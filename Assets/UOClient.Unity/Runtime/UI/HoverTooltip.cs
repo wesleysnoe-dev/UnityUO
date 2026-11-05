@@ -11,6 +11,7 @@ namespace UOClient.Unity.UI
         public const int TooltipWindowId = 0x7EEF;
 
         private uint _hoverSerial, _forcedHover;
+        private string _hoverText;
         private Vector2 _forcedHoverAt;
         private float _hoverSince;
         private GUIStyle _tooltipStyle;
@@ -29,6 +30,7 @@ namespace UOClient.Unity.UI
         public void UpdateHover(UiManager ui, Func<Vector2, uint> pick)
         {
             uint serial = 0;
+            string text = null;
             Vector2 mouse = Input.mousePosition;
             if (ui.IsOverUi(mouse))
             {
@@ -37,6 +39,7 @@ namespace UOClient.Unity.UI
                     if (ui.Windows[i].Rect.Contains(p))
                     {
                         serial = ui.Windows[i].Hovered;
+                        text = serial == 0 ? ui.Windows[i].HoveredText : null;
                         break;
                     }
             }
@@ -45,20 +48,25 @@ namespace UOClient.Unity.UI
                 serial = pick(mouse);
             }
             if (_forcedHover != 0)
+            {
                 serial = _forcedHover; // the capture tour (no real mouse)
-            if (serial != _hoverSerial)
+                text = null;
+            }
+            if (serial != _hoverSerial || text != _hoverText)
             {
                 _hoverSerial = serial;
+                _hoverText = text;
                 _hoverSince = Time.realtimeSinceStartup;
             }
         }
 
         public void OnGUI(GameSession session, UiManager ui)
         {
-            if (session == null || _hoverSerial == 0 || Time.realtimeSinceStartup - _hoverSince < 0.4f || ui.Dragging != null)
+            if (session == null || (_hoverSerial == 0 && string.IsNullOrEmpty(_hoverText))
+                || Time.realtimeSinceStartup - _hoverSince < 0.4f || ui.Dragging != null)
                 return;
-            PropertyList props = session.GetProperties(_hoverSerial);
-            if (props == null || props.Lines.Count == 0)
+            PropertyList props = _hoverSerial != 0 ? session.GetProperties(_hoverSerial) : null;
+            if (_hoverSerial != 0 && (props == null || props.Lines.Count == 0))
                 return;
             if (_tooltipStyle == null)
             {
@@ -69,7 +77,9 @@ namespace UOClient.Unity.UI
                 _tooltipBack.Apply();
             }
             var sb = new StringBuilder();
-            for (int i = 0; i < props.Lines.Count; i++)
+            if (props == null)
+                sb.Append(GumpHtml.ToRichText(_hoverText, out _)); // a gump element's cliloc tooltip
+            for (int i = 0; props != null && i < props.Lines.Count; i++)
             {
                 string line = GumpHtml.ToRichText(props.Lines[i], out _);
                 sb.Append(i == 0 ? $"<color=#ffd27a><b>{line}</b></color>" : line);

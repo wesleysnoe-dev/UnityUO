@@ -26,6 +26,38 @@ public sealed class GumpTests
     }
 
     [Fact]
+    public void ParsesModernUOLayoutBuilderCommands()
+    {
+        // As GumpLayoutBuilder writes them: AddSpriteImage, AddImageTiledButton + its tooltip with arguments,
+        // AddTextEntryLimited (StValentinesBears' 25-character lines, and the default size 0), AddGumpIdOverride.
+        string layout = "{ picinpic 10 20 9200 30 40 5 6 }" +
+                        "{ buttontileart 0 0 4005 4007 1 0 9 3823 0 18 12 }{ tooltip 1062547 @Wes\t#1011036@ }" +
+                        "{ tooltip 1011036 }" +
+                        "{ textentrylimited 15 152 390 20 0 0 1 25 }{ textentrylimited 15 202 390 20 0 1 2 0 }" +
+                        "{ textentrylimited 0 0 10 20 0 2 3 500 }{ textentry 0 0 10 20 0 3 4 }{ mastergump 2000 }";
+        List<GumpCommand> c = ServerGump.ParseLayout(layout);
+
+        Assert.Equal(new[] { 10, 20, 9200, 30, 40, 5, 6 }, c[0].Args);
+        Assert.Equal(9, c[1].Arg(6));                       // tile-art button reply id
+        Assert.Equal(1062547, c[2].Arg(0));
+        Assert.Equal("Wes\t#1011036", c[2].ClilocArgs);
+        Assert.Null(c[3].ClilocArgs);
+        Assert.Equal(25, c[4].TextLimit);
+        Assert.Equal(GumpCommand.MaxReplyText, c[5].TextLimit); // size 0: no limit of its own, not one character
+        Assert.Equal(GumpCommand.MaxReplyText, c[6].TextLimit); // never more than ModernUO accepts back
+        Assert.Equal(GumpCommand.MaxReplyText, c[7].TextLimit);
+        Assert.Equal("mastergump", c[8].Name);
+    }
+
+    [Fact]
+    public void XmfHtmlTokArgumentsComeFromTheAtBlock()
+    {
+        GumpCommand c = ServerGump.ParseLayout("{ xmfhtmltok 10 10 200 40 0 0 32767 1011036 @a b\tc@ }")[0];
+        Assert.Equal(1011036, c.Arg(7));
+        Assert.Equal("a b\tc", c.ClilocArgs);
+    }
+
+    [Fact]
     public void ParsesPackedTextLines()
     {
         // Two lines, "Hi" and "Yo!", as uint16 length + big-endian UTF-16.

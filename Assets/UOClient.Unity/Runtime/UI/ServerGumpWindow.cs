@@ -105,12 +105,17 @@ namespace UOClient.Unity.UI
             if (Event.current.type == EventType.Repaint)
             {
                 Hovered = _hoverInGump;
+                HoveredText = _hoverTextInGump;
                 _hoverInGump = 0;
+                _hoverTextInGump = null;
             }
         }
 
+        // The element drawn last: itemproperty and tooltip describe it, as in TazUO, where they attach to the
+        // control added just before them.
         private Rect _lastArea;
         private uint _hoverInGump;
+        private string _hoverTextInGump;
 
         /// <summary>Draws one command; returns true if it closed the gump.</summary>
         private bool DrawCommand(GumpCommand c)
@@ -119,9 +124,12 @@ namespace UOClient.Unity.UI
             {
                 case "resizepic":
                     DrawResizePic(c.Arg(2), c.Arg(0), c.Arg(1), c.Arg(3), c.Arg(4));
+                    _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(3), c.Arg(4));
                     break;
 
                 case "gumppic":
+                case "gumppichued":
+                case "gumppicphued":
                 {
                     UiImage img = Art.Gump(c.Arg(2), c.Named("hue"));
                     DrawImage(img, c.Arg(0), c.Arg(1));
@@ -129,8 +137,27 @@ namespace UOClient.Unity.UI
                     break;
                 }
 
+                case "picinpic":
+                case "picinpichued":
+                case "picinpicphued":
+                {
+                    // x y gump width height sx sy: the width x height part of the gump starting at (sx, sy).
+                    var r = new Rect(c.Arg(0), c.Arg(1), c.Arg(3), c.Arg(4));
+                    UiImage img = Art.Gump(c.Arg(2));
+                    if (img != null && r.width > 0 && r.height > 0)
+                    {
+                        float sx = c.Arg(5), sy = c.Arg(6);
+                        // Textures are stored bottom-up, so v counts from the bottom of the picture.
+                        GUI.DrawTextureWithTexCoords(r, img.Texture, new Rect(sx / img.Width, 1f - (sy + r.height) / img.Height,
+                            r.width / img.Width, r.height / img.Height));
+                    }
+                    _lastArea = r;
+                    break;
+                }
+
                 case "gumppictiled":
                     DrawTiled(Art.Gump(c.Arg(4)), c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
+                    _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
                     break;
 
                 case "tilepic":
@@ -148,6 +175,12 @@ namespace UOClient.Unity.UI
                         _hoverInGump = (uint)c.Arg(0);
                     break;
 
+                case "tooltip":
+                    // tooltip number [@args@]: a cliloc shown over the element drawn just before.
+                    if (Event.current.type == EventType.Repaint && _lastArea.Contains(Event.current.mousePosition))
+                        _hoverTextInGump = ClilocText(c.Arg(0), c.ClilocArgs);
+                    break;
+
                 case "checkertrans":
                     // Classic clients make the area see-through; a light veil reads the same here.
                     GUI.color = new Color(0, 0, 0, 0.25f);
@@ -156,13 +189,18 @@ namespace UOClient.Unity.UI
                     break;
 
                 case "text":
+                {
                     _text.normal.textColor = Art.HueColor(c.Arg(2), new Color(0.1f, 0.1f, 0.1f));
-                    GUI.Label(new Rect(c.Arg(0), c.Arg(1), 600, 22), _gump.Line(c.Arg(3)), _text);
+                    var content = new GUIContent(_gump.Line(c.Arg(3)));
+                    GUI.Label(new Rect(c.Arg(0), c.Arg(1), 600, 22), content, _text);
+                    _lastArea = new Rect(c.Arg(0), c.Arg(1), _text.CalcSize(content).x, 22);
                     break;
+                }
 
                 case "croppedtext":
                     _text.normal.textColor = Art.HueColor(c.Arg(4), new Color(0.1f, 0.1f, 0.1f));
                     GUI.Label(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3)), _gump.Line(c.Arg(5)), _text);
+                    _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
                     break;
 
                 case "htmlgump":
@@ -178,11 +216,8 @@ namespace UOClient.Unity.UI
                     break;
 
                 case "xmfhtmltok":
-                {
-                    string args = c.Words.Length > 8 ? c.Words[8].Trim('@') : "";
-                    DrawHtml(c, ClilocText(c.Arg(7), args), c.Arg(4) != 0, c.Arg(5) != 0, Rgb15(c.Arg(6)));
+                    DrawHtml(c, ClilocText(c.Arg(7), c.ClilocArgs), c.Arg(4) != 0, c.Arg(5) != 0, Rgb15(c.Arg(6)));
                     break;
-                }
 
                 case "button":
                 case "buttontileart":
@@ -201,8 +236,8 @@ namespace UOClient.Unity.UI
                     int id = c.Arg(5);
                     _entry.normal.textColor = _entry.focused.textColor = Art.HueColor(c.Arg(4), new Color(0.1f, 0.1f, 0.1f));
                     string value = _texts.TryGetValue(id, out string v) ? v : "";
-                    int max = c.Name == "textentrylimited" ? Math.Max(1, c.Arg(7)) : 239;
-                    _texts[id] = GUI.TextField(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), Math.Max(18, c.Arg(3))), value, max, _entry);
+                    _texts[id] = GUI.TextField(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), Math.Max(18, c.Arg(3))), value, c.TextLimit, _entry);
+                    _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
                     break;
                 }
             }
@@ -216,6 +251,7 @@ namespace UOClient.Unity.UI
             if (up == null)
                 return false;
             var r = new Rect(x, y, up.Width, up.Height);
+            _lastArea = r;
             bool pressed = r.Contains(Event.current.mousePosition) && Input.GetMouseButton(0);
             DrawImage(pressed && down != null ? down : up, x, y);
             if (c.Name == "buttontileart")
@@ -242,6 +278,7 @@ namespace UOClient.Unity.UI
             if (img == null)
                 return;
             var r = new Rect(c.Arg(0), c.Arg(1), img.Width, img.Height);
+            _lastArea = r;
             DrawImage(img, r.x, r.y);
             if (!GUI.Button(r, GUIContent.none, GUIStyle.none))
                 return;
@@ -263,6 +300,7 @@ namespace UOClient.Unity.UI
         private void DrawHtml(GumpCommand c, string html, bool background, bool scrollbar, Color? color)
         {
             var r = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
+            _lastArea = r;
             if (background)
                 DrawResizePic(0x0BB8, r.x, r.y, r.width, r.height);
 
@@ -319,7 +357,13 @@ namespace UOClient.Unity.UI
                     case "textentry":
                     case "textentrylimited":
                         cw = c.Arg(2); ch = c.Arg(3); break;
+                    case "picinpic":
+                    case "picinpichued":
+                    case "picinpicphued":
+                        cw = c.Arg(3); ch = c.Arg(4); break;
                     case "gumppic":
+                    case "gumppichued":
+                    case "gumppicphued":
                     {
                         UiImage img = Art.Gump(c.Arg(2));
                         cw = img?.Width ?? 0;
@@ -327,6 +371,7 @@ namespace UOClient.Unity.UI
                         break;
                     }
                     case "button":
+                    case "buttontileart":
                     case "checkbox":
                     case "radio":
                     {

@@ -26,6 +26,26 @@ namespace UOClient.Core
             return fallback;
         }
 
+        /// <summary>The @...@ cliloc arguments (xmfhtmltok, tooltip) without the @s, or null if there are none.</summary>
+        public string ClilocArgs
+        {
+            get
+            {
+                foreach (string w in Words)
+                    if (w.Length >= 2 && w[0] == '@' && w[w.Length - 1] == '@')
+                        return w.Substring(1, w.Length - 2);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Characters a text entry takes: textentrylimited's size (x y w h hue id text size) when set, else 239,
+        /// ModernUO's cap on a reply text. ModernUO writes size 0 by default, which means no limit of its own.
+        /// </summary>
+        public int TextLimit => Name == "textentrylimited" && Arg(7) > 0 ? Math.Min(Arg(7), MaxReplyText) : MaxReplyText;
+
+        public const int MaxReplyText = 239;
+
         public override string ToString() => "{" + Name + " " + string.Join(" ", Words) + "}";
     }
 

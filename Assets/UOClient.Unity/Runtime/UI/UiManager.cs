@@ -44,6 +44,9 @@ namespace UOClient.Unity.UI
         /// <summary>The item or mobile under the mouse in this window (for tooltips), or 0; windows set it while drawing.</summary>
         public uint Hovered { get; protected set; }
 
+        /// <summary>A plain text tooltip under the mouse (a server gump's cliloc tooltip), or null.</summary>
+        public string HoveredText { get; protected set; }
+
         protected GameSession Session => Ui.Session;
         protected GumpArt Art => Ui.Art;
 
