@@ -132,6 +132,60 @@ public sealed class SessionPacketTests
     }
 
     [Fact]
+    public void MapDetailsAndPinsAreKeptPerMap()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        MapItemDetails? shown = null;
+        int changes = 0;
+        session.MapDisplayed += m => shown = m;
+        session.MapChanged += _ => changes++;
+
+        // ModernUO's DisplayTo: SendMapDetails (0x90 before 7.0.13), then 0x56 clear (5), an add (1) per pin, editable (7).
+        byte[] details = new PacketWriter(0x90, 19).UInt32(0x40000010).UInt16(0x139D)
+            .UInt16(1344).UInt16(1600).UInt16(1856).UInt16(2112).UInt16(400).UInt16(400).ToArray();
+        Assert.Equal(PacketLengths.For(ClientVersion.Default)[0x90], details.Length);
+        session.Inject(details, false);
+        byte[] clear = new PacketWriter(0x56, 11).UInt32(0x40000010).Byte(5).Byte(0).UInt16(0).UInt16(0).ToArray();
+        Assert.Equal(PacketLengths.For(ClientVersion.Default)[0x56], clear.Length);
+        session.Inject(clear, false);
+        session.Inject(new PacketWriter(0x56, 11).UInt32(0x40000010).Byte(1).Byte(0).UInt16(120).UInt16(80).ToArray(), false);
+        session.Inject(new PacketWriter(0x56, 11).UInt32(0x40000010).Byte(1).Byte(0).UInt16(300).UInt16(399).ToArray(), false);
+        session.Inject(new PacketWriter(0x56, 11).UInt32(0x40000010).Byte(7).Byte(1).UInt16(0).UInt16(0).ToArray(), false);
+
+        Assert.NotNull(shown);
+        Assert.Same(shown, session.Maps[0x40000010]);
+        Assert.Equal((0x139D, 1344, 1600, 1856, 2112, 400, 400, -1), (shown!.Gump, shown.X1, shown.Y1, shown.X2, shown.Y2, shown.Width, shown.Height, shown.Facet));
+        Assert.Equal(new[] { new MapPin(120, 80), new MapPin(300, 399) }, shown.Pins);
+        Assert.True(shown.Editable);
+        Assert.Equal(4, changes);
+
+        // Insert, move and remove by index, as ModernUO's MapItem applies them.
+        session.Inject(new PacketWriter(0x56, 11).UInt32(0x40000010).Byte(2).Byte(1).UInt16(10).UInt16(20).ToArray(), false);
+        session.Inject(new PacketWriter(0x56, 11).UInt32(0x40000010).Byte(3).Byte(0).UInt16(5).UInt16(6).ToArray(), false);
+        session.Inject(new PacketWriter(0x56, 11).UInt32(0x40000010).Byte(4).Byte(2).UInt16(0).UInt16(0).ToArray(), false);
+        Assert.Equal(new[] { new MapPin(5, 6), new MapPin(10, 20) }, shown.Pins);
+        session.Inject(new PacketWriter(0x56, 11).UInt32(0x40000010).Byte(6).Byte(0).UInt16(0).UInt16(0).ToArray(), false);
+        Assert.False(shown.Editable);
+
+        // A second map keeps its own pins; 0xF5 (7.0.13+, what ModernUO sends our default client) adds the facet.
+        byte[] newer = new PacketWriter(0xF5, 21).UInt32(0x40000020).UInt16(0x139D)
+            .UInt16(0).UInt16(0).UInt16(5119).UInt16(4095).UInt16(200).UInt16(200).UInt16(3).ToArray();
+        Assert.Equal(PacketLengths.For(ClientVersion.Default)[0xF5], newer.Length);
+        session.Inject(newer, false);
+        session.Inject(new PacketWriter(0x56, 11).UInt32(0x40000020).Byte(1).Byte(0).UInt16(1).UInt16(2).ToArray(), false);
+        Assert.Equal(3, session.Maps[0x40000020].Facet);
+        Assert.Equal(new[] { new MapPin(1, 2) }, session.Maps[0x40000020].Pins);
+        Assert.Equal(2, session.Maps[0x40000010].Pins.Count);
+
+        // Reopening a map: ModernUO clears (5) before resending its pins.
+        session.Inject(clear, false);
+        Assert.Empty(session.Maps[0x40000010].Pins);
+
+        // The request, as ModernUO's OnMapCommand reads it: serial, command, pin index, x, y.
+        Assert.Equal(new byte[] { 0x56, 0x40, 0, 0, 0x10, 2, 3, 0, 120, 1, 44 }, GameSession.MapCommandRequest(0x40000010, 2, 3, 120, 300));
+    }
+
+    [Fact]
     public void QuestArrowShowsAndClearsOnHighSeasClients()
     {
         GameSession session = InWorldAs(0x00000042, 1495, 1629);

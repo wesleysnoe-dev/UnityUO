@@ -282,5 +282,6 @@ The output folder holds:
 - [x] Gump text entry dialogs (`0xAB`, answered with `0xAC`). ModernUO doesn't use this packet; the layout follows RunUO/POL and ClassicUO. Injected-packet test only.
 - [x] Quest/tracking arrow (`0xBA`, 6 bytes or 10 with the tracked serial on 7.0.9+): a pulsing marker on the target tile, or an arrow at the screen edge pointing toward it; cleared when the server cancels it. Clicking the arrow (`0xBF 0x07`) is not sent yet. Injected-packet test only.
 - [x] Character profiles (`0xB8`): the paperdoll's scroll sends the display request (mode 0) and the reply opens a profile window (title, text, footer). Editing your profile is not supported yet. Injected-packet test only.
+- [ ] Map items (`0x90`/`0xF5` details, `0x56` pins): details and pin lists are parsed and kept per map serial (`GameSession.Maps`), and `0x56` requests can be built and sent. No map gump draws them yet, so opening a treasure or city map shows nothing. Injected-packet test only.
 
 Credits: parts of the format handling are ported from [ClassicUO](https://github.com/ClassicUO/ClassicUO) (BSD-2-Clause): the Mythic decompressor, the Huffman decoding tree, the packet length table and the MUL animation layout. Packet layouts were checked against the ModernUO source.

@@ -106,6 +106,7 @@ namespace UOClient.Core
             RegisterHousingHandlers();
             RegisterTrackingHandlers();
             RegisterProfileHandlers();
+            RegisterMapItemHandlers();
         }
 
         public World World { get; }
