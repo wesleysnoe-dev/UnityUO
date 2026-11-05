@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using UOClient.IO.Formats;
 using UOClient.Net;
 
 namespace UOClient.Core
@@ -127,22 +128,45 @@ namespace UOClient.Core
         }
 
         /// <summary>
-        /// A single click that wasn't the start of a double-click: names the thing (0x09) and, on a mobile, asks for its
-        /// context menu too, as ClassicUO does with popups enabled, so a vendor's click offers Buy/Sell/Train.
+        /// A single click that wasn't the start of a double-click, as TazUO's DelayedObjectClickManager.Update sends it:
+        /// nothing for a thing no longer in the world; the look (0x09) only without AOS tooltips (they name things on
+        /// hover) or for a locked fixture; and the context menu request for anything when the shard has popups, so a
+        /// vendor's click offers Buy/Sell/Train. <paramref name="tileData"/> tells a fixture by its weight and flags.
         /// </summary>
-        public void SingleClick(uint serial)
+        public void SingleClick(uint serial, TileData tileData)
         {
             if (State != SessionState.InWorld)
                 return;
-            foreach (byte[] packet in SingleClickRequests(serial, World.Mobiles.ContainsKey(serial)))
+            bool look;
+            if (World.Items.TryGetValue(serial, out WorldItem item))
+            {
+                StaticTileData data = tileData != null ? tileData.GetStatic(item.Graphic) : default;
+                look = SingleClickLooks(TooltipsEnabled, true, item.Flags, data.Weight, data.Flags);
+            }
+            else if (World.Mobiles.ContainsKey(serial))
+                look = SingleClickLooks(TooltipsEnabled, false, 0, 0, 0);
+            else
+                return;
+            foreach (byte[] packet in SingleClickRequests(serial, look, PopupEnabled))
                 _conn.Send(packet);
         }
 
-        /// <summary>The packets <see cref="SingleClick"/> sends: the look, then the context menu request for a mobile.</summary>
-        public static byte[][] SingleClickRequests(uint serial, bool mobile)
+        /// <summary>
+        /// Whether a single click names the thing with 0x09: always without tooltips; with them, only an item TazUO
+        /// counts as locked (not movable, weight over 90: Item.IsLocked) with weight 255 that is not a container.
+        /// </summary>
+        public static bool SingleClickLooks(bool tooltips, bool isItem, byte itemFlags, byte weight, TileFlags tileFlags) =>
+            !tooltips || isItem && (itemFlags & 0x20) == 0 && weight == 255 && (tileFlags & TileFlags.Container) == 0;
+
+        /// <summary>The packets <see cref="SingleClick"/> sends: the look, then the context menu request.</summary>
+        public static byte[][] SingleClickRequests(uint serial, bool look, bool popup)
         {
-            byte[] look = new PacketWriter(0x09, 5).UInt32(serial).ToArray();
-            return mobile ? new[] { look, ContextMenuRequest(serial) } : new[] { look };
+            var packets = new List<byte[]>(2);
+            if (look)
+                packets.Add(new PacketWriter(0x09, 5).UInt32(serial).ToArray());
+            if (popup)
+                packets.Add(ContextMenuRequest(serial));
+            return packets.ToArray();
         }
 
         /// <summary>0xBF 0x13: serial. ModernUO's ContextMenuSystem answers with 0xBF 0x14 if there are entries.</summary>

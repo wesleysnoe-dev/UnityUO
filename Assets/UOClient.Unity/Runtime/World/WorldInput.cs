@@ -71,7 +71,7 @@ namespace UOClient.Unity
 
         /// <summary>
         /// P paperdoll, B backpack, F1 help, Tab war mode, Escape cancels a target. Clicks in the world: single
-        /// click names (and on a mobile opens its context menu: a vendor's Buy/Sell/Train), double-click uses
+        /// click asks for the context menu (a vendor's Buy/Sell/Train) and names it where TazUO would, double-click uses
         /// (on yourself: dismount or paperdoll; another mobile in war mode: attack), shift-click opens anything's context menu, dragging a ground item picks it up, and with a
         /// target cursor up, a click targets.
         /// </summary>
@@ -85,7 +85,7 @@ namespace UOClient.Unity
             if (_pendingClick != 0 && Time.realtimeSinceStartup - _lastWorldClick >= DoubleClickTime && !(_pressedItem != 0 && Input.GetMouseButton(0)))
             {
                 if (_ctx.Session.Target == null)
-                    _ctx.Session.SingleClick(_pendingClick);
+                    _ctx.Session.SingleClick(_pendingClick, _ctx.Data.TileData);
                 _pendingClick = 0;
             }
             if (ui == null || _chat.Typing || ui.HasKeyboardFocus)
@@ -194,8 +194,8 @@ namespace UOClient.Unity
             bool doubleClick = Time.realtimeSinceStartup - _lastWorldClick < DoubleClickTime && (mouse - _lastWorldClickAt).sqrMagnitude < 64;
             _lastWorldClick = doubleClick ? 0 : Time.realtimeSinceStartup;
             _lastWorldClickAt = mouse;
-            if (!doubleClick && _pendingClick != 0)
-                _ctx.Session.SingleClick(_pendingClick); // a quick click elsewhere: the first one still counts
+            // A quick click elsewhere replaces the waiting one, as TazUO's DelayedObjectClickManager.Set does, so two
+            // vendors clicked in a row pop one menu, not two racing each other.
             _pendingClick = doubleClick ? 0 : picked;
             if (picked == 0 || !doubleClick)
                 return; // a single click goes out once the double-click time passes

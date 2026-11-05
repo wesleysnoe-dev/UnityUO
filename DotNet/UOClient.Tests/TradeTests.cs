@@ -104,18 +104,51 @@ public sealed class TradeTests
     }
 
     [Fact]
-    public void SingleClickOnAMobileAlsoAsksForItsContextMenu()
+    public void SingleClickSendsTheLookThenTheContextMenuRequest()
     {
-        const uint vendor = 0x00001234, item = 0x40000001;
+        const uint vendor = 0x00001234;
 
-        // A vendor: the look (0x09), then ModernUO's ContextMenuRequest (0xBF 0x13, serial) for Buy/Sell/Train.
-        byte[][] mobile = GameSession.SingleClickRequests(vendor, true);
-        Assert.Equal(2, mobile.Length);
-        Assert.Equal(new byte[] { 0x09, 0x00, 0x00, 0x12, 0x34 }, mobile[0]);
-        Assert.Equal(new byte[] { 0xBF, 0x00, 0x09, 0x00, 0x13, 0x00, 0x00, 0x12, 0x34 }, mobile[1]);
+        // Without tooltips: the look (0x09), then ModernUO's ContextMenuRequest (0xBF 0x13, serial) for Buy/Sell/Train.
+        byte[][] both = GameSession.SingleClickRequests(vendor, true, true);
+        Assert.Equal(2, both.Length);
+        Assert.Equal(new byte[] { 0x09, 0x00, 0x00, 0x12, 0x34 }, both[0]);
+        Assert.Equal(new byte[] { 0xBF, 0x00, 0x09, 0x00, 0x13, 0x00, 0x00, 0x12, 0x34 }, both[1]);
 
-        // An item only gets named; its menu stays on shift-click.
-        Assert.Equal(new[] { new byte[] { 0x09, 0x40, 0x00, 0x00, 0x01 } }, GameSession.SingleClickRequests(item, false));
+        // With AOS tooltips (every ModernUO shard from AOS on): only the menu request, as TazUO sends it.
+        Assert.Equal(new[] { both[1] }, GameSession.SingleClickRequests(vendor, false, true));
+        // A shard without context menus: only the look.
+        Assert.Equal(new[] { both[0] }, GameSession.SingleClickRequests(vendor, true, false));
+    }
+
+    // TazUO's DelayedObjectClickManager.Update: look if !TooltipsEnabled || (item is IsLocked && weight 255 && !container).
+    [Theory]
+    [InlineData(false, false, 0x00, 0, 0u, true)]         // no tooltips: everything is named
+    [InlineData(true, false, 0x00, 0, 0u, false)]         // a mobile (vendor): the tooltip names it
+    [InlineData(true, true, 0x20, 255, 0u, false)]        // movable: not locked
+    [InlineData(true, true, 0x00, 255, 0u, true)]         // a locked fixture (a sign, a forge)
+    [InlineData(true, true, 0x00, 90, 0u, false)]         // locked but not weight 255
+    [InlineData(true, true, 0x00, 255, 0x200000u, false)] // a locked container
+    public void SingleClickNamesWhatTazUONames(bool tooltips, bool isItem, int flags, int weight, uint tileFlags, bool look)
+    {
+        Assert.Equal(look, GameSession.SingleClickLooks(tooltips, isItem, (byte)flags, (byte)weight, (UOClient.IO.Formats.TileFlags)tileFlags));
+    }
+
+    [Theory]
+    [InlineData(0x08u | 0x20u | 0x80u, true, true)] // ModernUO's SE expansion: ContextMenus | AOS | SE
+    [InlineData(0x08u, true, false)]                // pre-AOS expansions: ContextMenus only
+    [InlineData(0x00u, false, false)]
+    public void CharacterListFlagsTurnOnPopupsAndTooltips(uint flags, bool popup, bool tooltips)
+    {
+        // ModernUO's SendCharacterList for a 7.0.13+ client: 5 empty slots, one 89-byte city, flags, then -1.
+        var session = new GameSession(new LoginSettings { Interactive = true });
+        var p = new PacketWriter(0xA9).Byte(5).Zero(5 * 60).Byte(1)
+            .Byte(0).Ascii("Britain", 32).Ascii("Inn", 32).Zero(24)
+            .UInt32(flags).UInt16(0xFFFF);
+        session.Inject(p.ToArray(), true);
+        Assert.Single(session.Cities);
+        Assert.Equal(flags, session.CharacterListFlags);
+        Assert.Equal(popup, session.PopupEnabled);
+        Assert.Equal(tooltips, session.TooltipsEnabled);
     }
 
     [Fact]

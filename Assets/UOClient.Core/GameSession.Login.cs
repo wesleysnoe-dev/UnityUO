@@ -34,6 +34,15 @@ namespace UOClient.Core
 
         public readonly List<StartCity> Cities = new List<StartCity>();
 
+        /// <summary>The flags after the cities in 0xA9 (ModernUO's CharacterListFlags for the shard's expansion).</summary>
+        public uint CharacterListFlags { get; private set; }
+
+        /// <summary>The shard has context menus (0x08; ModernUO sets it for every expansion), as ClassicUO's ClientFeatures.PopupEnabled.</summary>
+        public bool PopupEnabled => (CharacterListFlags & 0x08) != 0;
+
+        /// <summary>The shard sends AOS tooltips (0x20, from 3.0.8z clients on), as ClassicUO's ClientFeatures.TooltipsEnabled.</summary>
+        public bool TooltipsEnabled => (CharacterListFlags & 0x20) != 0 && _settings.Version >= new ClientVersion(3, 0, 8, 122);
+
         /// <summary>The server list arrived (interactive logins with more than one shard).</summary>
         public event Action ServersListed;
 

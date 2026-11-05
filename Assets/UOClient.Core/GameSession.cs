@@ -417,6 +417,8 @@ namespace UOClient.Core
                 if (cityName.IndexOf(_settings.StartCity ?? "", StringComparison.OrdinalIgnoreCase) >= 0)
                     city = index;
             }
+            if (r.Remaining >= 4)
+                CharacterListFlags = r.ReadUInt32();
 
             if (_settings.Interactive)
             {
