@@ -126,3 +126,7 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
 ## Session: bulletin boards (2026-11-05)
 
 1. **`0x71` bulletin boards** (`GameSession.BulletinBoards.cs`, `UI.BulletinBoardWindow`/`BulletinPostWindow`/`BulletinComposeWindow`, `SessionUiBinder`, `GameSession.Interaction` 0x3C/0x25 hook): incoming display (0: board, 30-byte UTF-8 name), summary (1: message, thread, poster/subject/time) and content (2: plus body, hue, equipment, lines) as ModernUO's `BulletinBoardPackets` write them. As ClassicUO does, each message item that arrives into an open board by `0x3C`/`0x25` gets a summary request (4); summaries and bodies for a board with no window are dropped. Messages list as threads, replies under their parent; a deleted message (`0x1D`) leaves the list. Outgoing read (3), post/reply (5: subject and lines length-prefixed with a null, ≤255 lines, not sent with an empty subject or body) and remove (6) as `BBClientRequest` reads them. Injected-packet and byte-layout tests (171 tests pass), not seen in Unity, no login.
+
+## Session: TazUO polish (2026-11-05)
+
+1. **Gold peace cursor** (`UI.TargetCursor`): outside war mode the pointer is now the classic gold up-left gauntlet (art `0x2073`, the peace twin of the war `0x205C`, as ClassicUO's `GameCursor` picks `_cursorData[war, 9]`) instead of the system arrow. Crosshair while targeting and the drag cursor are unchanged. Not seen in Unity, no login.

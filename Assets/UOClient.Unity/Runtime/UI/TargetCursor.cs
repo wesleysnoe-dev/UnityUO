@@ -5,17 +5,20 @@ namespace UOClient.Unity.UI
 {
     /// <summary>
     /// The mouse cursor: a crosshair while the server wants a target (white neutral, red harmful, blue beneficial),
-    /// else in war mode the classic client's red gauntlet, else the system pointer. A dragged item owns the cursor.
+    /// else the classic client's gauntlet: red in war mode, gold in peace (the system pointer only until art loads).
+    /// A dragged item owns the cursor.
     /// </summary>
     public sealed class TargetCursor
     {
         /// <summary>
-        /// The war-mode pointer in art: the classic cursors are 16 statics each, from 0x206A in peace and 0x2053 in war;
-        /// the ninth (0x2073 / 0x205C) is the up-left gauntlet, its fingertip at the image's top-left corner.
+        /// The pointers in art: the classic cursors are 16 statics each, from 0x206A in peace and 0x2053 in war;
+        /// the ninth (0x2073 / 0x205C) is the up-left gauntlet, its fingertip at the image's top-left corner
+        /// (ClassicUO's GameCursor uses _cursorData[war, 9] as its default pointer).
         /// </summary>
         public const int WarPointer = 0x2053 + 9;
+        public const int PeacePointer = 0x206A + 9;
 
-        private Texture2D _crossNeutral, _crossHarmful, _crossBeneficial, _warPointer;
+        private Texture2D _crossNeutral, _crossHarmful, _crossBeneficial, _warPointer, _peacePointer;
         private bool _cursorSet;
         private Texture2D _cursorTex;
 
@@ -37,10 +40,12 @@ namespace UOClient.Unity.UI
                 tex = t.Flags == 1 ? _crossHarmful : t.Flags == 2 ? _crossBeneficial : _crossNeutral;
                 hotspot = new Vector2(16, 16);
             }
-            else if (session != null && session.WarMode && ui?.Art != null)
+            else if (ui?.Art != null)
             {
-                _warPointer ??= ui.Art.Item(WarPointer)?.Texture;
-                tex = _warPointer;
+                if (session != null && session.WarMode)
+                    tex = _warPointer ??= ui.Art.Item(WarPointer)?.Texture;
+                else
+                    tex = _peacePointer ??= ui.Art.Item(PeacePointer)?.Texture;
             }
             if (_cursorSet && tex == _cursorTex)
                 return;
