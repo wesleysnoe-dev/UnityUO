@@ -49,13 +49,35 @@ namespace UOClient.Core
         /// Double-click (use): opens doors, containers, paperdolls (for mobiles), etc. Queued and sent at the
         /// server's pace, as the classic client does, so quick successive uses all go through.
         /// </summary>
-        public void Use(uint serial)
+        public void Use(uint serial) => Use(serial, "useobject " + MacroRecorder.Hex(serial));
+
+        private void Use(uint serial, string macro)
         {
             if (State != SessionState.InWorld)
                 return;
+            if ((serial & 0x80000000) == 0) // not the paperdoll request
+            {
+                LastObject = serial;
+                Macros.Note(macro);
+            }
             _actions.Use(serial, new PacketWriter(0x06, 5).UInt32(serial).ToArray());
             SendQueuedActions();
         }
+
+        /// <summary>The last thing we double-clicked (ClassicUO's World.LastObject, for the "last object" macro), or 0.</summary>
+        public uint LastObject { get; private set; }
+
+        /// <summary>Uses <see cref="LastObject"/> again, if there was one.</summary>
+        public bool UseLastObject()
+        {
+            if (LastObject == 0 || State != SessionState.InWorld)
+                return false;
+            Use(LastObject, "lastobject");
+            return true;
+        }
+
+        /// <summary>Records the player's actions as macro lines (see <see cref="MacroRecorder"/>).</summary>
+        public MacroRecorder Macros { get; } = new MacroRecorder();
 
         private void SendQueuedActions()
         {

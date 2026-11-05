@@ -110,11 +110,15 @@ namespace UOClient.Core
         }
 
         /// <summary>Answers the target cursor with a mobile or item.</summary>
-        public void TargetObject(uint serial)
+        public void TargetObject(uint serial) =>
+            AnswerTarget(serial, serial == World.PlayerSerial ? "targetself" : "target " + MacroRecorder.Hex(serial));
+
+        private void AnswerTarget(uint serial, string macro)
         {
             TargetRequest t = Target;
             if (t == null || State != SessionState.InWorld)
                 return;
+            Macros.Note(macro);
             Target = null;
             LastTarget = serial;
             _conn.Send(new PacketWriter(0x6C, 19).Byte(0).UInt32(t.CursorId).Byte(t.Flags).UInt32(serial)
@@ -130,7 +134,7 @@ namespace UOClient.Core
         {
             if (Target == null || LastTarget == 0)
                 return false;
-            TargetObject(LastTarget);
+            AnswerTarget(LastTarget, "lasttarget");
             return true;
         }
 
@@ -247,10 +251,20 @@ namespace UOClient.Core
         }
 
         /// <summary>Uses a skill by 0-based id (e.g. 21 Hiding, 46 Meditation); targeted skills then send a cursor.</summary>
-        public void UseSkill(int skillId) => TextCommand(0x24, $"{skillId} 0");
+        public void UseSkill(int skillId)
+        {
+            if (State == SessionState.InWorld)
+                Macros.Note($"skill {skillId}");
+            TextCommand(0x24, $"{skillId} 0");
+        }
 
         /// <summary>Casts a spell by number (1 = Clumsy ... 64 = Water Elemental for Magery).</summary>
-        public void CastSpell(int spellId) => TextCommand(0x56, spellId.ToString());
+        public void CastSpell(int spellId)
+        {
+            if (State == SessionState.InWorld)
+                Macros.Note($"cast {spellId}");
+            TextCommand(0x56, spellId.ToString());
+        }
 
         /// <summary>Opens a spellbook (1 = Magery, 2 = Necromancy, 3 = Chivalry, ...).</summary>
         public void OpenSpellbook(int type = 1) => TextCommand(0x43, type.ToString());

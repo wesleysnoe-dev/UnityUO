@@ -252,6 +252,7 @@ namespace UOClient.Core
         {
             if (State != SessionState.InWorld || string.IsNullOrWhiteSpace(text))
                 return;
+            Macros.Note("say " + text.Trim());
             if (text.TrimStart().StartsWith("/", StringComparison.Ordinal))
             {
                 PartyLine(text.Trim());
