@@ -20,6 +20,9 @@ namespace UOClient.Unity
         private readonly Func<Hotkeys> _hotkeys;
         private float _lastWorldClick;
         private Vector2 _lastWorldClickAt;
+        private uint _pendingClick; // a single click held until it can't be the start of a double-click
+
+        private const float DoubleClickTime = 0.35f;
 
         /// <summary>The window manager and the macros are read through <paramref name="ui"/> and <paramref name="hotkeys"/> on every use: each login makes new ones.</summary>
         public WorldInput(GameContext ctx, EntityViews entities, UI.HoverTooltip tooltip, ChatLine chat, Lighting lighting,
@@ -64,12 +67,22 @@ namespace UOClient.Unity
 
         /// <summary>
         /// P paperdoll, B backpack, F1 help, Tab war mode, Escape cancels a target. Clicks in the world: single
-        /// click names, double-click uses (attacks in war mode), and with a target cursor up, a click targets.
+        /// click names (and on a mobile opens its context menu: a vendor's Buy/Sell/Train), double-click uses
+        /// (attacks in war mode), shift-click opens anything's context menu, and with a target cursor up, a click targets.
         /// </summary>
         public void Update()
         {
             UI.UiManager ui = _ui();
-            if (ui == null || _ctx.Session == null || _chat.Typing || ui.HasKeyboardFocus)
+            if (_ctx.Session == null)
+                return;
+            // Like ClassicUO, the single click waits out the double-click time, so a double-click doesn't flash a popup.
+            if (_pendingClick != 0 && Time.realtimeSinceStartup - _lastWorldClick >= DoubleClickTime)
+            {
+                if (_ctx.Session.Target == null)
+                    _ctx.Session.SingleClick(_pendingClick);
+                _pendingClick = 0;
+            }
+            if (ui == null || _chat.Typing || ui.HasKeyboardFocus)
                 return;
             _hotkeys()?.Update(_ctx.Session);
             _tooltip.UpdateHover(ui, _entities.PickAt);
@@ -108,7 +121,7 @@ namespace UOClient.Unity
             if (popup != null)
                 ui.Close(popup);
 
-            // Shift+click: the context menu (vendors' Buy/Sell, pets' commands, ...).
+            // Shift+click: the context menu at once, for items too (a plain click on a mobile asks after the double-click time).
             if (_ctx.Session.Target == null && picked != 0 && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)))
             {
                 _ctx.Session.RequestContextMenu(picked);
@@ -134,17 +147,14 @@ namespace UOClient.Unity
                 return;
             }
 
-            bool doubleClick = Time.realtimeSinceStartup - _lastWorldClick < 0.35f && (mouse - _lastWorldClickAt).sqrMagnitude < 64;
+            bool doubleClick = Time.realtimeSinceStartup - _lastWorldClick < DoubleClickTime && (mouse - _lastWorldClickAt).sqrMagnitude < 64;
             _lastWorldClick = doubleClick ? 0 : Time.realtimeSinceStartup;
             _lastWorldClickAt = mouse;
-            if (picked == 0)
-                return;
-
-            if (!doubleClick)
-            {
-                _ctx.Session.Look(picked); // the server answers with the name over it
-                return;
-            }
+            if (!doubleClick && _pendingClick != 0)
+                _ctx.Session.SingleClick(_pendingClick); // a quick click elsewhere: the first one still counts
+            _pendingClick = doubleClick ? 0 : picked;
+            if (picked == 0 || !doubleClick)
+                return; // a single click goes out once the double-click time passes
             if (picked == _ctx.Session.World.PlayerSerial)
                 _ctx.Session.OpenPaperdoll();
             else if (_ctx.Session.WarMode && _ctx.Session.World.Mobiles.ContainsKey(picked))

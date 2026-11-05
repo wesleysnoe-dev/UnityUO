@@ -102,4 +102,27 @@ public sealed class TradeTests
         Assert.Equal(new[] { false, true }, menu.Entries.Select(e => e.Disabled));
         Assert.Equal(1, menu.Entries[1].Index);
     }
+
+    [Fact]
+    public void SingleClickOnAMobileAlsoAsksForItsContextMenu()
+    {
+        const uint vendor = 0x00001234, item = 0x40000001;
+
+        // A vendor: the look (0x09), then ModernUO's ContextMenuRequest (0xBF 0x13, serial) for Buy/Sell/Train.
+        byte[][] mobile = GameSession.SingleClickRequests(vendor, true);
+        Assert.Equal(2, mobile.Length);
+        Assert.Equal(new byte[] { 0x09, 0x00, 0x00, 0x12, 0x34 }, mobile[0]);
+        Assert.Equal(new byte[] { 0xBF, 0x00, 0x09, 0x00, 0x13, 0x00, 0x00, 0x12, 0x34 }, mobile[1]);
+
+        // An item only gets named; its menu stays on shift-click.
+        Assert.Equal(new[] { new byte[] { 0x09, 0x40, 0x00, 0x00, 0x01 } }, GameSession.SingleClickRequests(item, false));
+    }
+
+    [Fact]
+    public void ContextMenuChoiceEchoesSerialAndIndex()
+    {
+        // ModernUO's ContextMenuResponse: serial, u16 index into the menu it sent.
+        Assert.Equal(new byte[] { 0xBF, 0x00, 0x0B, 0x00, 0x15, 0x00, 0x00, 0x12, 0x34, 0x00, 0x01 },
+            GameSession.ContextMenuChoice(0x00001234, 1));
+    }
 }

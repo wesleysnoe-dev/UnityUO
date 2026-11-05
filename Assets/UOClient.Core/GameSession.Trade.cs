@@ -113,18 +113,45 @@ namespace UOClient.Core
 
         // ---- context menus ----
 
-        /// <summary>Asks for something's context menu (the classic shift-click or right-click popup).</summary>
+        /// <summary>Asks for something's context menu (a mobile's single click, or shift-click on anything).</summary>
         public void RequestContextMenu(uint serial)
         {
             if (State == SessionState.InWorld)
-                _conn.Send(new PacketWriter(0xBF).UInt16(0x13).UInt32(serial).ToArray());
+                _conn.Send(ContextMenuRequest(serial));
         }
 
         public void ChooseContextMenu(uint serial, int index)
         {
             if (State == SessionState.InWorld)
-                _conn.Send(new PacketWriter(0xBF).UInt16(0x15).UInt32(serial).UInt16(index).ToArray());
+                _conn.Send(ContextMenuChoice(serial, index));
         }
+
+        /// <summary>
+        /// A single click that wasn't the start of a double-click: names the thing (0x09) and, on a mobile, asks for its
+        /// context menu too, as ClassicUO does with popups enabled, so a vendor's click offers Buy/Sell/Train.
+        /// </summary>
+        public void SingleClick(uint serial)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            foreach (byte[] packet in SingleClickRequests(serial, World.Mobiles.ContainsKey(serial)))
+                _conn.Send(packet);
+        }
+
+        /// <summary>The packets <see cref="SingleClick"/> sends: the look, then the context menu request for a mobile.</summary>
+        public static byte[][] SingleClickRequests(uint serial, bool mobile)
+        {
+            byte[] look = new PacketWriter(0x09, 5).UInt32(serial).ToArray();
+            return mobile ? new[] { look, ContextMenuRequest(serial) } : new[] { look };
+        }
+
+        /// <summary>0xBF 0x13: serial. ModernUO's ContextMenuSystem answers with 0xBF 0x14 if there are entries.</summary>
+        public static byte[] ContextMenuRequest(uint serial) =>
+            new PacketWriter(0xBF).UInt16(0x13).UInt32(serial).ToArray();
+
+        /// <summary>0xBF 0x15: serial, entry index (from 0xBF 0x14).</summary>
+        public static byte[] ContextMenuChoice(uint serial, int index) =>
+            new PacketWriter(0xBF).UInt16(0x15).UInt32(serial).UInt16(index).ToArray();
 
         private void ReadContextMenu(PacketReader r)
         {
