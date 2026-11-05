@@ -47,6 +47,18 @@ namespace UOClient.Net
             return this;
         }
 
+        /// <summary>UTF-8 bytes with no terminator (the caller writes the length).</summary>
+        public PacketWriter Utf8(byte[] bytes)
+        {
+            Ensure(bytes.Length);
+            Array.Copy(bytes, 0, _buffer, Position, bytes.Length);
+            Position += bytes.Length;
+            return this;
+        }
+
+        /// <summary>Zero-terminated UTF-8 string.</summary>
+        public PacketWriter Utf8Z(string s) => Utf8(Encoding.UTF8.GetBytes(s ?? "")).Byte(0);
+
         /// <summary>Zero-terminated big-endian UTF-16 string.</summary>
         public PacketWriter UnicodeZ(string s)
         {

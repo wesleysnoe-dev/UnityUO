@@ -67,6 +67,27 @@ namespace UOClient.Net
             return s;
         }
 
+        /// <summary>Fixed-size UTF-8 string, cut at the first zero.</summary>
+        public string ReadUtf8(int length)
+        {
+            int n = Math.Max(0, Math.Min(length, Remaining));
+            int end = Array.IndexOf(_data, (byte)0, Position, n);
+            string s = Encoding.UTF8.GetString(_data, Position, (end < 0 ? Position + n : end) - Position);
+            Position += n;
+            return s;
+        }
+
+        /// <summary>Zero-terminated UTF-8 string.</summary>
+        public string ReadUtf8Z()
+        {
+            int end = Array.IndexOf(_data, (byte)0, Position);
+            if (end < 0)
+                end = _data.Length;
+            string s = Encoding.UTF8.GetString(_data, Position, end - Position);
+            Position = Math.Min(_data.Length, end + 1);
+            return s;
+        }
+
         /// <summary>Zero-terminated big-endian UTF-16 string.</summary>
         public string ReadUnicodeZ()
         {

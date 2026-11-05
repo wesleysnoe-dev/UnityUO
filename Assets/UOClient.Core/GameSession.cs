@@ -111,6 +111,7 @@ namespace UOClient.Core
             RegisterSeasonHandlers();
             RegisterBuffHandlers();
             RegisterWeatherHandlers();
+            RegisterBookHandlers();
         }
 
         public World World { get; }

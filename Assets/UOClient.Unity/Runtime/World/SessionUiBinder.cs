@@ -84,6 +84,7 @@ namespace UOClient.Unity
             s.TextEntryRequested += OnTextEntryRequested;
             s.SpellbookContent += OnSpellbookContent;
             s.ProfileReceived += OnProfileReceived;
+            s.BookOpened += OnBookOpened;
             s.MapDisplayed += OnMapDisplayed;
             s.EffectStarted += _effects.Start;
 
@@ -127,6 +128,7 @@ namespace UOClient.Unity
             s.TextEntryRequested -= OnTextEntryRequested;
             s.SpellbookContent -= OnSpellbookContent;
             s.ProfileReceived -= OnProfileReceived;
+            s.BookOpened -= OnBookOpened;
             s.MapDisplayed -= OnMapDisplayed;
             s.EffectStarted -= _effects.Start;
             s.SoundPlayed -= OnSoundPlayed;
@@ -254,6 +256,9 @@ namespace UOClient.Unity
         private void OnSpellbookContent(uint book, int first, ulong bits) => Ui.Open(new UI.SpellbookWindow(book, first, bits));
 
         private void OnProfileReceived(CharacterProfile p) => Ui.Open(new UI.ProfileWindow(p)).SetProfile(p);
+
+        /// <summary>A cover (0xD4/0x93): open the book, or refresh the open one (pages arrive into it through 0x66).</summary>
+        private void OnBookOpened(BookInfo book) => Ui.Open(new UI.BookWindow(book)).SetBook(book);
 
         private void OnMapDisplayed(MapItemDetails map) => Ui.Open(new UI.MapItemWindow(map));
 
