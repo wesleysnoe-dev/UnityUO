@@ -130,6 +130,27 @@ namespace UOClient.Core
                 _conn.Send(new PacketWriter(0x09, 5).UInt32(serial).ToArray());
         }
 
+        /// <summary>
+        /// Renames a pet from its health bar (TazUO's GameActions.Rename, from BaseHealthBarGump.OnKeyDown on Enter). Only a
+        /// mobile in view whose last 0x11 said it can be renamed (TazUO's IsRenamable gates the name box), never ourselves;
+        /// false when nothing was sent. The server checks range and ownership itself (ModernUO's RenameRequests).
+        /// </summary>
+        public bool Rename(uint serial, string name)
+        {
+            if (State != SessionState.InWorld || serial == World.PlayerSerial || name == null
+                || !World.Mobiles.TryGetValue(serial, out Mobile m) || !m.Renamable)
+                return false;
+            _conn.Send(RenameRequest(serial, name));
+            return true;
+        }
+
+        /// <summary>
+        /// 0x75, 35 bytes: serial, then the name as 30 zero-padded Latin-1 bytes (TazUO's Send_RenameRequest WriteASCII(name,
+        /// 30); ModernUO's IncomingMobilePackets.RenameRequest, registered fixed 35, reads it).
+        /// </summary>
+        public static byte[] RenameRequest(uint serial, string name) =>
+            new PacketWriter(0x75, 35).UInt32(serial).Ascii(name, 30).ToArray();
+
         /// <summary>Asks for a mobile's status (hits etc.).</summary>
         public void RequestStatus(uint serial)
         {

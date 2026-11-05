@@ -5,11 +5,89 @@ namespace UOClient.Unity.UI
     // No UnityEngine here: the test project and gumppreview compile this file on their own to check and draw the layout.
 
     /// <summary>
-    /// TazUO's classic HealthBarGump (HealthBarGump.cs:1681-1945 build, :1947-2273 update, Settings :2298-2323), the
-    /// non-party style. Party bars (0x0028 / 0x0029 lines, heal buttons) are not built here.
+    /// TazUO's classic HealthBarGump (HealthBarGump.cs:1681-1945 build, :1947-2273 update, Settings :2298-2323): the
+    /// classic style and the party style (BuildGump :1689-1795) a party member's bar takes.
     /// </summary>
     public sealed partial class HealthBarWindow
     {
+        // ---- party style (ShowPartyStyleBar) ----
+
+        /// <summary>Settings.Line_Red_Party and Line_Blue_Party: the party bar's lines.</summary>
+        public const int LineRedParty = 0x0028, LineBlueParty = 0x0029;
+
+        /// <summary>The heal (0x0938) and cure (0x0939) buttons, both 0x093A pressed, at (0, 20) and (0, 33).</summary>
+        public const int HealButton = 0x0938, CureButton = 0x0939, HealCurePressed = 0x093A;
+        public const int HealButtonY = 20, CureButtonY = 33;
+
+        /// <summary>The party bar: 115 x 55 over an invisible 0x0803 (Alpha 0), lines at x 18, 96 wide (Update's barW).</summary>
+        public const int PartyWidth = 115, PartyHeight = 55, PartyLineX = 18, PartyBarWidth = 96;
+
+        /// <summary>The party bar's hits, mana and stamina lines.</summary>
+        public static readonly int[] PartyLineY = { 20, 33, 45 };
+
+        /// <summary>The party name box: at (0, -2), 120 wide for ourselves and 109 for others.</summary>
+        public const int PartyNameX = 0, PartyNameY = -2, PartyNameWidthSelf = 120, PartyNameWidthOther = 109;
+
+        /// <summary>Our own party bar's name, TazLang "self" (language.ini:2476), never replaced by our real name (:2097).</summary>
+        public const string PartySelfName = "[* SELF *]";
+
+        /// <summary>What a party style bar shows this frame (TazUO's Update with inparty set).</summary>
+        public readonly struct PartyState
+        {
+            public readonly bool Self, InRange, HitsMaxKnown;
+            public readonly int NameHue, Hits, Mana, Stamina; // filled widths in pixels, of PartyBarWidth
+            public readonly string Name;
+
+            public PartyState(bool self, bool inRange, bool hitsMaxKnown, int nameHue, int hits, int mana, int stamina, string name)
+            {
+                Self = self;
+                InRange = inRange;
+                HitsMaxKnown = hitsMaxKnown;
+                NameHue = nameHue;
+                Hits = hits;
+                Mana = mana;
+                Stamina = stamina;
+                Name = name;
+            }
+
+            /// <summary>Out of range the three bars and the heal / cure buttons hide (:2011-2049); in range they show (:2120-2138).</summary>
+            public bool ShowsBarsAndButtons => InRange;
+
+            /// <summary>The red line under the hits shows once the maximum is known (:2061); mana and stamina's always do.</summary>
+            public bool ShowsHitsRedLine => InRange && HitsMaxKnown;
+        }
+
+        /// <summary>
+        /// The party style's Update: everyone's hits, mana and stamina over 96 pixels, the name in the mobile's notoriety
+        /// hue (:2141-2144) or Hue_Text 0x0386 out of range (the 912 out-of-range hue lasts one frame, as the classic
+        /// style's colors do). Poisoned and yellow hits keep the 0x0029 line: the party style only changes the hue, which
+        /// the next Update resets. Our own bar is named <see cref="PartySelfName"/>.
+        /// </summary>
+        public static PartyState ComputeParty(uint serial, uint player, Mobile m, string lastName)
+        {
+            bool self = serial == player;
+            bool inRange = m != null;
+            string name = self ? PartySelfName : inRange && !string.IsNullOrEmpty(m.Name) ? m.Name : lastName;
+            int hits = inRange ? Percent(m.HitsMax, m.Hits, PartyBarWidth) : 0;
+            int mana = inRange ? Percent(m.ManaMax, m.Mana, PartyBarWidth) : 0;
+            int stam = inRange ? Percent(m.StaminaMax, m.Stamina, PartyBarWidth) : 0;
+            return new PartyState(self, inRange, inRange && m.HitsMax > 0, inRange ? NotorietyHue(m.Notoriety) : NameHue,
+                hits, mana, stam, name ?? "");
+        }
+
+        /// <summary>
+        /// Whether a bar's name box can be edited to rename the mobile: <see cref="State.Renamable"/> (in view, not us, the
+        /// 0x11 flag) with no target cursor up (TextBoxOnMouseUp targets first).
+        /// </summary>
+        public static bool CanRename(State s, bool targeting) => s.Renamable && !targeting;
+
+        /// <summary>
+        /// A classic bar's heal and cure buttons (BuildGump :1887-1911, Update :2134): TazUO's ShouldShowHealButtons with
+        /// the profile defaults, which is only ShowHealCureButtonsPets (true; the friends and all-bars options are off).
+        /// IsPet is a renamable mobile in view, not us, not in our party; the buttons sit at the party bar's places.
+        /// </summary>
+        public static bool ShowsPetHealButtons(State s, bool inParty) => s.Renamable && !inParty;
+
         public const int BackgroundNormal = 0x0803, BackgroundWar = 0x0807, BackgroundOther = 0x0804;
         public const int LineRed = 0x0805, LineBlue = 0x0806, LinePoisoned = 0x0808, LineYellowHits = 0x0809;
 

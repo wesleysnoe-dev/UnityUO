@@ -172,6 +172,59 @@ namespace UOClient.Core
             }
         }
 
+        // ---- party health bars: style and quick heal / cure ----
+
+        /// <summary>Party members' health bars use the party style (TazUO's Profile.UsePartyHealthBars, on by default).</summary>
+        public bool UsePartyHealthBars { get; set; } = true;
+
+        /// <summary>TazUO's BaseHealthBarGump.ShowPartyStyleBar: the mobile is in our party (us included) and the style is on.</summary>
+        public bool ShowsPartyHealthBar(uint serial) => UsePartyHealthBars && PartyMembers.Contains(serial);
+
+        /// <summary>The heal and cure buttons' spells (TazUO's Profile.QuickHealSpell 29 Greater Heal, QuickCureSpell 11 Cure).</summary>
+        public int QuickHealSpell { get; set; } = 29;
+        public int QuickCureSpell { get; set; } = 11;
+
+        /// <summary>TazUO's PartyManager.PartyHealTimer, as session seconds: the next cursor counts only once this has passed.</summary>
+        public const double PartyHealDelay = 0.05;
+
+        private double _partyHealAfter;
+
+        /// <summary>Who the next target cursor goes to after a quick heal or cure (TazUO's PartyHealTarget), or 0.</summary>
+        public uint PartyHealTarget { get; private set; }
+
+        /// <summary>GameActions.QuickHeal: casts the heal spell; the cursor it brings is answered with <paramref name="target"/>.</summary>
+        public void QuickHeal(uint target) => QuickCast(QuickHealSpell, target);
+
+        /// <summary>GameActions.QuickCure: the same with the cure spell.</summary>
+        public void QuickCure(uint target) => QuickCast(QuickCureSpell, target);
+
+        private void QuickCast(int spell, uint target)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            CastSpell(spell);
+            _partyHealAfter = _now + PartyHealDelay;
+            PartyHealTarget = target;
+        }
+
+        /// <summary>
+        /// TazUO's TargetCursor handler (TargetCursor.cs:17-22): a cursor arriving after the heal delay goes to the heal
+        /// target through <see cref="TargetObject"/>, so the criminal question can still hold it, and the target is
+        /// forgotten. A cursor before the delay leaves it for the next one. A cancel clears it without sending anything,
+        /// and so does a target no longer in view (TargetManager.Target sends nothing for an unknown entity; the cursor
+        /// stays up for the player).
+        /// </summary>
+        private void AnswerPartyHeal()
+        {
+            if (PartyHealTarget == 0 || _partyHealAfter >= _now)
+                return;
+            uint serial = PartyHealTarget;
+            PartyHealTarget = 0;
+            _partyHealAfter = 0;
+            if (Target != null && World.Mobiles.ContainsKey(serial))
+                TargetObject(serial);
+        }
+
         public enum PartyLineCommand { None, Say, Accept, Decline, Add, Quit }
 
         /// <summary>Splits a "/..." line into a command, a 1-based member number for a private message (0 = everyone) and the text.</summary>

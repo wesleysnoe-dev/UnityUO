@@ -99,10 +99,12 @@ namespace UOClient.Core
                 // The server cancelled the cursor.
                 Target = null;
                 TargetEnded?.Invoke();
+                AnswerPartyHeal();
                 return;
             }
             Target = new TargetRequest { Type = type, CursorId = id, Flags = flags };
             TargetRequested?.Invoke(Target);
+            AnswerPartyHeal();
         }
 
         /// <summary>

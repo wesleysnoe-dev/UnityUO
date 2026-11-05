@@ -39,6 +39,13 @@ internal static class UxPreview
         Write(outDir, "healthbar-poisoned-gray", Bar(data, text, hues, HealthBarWindow.Compute(Orc, Me, false, poisoned, null)));
         Write(outDir, "healthbar-pet", Bar(data, text, hues, HealthBarWindow.Compute(Orc, Me, false, pet, null)));
         Write(outDir, "healthbar-out-of-range", Bar(data, text, hues, HealthBarWindow.Compute(Orc, Me, false, null, "an orc")));
+        var friend = new Mobile
+        {
+            Serial = Orc, Name = "Friend", Hits = 40, HitsMax = 100, Mana = 70, ManaMax = 100, Stamina = 100, StaminaMax = 100, Notoriety = 1
+        };
+        Write(outDir, "partybar-self", PartyBar(data, text, hues, HealthBarWindow.ComputeParty(Me, Me, me, null)));
+        Write(outDir, "partybar-member", PartyBar(data, text, hues, HealthBarWindow.ComputeParty(Orc, Me, friend, null)));
+        Write(outDir, "partybar-out-of-range", PartyBar(data, text, hues, HealthBarWindow.ComputeParty(Orc, Me, null, "Friend")));
         Write(outDir, "status-classic", Status(data, text, hues, me));
         Write(outDir, "question-criminal", Question(data, text, hues, QuestionWindow.CriminalText));
         return 0;
@@ -92,6 +99,35 @@ internal static class UxPreview
                 Tiled(canvas, Gump(data, hues, s.HitsLine), HealthBarWindow.OtherLineX, HealthBarWindow.OtherLineY, s.Hits);
             Blit(canvas, Label(text, hues, s.Name, s.NameHue), HealthBarWindow.NameX, HealthBarWindow.NameY,
                 HealthBarWindow.NameX + HealthBarWindow.NameWidth);
+            if (HealthBarWindow.ShowsPetHealButtons(s, inParty: false))
+            {
+                Blit(canvas, Gump(data, hues, HealthBarWindow.HealButton), 0, HealthBarWindow.HealButtonY, canvas.Width);
+                Blit(canvas, Gump(data, hues, HealthBarWindow.CureButton), 0, HealthBarWindow.CureButtonY, canvas.Width);
+            }
+        }
+        return canvas;
+    }
+
+    // ---- HealthBarWindow.DrawParty (the 0x0803 background is invisible: Alpha 0) -------------------------------------
+
+    private static Bitmap32 PartyBar(UOData data, UniText text, HueEntry[] hues, HealthBarWindow.PartyState s)
+    {
+        var canvas = Canvas(HealthBarWindow.PartyWidth, HealthBarWindow.PartyHeight);
+        int nameWidth = s.Self ? HealthBarWindow.PartyNameWidthSelf : HealthBarWindow.PartyNameWidthOther;
+        Blit(canvas, Label(text, hues, s.Name, s.NameHue), HealthBarWindow.PartyNameX, HealthBarWindow.PartyNameY,
+            HealthBarWindow.PartyNameX + nameWidth);
+        if (s.ShowsBarsAndButtons)
+        {
+            Blit(canvas, Gump(data, hues, HealthBarWindow.HealButton), 0, HealthBarWindow.HealButtonY, canvas.Width);
+            Blit(canvas, Gump(data, hues, HealthBarWindow.CureButton), 0, HealthBarWindow.CureButtonY, canvas.Width);
+        }
+        int[] widths = { s.Hits, s.Mana, s.Stamina };
+        for (int i = 0; i < HealthBarWindow.PartyLineY.Length; i++)
+        {
+            if (i > 0 || s.ShowsHitsRedLine)
+                Blit(canvas, Gump(data, hues, HealthBarWindow.LineRedParty), HealthBarWindow.PartyLineX, HealthBarWindow.PartyLineY[i], canvas.Width);
+            if (s.ShowsBarsAndButtons)
+                Tiled(canvas, Gump(data, hues, HealthBarWindow.LineBlueParty), HealthBarWindow.PartyLineX, HealthBarWindow.PartyLineY[i], widths[i]);
         }
         return canvas;
     }
