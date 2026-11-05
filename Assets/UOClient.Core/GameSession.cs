@@ -98,6 +98,7 @@ namespace UOClient.Core
             _handlers[0x73] = _ => { };
             _handlers[0x97] = r => { }; // move player (forced step); position follows in 0x20
             _handlers[0x98] = MobileName;
+            _handlers[0x76] = ServerChange;
             RegisterInteractionHandlers();
             RegisterCombatHandlers();
             RegisterTradeHandlers();
@@ -692,6 +693,42 @@ namespace UOClient.Core
             }
             MoveRejected?.Invoke(x, y, z, (byte)(dir & 7));
         }
+
+        /// <summary>
+        /// 0x76 (16 bytes): x, y, z (int16 each), 0, two unused int16, map width, map height. ModernUO sends it
+        /// when the player changes facet, before the new map (0xBF 0x08) and the player update (0x20).
+        /// </summary>
+        private void ServerChange(PacketReader r)
+        {
+            int x = r.ReadUInt16(), y = r.ReadUInt16();
+            var z = (sbyte)r.ReadInt16();
+            r.ReadByte();
+            r.ReadUInt16();
+            r.ReadUInt16();
+            int width = r.ReadUInt16(), height = r.ReadUInt16();
+            if (width > 0 && height > 0)
+            {
+                World.MapWidth = width;
+                World.MapHeight = height;
+            }
+            // Steps in flight belong to the old place.
+            _moveSeq = 0;
+            _pendingSteps.Clear();
+            SetStatus($"Server change: moved to {x},{y},{z} (map {width}x{height})");
+
+            Mobile p = World.Player;
+            if (p != null)
+            {
+                p.X = x;
+                p.Y = y;
+                p.Z = z;
+                World.RaiseMobileUpdated(p);
+            }
+            ServerChanged?.Invoke(x, y, z);
+        }
+
+        /// <summary>The server moved us to another facet or server area (0x76); the new map follows in 0xBF 0x08.</summary>
+        public event Action<int, int, sbyte> ServerChanged;
 
         /// <summary>Applies a step the player predicted locally, so the world model matches what is drawn.</summary>
         public void ApplyPredictedStep(int x, int y, sbyte z, int direction)
