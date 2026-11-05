@@ -180,6 +180,12 @@ namespace UOClient.Unity.UI
             {
                 if (_windows[i].Key == window.Key)
                 {
+                    // A stale one (a server gump closed and re-sent in the same frame) gives way to the new window.
+                    if (!_windows[i].StillValid)
+                    {
+                        Close(_windows[i]);
+                        break;
+                    }
                     // Already open: keep its position, bring it forward.
                     UiWindow existing = _windows[i];
                     _windows.RemoveAt(i);

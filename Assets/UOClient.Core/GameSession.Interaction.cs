@@ -143,7 +143,17 @@ namespace UOClient.Core
             World.RemoveGump(gump);
             if (State != SessionState.InWorld)
                 return;
-            var w = new PacketWriter(0xB1).UInt32(gump.Serial).UInt32(gump.TypeId).Int32(buttonId);
+            _conn.Send(GumpReply(gump.Serial, gump.TypeId, buttonId, switches, texts));
+        }
+
+        /// <summary>
+        /// 0xB1 as ModernUO's GumpSystem.DisplayGumpResponse reads it: serial, type id, button, the switch count
+        /// and ids, the text count, then per entry uint16 id, uint16 length and big-endian UTF-16 text. A text
+        /// longer than 239 characters gets the whole response dropped, so it is cut there.
+        /// </summary>
+        public static byte[] GumpReply(uint serial, uint typeId, int buttonId, IList<int> switches, IList<(int Id, string Text)> texts)
+        {
+            var w = new PacketWriter(0xB1).UInt32(serial).UInt32(typeId).Int32(buttonId);
             w.Int32(switches?.Count ?? 0);
             if (switches != null)
                 foreach (int s in switches)
@@ -153,13 +163,15 @@ namespace UOClient.Core
             {
                 foreach (var (id, text) in texts)
                 {
-                    string t = text.Length > 239 ? text.Substring(0, 239) : text;
+                    string t = text ?? "";
+                    if (t.Length > 239)
+                        t = t.Substring(0, 239);
                     w.UInt16(id).UInt16(t.Length);
                     foreach (char c in t)
                         w.UInt16(c);
                 }
             }
-            _conn.Send(w.ToArray());
+            return w.ToArray();
         }
 
         // ---- handlers ----
@@ -239,7 +251,8 @@ namespace UOClient.Core
                 Y = r.ReadInt32()
             };
             byte[] layout = ReadPacked(ref r);
-            string layoutText = Encoding.ASCII.GetString(layout).TrimEnd('\0');
+            // ModernUO writes the layout as Latin-1 (cliloc arguments carry names with accents).
+            string layoutText = Encoding.GetEncoding(28591).GetString(layout).TrimEnd('\0');
             int lineCount = r.ReadInt32();
             byte[] lines = ReadPacked(ref r);
 
@@ -276,11 +289,21 @@ namespace UOClient.Core
             World.AddGump(g);
         }
 
+        /// <summary>
+        /// 0xBF 0x04: ModernUO closes the oldest gump of that type it holds for us (NetStateGumps.Close and a
+        /// singleton re-send), so only that one goes; other open gumps of the same type are still live server-side.
+        /// No reply: the server has already forgotten it.
+        /// </summary>
         private void CloseGumpFromServer(uint typeId, int buttonId)
         {
-            foreach (ServerGump g in World.Gumps.ToArray())
+            foreach (ServerGump g in World.Gumps)
+            {
                 if (g.TypeId == typeId)
+                {
                     World.RemoveGump(g);
+                    return;
+                }
+            }
         }
 
         /// <summary>Gump payload: int32 (packed length + 4) or 0, int32 unpacked length, zlib data.</summary>
