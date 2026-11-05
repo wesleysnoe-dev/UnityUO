@@ -33,9 +33,30 @@ namespace UOClient.Unity.UI
         public GumpArt(UOData data)
         {
             _data = data;
+            Text = new UniText(data.GetUniFont);
         }
 
         public UOData Data => _data;
+
+        /// <summary>TazUO's unicode text renderer over the client's unifont files (server gump labels).</summary>
+        public UniText Text { get; }
+
+        /// <summary>
+        /// A rendered text as UI art, point-sampled at its native size like the gumps around it; null when nothing was
+        /// drawn. Not cached here: the window that asks owns the texture and destroys it (<see cref="Release"/>).
+        /// </summary>
+        public static UiImage TextImage(UniTextImage text)
+        {
+            if (text?.Bitmap == null)
+                return null;
+            return new UiImage { Bitmap = text.Bitmap, Texture = UnityTextures.ToTexture(text.Bitmap, "gump text") };
+        }
+
+        public static void Release(UiImage img)
+        {
+            if (img != null)
+                UnityEngine.Object.Destroy(img.Texture);
+        }
 
         /// <summary>A gump image, optionally hued (partial = only gray pixels). Null if the gump does not exist.</summary>
         public UiImage Gump(int id, int hue = 0, bool partial = false)

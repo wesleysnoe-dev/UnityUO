@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UOClient.Core;
+using UOClient.IO.Formats;
 
 namespace UOClient.Unity.UI
 {
@@ -19,7 +20,11 @@ namespace UOClient.Unity.UI
         private int _page = 1;
         private int _focusEntry; // the text entry still to be given the keyboard (FirstTextEntry), or -1 once done
         private bool _answered, _ownsKeyboard;
-        private GUIStyle _text, _html, _entry;
+        private GUIStyle _entry;
+
+        // Each text, croppedtext and html command's rendered text (null: nothing to draw), made on first use; the
+        // server replaces the whole gump to change one, so they live as long as the window.
+        private readonly Dictionary<GumpCommand, UiImage> _texts = new Dictionary<GumpCommand, UiImage>();
 
         public ServerGumpWindow(ServerGump gump)
         {
@@ -57,6 +62,9 @@ namespace UOClient.Unity.UI
             // Give the keyboard back to the world, as TazUO's focused StbTextBox goes with its gump.
             if (_ownsKeyboard)
                 GUIUtility.keyboardControl = 0;
+            foreach (UiImage img in _texts.Values)
+                GumpArt.Release(img);
+            _texts.Clear();
         }
 
         private string EntryName(int index) => $"{Key}:entry:{index}";
@@ -184,35 +192,28 @@ namespace UOClient.Unity.UI
 
                 case "text":
                 {
-                    var content = new GUIContent(_gump.Line(c.Arg(3)));
-                    DrawLabel(new Rect(c.Arg(0), c.Arg(1), 600, 22), content, TextHue(c.Arg(2)));
-                    _lastArea = new Rect(c.Arg(0), c.Arg(1), _text.CalcSize(content).x, 22);
+                    // TazUO's Label: the whole picture at x, y, and the label as big as it.
+                    UiImage img = TextImage(c);
+                    DrawImage(img, c.Arg(0), c.Arg(1));
+                    _lastArea = new Rect(c.Arg(0), c.Arg(1), img?.Width ?? 0, img?.Height ?? 0);
                     break;
                 }
 
                 case "croppedtext":
-                    // The border stays inside the box, as TazUO's is drawn into the cropped texture.
-                    GUI.BeginGroup(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3)));
-                    DrawLabel(new Rect(0, 0, c.Arg(2), c.Arg(3)), new GUIContent(_gump.Line(c.Arg(5))), TextHue(c.Arg(4)));
-                    GUI.EndGroup();
+                    // CroppedText draws its whole picture (the box's width + 4) unclipped; the crop already fit the text.
+                    DrawImage(TextImage(c), c.Arg(0), c.Arg(1));
                     _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
                     break;
 
                 case "htmlgump":
-                    DrawHtml(c, _gump.Line(c.Arg(4)), c.Arg(5) != 0, c.Arg(6) != 0, null);
-                    break;
-
                 case "xmfhtmlgump":
-                    DrawHtml(c, ClilocText(c.Arg(4), null), c.Arg(5) != 0, c.Arg(6) != 0, null);
-                    break;
-
                 case "xmfhtmlgumpcolor":
-                    DrawHtml(c, ClilocText(c.Arg(4), null), c.Arg(5) != 0, c.Arg(6) != 0, Rgb15(c.Arg(7)));
-                    break;
-
                 case "xmfhtmltok":
-                    DrawHtml(c, ClilocText(c.Arg(7), c.ClilocArgs), c.Arg(4) != 0, c.Arg(5) != 0, Rgb15(c.Arg(6)));
+                {
+                    (bool background, bool scrollbar, _) = HtmlParts(c);
+                    DrawHtml(c, TextImage(c), background, scrollbar);
                     break;
+                }
 
                 case "button":
                 case "buttontileart":
@@ -285,46 +286,89 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>
-        /// A label as TazUO's unicode font draws it: the hue's TextColorCell shade, with a one-pixel black border on
-        /// all eight sides unless the text is itself black (TextArgb, HasBlackBorder).
+        /// The rendered text of a text, croppedtext or html command (UniText, TazUO's FontsLoader port): the hue's
+        /// TextColorCell shade with the black border, laid out in unicode font 1's own widths and line heights.
         /// </summary>
-        private void DrawLabel(Rect r, GUIContent content, int clientHue)
+        private UiImage TextImage(GumpCommand c)
         {
-            uint argb = Art.GumpTextArgb(clientHue);
-            if (HasBlackBorder(argb))
+            if (_texts.TryGetValue(c, out UiImage img))
+                return img;
+            HueEntry[] hues = Art.Data.Hues.Entries;
+            UniTextImage text = null;
+            switch (c.Name)
             {
-                _text.normal.textColor = GumpArt.ToColor(TextBlackArgb);
-                foreach ((int dx, int dy) in BlackBorderOffsets)
-                    GUI.Label(new Rect(r.x + dx, r.y + dy, r.width, r.height), content, _text);
+                case "text":
+                    text = LabelImage(Art.Text, hues, _gump.Line(c.Arg(3)), c.Arg(2));
+                    break;
+                case "croppedtext":
+                    text = CroppedImage(Art.Text, hues, _gump.Line(c.Arg(5)), c.Arg(4), c.Arg(2));
+                    break;
+                case "htmlgump":
+                case "xmfhtmlgump":
+                case "xmfhtmlgumpcolor":
+                case "xmfhtmltok":
+                {
+                    (bool background, bool scrollbar, int color) = HtmlParts(c);
+                    string html = c.Name == "htmlgump" ? _gump.Line(c.Arg(4))
+                        : c.Name == "xmfhtmltok" ? ClilocText(c.Arg(7), c.ClilocArgs)
+                        : ClilocText(c.Arg(4), null);
+                    // htmlgump's optional ninth part 1 asks for the black border (HtmlControl.cs:42-43).
+                    text = HtmlImage(Art.Text, hues, html, c.Arg(2), background, scrollbar, color,
+                        c.Name == "htmlgump" && c.Arg(7) == 1);
+                    break;
+                }
             }
-            _text.normal.textColor = GumpArt.ToColor(argb);
-            GUI.Label(r, content, _text);
+            img = GumpArt.TextImage(text);
+            _texts[c] = img;
+            return img;
         }
 
-        private void DrawHtml(GumpCommand c, string html, bool background, bool scrollbar, Color? color)
+        /// <summary>
+        /// An html command's background, scrollbar and colour as GumpHelpers reads them (GumpHelpers.cs:290-381,
+        /// HtmlControl.cs:35-37): a background only for exactly 1, a scrollbar for anything but 0.
+        /// </summary>
+        private static (bool Background, bool Scrollbar, int Color) HtmlParts(GumpCommand c)
+        {
+            switch (c.Name)
+            {
+                case "xmfhtmlgumpcolor":
+                    return (c.Arg(5) == 1, c.Arg(6) != 0, HtmlColorPart(c.Arg(7)));
+                case "xmfhtmltok":
+                    return (c.Arg(4) == 1, c.Arg(5) != 0, HtmlColorPart(c.Arg(6)));
+                default:
+                    return (c.Arg(5) == 1, c.Arg(6) != 0, 0);
+            }
+        }
+
+        /// <summary>
+        /// TazUO's HtmlControl: the background (ResizePic 0x2486, short of the scrollbar), and the text 4 in from it,
+        /// clipped to the control and scrolled by up to HtmlScrollMax.
+        /// </summary>
+        private void DrawHtml(GumpCommand c, UiImage text, bool background, bool scrollbar)
         {
             var r = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
             _lastArea = r;
             if (background)
                 DrawResizePic(HtmlBackgroundGump, r.x, r.y, r.width - (scrollbar ? HtmlScrollbarWidth : 0), r.height);
+            if (text == null)
+                return;
 
-            string rich = GumpHtml.ToRichText(html, out bool centered);
-            _html.alignment = centered ? TextAnchor.UpperCenter : TextAnchor.UpperLeft;
-            // Uncolored HTML is TazUO's 0x010101 (HtmlControl.InternalBuild). Its scrolling-without-background case
-            // (hue 0xFFFF) is left the same here: not checked against TazUO's font renderer.
-            _html.normal.textColor = color ?? new Color(1f / 255, 1f / 255, 1f / 255);
-            var inner = new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4);
+            int offset = HtmlTextOffset(background);
             if (!scrollbar)
             {
-                GUI.Label(inner, rich, _html);
+                GUI.BeginGroup(r);
+                DrawImage(text, offset, offset);
+                GUI.EndGroup();
                 return;
             }
 
+            // The scroll range is TazUO's: the text's height less the control's, plus 8 with a background.
             int key = c.Arg(0) * 10007 + c.Arg(1);
-            float height = _html.CalcHeight(new GUIContent(rich), inner.width - 16);
+            float content = r.height + HtmlScrollMax(text.Height, (int)r.height, background);
             _scroll.TryGetValue(key, out Vector2 pos);
-            pos = GUI.BeginScrollView(inner, pos, new Rect(0, 0, inner.width - 16, Math.Max(height, inner.height)));
-            GUI.Label(new Rect(0, 0, inner.width - 16, height), rich, _html);
+            pos = GUI.BeginScrollView(r, pos, new Rect(0, 0, r.width - HtmlScrollbarWidth, content), false, false,
+                GUIStyle.none, GUI.skin.verticalScrollbar);
+            DrawImage(text, offset, offset);
             GUI.EndScrollView();
             _scroll[key] = pos;
         }
@@ -334,13 +378,6 @@ namespace UOClient.Unity.UI
             if (Ui.Cliloc == null)
                 return $"#{number}";
             return string.IsNullOrEmpty(args) ? Ui.Cliloc.Get(number) ?? $"#{number}" : Ui.Cliloc.Format(number, args);
-        }
-
-        private static Color? Rgb15(int c)
-        {
-            if (c == 0)
-                return null;
-            return new Color(((c >> 10) & 0x1F) / 31f, ((c >> 5) & 0x1F) / 31f, (c & 0x1F) / 31f, 1f);
         }
 
         /// <summary>Size from the layout: the furthest extent of any drawn command.</summary>
@@ -401,8 +438,11 @@ namespace UOClient.Unity.UI
                     return (x, y, img?.Width ?? 20, img?.Height ?? 20);
                 }
                 case "text":
-                    // The label's own width, as TazUO's Label sizes to its text (a guess before styles exist).
-                    return (x, y, _text != null ? (int)_text.CalcSize(new GUIContent(_gump.Line(c.Arg(3)))).x : 120, 20);
+                {
+                    // TazUO's Label is the size of its rendered text.
+                    UiImage img = TextImage(c);
+                    return (x, y, img?.Width ?? 0, img?.Height ?? 0);
+                }
                 default:
                     return (x, y, 0, 0);
             }
@@ -410,10 +450,8 @@ namespace UOClient.Unity.UI
 
         private void EnsureStyles()
         {
-            if (_text != null)
+            if (_entry != null)
                 return;
-            _text = new GUIStyle(GUI.skin.label) { fontSize = 14, wordWrap = false, clipping = TextClipping.Clip, padding = new RectOffset() };
-            _html = new GUIStyle(GUI.skin.label) { fontSize = 14, wordWrap = true, richText = true, padding = new RectOffset() };
             _entry = new GUIStyle(GUI.skin.textField) { fontSize = 14 };
             _entry.normal.background = _entry.focused.background = _entry.hover.background = null;
         }

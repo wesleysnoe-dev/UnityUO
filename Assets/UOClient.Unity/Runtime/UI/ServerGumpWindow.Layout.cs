@@ -55,6 +55,87 @@ namespace UOClient.Unity.UI
         public static readonly (int Dx, int Dy)[] BlackBorderOffsets =
             { (-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1) };
 
+        /// <summary>The unicode font every server gump text uses: Label's 0xFF, CroppedText's and HtmlControl's 1 (CV_305D and later).</summary>
+        public const int GumpFont = 1;
+
+        /// <summary>
+        /// The colour GeneratePixelsUnicode draws a client hue in: <see cref="UniText.UnhuedArgb"/> for 0xFFFF
+        /// (FontsLoader.cs:1719-1722), else <see cref="TextArgb"/>.
+        /// </summary>
+        public static uint LabelArgb(HueEntry[] hues, int clientHue) =>
+            clientHue == 0xFFFF ? UniText.UnhuedArgb : TextArgb(hues, clientHue);
+
+        /// <summary>
+        /// A text command's picture, as TazUO's Label(parts) makes it (Label.cs:58-70): not HTML, no width limit, black
+        /// border. It is as wide as the text plus 4 and as tall as its lines plus 4, and the label takes that size.
+        /// </summary>
+        public static UniTextImage LabelImage(UniText text, HueEntry[] hues, string line, int serverHue) =>
+            text.Generate(line, GumpFont, LabelArgb(hues, TextHue(serverHue)), 0, UniTextAlign.Left, UniTextStyle.BlackBorder);
+
+        /// <summary>
+        /// A croppedtext's picture, as CroppedText(parts) makes it (CroppedText.cs:13-36): HTML on, black border, and
+        /// with a width the Cropped style, so text wider than the box loses its tail to "..." and stays on one line
+        /// 18 tall. The picture is the box's width plus 4 and is drawn whole, not clipped to the box.
+        /// </summary>
+        public static UniTextImage CroppedImage(UniText text, HueEntry[] hues, string line, int serverHue, int width) =>
+            text.Generate(line, GumpFont, LabelArgb(hues, TextHue(serverHue)), width, UniTextAlign.Left,
+                width > 0 ? UniTextStyle.BlackBorder | UniTextStyle.Cropped : UniTextStyle.BlackBorder, html: true);
+
+        /// <summary>xmfhtmlgumpcolor's and xmfhtmltok's colour part as GumpHelpers reads it (GumpHelpers.cs:319-322, :344-347): 0x7FFF is white.</summary>
+        public static int HtmlColorPart(int color) => color == 0x7FFF ? 0x00FFFFFF : color;
+
+        /// <summary>Where an HtmlControl's text starts inside it: 4 in from a background, else at its corner (HtmlControl.cs:279).</summary>
+        public static int HtmlTextOffset(bool background) => background ? 4 : 0;
+
+        /// <summary>
+        /// The width an HtmlControl wraps its text in (HtmlControl.cs:39, :84, :144): its own, less 16 for a scrollbar and
+        /// 8 for a background, and 9 more for a background when no colour is given.
+        /// </summary>
+        public static int HtmlTextWidth(int width, bool background, bool scrollbar, int color) =>
+            width - (scrollbar ? HtmlScrollbarWidth : 0) - (background ? 8 : 0) - (background && color <= 0 ? 9 : 0);
+
+        /// <summary>
+        /// An HtmlControl's text colour and starting HTML colour (InternalBuild, HtmlControl.cs:113-149) for
+        /// <paramref name="color"/>, the 15-bit colour of xmfhtmlgumpcolor / xmfhtmltok (0x7FFF already made 0xFFFFFF,
+        /// GumpHelpers.cs:321, :346) or 0. A colour is the text's from the start (0xFFFFFF, 0xFFFF and 0xFF: white at alpha
+        /// 0xFE); with none, text on a background, or with neither background nor scrollbar, is near-black; text with
+        /// only a scrollbar is hue 0xFFFF's white.
+        /// </summary>
+        public static (uint TextArgb, uint HtmlColor) HtmlColors(HueEntry[] hues, bool background, bool scrollbar, int color)
+        {
+            if (color > 0)
+            {
+                uint html = color == 0x00FFFFFF || color == 0xFFFF || color == 0xFF
+                    ? UniText.FromRgba(0xFFFFFFFE)
+                    : Color16.ToArgb32((ushort)color);
+                return (TextArgb(hues, 0), html);
+            }
+            if (!background)
+                return (UniText.UnhuedArgb, scrollbar ? UniText.NoHtmlColor : TextBlackArgb);
+            return (TextArgb(hues, 0), TextBlackArgb);
+        }
+
+        /// <summary>
+        /// An htmlgump / xmfhtml* picture, as HtmlControl builds its RenderedText: font 1, HTML, wrapped in
+        /// <see cref="HtmlTextWidth"/>, a body bgcolor filling only without a background, and the black border only when
+        /// htmlgump's optional ninth part asks for it.
+        /// </summary>
+        public static UniTextImage HtmlImage(UniText text, HueEntry[] hues, string html, int width, bool background,
+            bool scrollbar, int color, bool blackBorder = false)
+        {
+            (uint argb, uint htmlColor) = HtmlColors(hues, background, scrollbar, color);
+            return text.Generate(html, GumpFont, argb, HtmlTextWidth(width, background, scrollbar, color), UniTextAlign.Left,
+                blackBorder ? UniTextStyle.BlackBorder : UniTextStyle.None, html: true, htmlColor: htmlColor,
+                htmlBackgroundColored: !background);
+        }
+
+        /// <summary>
+        /// How far an HtmlControl scrolls (HtmlControl.cs:189-190): its text's height less its own, plus 8 with a
+        /// background; never below 0.
+        /// </summary>
+        public static int HtmlScrollMax(int textHeight, int height, bool background) =>
+            Math.Max(0, textHeight - height + (background ? 8 : 0));
+
         /// <summary>The client hue of gumppic's hue=N: GumpPic adds one, then TransformHue leaves 2 and below unhued.</summary>
         public static int PicHue(int serverHue)
         {
