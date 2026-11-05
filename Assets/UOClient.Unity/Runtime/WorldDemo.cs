@@ -74,7 +74,7 @@ namespace UOClient.Unity
         private Func<IsoCompositor> _compositorFactory;
         private CameraRig _cameraRig;
         private int _bakedCount;
-        private bool _roofsForced, _manualRoofs = true;
+        private readonly RoofController _roofs = new RoofController();
         private bool _ready;
         private string _loadError;
         private readonly MinimapUpdater _minimap = new MinimapUpdater();
@@ -83,8 +83,9 @@ namespace UOClient.Unity
 
         // Online
         private EntityViews _entities;
-        private bool _typing;
-        private string _chat = "";
+        private readonly ChatLine _chatLine = new ChatLine();
+        private PlayerMovement _movement;
+        private WorldInput _input;
 
         private readonly Lighting _lighting = new Lighting();
 
@@ -92,6 +93,8 @@ namespace UOClient.Unity
         {
             _ctx.Root = transform;
             _entities = new EntityViews(_ctx) { PlayerNamed = name => characterName = name };
+            _movement = new PlayerMovement(_ctx);
+            _input = new WorldInput(_ctx, _entities, _tooltip, _chatLine, _lighting, _roofs, () => _ui, () => Hotkeys);
             _effects = new EffectsLayer(MakeEffectView);
             _ctx.Camera = CameraRig.EnsureMainCamera();
             _cameraRig = new CameraRig(_ctx.Camera);
@@ -282,8 +285,6 @@ namespace UOClient.Unity
 
         private UI.GumpArt _gumpArt;
         private UI.UiManager _ui;
-        private float _lastWorldClick;
-        private Vector2 _lastWorldClickAt;
 
         /// <summary>Windows the server opens: paperdolls, containers and gumps.</summary>
         private void SetUpUi()
@@ -292,7 +293,7 @@ namespace UOClient.Unity
             _ui = new UI.UiManager(_ctx.Session, _gumpArt, _ctx.Session.Cliloc)
             {
                 // Released over the world: onto what is under the mouse, as in the classic client.
-                DropOutside = (item, gui) => DropInWorld(item, new Vector2(gui.x, Screen.height - gui.y))
+                DropOutside = (item, gui) => _input.DropInWorld(item, new Vector2(gui.x, Screen.height - gui.y))
             };
             _ctx.Session.World.PaperdollOpened += (serial, title) =>
             {
@@ -381,7 +382,7 @@ namespace UOClient.Unity
         private bool _quitAfterLogout;
 
         /// <summary>The height upper floors are cut at right now (null outdoors).</summary>
-        public int? CutZ { get; private set; }
+        public int? CutZ => _roofs.CutZ;
         private UI.ChatLog _chatLog;
 
         /// <summary>The paperdoll's buttons.</summary>
@@ -400,7 +401,7 @@ namespace UOClient.Unity
                     break;
                 case "journal": _ctx.Hud.JournalVisible = !_ctx.Hud.JournalVisible; break;
                 case "skills": _ui.Open(new UI.SkillsWindow()); break;
-                case "chat": _typing = true; _chat = ""; break;
+                case "chat": _chatLine.Open(); break;
                 case "war": _ctx.Session.SetWarMode(!_ctx.Session.WarMode); break;
                 case "status": _ui.Open(new UI.StatusWindow()); break;
                 // The top bar's own buttons.
@@ -434,23 +435,13 @@ namespace UOClient.Unity
         public bool ShowNames { get => _ctx.Hud.NamesVisible; set => _ctx.Hud.NamesVisible = value; }
         public bool ShowHud { get => _ctx.Hud.Visible; set => _ctx.Hud.Visible = value; }
         public bool ShowJournal { get => _ctx.Hud.JournalVisible; set => _ctx.Hud.JournalVisible = value; }
-        public bool AutoRoofs { get => !_roofsForced; set { _roofsForced = !value; _manualRoofs = true; } }
+        public bool AutoRoofs { get => _roofs.AutoRoofs; set => _roofs.AutoRoofs = value; }
         public float Zoom { get => zoom; set => zoom = Mathf.Clamp(value, 0.25f, 4f); }
 
         // ---- cursor ----
 
         private readonly UI.TargetCursor _cursor = new UI.TargetCursor();
         private readonly MultiPlacementGhost _placement = new MultiPlacementGhost();
-
-        /// <summary>The map tile under the mouse with its surface z near the player, or null over a window.</summary>
-        private Vector3Int? MouseTile()
-        {
-            if (_ui != null && _ui.IsOverUi(Input.mousePosition))
-                return null;
-            Vector3 wp = _ctx.Camera.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, 0));
-            Vector2Int tile = _ctx.World.TileAt(_ctx.World.FromUnity(new Vector2(wp.x, wp.y)), _ctx.Player.Z);
-            return new Vector3Int(tile.x, tile.y, _ctx.Walk.SurfaceZ(tile.x, tile.y, _ctx.Player.Z));
-        }
 
         // ---- overhead text ----
 
@@ -459,91 +450,6 @@ namespace UOClient.Unity
         // ---- tooltips ----
 
         private readonly UI.HoverTooltip _tooltip = new UI.HoverTooltip();
-
-        // ---- input ----
-
-        /// <summary>
-        /// P paperdoll, B backpack, F1 help, Tab war mode, Escape cancels a target. Clicks in the world: single
-        /// click names, double-click uses (attacks in war mode), and with a target cursor up, a click targets.
-        /// </summary>
-        private void HandleUiInput()
-        {
-            if (_ui == null || _ctx.Session == null || _typing || _ui.HasKeyboardFocus)
-                return;
-            Hotkeys?.Update(_ctx.Session);
-            _tooltip.UpdateHover(_ui, _entities.PickAt);
-            if (Input.GetKeyDown(KeyCode.P))
-                _ctx.Session.OpenPaperdoll();
-            if (Input.GetKeyDown(KeyCode.B) && !_ctx.Session.OpenBackpack())
-                _ctx.Hud.Log(null, "You have no backpack.");
-            if (Input.GetKeyDown(KeyCode.F1))
-                _ctx.Session.RequestHelp();
-            if (Input.GetKeyDown(KeyCode.Tab))
-                _ctx.Session.SetWarMode(!_ctx.Session.WarMode);
-            if (Input.GetKeyDown(KeyCode.K))
-                _ui.Open(new UI.SkillsWindow());
-            if (Input.GetKeyDown(KeyCode.C))
-                _ui.Open(new UI.StatusWindow());
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                if (_ctx.Session.Target != null)
-                    _ctx.Session.CancelTarget();
-                else if (_ui.Windows.LastOrDefault(w => w.CanClose) is UI.UiWindow top)
-                    _ui.Close(top); // the topmost window that can close (not the top bar)
-            }
-
-            if (!Input.GetMouseButtonDown(0) || _ui.IsOverUi(Input.mousePosition) || _ctx.Hud.JournalRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)))
-                return;
-            Vector2 mouse = Input.mousePosition;
-            uint picked = _entities.PickAt(mouse);
-            UI.UiWindow popup = _ui.Find("context");
-            if (popup != null)
-                _ui.Close(popup);
-
-            // Shift+click: the context menu (vendors' Buy/Sell, pets' commands, ...).
-            if (_ctx.Session.Target == null && picked != 0 && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)))
-            {
-                _ctx.Session.RequestContextMenu(picked);
-                return;
-            }
-
-            // Target cursor: whatever is under the mouse, or the ground there.
-            if (_ctx.Session.Target != null)
-            {
-                if (picked != 0 && !_ctx.Session.Target.IsMulti) // placement goes where its preview stands
-                {
-                    _ctx.Session.TargetObject(picked);
-                }
-                else if (_ctx.Session.Target.AllowGround)
-                {
-                    Vector3Int tile = MouseTile().Value;
-                    _ctx.Session.TargetGround(tile.x, tile.y, tile.z);
-                }
-                else
-                {
-                    _ctx.Hud.Log(null, "Target an object.");
-                }
-                return;
-            }
-
-            bool doubleClick = Time.realtimeSinceStartup - _lastWorldClick < 0.35f && (mouse - _lastWorldClickAt).sqrMagnitude < 64;
-            _lastWorldClick = doubleClick ? 0 : Time.realtimeSinceStartup;
-            _lastWorldClickAt = mouse;
-            if (picked == 0)
-                return;
-
-            if (!doubleClick)
-            {
-                _ctx.Session.Look(picked); // the server answers with the name over it
-                return;
-            }
-            if (picked == _ctx.Session.World.PlayerSerial)
-                _ctx.Session.OpenPaperdoll();
-            else if (_ctx.Session.WarMode && _ctx.Session.World.Mobiles.ContainsKey(picked))
-                _ctx.Session.Attack(picked);
-            else
-                _ctx.Session.Use(picked);
-        }
 
         private void StartOnline(LoginSettings login)
         {
@@ -599,24 +505,6 @@ namespace UOClient.Unity
             _ctx.Hud.Log(null, $"Connected as {characterName}. Enter to talk, F3 for frame stats.");
         }
 
-        /// <summary>
-        /// A dragged item released over the world at a screen point (bottom-left origin): onto a character there
-        /// (giving it, or loading a pack animal), into an item there (a chest, a stack), else onto that tile.
-        /// The server decides; what it refuses bounces back.
-        /// </summary>
-        private void DropInWorld(UI.DraggedItem item, Vector2 screen)
-        {
-            uint under = _entities.PickAt(screen);
-            if (under != 0 && under != item.Serial)
-            {
-                _ctx.Session.DropInto(item.Serial, under, 0xFFFF, 0xFFFF); // a mobile or item serial; the server sorts out which
-                return;
-            }
-            Vector3 wp = _ctx.Camera.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0));
-            Vector2Int tile = _ctx.World.TileAt(_ctx.World.FromUnity(new Vector2(wp.x, wp.y)), _ctx.Player.Z);
-            _ctx.Session.DropOnGround(item.Serial, tile.x, tile.y, _ctx.Walk.SurfaceZ(tile.x, tile.y, _ctx.Player.Z));
-        }
-
         // ---- frame loop ----
 
         private void Update()
@@ -665,23 +553,18 @@ namespace UOClient.Unity
 
             _sections.Begin("input");
             HandleInput();
-            HandleUiInput();
+            _input.Update();
             _ctx.Player.Tick(Time.deltaTime);
             _entities.Tick(Time.deltaTime);
 
-            bool under = _ctx.Walk.IsUnderRoof(_ctx.Player.X, _ctx.Player.Y, _ctx.Player.Z);
-            _ctx.World.SetRoofsVisible(_roofsForced ? _manualRoofs : !under);
-            // Upper floors: indoors, everything from the floor over our head up is cut away (unless R shows roofs).
-            int? overhead = _roofsForced && _manualRoofs ? null : _ctx.Walk.OverheadZ(_ctx.Player.X, _ctx.Player.Y, _ctx.Player.Z);
-            Shader.SetGlobalFloat("_UOCutZ", overhead.HasValue ? MeshBuilder.CutHeight(overhead.Value) : 0f);
-            CutZ = overhead;
+            bool hideUpperMultiParts = _roofs.Apply(_ctx.World, _ctx.Walk, _ctx.Player);
 
             _sections.Begin("art");
             _ctx.MobileArt.Flush();
             _sections.Begin("sprites");
             _ctx.Player.Render(_ctx.World);
-            _entities.Render(_roofsForced ? !_manualRoofs : under);
-            _placement.Update(_ctx.Session, _ctx.Data, _ctx.World, p => new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, p), MouseTile);
+            _entities.Render(hideUpperMultiParts);
+            _placement.Update(_ctx.Session, _ctx.Data, _ctx.World, p => new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, p), _input.MouseTile);
             _effects.Update(_ctx.World);
 
             _sections.Begin("camera+hud");
@@ -698,97 +581,15 @@ namespace UOClient.Unity
         private void HandleInput()
         {
             // Typing in the chat line or a gump's text box: keys are text, not commands.
-            if (_typing || (_ui != null && _ui.HasKeyboardFocus))
+            if (_chatLine.Typing || (_ui != null && _ui.HasKeyboardFocus))
                 return;
 
-            if (Input.GetKeyDown(KeyCode.T))
-                _ctx.Hud.Log(null, _lighting.CycleOverride(_ctx.Session != null));
-            if (Input.GetKeyDown(KeyCode.R))
-            {
-                // First press takes over from the automatic indoor check; each press flips.
-                _roofsForced = true;
-                _manualRoofs = !_ctx.World.RoofsVisible;
-                _ctx.Hud.Log(null, _manualRoofs ? "Roofs shown." : "Roofs hidden.");
-            }
-            if (Input.GetKeyDown(KeyCode.H))
-                _ctx.Hud.Visible = !_ctx.Hud.Visible;
-
-            float wheel = Input.mouseScrollDelta.y;
-            if (Mathf.Abs(wheel) > 0.01f && (_ui == null || !_ui.IsOverUi(Input.mousePosition))) // windows (chat, world map) scroll themselves
-                zoom =Mathf.Clamp(zoom * (wheel > 0 ? 1.12f : 1f / 1.12f), 0.25f, 4f);
-
-            // Screen-space intent: keyboard, or right mouse toward the cursor (far cursor = run, like the classic client).
-            Vector2 intent = Vector2.zero;
-            if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow)) intent.y -= 1;
-            if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) intent.y += 1;
-            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)) intent.x -= 1;
-            if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) intent.x += 1;
-            bool run = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-
-            // Right mouse walks only over the world; over a window it closes the window instead.
-            if (intent == Vector2.zero && Input.GetMouseButton(1) && (_ui == null || !_ui.IsOverUi(Input.mousePosition)))
-            {
-                Vector3 player = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(_ctx.Player.AnchorPixels));
-                intent = new Vector2(Input.mousePosition.x - player.x, -(Input.mousePosition.y - player.y));
-                if (intent.magnitude < 12f)
-                    return;
-                run |= intent.magnitude > Screen.height * 0.25f;
-            }
-            if (intent == Vector2.zero)
-                return;
-
-            TryStep(DirectionFromScreen(intent), run);
+            _input.HandleViewKeys(ref zoom);
+            _movement.Update(_ui);
         }
-
-        /// <summary>
-        /// One step (or a turn) in a direction, predicted locally and, online, sent to the server.
-        /// Online, steps are paced on real time at the server's rate (ModernUO throttles anything faster),
-        /// and each one starts the moment the previous one is due to end, so walking never pauses.
-        /// </summary>
-        private bool TryStep(int direction, bool run)
-        {
-            double now = Time.realtimeSinceStartupAsDouble;
-            bool canStep = _ctx.Session == null ? !_ctx.Player.IsMoving : now >= _nextStepAt - 0.004 && _ctx.Session.PendingSteps < 3;
-            if (!canStep)
-                return false;
-
-            if (_ctx.Session != null && direction != _ctx.Player.Direction)
-            {
-                // The server turns first and moves on the next request.
-                if (_ctx.Session.RequestStep(direction, run))
-                    _ctx.Player.Face(direction);
-                return true;
-            }
-
-            Vector2Int d = Avatar.Delta(direction);
-            int nx = _ctx.Player.X + d.x, ny = _ctx.Player.Y + d.y;
-            int? z = _ctx.Walk.TryStep(nx, ny, _ctx.Player.Z);
-            if (!z.HasValue)
-            {
-                _ctx.Player.Face(direction);
-                return false;
-            }
-            if (_ctx.Session != null)
-            {
-                if (!_ctx.Session.RequestStep(direction, run))
-                    return false;
-                _ctx.Session.ApplyPredictedStep(nx, ny, (sbyte)z.Value, direction);
-                // Never faster than one step per server delay, measured from when the last step was due.
-                _nextStepAt = Math.Max(now, _nextStepAt) + _ctx.Player.StepTime(run);
-            }
-            _ctx.Player.BeginStep(direction, z.Value, run);
-            return true;
-        }
-
-        private double _nextStepAt;
 
         /// <summary>Screen vector (x right, y down) to a UO direction: right = 1 (east-north), down = 3, left = 5, up = 7.</summary>
-        public static int DirectionFromScreen(Vector2 v)
-        {
-            float angle = Mathf.Atan2(v.y, v.x) * Mathf.Rad2Deg;
-            int octant = Mathf.RoundToInt(angle / 45f);
-            return ((octant + 1) % 8 + 8) % 8;
-        }
+        public static int DirectionFromScreen(Vector2 v) => PlayerMovement.DirectionFromScreen(v);
 
         private void UpdateHud()
         {
@@ -870,7 +671,7 @@ namespace UOClient.Unity
                 _ui.OnGUI();
                 _tooltip.OnGUI(_ctx.Session, _ui);
             }
-            DrawChat();
+            _chatLine.OnGUI(_ctx.Session, _ui);
 
             if (_showStats)
             {
@@ -879,37 +680,6 @@ namespace UOClient.Unity
                     $"{_frames.Summary()}\nchunks {_ctx.World.LoadedChunks} loaded, {_ctx.World.PendingChunks} pending, worker {_ctx.World.WorkerMs / Math.Max(1, _ctx.World.ChunksBuilt):F1} ms/chunk; " +
                     $"art {_ctx.MobileArt.Built} built, {_ctx.MobileArt.PendingRequests} pending{lastHitch}");
             }
-        }
-
-        /// <summary>Enter opens a speech line; Enter again sends it, Escape cancels.</summary>
-        private void DrawChat()
-        {
-            if (_ctx.Session == null)
-                return;
-            Event e = Event.current;
-            // A window's text box (the chat window, a prompt) has the keyboard: its Enter is its own.
-            bool otherField = !_typing && _ui != null && _ui.HasKeyboardFocus;
-            if (!otherField && e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
-            {
-                if (_typing && _chat.Trim().Length > 0)
-                    _ctx.Session.Say(_chat.Trim());
-                _typing = !_typing;
-                _chat = "";
-                e.Use();
-            }
-            else if (_typing && e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
-            {
-                _typing = false;
-                _chat = "";
-                e.Use();
-            }
-
-            if (!_typing)
-                return;
-            float s = Mathf.Clamp(Screen.height / 1000f, 0.75f, 2.5f);
-            GUI.SetNextControlName("uo-chat");
-            _chat = GUI.TextField(new Rect(Screen.width * 0.5f - 300 * s, Screen.height - 250 * s, 600 * s, 26 * s), _chat, 200);
-            GUI.FocusControl("uo-chat");
         }
 
         /// <summary>Nearest walkable tile to (x, y) whose indoor state matches; spirals outward.</summary>
@@ -966,7 +736,7 @@ namespace UOClient.Unity
             while (steps < 60 && Time.realtimeSinceStartup < until)
             {
                 int dir2 = preference[heading % preference.Length];
-                bool moved = TryStep(dir2, run: true);
+                bool moved = _movement.TryStep(dir2, run: true);
                 if (moved && _ctx.Player.IsMoving)
                 {
                     steps++;

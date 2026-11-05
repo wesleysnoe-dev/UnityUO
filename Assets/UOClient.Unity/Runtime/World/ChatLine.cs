@@ -1,0 +1,50 @@
+using UnityEngine;
+using UOClient.Core;
+
+namespace UOClient.Unity
+{
+    /// <summary>The speech line: Enter opens it; Enter again sends it, Escape cancels.</summary>
+    public sealed class ChatLine
+    {
+        private string _chat = "";
+
+        /// <summary>The line is open: keys are text, not commands.</summary>
+        public bool Typing { get; private set; }
+
+        public void Open()
+        {
+            Typing = true;
+            _chat = "";
+        }
+
+        public void OnGUI(GameSession session, UI.UiManager ui)
+        {
+            if (session == null)
+                return;
+            Event e = Event.current;
+            // A window's text box (the chat window, a prompt) has the keyboard: its Enter is its own.
+            bool otherField = !Typing && ui != null && ui.HasKeyboardFocus;
+            if (!otherField && e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+            {
+                if (Typing && _chat.Trim().Length > 0)
+                    session.Say(_chat.Trim());
+                Typing = !Typing;
+                _chat = "";
+                e.Use();
+            }
+            else if (Typing && e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
+            {
+                Typing = false;
+                _chat = "";
+                e.Use();
+            }
+
+            if (!Typing)
+                return;
+            float s = Mathf.Clamp(Screen.height / 1000f, 0.75f, 2.5f);
+            GUI.SetNextControlName("uo-chat");
+            _chat = GUI.TextField(new Rect(Screen.width * 0.5f - 300 * s, Screen.height - 250 * s, 600 * s, 26 * s), _chat, 200);
+            GUI.FocusControl("uo-chat");
+        }
+    }
+}
