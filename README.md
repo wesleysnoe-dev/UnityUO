@@ -11,7 +11,7 @@ The client reads the player's own UO install. **EA's data files and anything der
 | `Assets/UOClient.IO/` | MUL/UOP containers, decoders for art, gumps, tiledata, hues, map and statics. Pure C#, `noEngineReferences`. |
 | `Assets/UOClient.ArtPipeline/` | `IsoCompositor`: a CPU isometric render of a map region plus a per-pixel ownership map, used for the ComfyUI restyle-and-slice workflow. |
 | `Assets/UOClient.Unity/Editor/` | **UOClient → Art Browser** (single art pieces) and **UOClient → World Preview** (a map region from original, baked or per-graphic art). |
-| `DotNet/` | Builds the same `Assets/` sources outside Unity (netstandard2.1, C# 9), plus the `uoclient` CLI and xUnit tests. |
+| `DotNet/` | Builds the same `Assets/` sources outside Unity (netstandard2.1, C# 9), plus the `uoclient` CLI, the `gumppreview` fixture renderer and xUnit tests. |
 
 ## Connecting to ModernUO
 
@@ -181,6 +181,14 @@ dotnet run --project DotNet/UOClient.Cli -- compose 0 1408 1664 64 64 Exports/br
 - `items.bin` / `items.json`: one entry per sprite, with graphic, tile, z and pixel rectangle
 
 Other CLI commands: `land|static|gump <id> <out.png>` (the id can be hex, e.g. `0x0FAF`).
+
+A saved shard gump (`DotNet/UOClient.Tests/Fixtures/Gumps/*.json`) can be drawn to a PNG offline, with no server, session or Editor. `[page]` defaults to 1:
+
+```bash
+dotnet run --project DotNet/UOClient.GumpPreview -- <uoDataDir> DotNet/UOClient.Tests/Fixtures/Gumps/stable-live-all.json _cc_logs/fixture_preview [page]
+```
+
+It is a software copy of `ServerGumpWindow`'s drawing as the gump opens, not a Unity screenshot. It uses the same `.Layout.cs` helpers, gump and item art, and UniFont1 text. Hover, pressed buttons, tooltips, the entry caret and HD art are not drawn.
 
 ### Restyle-and-slice workflow
 

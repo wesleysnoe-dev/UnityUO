@@ -19,7 +19,8 @@ namespace UOClient.Tests;
 /// PetLoyalty, which are not in the references, and have no fixture.
 /// Serials and type ids are stand-ins (ModernUO numbers gumps by a counter and hashes the type's full name).
 /// Set UOCLIENT_WRITE_GUMP_FIXTURES=1 to rewrite the files from the builders.
-/// No Editor preview: ServerGumpWindow needs a live Session and runtime-loaded Art.
+/// No Editor preview (ServerGumpWindow needs a live Session and runtime-loaded Art); DotNet/UOClient.GumpPreview draws
+/// a fixture to a PNG offline instead.
 /// </summary>
 public sealed class GumpFixtureTests
 {

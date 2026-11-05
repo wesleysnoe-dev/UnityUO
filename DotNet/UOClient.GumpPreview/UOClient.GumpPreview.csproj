@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Offline: renders a saved shard gump (UOClient.Tests/Fixtures/Gumps/*.json) to a PNG from the UO data alone.
+       A software copy of ServerGumpWindow's drawing, not a Unity screenshot; no Session, server or Editor. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>gumppreview</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The same UnityEngine-free layout files the test project compiles. -->
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\ServerGumpWindow.Layout.cs" Link="Unity\ServerGumpWindow.Layout.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\GumpHtml.cs" Link="Unity\GumpHtml.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />
+    <ProjectReference Include="..\UOClient.Core\UOClient.Core.csproj" />
+  </ItemGroup>
+</Project>
