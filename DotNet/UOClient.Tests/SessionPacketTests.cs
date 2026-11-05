@@ -278,6 +278,72 @@ public sealed class SessionPacketTests
     }
 
     [Fact]
+    public void PlottedPinsAreKeptLocallyOnlyWhileEditable()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        int changes = 0;
+        session.MapChanged += _ => changes++;
+        session.Inject(new PacketWriter(0x90, 19).UInt32(0x40000010).UInt16(0x139D)
+            .UInt16(1344).UInt16(1600).UInt16(1856).UInt16(2112).UInt16(200).UInt16(100).ToArray(), false);
+        MapItemDetails map = session.Maps[0x40000010];
+
+        // Not editable yet, and an unknown map: nothing happens.
+        Assert.False(session.AddMapPin(0x40000010, 10, 10));
+        Assert.False(session.ClearMapPins(0x40000010));
+        Assert.False(session.AddMapPin(0x40000099, 10, 10));
+        Assert.Empty(map.Pins);
+
+        // ModernUO sends 7 with the flag set; then our adds are mirrored here (it doesn't echo them), clamped to the map.
+        session.Inject(new PacketWriter(0x56, 11).UInt32(0x40000010).Byte(7).Byte(1).UInt16(0).UInt16(0).ToArray(), false);
+        changes = 0;
+        Assert.True(session.AddMapPin(0x40000010, 50, 40));
+        Assert.True(session.AddMapPin(0x40000010, 500, -3));
+        Assert.Equal(new[] { new MapPin(50, 40), new MapPin(199, 0) }, map.Pins);
+        Assert.Equal(2, changes);
+
+        // ModernUO's MapItem stops at 50 pins.
+        while (map.Pins.Count < MapItemLayout.MaxPins)
+            Assert.True(session.AddMapPin(0x40000010, 1, 1));
+        Assert.False(session.AddMapPin(0x40000010, 1, 1));
+        Assert.Equal(MapItemLayout.MaxPins, map.Pins.Count);
+
+        Assert.True(session.ClearMapPins(0x40000010));
+        Assert.Empty(map.Pins);
+    }
+
+    [Fact]
+    public void MapItemLayoutConvertsBetweenMapViewAndWorld()
+    {
+        var map = new MapItemDetails { X1 = 1344, Y1 = 1600, X2 = 1856, Y2 = 2112, Width = 400, Height = 200 };
+
+        // A view half the map's size.
+        Assert.Equal((100f, 50f), MapItemLayout.ToView(map, 200, 100, 200, 100));
+        Assert.Equal((0f, 0f), MapItemLayout.ToView(map, 0, 0, 200, 100));
+        Assert.True(MapItemLayout.TryToMap(map, 100, 50, 200, 100, out int x, out int y));
+        Assert.Equal((200, 100), (x, y));
+        Assert.True(MapItemLayout.TryToMap(map, 199.9f, 99.9f, 200, 100, out x, out y));
+        Assert.Equal((399, 199), (x, y));
+        Assert.False(MapItemLayout.TryToMap(map, 200, 10, 200, 100, out _, out _));
+        Assert.False(MapItemLayout.TryToMap(map, -1, 10, 200, 100, out _, out _));
+
+        // Round trip at native size.
+        (float vx, float vy) = MapItemLayout.ToView(map, 123, 45, 400, 200);
+        Assert.True(MapItemLayout.TryToMap(map, vx, vy, 400, 200, out x, out y));
+        Assert.Equal((123, 45), (x, y));
+
+        // Map pixels to world tiles across the 512 x 512 area.
+        Assert.Equal((1344, 1600), MapItemLayout.ToWorld(map, 0, 0));
+        Assert.Equal((1600, 1856), MapItemLayout.ToWorld(map, 200, 100));
+
+        // Large maps shrink to fit, keeping their shape; small ones stay as they are.
+        Assert.Equal((480f, 240f), MapItemLayout.ViewSize(new MapItemDetails { Width = 960, Height = 480 }, 480));
+        Assert.Equal((400f, 200f), MapItemLayout.ViewSize(map, 480));
+
+        // A map with no size never maps a click.
+        Assert.False(MapItemLayout.TryToMap(new MapItemDetails(), 1, 1, 10, 10, out _, out _));
+    }
+
+    [Fact]
     public void SeasonIsStoredAndRaised()
     {
         GameSession session = InWorldAs(0x00000042, 1495, 1629);

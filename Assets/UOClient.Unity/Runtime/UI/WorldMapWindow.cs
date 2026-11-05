@@ -14,7 +14,7 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed class WorldMapWindow : UiWindow
     {
-        private const int TilesPerPixel = 2;
+        internal const int TilesPerPixel = 2;
         private static readonly string[] Facets = { "Felucca", "Trammel", "Ilshenar", "Malas", "Tokuno", "Ter Mur" };
 
         // One image per facet for the whole session (closing the window keeps it).
@@ -42,6 +42,9 @@ namespace UOClient.Unity.UI
 
         /// <summary>True once the facet's image has been drawn (for the capture tour).</summary>
         public static bool Ready(int map) => _texture != null && _textureMap == map;
+
+        /// <summary>The facet's image if it has been drawn this session (one pixel per <see cref="TilesPerPixel"/> tiles), else null.</summary>
+        internal static Texture2D Cached(int map) => Ready(map) ? _texture : null;
 
         public override void Draw()
         {

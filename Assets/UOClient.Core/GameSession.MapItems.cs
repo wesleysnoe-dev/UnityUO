@@ -128,6 +128,33 @@ namespace UOClient.Core
                 _conn.Send(MapCommandRequest(serial, command, number, x, y));
         }
 
+        /// <summary>
+        /// Plots a pin at map pixel (x, y), clamped to the map as the server does. ModernUO doesn't echo pin edits, so
+        /// it is added here too (as the classic client does). False if the map isn't known, editable or has no room.
+        /// </summary>
+        public bool AddMapPin(uint serial, int x, int y)
+        {
+            if (!_maps.TryGetValue(serial, out MapItemDetails map) || !MapItemLayout.CanAddPin(map))
+                return false;
+            x = Math.Max(0, Math.Min(x, map.Width - 1));
+            y = Math.Max(0, Math.Min(y, map.Height - 1));
+            SendMapCommand(serial, 1, 0, x, y);
+            map.Pins.Add(new MapPin(x, y));
+            MapChanged?.Invoke(map);
+            return true;
+        }
+
+        /// <summary>Removes every pin (command 5), here and on the server. False if the map isn't known or editable.</summary>
+        public bool ClearMapPins(uint serial)
+        {
+            if (!_maps.TryGetValue(serial, out MapItemDetails map) || !map.Editable)
+                return false;
+            SendMapCommand(serial, 5);
+            map.Pins.Clear();
+            MapChanged?.Invoke(map);
+            return true;
+        }
+
         /// <summary>0x56 request, as ModernUO's OnMapCommand reads it: serial, command, pin index, x, y.</summary>
         public static byte[] MapCommandRequest(uint serial, int command, int number, int x, int y) =>
             new PacketWriter(0x56, 11).UInt32(serial).Byte(command).Byte(number).UInt16(x).UInt16(y).ToArray();
