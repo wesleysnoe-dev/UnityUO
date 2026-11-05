@@ -93,6 +93,13 @@ namespace UOClient.Unity
                     ui.Close(top); // the topmost window that can close (not the top bar)
             }
 
+            // The quest arrow: left click notifies the server, right click cancels it (0xBF 0x07).
+            if ((Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1)) && !ui.IsOverUi(Input.mousePosition) && OverQuestArrow())
+            {
+                _ctx.Session.ClickQuestArrow(Input.GetMouseButtonDown(1));
+                return;
+            }
+
             if (!Input.GetMouseButtonDown(0) || ui.IsOverUi(Input.mousePosition) || _ctx.Hud.JournalRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)))
                 return;
             Vector2 mouse = Input.mousePosition;
@@ -145,6 +152,10 @@ namespace UOClient.Unity
             else
                 _ctx.Session.Use(picked);
         }
+
+        /// <summary>The mouse is over the quest arrow's on-screen or edge marker.</summary>
+        public bool OverQuestArrow() =>
+            _ctx.Hud.QuestArrowRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y));
 
         /// <summary>
         /// A dragged item released over the world at a screen point (bottom-left origin): onto a character there

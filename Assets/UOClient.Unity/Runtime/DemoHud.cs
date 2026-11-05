@@ -60,6 +60,9 @@ namespace UOClient.Unity
         public Vector2? QuestArrow { get; set; }
         public Vector2Int QuestArrowTile { get; set; }
 
+        /// <summary>The quest arrow's marker in screen pixels (top-left origin) for clicks, valid after a draw; empty when none.</summary>
+        public Rect QuestArrowRect { get; private set; }
+
         /// <summary>The buff bar under the status bars: each buff's name and time left ("" when untimed), redrawn every frame.</summary>
         public readonly List<(string Name, string Time)> Buffs = new List<(string, string)>();
 
@@ -250,8 +253,12 @@ namespace UOClient.Unity
                 DrawOutlined(new Rect(screen.x / s - 120, screen.y / s - th - used, 240, th), text, _overhead, color);
             }
 
+            QuestArrowRect = Rect.zero;
             if (QuestArrow is Vector2 quest)
-                DrawQuestArrow(quest / s, w, h);
+            {
+                Vector2 at = DrawQuestArrow(quest / s, w, h);
+                QuestArrowRect = new Rect((at.x - 18) * s, (at.y - 18) * s, 36 * s, 36 * s);
+            }
 
             if (WarMode)
                 DrawOutlined(new Rect(w * 0.5f - 60, 40 + TopInset, 120, 22), "WAR", _bar, new Color(1f, 0.3f, 0.25f));
@@ -391,6 +398,23 @@ namespace UOClient.Unity
             // Player marker.
             GUI.color = new Color(0.35f, 0.65f, 1f);
             GUI.DrawTexture(new Rect(inner.center.x - 3, inner.center.y - 3, 6, 6), _white);
+
+            // Quest arrow target: a gold diamond, pinned to the rim when it is off the minimap.
+            if (QuestArrow != null && _playerX != int.MinValue)
+            {
+                Vector2 o = MinimapOffset(QuestArrowTile.x - _playerX, QuestArrowTile.y - _playerY);
+                float rim = MinimapSize / 2f - 8f;
+                if (o.magnitude > rim)
+                    o = o.normalized * rim;
+                Vector2 at = inner.center + o;
+                Matrix4x4 saved = GUI.matrix;
+                GUI.matrix = saved * Rotation(at, 45f);
+                GUI.color = new Color(0.1f, 0.06f, 0f, 0.9f);
+                GUI.DrawTexture(new Rect(at.x - 5, at.y - 5, 10, 10), _white);
+                GUI.color = new Color(1f, 0.82f, 0.25f);
+                GUI.DrawTexture(new Rect(at.x - 3.5f, at.y - 3.5f, 7, 7), _white);
+                GUI.matrix = saved;
+            }
             GUI.color = Color.white;
             GUI.Label(new Rect(inner.x, inner.yMax + 2, inner.width, 16), $"{_playerX}, {_playerY}", _small);
         }
@@ -399,7 +423,7 @@ namespace UOClient.Unity
         /// A pulsing diamond on the target tile while it is in view, else an arrow at the screen edge on the line
         /// from the screen center toward it. <paramref name="p"/> is in UI units.
         /// </summary>
-        private void DrawQuestArrow(Vector2 p, float w, float h)
+        private Vector2 DrawQuestArrow(Vector2 p, float w, float h)
         {
             const float margin = 40f;
             var color = new Color(1f, 0.82f, 0.25f, 0.75f + 0.25f * Mathf.Sin(Time.time * 6f));
@@ -429,6 +453,17 @@ namespace UOClient.Unity
             GUI.matrix = saved;
             GUI.color = Color.white;
             DrawOutlined(new Rect(at.x - 60, at.y + 16, 120, 18), $"{QuestArrowTile.x}, {QuestArrowTile.y}", _small, color);
+            return at;
+        }
+
+        /// <summary>
+        /// Where a tile <paramref name="dx"/>, <paramref name="dy"/> from the player lands on the minimap, in pixels
+        /// from its center (x right, y down): the inverse of the 45-degree turn in <see cref="UpdatePlayer"/>.
+        /// </summary>
+        public static Vector2 MinimapOffset(int dx, int dy)
+        {
+            float k = PixelsPerTile / Mathf.Sqrt(2f);
+            return new Vector2((dx - dy) * k, (dx + dy) * k);
         }
 
         /// <summary>A GUI matrix rotating by <paramref name="degrees"/> (clockwise on screen) around a point.</summary>

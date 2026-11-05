@@ -38,5 +38,26 @@ namespace UOClient.Core
             QuestArrow = active ? new QuestArrow { X = x, Y = y, Serial = serial } : null;
             QuestArrowChanged?.Invoke(QuestArrow);
         }
+
+        /// <summary>0xBF 0x07: the player clicked the quest arrow (ModernUO reads one bool, true for a right click).</summary>
+        public static byte[] QuestArrowClick(bool rightClick) => new PacketWriter(0xBF).UInt16(0x07).Bool(rightClick).ToArray();
+
+        /// <summary>
+        /// Tells the server the arrow was clicked. A right click is the classic cancel: ModernUO's tracking arrow
+        /// stops and answers with a cancelling 0xBA, so the arrow is cleared here at once rather than waiting.
+        /// A left click only notifies; the server decides what (if anything) it means.
+        /// </summary>
+        public void ClickQuestArrow(bool rightClick)
+        {
+            if (QuestArrow == null)
+                return;
+            if (State == SessionState.InWorld)
+                _conn?.Send(QuestArrowClick(rightClick));
+            if (rightClick)
+            {
+                QuestArrow = null;
+                QuestArrowChanged?.Invoke(null);
+            }
+        }
     }
 }

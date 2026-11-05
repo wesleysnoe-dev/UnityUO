@@ -442,6 +442,35 @@ public sealed class SessionPacketTests
         Assert.Null(session.QuestArrow);
     }
 
+    [Fact]
+    public void QuestArrowClickMatchesModernUOsExtendedLayout()
+    {
+        // 0xBF, length 6, sub-command 0x07, then the bool Tracking.QuestArrow reads (true = right click).
+        Assert.Equal(new byte[] { 0xBF, 0x00, 0x06, 0x00, 0x07, 0x00 }, GameSession.QuestArrowClick(false));
+        Assert.Equal(new byte[] { 0xBF, 0x00, 0x06, 0x00, 0x07, 0x01 }, GameSession.QuestArrowClick(true));
+    }
+
+    [Fact]
+    public void RightClickingTheQuestArrowClearsItLeftClickKeepsIt()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        var changes = new List<QuestArrow?>();
+        session.QuestArrowChanged += a => changes.Add(a);
+        session.Inject(new PacketWriter(0xBA, 10).Byte(1).UInt16(1520).UInt16(1650).UInt32(0x00001234).ToArray(), false);
+
+        session.ClickQuestArrow(false);
+        Assert.NotNull(session.QuestArrow);
+        Assert.Single(changes);
+
+        session.ClickQuestArrow(true);
+        Assert.Null(session.QuestArrow);
+        Assert.Equal(2, changes.Count);
+        Assert.Null(changes[1]);
+
+        session.ClickQuestArrow(true); // nothing left to click
+        Assert.Equal(2, changes.Count);
+    }
+
     /// <summary>0xDF add as ModernUO's SendAddBuffPacket writes it (args, when given, go out as "\t" + args, little-endian).</summary>
     private static byte[] AddBuffPacket(uint mob, int icon, int title, int secondary, string? args, int seconds)
     {

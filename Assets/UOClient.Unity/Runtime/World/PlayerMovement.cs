@@ -26,7 +26,9 @@ namespace UOClient.Unity
             bool run = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
             // Right mouse walks only over the world; over a window it closes the window instead.
-            if (intent == Vector2.zero && Input.GetMouseButton(1) && (ui == null || !ui.IsOverUi(Input.mousePosition)))
+            // (Nor over the quest arrow, where a right click cancels it.)
+            if (intent == Vector2.zero && Input.GetMouseButton(1) && (ui == null || !ui.IsOverUi(Input.mousePosition))
+                && !_ctx.Hud.QuestArrowRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)))
             {
                 Vector3 player = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(_ctx.Player.AnchorPixels));
                 intent = new Vector2(Input.mousePosition.x - player.x, -(Input.mousePosition.y - player.y));
