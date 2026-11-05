@@ -35,10 +35,14 @@ namespace UOClient.Core
         /// Minimum time between uses. ModernUO's Mobile.ActionDelay is 1000 ms with AOS rules (500 ms before),
         /// configurable server-side as "actionDelay"; faster uses get "You must wait to perform another action".
         /// </summary>
-        public double UseDelay { get; set; } = 1.05;
+        public double UseDelay
+        {
+            get => _actions.Delay;
+            set => _actions.Delay = value;
+        }
 
-        private readonly Queue<uint> _uses = new Queue<uint>();
-        private double _nextUseAt;
+        // Uses and lifts share the server's action delay; drops and equips follow their lift (see ActionQueue).
+        private readonly ActionQueue _actions = new ActionQueue();
 
         /// <summary>
         /// Double-click (use): opens doors, containers, paperdolls (for mobiles), etc. Queued and sent at the
@@ -48,17 +52,14 @@ namespace UOClient.Core
         {
             if (State != SessionState.InWorld)
                 return;
-            if (!_uses.Contains(serial))
-                _uses.Enqueue(serial);
-            SendQueuedUse();
+            _actions.Use(serial, new PacketWriter(0x06, 5).UInt32(serial).ToArray());
+            SendQueuedActions();
         }
 
-        private void SendQueuedUse()
+        private void SendQueuedActions()
         {
-            if (_uses.Count == 0 || _now < _nextUseAt || State != SessionState.InWorld)
-                return;
-            _conn.Send(new PacketWriter(0x06, 5).UInt32(_uses.Dequeue()).ToArray());
-            _nextUseAt = _now + UseDelay;
+            if (State == SessionState.InWorld)
+                _actions.Pump(_now, _conn.Send);
         }
 
         /// <summary>Opens our own paperdoll (double-click on self with the paperdoll flag).</summary>
@@ -101,7 +102,9 @@ namespace UOClient.Core
             if (State != SessionState.InWorld)
                 return;
             Holding = serial;
-            _conn.Send(new PacketWriter(0x07, 7).UInt32(serial).UInt16(Math.Max(1, Math.Min(amount, 60000))).ToArray());
+            // ModernUO refuses a lift inside the action delay of a use (and a lift starts one), so it waits its turn.
+            _actions.Paced(new PacketWriter(0x07, 7).UInt32(serial).UInt16(Math.Max(1, Math.Min(amount, 60000))).ToArray());
+            SendQueuedActions();
         }
 
         /// <summary>Drops the held item into a container at (x, y) in the container gump.</summary>
@@ -109,7 +112,8 @@ namespace UOClient.Core
         {
             if (State != SessionState.InWorld)
                 return;
-            _conn.Send(new PacketWriter(0x08, 15).UInt32(serial).UInt16(x).UInt16(y).Byte(0).Byte(0).UInt32(container).ToArray());
+            _actions.Follow(new PacketWriter(0x08, 15).UInt32(serial).UInt16(x).UInt16(y).Byte(0).Byte(0).UInt32(container).ToArray());
+            SendQueuedActions();
         }
 
         /// <summary>Drops the held item on the ground.</summary>
@@ -117,7 +121,8 @@ namespace UOClient.Core
         {
             if (State != SessionState.InWorld)
                 return;
-            _conn.Send(new PacketWriter(0x08, 15).UInt32(serial).UInt16(x).UInt16(y).Byte((byte)(sbyte)z).Byte(0).UInt32(0xFFFFFFFF).ToArray());
+            _actions.Follow(new PacketWriter(0x08, 15).UInt32(serial).UInt16(x).UInt16(y).Byte((byte)(sbyte)z).Byte(0).UInt32(0xFFFFFFFF).ToArray());
+            SendQueuedActions();
         }
 
         /// <summary>Equips the held item on a mobile (usually ourselves); the server picks the layer.</summary>
@@ -125,7 +130,8 @@ namespace UOClient.Core
         {
             if (State != SessionState.InWorld)
                 return;
-            _conn.Send(new PacketWriter(0x13, 10).UInt32(serial).Byte(layer).UInt32(mobile).ToArray());
+            _actions.Follow(new PacketWriter(0x13, 10).UInt32(serial).Byte(layer).UInt32(mobile).ToArray());
+            SendQueuedActions();
         }
 
         /// <summary>

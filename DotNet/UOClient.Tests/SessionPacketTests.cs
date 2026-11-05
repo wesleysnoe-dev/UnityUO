@@ -104,6 +104,39 @@ public sealed class SessionPacketTests
     }
 
     [Fact]
+    public void LiftsAndUsesShareTheActionDelayAndDropsFollowTheirLift()
+    {
+        var q = new ActionQueue { Delay = 1.0 };
+        var sent = new List<byte>();
+        void Pump(double now) => q.Pump(now, p => sent.Add(p[0]));
+
+        // Double-click the backpack, then drag something out of it at once: ModernUO's Lift checks
+        // NextActionTime that the use just set, so the lift (and the drop behind it) wait a second.
+        q.Use(0x40000001, new byte[] { 0x06 });
+        Pump(0.0);
+        q.Paced(new byte[] { 0x07 });
+        q.Follow(new byte[] { 0x08 });
+        Pump(0.5);
+        Assert.Equal(new byte[] { 0x06 }, sent);
+        Pump(1.0);
+        Assert.Equal(new byte[] { 0x06, 0x07, 0x08 }, sent);
+
+        // The lift started a delay of its own: a double-click right after the drop waits for it too.
+        q.Use(0x40000002, new byte[] { 0x06 });
+        q.Use(0x40000002, new byte[] { 0x06 }); // the same thing twice queues once
+        Pump(1.2);
+        Assert.Equal(3, sent.Count);
+        Pump(2.0);
+        Assert.Equal(new byte[] { 0x06, 0x07, 0x08, 0x06 }, sent);
+        Assert.Equal(0, q.Count);
+
+        // With nothing queued, a drop or equip goes out at once.
+        q.Follow(new byte[] { 0x13 });
+        Pump(2.1);
+        Assert.Equal(0x13, sent[^1]);
+    }
+
+    [Fact]
     public void TextEntryDialogIsReadAndAnswered()
     {
         var session = new GameSession(new LoginSettings());

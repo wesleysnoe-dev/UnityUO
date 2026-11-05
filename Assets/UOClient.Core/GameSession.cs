@@ -212,7 +212,7 @@ namespace UOClient.Core
             if (_conn != null && !_conn.IsConnected && State != SessionState.Disconnected)
                 SetState(SessionState.Disconnected, $"Disconnected: {_conn.CloseReason}");
 
-            SendQueuedUse();
+            SendQueuedActions();
 
             if (State == SessionState.InWorld && now - _lastPing > PingInterval)
             {
