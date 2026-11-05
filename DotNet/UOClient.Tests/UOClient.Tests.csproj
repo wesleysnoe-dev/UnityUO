@@ -33,6 +33,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\UiRouting.cs" Link="Unity\UiRouting.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\HealthBarWindow.Layout.cs" Link="Unity\HealthBarWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\StatusWindow.Layout.cs" Link="Unity\StatusWindow.Layout.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\QuestionWindow.Layout.cs" Link="Unity\QuestionWindow.Layout.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />

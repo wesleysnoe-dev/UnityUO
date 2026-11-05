@@ -70,6 +70,7 @@ namespace UOClient.Unity
             s.WarModeChanged += OnWarModeChanged;
             s.Damaged += OnDamaged;
             s.LastAttackSet += OnLastAttackSet;
+            s.AttackQueryRequested += OnAttackQueryRequested;
             s.World.JournalAdded += OnJournalOverhead;
             s.PlayerDied += OnPlayerDied;
             s.PlayerDeadChanged += OnPlayerDeadChanged;
@@ -120,6 +121,7 @@ namespace UOClient.Unity
             s.WarModeChanged -= OnWarModeChanged;
             s.Damaged -= OnDamaged;
             s.LastAttackSet -= OnLastAttackSet;
+            s.AttackQueryRequested -= OnAttackQueryRequested;
             s.World.JournalAdded -= OnJournalOverhead;
             s.PlayerDied -= OnPlayerDied;
             s.PlayerDeadChanged -= OnPlayerDeadChanged;
@@ -174,6 +176,18 @@ namespace UOClient.Unity
 
         /// <summary>TazUO's OpenHealthBarForLastAttack (on by default, hardcoded here; nothing is written to the settings).</summary>
         private void OnLastAttackSet(uint serial) => UI.HealthBarWindow.ShowLastAttack(Ui, serial);
+
+        /// <summary>
+        /// GameActions.Attack's criminal query: a question already up for another mobile goes (answering no, which sends
+        /// nothing), and this one's answer goes back to the session, which alone sends the attack, on yes.
+        /// </summary>
+        private void OnAttackQueryRequested(uint serial)
+        {
+            if (Ui.Find(UI.QuestionWindow.KeyFor("attack")) is UI.UiWindow old)
+                Ui.Close(old);
+            GameSession s = _session;
+            Ui.Open(new UI.QuestionWindow("attack", UI.QuestionWindow.CriminalText, yes => s.AnswerAttackQuery(serial, yes)));
+        }
 
         private void OnDamaged(uint serial, int amount) => _overheads.Add(serial, amount.ToString(), new Color(1f, 0.25f, 0.2f), 18, 1.6f, true);
 

@@ -229,13 +229,72 @@ namespace UOClient.Core
                 _conn.Send(new PacketWriter(0x72, 5).Bool(on).Byte(0).Byte(0x32).Byte(0).ToArray());
         }
 
+        /// <summary>ModernUO's Notoriety.Innocent and Notoriety.Ally (Notoriety.cs:7-8), as 0x77 / 0x78 / 0x22 carry them.</summary>
+        public const byte NotorietyInnocent = 1, NotorietyAlly = 2;
+
+        /// <summary>
+        /// Ask before attacking an innocent while we are innocent or an ally (TazUO's Profile.EnabledCriminalActionQuery,
+        /// on by default).
+        /// </summary>
+        public bool CriminalActionQuery { get; set; } = true;
+
+        /// <summary>The mobile an attack is waiting on the "this may flag you criminal" answer for, or 0.</summary>
+        public uint PendingAttackQuery { get; private set; }
+
+        /// <summary>
+        /// An attack needs the player's yes first (TazUO's QuestionGump of type Attack): show the question for this serial
+        /// and answer with <see cref="AnswerAttackQuery"/>. A question already up for another serial is replaced by this one.
+        /// Nothing is sent until the answer is yes.
+        /// </summary>
+        public event Action<uint> AttackQueryRequested;
+
+        /// <summary>
+        /// TazUO's GameActions.Attack (GameActions.cs:584-635): with the query on, attacking a known innocent mobile while
+        /// we are innocent or an ally asks first (only the same serial's question already up is left alone); otherwise
+        /// 0x05 goes straight out and the mobile becomes our last attack.
+        /// </summary>
         public void Attack(uint serial)
         {
             if (State != SessionState.InWorld)
                 return;
+            if (NeedsCriminalQuery(serial))
+            {
+                if (PendingAttackQuery == serial)
+                    return;
+                PendingAttackQuery = serial;
+                AttackQueryRequested?.Invoke(serial);
+                return;
+            }
             SetLastAttack(serial);
-            _conn.Send(new PacketWriter(0x05, 5).UInt32(serial).ToArray());
+            _conn.Send(AttackRequest(serial));
         }
+
+        /// <summary>
+        /// The player's answer to the attack question for <paramref name="serial"/>: yes sends 0x05 (only that, as TazUO's
+        /// callback does; the server's 0xAA then makes it our last attack); no, or an answer to a question no longer up,
+        /// sends nothing.
+        /// </summary>
+        public void AnswerAttackQuery(uint serial, bool yes)
+        {
+            if (serial == 0 || PendingAttackQuery != serial)
+                return;
+            PendingAttackQuery = 0;
+            if (yes && State == SessionState.InWorld)
+                _conn.Send(AttackRequest(serial));
+        }
+
+        /// <summary>GameActions.Attack's test: the query on, us innocent or an ally, the target a known innocent mobile and not us.</summary>
+        public bool NeedsCriminalQuery(uint serial) =>
+            CriminalActionQuery && World.Player is Mobile p && serial != World.PlayerSerial
+            && World.Mobiles.TryGetValue(serial, out Mobile m)
+            && QueriesAttack(p.Notoriety, m.Notoriety);
+
+        /// <summary>The notoriety half of the test: an innocent target, while we are innocent or an ally.</summary>
+        public static bool QueriesAttack(byte player, byte target) =>
+            (player == NotorietyInnocent || player == NotorietyAlly) && target == NotorietyInnocent;
+
+        /// <summary>0x05 AttackRequest (TazUO's Send_AttackRequest; ModernUO's AttackReq reads the serial).</summary>
+        public static byte[] AttackRequest(uint serial) => new PacketWriter(0x05, 5).UInt32(serial).ToArray();
 
         private void SetLastAttack(uint serial)
         {

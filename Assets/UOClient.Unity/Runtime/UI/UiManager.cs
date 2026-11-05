@@ -100,15 +100,17 @@ namespace UOClient.Unity.UI
             GUI.EndGroup();
         }
 
-        /// <summary>A gump button (normal / pressed art); returns true when clicked.</summary>
-        protected bool GumpButton(int normal, int pressed, float x, float y)
+        /// <summary>A gump button (normal / pressed art, and optional mouse-over art); returns true when clicked.</summary>
+        protected bool GumpButton(int normal, int pressed, float x, float y, int over = -1)
         {
             UiImage up = Art.Gump(normal);
             if (up == null)
                 return false;
             var r = new Rect(x, y, up.Width, up.Height);
-            bool down = r.Contains(Event.current.mousePosition) && Input.GetMouseButton(0);
-            DrawImage(down ? Art.Gump(pressed) ?? up : up, x, y);
+            bool inside = r.Contains(Event.current.mousePosition);
+            bool down = inside && Input.GetMouseButton(0);
+            UiImage hover = inside && over >= 0 ? Art.Gump(over) : null;
+            DrawImage(down ? Art.Gump(pressed) ?? up : hover ?? up, x, y);
             return GUI.Button(r, GUIContent.none, GUIStyle.none);
         }
 

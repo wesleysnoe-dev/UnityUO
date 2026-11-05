@@ -40,7 +40,22 @@ internal static class UxPreview
         Write(outDir, "healthbar-pet", Bar(data, text, hues, HealthBarWindow.Compute(Orc, Me, false, pet, null)));
         Write(outDir, "healthbar-out-of-range", Bar(data, text, hues, HealthBarWindow.Compute(Orc, Me, false, null, "an orc")));
         Write(outDir, "status-classic", Status(data, text, hues, me));
+        Write(outDir, "question-criminal", Question(data, text, hues, QuestionWindow.CriminalText));
         return 0;
+    }
+
+    // ---- QuestionWindow.Draw (the box alone, without the screen dimming) ---------------------------------------------
+
+    private static Bitmap32 Question(UOData data, UniText text, HueEntry[] hues, string message)
+    {
+        Bitmap32 bg = Gump(data, hues, QuestionWindow.Background);
+        var canvas = Canvas(bg?.Width ?? QuestionWindow.FallbackWidth, bg?.Height ?? QuestionWindow.FallbackHeight);
+        Blit(canvas, bg, 0, 0, canvas.Width);
+        Blit(canvas, Label(text, hues, message, QuestionWindow.LabelHue), QuestionWindow.LabelX, QuestionWindow.LabelY,
+            QuestionWindow.LabelX + QuestionWindow.LabelWidth);
+        Blit(canvas, Gump(data, hues, QuestionWindow.CancelNormal), QuestionWindow.CancelX, QuestionWindow.ButtonY, canvas.Width);
+        Blit(canvas, Gump(data, hues, QuestionWindow.OkNormal), QuestionWindow.OkX, QuestionWindow.ButtonY, canvas.Width);
+        return canvas;
     }
 
     private static void Write(string outDir, string name, Bitmap32 bmp)
