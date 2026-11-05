@@ -71,6 +71,8 @@ namespace UOClient.Unity
             s.Damaged += OnDamaged;
             s.World.JournalAdded += OnJournalOverhead;
             s.PlayerDied += OnPlayerDied;
+            _weatherLogged = WeatherType.None;
+            s.WeatherChanged += OnWeatherChanged;
 
             s.ContextMenuOpened += OnContextMenuOpened;
             s.ShopOpened += OnShopOpened;
@@ -110,6 +112,7 @@ namespace UOClient.Unity
             s.Damaged -= OnDamaged;
             s.World.JournalAdded -= OnJournalOverhead;
             s.PlayerDied -= OnPlayerDied;
+            s.WeatherChanged -= OnWeatherChanged;
             s.ContextMenuOpened -= OnContextMenuOpened;
             s.ShopOpened -= OnShopOpened;
             s.ShopClosed -= OnShopClosed;
@@ -163,6 +166,24 @@ namespace UOClient.Unity
         }
 
         private void OnPlayerDied() => _ctx.Hud.Log(null, "You are dead.");
+
+        // ModernUO resends the weather every 30 seconds while it lasts, so only a change of kind is logged.
+        private WeatherType _weatherLogged = WeatherType.None;
+
+        private void OnWeatherChanged(Weather w)
+        {
+            if (w.Type == _weatherLogged)
+                return;
+            _weatherLogged = w.Type;
+            _ctx.Hud.Log(null, w.Type switch
+            {
+                WeatherType.Rain => "It begins to rain.",
+                WeatherType.FierceStorm => "A fierce storm approaches.",
+                WeatherType.Snow => "It begins to snow.",
+                WeatherType.StormBrewing => "A storm is brewing.",
+                _ => "The weather clears."
+            });
+        }
 
         private void OnContextMenuOpened(Core.ContextMenu menu)
         {

@@ -210,6 +210,41 @@ public sealed class SessionPacketTests
     }
 
     [Fact]
+    public void WeatherIsStoredAndRaised()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        var changes = new List<Weather>();
+        session.WeatherChanged += changes.Add;
+        Assert.Equal(WeatherType.None, session.Weather.Type);
+        Assert.False(session.Weather.IsFalling);
+
+        // ModernUO's SendWeather: 0x65, type, density, temperature (4 bytes).
+        byte[] rain = { 0x65, 0, 35, 15 };
+        Assert.Equal(PacketLengths.For(ClientVersion.Default)[0x65], rain.Length);
+        session.Inject(rain, false);
+        Assert.Equal(WeatherType.Rain, session.Weather.Type);
+        Assert.Equal(35, session.Weather.Count);
+        Assert.Equal(15, session.Weather.Temperature);
+        Assert.True(session.Weather.IsFalling);
+
+        // Extreme cold: ModernUO negates the temperature and sends snow; the byte is signed.
+        session.Inject(new byte[] { 0x65, 2, 70, unchecked((byte)-15) }, false);
+        Assert.Equal(WeatherType.Snow, session.Weather.Type);
+        Assert.Equal(70, session.Weather.Count);
+        Assert.Equal(-15, session.Weather.Temperature);
+
+        // Stage 0 of a weather cycle: density 0, type 0xFE. 0xFF and unknown types clear too.
+        session.Inject(new byte[] { 0x65, 0xFE, 0, 15 }, false);
+        Assert.Equal(WeatherType.None, session.Weather.Type);
+        Assert.False(session.Weather.IsFalling);
+        session.Inject(new byte[] { 0x65, 0xFF, 10, 0 }, false);
+        Assert.Equal(WeatherType.None, session.Weather.Type);
+        Assert.Equal(0, session.Weather.Count);
+
+        Assert.Equal(new[] { WeatherType.Rain, WeatherType.Snow, WeatherType.None, WeatherType.None }, changes.Select(w => w.Type));
+    }
+
+    [Fact]
     public void QuestArrowShowsAndClearsOnHighSeasClients()
     {
         GameSession session = InWorldAs(0x00000042, 1495, 1629);

@@ -7,7 +7,7 @@ namespace UOClient.Unity
 {
     /// <summary>
     /// Fills the HUD model each frame: the player's position and stats, the connection text, the name labels
-    /// over everyone in view, the health bars under their feet, where the quest arrow points, and the buff bar.
+    /// over everyone in view, the health bars under their feet, where the quest arrow points, the buff bar and the weather.
     /// </summary>
     public sealed class HudPresenter
     {
@@ -26,8 +26,15 @@ namespace UOClient.Unity
             _ctx.Hud.Labels.Clear();
             _ctx.Hud.QuestArrow = null;
             _ctx.Hud.Buffs.Clear();
+            _ctx.Hud.WeatherCount = 0;
             if (_ctx.Session == null)
                 return;
+
+            // Weather: rain or snow particles while the server's weather has something falling.
+            Core.Weather weather = _ctx.Session.Weather;
+            _ctx.Hud.WeatherCount = weather.IsFalling ? weather.Count : 0;
+            _ctx.Hud.WeatherSnow = weather.Type == WeatherType.Snow;
+            _ctx.Hud.WeatherStorm = weather.Type == WeatherType.FierceStorm;
 
             // Buff bar: the player's buffs with the time left as m:ss (counted down here; the server removes them).
             foreach (Buff b in _ctx.Session.Buffs)

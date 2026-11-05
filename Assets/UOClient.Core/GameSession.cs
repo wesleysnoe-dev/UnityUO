@@ -109,6 +109,7 @@ namespace UOClient.Core
             RegisterMapItemHandlers();
             RegisterSeasonHandlers();
             RegisterBuffHandlers();
+            RegisterWeatherHandlers();
         }
 
         public World World { get; }

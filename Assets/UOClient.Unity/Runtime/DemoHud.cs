@@ -63,6 +63,13 @@ namespace UOClient.Unity
         /// <summary>The buff bar under the status bars: each buff's name and time left ("" when untimed), redrawn every frame.</summary>
         public readonly List<(string Name, string Time)> Buffs = new List<(string, string)>();
 
+        /// <summary>Falling rain or snow drawn over the world: how many particles (0 for none, at most 70), snow or rain, and storm speed.</summary>
+        public int WeatherCount { get; set; }
+        public bool WeatherSnow { get; set; }
+        public bool WeatherStorm { get; set; }
+        private readonly Vector2[] _weather = new Vector2[70];
+        private bool _weatherSeeded;
+
         /// <summary>Room left at the top of the screen for the top bar (UI units).</summary>
         public float TopInset { get; set; }
 
@@ -196,6 +203,8 @@ namespace UOClient.Unity
             float s = Mathf.Clamp(Screen.height / 1000f, 0.75f, 2.5f);
             float w = Screen.width / s, h = Screen.height / s;
 
+            DrawWeather(s);
+
             // Vignette in screen space, under everything.
             if (Vignette > 0.01f)
             {
@@ -271,6 +280,41 @@ namespace UOClient.Unity
             }
 
             GUI.matrix = saved;
+        }
+
+        /// <summary>
+        /// Rain streaks or drifting snowflakes in screen space, one per weather particle, like the classic client's
+        /// 70 at most. Positions are fractions of the screen, advanced once per repaint.
+        /// </summary>
+        private void DrawWeather(float s)
+        {
+            if (WeatherCount <= 0 || Event.current.type != EventType.Repaint)
+                return;
+            if (!_weatherSeeded)
+            {
+                for (int i = 0; i < _weather.Length; i++)
+                    _weather[i] = new Vector2(UnityEngine.Random.value, UnityEngine.Random.value);
+                _weatherSeeded = true;
+            }
+
+            int n = Mathf.Min(WeatherCount, _weather.Length);
+            float dt = Mathf.Min(Time.deltaTime, 0.1f);
+            float fall = WeatherSnow ? 0.12f : WeatherStorm ? 2f : 1.4f;
+            GUI.color = WeatherSnow ? new Color(1f, 1f, 1f, 0.85f) : new Color(0.75f, 0.8f, 0.9f, 0.55f);
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 p = _weather[i];
+                p.y += fall * dt;
+                if (p.y > 1f)
+                    p = new Vector2(UnityEngine.Random.value, p.y - 1f);
+                _weather[i] = p;
+                float x = p.x * Screen.width, y = p.y * Screen.height;
+                if (WeatherSnow)
+                    GUI.DrawTexture(new Rect(x + Mathf.Sin(Time.time * 1.3f + i) * 8 * s, y, 3 * s, 3 * s), _white);
+                else
+                    GUI.DrawTexture(new Rect(x, y, 1.5f * s, 16 * s), _white);
+            }
+            GUI.color = Color.white;
         }
 
         private void DrawStatus(Rect r)
