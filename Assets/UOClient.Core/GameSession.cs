@@ -102,6 +102,7 @@ namespace UOClient.Core
             RegisterInteractionHandlers();
             RegisterCombatHandlers();
             RegisterTradeHandlers();
+            RegisterSecureTradeHandlers();
             RegisterTooltipHandlers();
             RegisterHousingHandlers();
             RegisterTrackingHandlers();

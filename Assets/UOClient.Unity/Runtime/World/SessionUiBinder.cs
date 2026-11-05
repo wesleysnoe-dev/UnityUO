@@ -77,6 +77,8 @@ namespace UOClient.Unity
             s.ContextMenuOpened += OnContextMenuOpened;
             s.ShopOpened += OnShopOpened;
             s.ShopClosed += OnShopClosed;
+            s.TradeOpened += OnTradeOpened;
+            s.TradeClosed += OnTradeClosed;
             s.PromptRequested += OnPromptRequested;
             s.TextEntryRequested += OnTextEntryRequested;
             s.SpellbookContent += OnSpellbookContent;
@@ -117,6 +119,8 @@ namespace UOClient.Unity
             s.ContextMenuOpened -= OnContextMenuOpened;
             s.ShopOpened -= OnShopOpened;
             s.ShopClosed -= OnShopClosed;
+            s.TradeOpened -= OnTradeOpened;
+            s.TradeClosed -= OnTradeClosed;
             s.PromptRequested -= OnPromptRequested;
             s.TextEntryRequested -= OnTextEntryRequested;
             s.SpellbookContent -= OnSpellbookContent;
@@ -217,6 +221,16 @@ namespace UOClient.Unity
                 if (w is UI.ShopWindow s && s.Vendor == vendor)
                     Ui.Close(w);
         }
+
+        private void OnTradeOpened(SecureTrade t)
+        {
+            // A trade re-displayed on the same container replaces the old window (its trade is no longer open, so closing it sends nothing).
+            CloseByKey(UI.SecureTradeWindow.KeyFor(t));
+            Ui.Open(new UI.SecureTradeWindow(t));
+        }
+
+        /// <summary>The server ended the trade (cancelled, or both accepted): the window goes without sending a cancel.</summary>
+        private void OnTradeClosed(SecureTrade t) => CloseByKey(UI.SecureTradeWindow.KeyFor(t));
 
         private void OnPromptRequested(TextPrompt prompt)
         {
