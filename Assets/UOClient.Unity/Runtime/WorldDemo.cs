@@ -24,7 +24,7 @@ namespace UOClient.Unity
     /// scroll to zoom, Enter to talk, T to override time of day, R to toggle roofs, H to hide the HUD,
     /// F3 for frame-time stats.
     /// </summary>
-    public sealed class WorldDemo : MonoBehaviour
+    public sealed class WorldDemo : MonoBehaviour, IGameOptions, ICaptureHost
     {
         public const string CaptureRequestFile = "Library/UOClient/capture-demo";
 
@@ -977,6 +977,21 @@ namespace UOClient.Unity
             for (int i = 0; i < n; i++)
                 yield return null;
         }
+
+        // ---- what the capture tour reads ----
+
+        bool ICaptureHost.Ready => _ready;
+        string ICaptureHost.LoadError => _loadError;
+        int? ICaptureHost.CutZ => CutZ;
+        bool ICaptureHost.TryStep(int dir, bool run) => _movement.TryStep(dir, run);
+        void ICaptureHost.RunCommand(string cmd) => OnUiCommand(cmd);
+        FrameStats ICaptureHost.Frames => _frames;
+        FrameSections ICaptureHost.Sections => _sections;
+        EntityViews ICaptureHost.Entities => _entities;
+        EffectsLayer ICaptureHost.Effects => _effects;
+        OverheadText ICaptureHost.Overheads => _overheads;
+        UI.HoverTooltip ICaptureHost.Hover => _tooltip;
+        SessionUiBinder ICaptureHost.Ui => _binder;
 
         /// <summary>Written next to a player build: where the project (baked art, account file) lives on this machine.</summary>
         public const string PathsFileName = ClientPaths.PathsFileName;

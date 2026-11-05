@@ -40,9 +40,9 @@ namespace UOClient.Unity.UI
     /// <summary>Client options: what to show, roofs, zoom.</summary>
     public sealed class OptionsWindow : UiWindow
     {
-        private readonly WorldDemo _game;
+        private readonly IGameOptions _game;
 
-        public OptionsWindow(WorldDemo game)
+        public OptionsWindow(IGameOptions game)
         {
             _game = game;
             Rect = new Rect(300, 140, 360, 330 + (game.Hotkeys?.Bindings.Count ?? 0) * 18 + 60);
