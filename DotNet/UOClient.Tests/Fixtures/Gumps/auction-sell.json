@@ -1,0 +1,60 @@
+{
+  "gump": "AuctionSellGump",
+  "source": "ModernUO @ b170e7eb3 Projects/UOContent/CustomBots/Auctions/AuctionGump.cs",
+  "state": "selling a katana at 1500, 3 days",
+  "packet": "0xB0",
+  "serial": 1073742082,
+  "typeId": 796725668,
+  "x": 120,
+  "y": 80,
+  "dynamic": false,
+  "layout": [
+    "{ page 0 }",
+    "{ resizepic 0 0 9270 460 330 }",
+    "{ htmlgump 16 14 428 22 0 0 0 }",
+    "{ tilepic 24 54 5119 }",
+    "{ itemproperty 1073744385 }",
+    "{ croppedtext 84 52 360 20 1153 1 }",
+    "{ text 84 74 946 2 }",
+    "{ text 24 112 1153 3 }",
+    "{ resizepic 130 108 3000 160 26 }",
+    "{ textentry 136 111 150 20 0 1 4 }",
+    "{ text 24 148 1153 5 }",
+    "{ group 0 }",
+    "{ radio 110 146 210 211 0 100 }",
+    "{ text 134 148 1153 6 }",
+    "{ radio 210 146 210 211 1 101 }",
+    "{ text 234 148 1153 7 }",
+    "{ radio 310 146 210 211 0 102 }",
+    "{ text 334 148 1153 8 }",
+    "{ htmlgump 24 184 412 60 9 0 0 }",
+    "{ button 24 284 4005 4007 1 0 1 }",
+    "{ text 58 286 68 10 }",
+    "{ button 330 284 4017 4019 1 0 0 }",
+    "{ text 364 286 1153 11 }"
+  ],
+  "lines": [
+    "<BASEFONT COLOR=#F4F4F4 SIZE=4><B>Sell at auction</B></BASEFONT>",
+    "katana",
+    "Market estimate: about 1,500 gp (at or under this sells within hours)",
+    "Price (gold):",
+    "1500",
+    "Duration:",
+    "1 day",
+    "3 days",
+    "7 days",
+    "<BASEFONT COLOR=#C8C0A8>Listing fee 2% now (at least 1 gp); 5% of the price is kept when it sells.</BASEFONT>",
+    "List it",
+    "Back"
+  ],
+  "buttonIds": [
+    0,
+    1
+  ],
+  "replyButtons": [
+    0,
+    1
+  ],
+  "switches": 3,
+  "textEntries": 1
+}

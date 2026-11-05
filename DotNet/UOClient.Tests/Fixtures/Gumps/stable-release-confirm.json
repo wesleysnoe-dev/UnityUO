@@ -1,0 +1,37 @@
+{
+  "gump": "StableReleaseConfirmGump",
+  "source": "uo-offline-dev @ 0d14143 playerbots/source/CustomBots/Stables/StableReleaseConfirmGump.cs",
+  "state": "first confirm for Shadowmere (Nightmare)",
+  "packet": "0xB0",
+  "serial": 1073742338,
+  "typeId": 1521606657,
+  "x": 250,
+  "y": 200,
+  "dynamic": false,
+  "layout": [
+    "{ page 0 }",
+    "{ resizepic 0 0 9270 380 180 }",
+    "{ htmlgump 16 14 348 22 0 0 0 }",
+    "{ htmlgump 16 42 348 80 1 0 0 }",
+    "{ button 20 140 4017 4019 1 0 1 }",
+    "{ text 54 142 1153 2 }",
+    "{ button 220 140 4005 4007 1 0 2 }",
+    "{ text 254 142 34 3 }"
+  ],
+  "lines": [
+    "<BASEFONT COLOR=#FF9090 SIZE=4><B>Release Shadowmere?</B></BASEFONT>",
+    "<BASEFONT COLOR=#E0E0E0>Shadowmere (Nightmare) leaves the stables and goes wild next to the stable master. This can't be undone.</BASEFONT>",
+    "Cancel",
+    "Yes, release"
+  ],
+  "buttonIds": [
+    1,
+    2
+  ],
+  "replyButtons": [
+    1,
+    2
+  ],
+  "switches": 0,
+  "textEntries": 0
+}

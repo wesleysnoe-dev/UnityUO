@@ -16,6 +16,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Saved shard gump layouts (GumpFixtureTests). -->
+    <None Include="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Unity-side files with no UnityEngine dependency, compiled here so their rules can be tested. -->
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\AccountStore.PathRule.cs" Link="Unity\AccountStore.PathRule.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\LaunchOptions.cs" Link="Unity\LaunchOptions.cs" />

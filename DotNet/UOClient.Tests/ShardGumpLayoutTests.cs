@@ -27,7 +27,7 @@ public sealed class ShardGumpLayoutTests
         { "All", "Weapons", "Armor", "Jewelry", "Clothing", "Artifacts", "Scrolls", "Reagents", "Resources", "Consumables", "Bulk Orders", "Furniture", "Misc" };
 
     /// <summary>AuctionGump on the Browse tab: All picked, page 1 of 2, a katana from Ann and 50 black pearl from Bob.</summary>
-    private static ShardGump AuctionBrowse()
+    internal static ShardGump AuctionBrowse()
     {
         var g = new ShardGump(0x40000101, 0x6A1C3B2E, 60, 40);
         const int W = 860, TextHue = 1153, DimHue = 0x3B2, GoldHue = 0x35, PickHue = 0x44;
@@ -149,7 +149,7 @@ public sealed class ShardGumpLayoutTests
     }
 
     /// <summary>AuctionSellGump for a katana: price entry 1, AddGroup(0) and the duration radios 100-102 (3 days on).</summary>
-    private static ShardGump AuctionSell(string message = null)
+    internal static ShardGump AuctionSell(string message = null)
     {
         var g = new ShardGump(0x40000102, 0x2F7D11A4, 120, 80);
         const int W = 460, H = 330;
@@ -293,12 +293,13 @@ public sealed class ShardGumpLayoutTests
 
     // ---- Group Finder (CustomBots/Chat/GroupFinder.cs) ----
 
-    [Fact]
-    public void GroupFinderDungeonsTabRepliesARowButtonWithNothingElse()
+    /// <summary>
+    /// GroupFinderGump(m, Dungeons, page 0, onlyActive false): a header with Start, a joinable party, a header with
+    /// no groups; 16 rows a page and 20 rows, so a Next and no Prev. The "only places with groups" toggle is a
+    /// button (0xD2/0xD3 art), not a checkbox: the gump declares no switches and no text entries.
+    /// </summary>
+    internal static ShardGump GroupFinderDungeons()
     {
-        // GroupFinderGump(m, Dungeons, page 0, onlyActive false): a header with Start, a joinable party, a header with
-        // no groups; 16 rows a page and 20 rows, so a Next and no Prev. The "only places with groups" toggle is a
-        // button (0xD2/0xD3 art), not a checkbox: the gump declares no switches and no text entries.
         const int W = 680, ListTop = 92, RowH = 22;
         var g = new ShardGump(0x40000104, 0x7C4F0A55, 80, 60);
         int h = ListTop + 16 * RowH + 74;
@@ -344,7 +345,13 @@ public sealed class ShardGumpLayoutTests
         g.AddButton(W - 80, fy + 20, 4005, 4007, 11);
         g.AddLabel(W - 46, fy + 21, 1153, "Next");
         g.AddLabel(W / 2 - 40, fy + 21, 0x3B2, "Page 1 of 2");
+        return g;
+    }
 
+    [Fact]
+    public void GroupFinderDungeonsTabRepliesARowButtonWithNothingElse()
+    {
+        ShardGump g = GroupFinderDungeons();
         var sent = new List<byte[]>();
         GameSession session = InWorld(sent);
         ServerGump gump = Open(session, g.Uncompressed());
@@ -400,7 +407,7 @@ public sealed class ShardGumpLayoutTests
     private const int LoreLabel = 0x24E5;
 
     /// <summary>AnimalLoreGump.BuildLayout under AOS, SE and ML: five pages for a tamed dragon.</summary>
-    private static ShardGump AnimalLore()
+    internal static ShardGump AnimalLore()
     {
         var b = new ShardGump(0x40000106, 0x3D7E2A19, 250, 50, dynamic: true);
         b.AddPage(0);
@@ -607,7 +614,7 @@ public sealed class ShardGumpLayoutTests
 
     // ---- harness ----
 
-    private static GameSession InWorld(List<byte[]> sent)
+    internal static GameSession InWorld(List<byte[]> sent)
     {
         var session = new GameSession(new LoginSettings { AnnounceChatLinks = false });
         session.StartOffline(sent.Add);
@@ -619,7 +626,7 @@ public sealed class ShardGumpLayoutTests
         return session;
     }
 
-    private static ServerGump Open(GameSession session, byte[] packet)
+    internal static ServerGump Open(GameSession session, byte[] packet)
     {
         ServerGump opened = null;
         session.World.GumpOpened += g => opened = g;
@@ -643,7 +650,7 @@ public sealed class ShardGumpLayoutTests
         GameSession.GumpReply(g.Serial, g.TypeId, button, switches ?? Array.Empty<int>(), texts?.ToList() ?? new List<(int, string)>());
 
     /// <summary>What OnResponse gets in its RelayInfo.</summary>
-    private sealed record Relay(int Button, int[] Switches, List<(int Id, string Text)> Texts)
+    internal sealed record Relay(int Button, int[] Switches, List<(int Id, string Text)> Texts)
     {
         // RelayInfo.GetTextEntry: the first entry with that id.
         public string GetTextEntry(int id) => Texts.Where(t => t.Id == id).Select(t => t.Text).FirstOrDefault();
@@ -657,7 +664,7 @@ public sealed class ShardGumpLayoutTests
     /// new line for every string. Counts switches and text entries as Compile does, and keeps the button ids
     /// DisplayGumpResponse looks for.
     /// </summary>
-    private sealed class ShardGump
+    internal sealed class ShardGump
     {
         public readonly uint Serial, TypeId;
         public readonly int X, Y;
@@ -673,6 +680,23 @@ public sealed class ShardGumpLayoutTests
         public ShardGump(uint serial, uint typeId, int x, int y, bool dynamic = false)
         {
             (Serial, TypeId, X, Y, _dynamic) = (serial, typeId, x, y, dynamic);
+        }
+
+        public bool Dynamic => _dynamic;
+
+        /// <summary>Every button id the gump added, page buttons too: what DisplayGumpResponse checks a reply against.</summary>
+        public IReadOnlyCollection<int> ButtonIds => _buttonIds;
+
+        /// <summary>A gump read back from a saved fixture: its layout as sent (flag commands included) and its counts.</summary>
+        public static ShardGump FromSaved(uint serial, uint typeId, int x, int y, bool dynamic, string layout,
+            IEnumerable<string> lines, IEnumerable<int> buttonIds, IEnumerable<int> replyIds, int switches, int textEntries)
+        {
+            var g = new ShardGump(serial, typeId, x, y, dynamic) { Switches = switches, TextEntries = textEntries };
+            g._entries.Append(layout);
+            g.Lines.AddRange(lines);
+            g._buttonIds.UnionWith(buttonIds);
+            g.ReplyIds.UnionWith(replyIds);
+            return g;
         }
 
         public string Layout =>
@@ -722,6 +746,13 @@ public sealed class ShardGumpLayoutTests
         public void AddTextEntry(int x, int y, int w, int h, int hue, int id, string text)
         {
             Add($"textentry {x} {y} {w} {h} {hue} {id} {Text(text)}");
+            TextEntries++;
+        }
+
+        /// <summary>Gump.AddTextEntry with a size: GumpTextEntryLimited.</summary>
+        public void AddTextEntry(int x, int y, int w, int h, int hue, int id, string text, int size)
+        {
+            Add($"textentrylimited {x} {y} {w} {h} {hue} {id} {Text(text)} {size}");
             TextEntries++;
         }
 
