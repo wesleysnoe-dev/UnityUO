@@ -143,13 +143,12 @@ namespace UOClient.Unity
                 SetUpArt();
 
                 // Unattended runs log straight in with the account file; people get the login screen.
+                LaunchOptions launch = LaunchOptions.FromCommandLine();
                 bool unattended = File.Exists(Path.Combine(ProjectRoot, CaptureRequestFile))
-                                  || Environment.GetCommandLineArgs().Contains("-uoclient-capture")
-                                  || Environment.GetCommandLineArgs().Contains("-uoclient-autologin");
+                                  || launch.CaptureFromCommandLine
+                                  || launch.AutoLogin;
                 // -offline <map> <x> <y>: the offline demo at an exact spot (indoors included), e.g. to check a building.
-                string[] cl = Environment.GetCommandLineArgs();
-                int at = Array.IndexOf(cl, "-offline");
-                if (at >= 0 && at + 3 < cl.Length && int.TryParse(cl[at + 1], out int om) && int.TryParse(cl[at + 2], out int ox) && int.TryParse(cl[at + 3], out int oy))
+                if (launch.OfflineAt is (int om, int ox, int oy))
                 {
                     StartOfflineAt(om, ox, oy);
                 }
@@ -165,7 +164,7 @@ namespace UOClient.Unity
                 }
                 else
                 {
-                    LoginSettings login = online ? ReadAccount() : null;
+                    LoginSettings login = online ? Accounts.ReadLogin(Settings) : null;
                     if (login != null)
                         StartOnline(login);
                     else
@@ -180,7 +179,7 @@ namespace UOClient.Unity
 
             // Unattended run: a request file (editor), or -uoclient-capture on a player's command line (quits when done).
             string request = Path.Combine(ProjectRoot, CaptureRequestFile);
-            bool fromCommandLine = Environment.GetCommandLineArgs().Contains("-uoclient-capture");
+            bool fromCommandLine = LaunchOptions.FromCommandLine().CaptureFromCommandLine;
             if (File.Exists(request) || fromCommandLine)
             {
                 if (File.Exists(request))
@@ -252,20 +251,8 @@ namespace UOClient.Unity
 
         private UI.LoginScreen _login;
 
-        private string AccountPath => AccountPathFor(Settings.host);
-
-        /// <summary>
-        /// Remembered logins are kept per server: the local test server uses the test account file, any other
-        /// shard its own file. So the local test account is never offered to (or sent to) the live shard.
-        /// </summary>
-        private string AccountPathFor(string host)
-        {
-            string local = Path.IsPathRooted(accountFile) ? accountFile : Path.Combine(ProjectRoot, accountFile);
-            if (host == "127.0.0.1" || host == "localhost" || host == "::1")
-                return local;
-            string safe = new string(host.Select(ch => char.IsLetterOrDigit(ch) || ch == '.' || ch == '-' ? ch : '_').ToArray());
-            return Path.Combine(Path.GetDirectoryName(local), $"uoclient-account-{safe}.json");
-        }
+        // Built on use, so it always sees the current accountFile (as the inline code it replaced did).
+        private AccountStore Accounts => new AccountStore(accountFile);
 
         private void ShowLoginScreen()
         {
@@ -273,25 +260,17 @@ namespace UOClient.Unity
             _login = new UI.LoginScreen(_gumpArt, Path.Combine(ProjectRoot, "Tools", "ComfyRestyle", "style", "mockup_scene.png"));
             _login.Host = Settings.host;
             _login.Port = Settings.port;
-            if (File.Exists(AccountPath))
+            if (Accounts.Stored(Settings.host) is (var account, var password))
             {
-                AccountFile a = JsonUtility.FromJson<AccountFile>(File.ReadAllText(AccountPath));
-                _login.Account = a.account;
-                _login.Password = a.password;
-                _login.RememberPassword = !string.IsNullOrEmpty(a.password);
+                _login.Account = account;
+                _login.Password = password;
+                _login.RememberPassword = !string.IsNullOrEmpty(password);
             }
             _login.QuitPressed = Quit;
-            _login.RememberedFor = host =>
-            {
-                string path = AccountPathFor(host);
-                if (host.Length == 0 || !File.Exists(path))
-                    return ("", "");
-                AccountFile a = JsonUtility.FromJson<AccountFile>(File.ReadAllText(path));
-                return (a.account ?? "", a.password ?? "");
-            };
+            _login.RememberedFor = host => Accounts.Remembered(host);
             _login.LoginPressed = screen =>
             {
-                SaveAccount(screen);
+                Accounts.Save(screen.Host, screen.Account, screen.Password, screen.RememberPassword);
                 // A server typed on the login screen becomes the setting (unless -server chose it for this run).
                 if ((screen.Host != Settings.host || screen.Port != Settings.port) && !ServerFromArguments)
                 {
@@ -306,7 +285,7 @@ namespace UOClient.Unity
                 {
                     Host = screen.Host, Port = screen.Port, Account = screen.Account, Password = screen.Password,
                     Interactive = true,
-                    Version = ReadAccountVersion()
+                    Version = Accounts.ReadVersion(Settings.host)
                 };
                 StartOnline(login);
                 if (_session != null)
@@ -314,34 +293,7 @@ namespace UOClient.Unity
             };
         }
 
-        /// <summary>Keeps what was typed for next time (the password only when asked; the file is git-ignored).</summary>
-        private void SaveAccount(UI.LoginScreen screen)
-        {
-            try
-            {
-                string path = AccountPathFor(screen.Host); // the server being logged in to, which may have just been typed
-                AccountFile a = File.Exists(path) ? JsonUtility.FromJson<AccountFile>(File.ReadAllText(path)) : new AccountFile();
-                a.account = screen.Account;
-                a.password = screen.RememberPassword ? screen.Password : "";
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllText(path, JsonUtility.ToJson(a, true));
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"UOClient: could not save the account file ({e.Message}).");
-            }
-        }
-
-        private ClientVersion ReadAccountVersion()
-        {
-            if (!File.Exists(AccountPath))
-                return ClientVersion.Default;
-            AccountFile a = JsonUtility.FromJson<AccountFile>(File.ReadAllText(AccountPath));
-            return string.IsNullOrEmpty(a.clientVersion) ? ClientVersion.Default : ClientVersion.Parse(a.clientVersion);
-        }
-
-        private static bool ServerFromArguments =>
-            Environment.GetCommandLineArgs().Any(a => a.TrimStart('-').Equals("server", StringComparison.OrdinalIgnoreCase));
+        private static bool ServerFromArguments => LaunchOptions.FromCommandLine().ServerFromArguments;
 
         private static void Quit()
         {
@@ -350,28 +302,6 @@ namespace UOClient.Unity
 #else
             Application.Quit();
 #endif
-        }
-
-        private LoginSettings ReadAccount()
-        {
-            // Unattended runs only log in with an account remembered for this server (never the test account elsewhere).
-            string path = AccountPathFor(Settings.host);
-            if (!File.Exists(path))
-            {
-                Debug.LogWarning($"UOClient: no account file for {Settings.Server} at {path}; running the offline demo.");
-                return null;
-            }
-            AccountFile a = JsonUtility.FromJson<AccountFile>(File.ReadAllText(path));
-            return new LoginSettings
-            {
-                Host = Settings.host,
-                Port = Settings.port,
-                Account = a.account,
-                Password = a.password,
-                CharacterName = string.IsNullOrEmpty(a.character) ? "Adventurer" : a.character,
-                StartCity = string.IsNullOrEmpty(a.startCity) ? "Britain" : a.startCity,
-                Version = string.IsNullOrEmpty(a.clientVersion) ? ClientVersion.Default : ClientVersion.Parse(a.clientVersion)
-            };
         }
 
         // ---- gumps ----
@@ -904,14 +834,6 @@ namespace UOClient.Unity
             foreach (KeyValuePair<uint, ItemView> kv in _items)
                 Consider(kv.Key, kv.Value.LastRect, kv.Value.LastDepth);
             return best;
-        }
-
-        [Serializable]
-        private sealed class AccountFile
-        {
-            // The server is not here: it is a setting (unity-uo-settings.json / -server), so switching shards
-            // never means editing credentials.
-            public string account = "", password = "", character = "", startCity = "", clientVersion = "";
         }
 
         private void StartOnline(LoginSettings login)
