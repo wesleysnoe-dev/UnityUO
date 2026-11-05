@@ -111,18 +111,16 @@ namespace UOClient.Unity.UI
             if (color != null) sb.Append("<color=").Append(color).Append('>');
             if (bold) sb.Append("<b>");
             if (italic) sb.Append("<i>");
-            sb.Append(Escape(Decode(text)));
+            sb.Append(Escape(text));
             if (italic) sb.Append("</i>");
             if (bold) sb.Append("</b>");
             if (color != null) sb.Append("</color>");
             if (size != 0) sb.Append("</size>");
         }
 
-        // The entities shards write in text (ModernUO's EscapeHtml for a player's words). Decoded before Escape, so an
-        // escaped "<b>" in a chat line shows as text instead of turning into rich-text markup.
-        private static string Decode(string text) =>
-            text.Replace("&nbsp;", " ").Replace("&lt;", "<").Replace("&gt;", ">").Replace("&amp;", "&");
-
+        // Entities are not decoded: TazUO's GetHTMLData only reads '<' as a tag and copies every other character, so
+        // ModernUO's EscapeHtml output (&lt; &gt; &amp; &quot; &#39;) shows exactly as sent. IMGUI rich text doesn't
+        // decode them either.
         // Rich text treats '<' as markup; plain text keeps angle brackets visible via a look-alike.
         private static string Escape(string text) => text.Replace("<", "‹").Replace(">", "›");
 

@@ -350,11 +350,35 @@ public sealed class GumpTests
     }
 
     [Fact]
-    public void EscapedPlayerTextStaysText()
+    public void HtmlEntitiesShowRawAsInTazUO()
     {
-        // ChatGumps / GroupFinder write a player's words through ModernUO's EscapeHtml.
-        string rich = GumpHtml.ToRichText("<BASEFONT COLOR=#FFD24A>&lt;color=red&gt;hi&lt;/color&gt; &amp; bye</BASEFONT>", out _);
-        Assert.Equal("<color=#FFD24A>‹color=red›hi‹/color› & bye</color>", rich);
+        // TazUO's FontsLoader.GetHTMLData only reads '<' as a tag and copies every other character: no entity is
+        // decoded, so what ModernUO's EscapeHtml sends (&lt; &gt; &amp; &quot; &#39;) is what the player sees.
+
+        // AuctionGump: v.Message.EscapeHtml() in <BASEFONT COLOR=#B4E1A8><I>.
+        Assert.Equal("<color=#B4E1A8><i>Bid on Tom&#39;s &quot;Blade&quot; &lt;rare&gt; &amp; more</i></color>",
+            GumpHtml.ToRichText(
+                "<BASEFONT COLOR=#B4E1A8><I>Bid on Tom&#39;s &quot;Blade&quot; &lt;rare&gt; &amp; more</I></BASEFONT>", out _));
+
+        // Escaped markup in a player's words stays text, never live rich text.
+        string chat = GumpHtml.ToRichText("<BASEFONT COLOR=#FFD24A>&lt;color=red&gt;hi&lt;/color&gt; &amp; bye</BASEFONT>", out _);
+        Assert.Equal("<color=#FFD24A>&lt;color=red&gt;hi&lt;/color&gt; &amp; bye</color>", chat);
+        Assert.DoesNotContain("<color=red>", chat);
+
+        // ChatSettingsGump's typing help spaces its entries with &nbsp;, shown as written.
+        Assert.Equal("<color=#D8D8D8>, text = Global &nbsp; ,t = Trade</color>\n",
+            GumpHtml.ToRichText("<BASEFONT COLOR=#D8D8D8>, text = Global &nbsp; ,t = Trade<BR></BASEFONT>", out _));
+
+        // StableGump: notice.EscapeHtml() in <BASEFONT COLOR=#FFE080> (StableActions' rename refusal).
+        Assert.Equal("<color=#FFE080>You can&#39;t rename pets from jail.</color>",
+            GumpHtml.ToRichText("<BASEFONT COLOR=#FFE080>You can&#39;t rename pets from jail.</BASEFONT>", out _));
+
+        // StableReleaseConfirmGump: an escaped pet name next to the gump's own unescaped "can't".
+        Assert.Equal("<color=#E0E0E0>Sir &lt;Fluffy&gt; &amp; Co (horse) leaves. This can't be undone.</color>",
+            GumpHtml.ToRichText("<BASEFONT COLOR=#E0E0E0>Sir &lt;Fluffy&gt; &amp; Co (horse) leaves. This can't be undone.</BASEFONT>", out _));
+
+        // A bare '<' that isn't a tag still shows (as a look-alike, so IMGUI doesn't read it as markup).
+        Assert.Equal("1 ‹ 2 & 3", GumpHtml.ToRichText("1 < 2 & 3", out _));
     }
 
     [Fact]
