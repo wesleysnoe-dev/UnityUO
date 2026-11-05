@@ -148,6 +148,20 @@ namespace UOClient.Core
                 _conn.Send(new PacketWriter(0x9B, 258).Zero(257).ToArray());
         }
 
+        /// <summary>
+        /// The paperdoll's virtue gem, as TazUO's PaperDollGump.VirtueMenu_MouseDoubleClickEvent: a reply to gump type
+        /// 461 from the player, button 1, with the paperdoll's mobile as the one switch. ModernUO's DisplayGumpResponse
+        /// answers that with VirtueGump.RequestVirtueGump for the switch's player.
+        /// </summary>
+        public void RequestVirtueGump(uint beheld)
+        {
+            if (State == SessionState.InWorld)
+                _conn.Send(GumpReply(World.PlayerSerial, VirtueGumpType, 1, new[] { (int)beheld }, null));
+        }
+
+        /// <summary>The virtue gump's type id (ModernUO's GumpSystem and TazUO's Send_VirtueGumpResponse use 461).</summary>
+        public const uint VirtueGumpType = 461;
+
         /// <summary>Picks an item up onto the cursor. The server answers with a lift reject if it can't be.</summary>
         public void Lift(uint serial, int amount)
         {

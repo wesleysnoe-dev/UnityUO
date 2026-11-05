@@ -99,12 +99,15 @@ Works:
   - **Death:** `0x2C` 2 then the ghost body, then ModernUO's `ResurrectGump`. The default layout's CONTINUE (button 1) and the priced layout's button 2 with the pre-checked switch 1 are each sent back as `0xB1`, read as `GumpSystem.DisplayGumpResponse` reads it. Then the living body clears the ghost state.
   - **No client 0x2C reply:** ModernUO's `IncomingPlayerPackets.DeathStatusResponse` ignores it. TazUO.dll has `NetClientExt.Send_DeathScreen` (writes `0x2C 0x02`, read from its IL), but nothing in TazUO.dll calls it. So nothing is sent, and a test pins that.
   - Verified: 227 tests pass; Tests, Cli and EditorCheck build. Not verified: the Unity windows on top (`PartyWindow`, `SplitStackWindow`, `ServerGumpWindow`'s radio state) and anything live.
+- [x] **Paperdoll virtue gem and party manifest** (`PaperdollWindow`, `GameSession.RequestVirtueGump`): positions and art come from TazUO.dll's `PaperDollGump.BuildGump` and `Settings..cctor` IL. Both pictures act on a left double-click on opaque pixels.
+  - **Virtue gem:** gump `0x71` at (80,4) on every paperdoll, drawn under the body. A double-click sends `0xB1` from the player with type 461, button 1, and the paperdoll's serial as the only switch, as `VirtueMenu_MouseDoubleClickEvent` → `GameActions.ReplyGump` does. ModernUO's `DisplayGumpResponse` answers type 461 with button 1 and a switch with `VirtueGump.RequestVirtueGump(beholder, switch's player)`.
+  - **Party manifest:** own paperdoll only. Gump `0x7D2` at (25 + its width − 4, 196), next to the profile scroll. A double-click opens the party window or brings it forward, as `PartyManifest_MouseDoubleClickEvent` does.
+  - Verified: 228 tests pass (a new offline test reads the `0xB1` as `DisplayGumpResponse` does); Tests, Cli and EditorCheck build. Runtime and Editor also build as separate assemblies. Not verified: in Unity, and the live virtue gump. Known gaps: TazUO opens its party gump at screen centre −(272,240), ours opens where `PartyWindow` puts it. The gargoyle racial-abilities offset (+14 to the scrolls) is not done. Our profile scroll still opens on a single click; TazUO uses a double-click.
 
 Still missing:
 - [ ] The directional run cursors (`0x206A`–`0x2079`, `0x2053`–`0x2062`); the pointer is always the up-left gauntlet.
 - [ ] Health bar gumps you can drag off a mobile, and the TazUO compact status bar. The status window is text, not the classic gump.
 - [ ] Skill groups and a skill-gain display (the `0x3A` updates are applied but not called out).
-- [ ] The paperdoll's virtue (`0xB1` virtue gump) and party buttons.
 - [ ] Criminal-action query before attacking an innocent (TazUO's optional confirmation).
 - [ ] Not seen live: dismount on double-click, and the status query filling a target's bar.
 

@@ -11,11 +11,16 @@ namespace UOClient.Unity.UI
     /// The paperdoll: background gump, body gump in the skin hue, and each worn item's paperdoll art
     /// (tiledata AnimId + 50000 for male, + 60000 for female), layered like the classic client.
     /// Double-click the backpack to open it, double-click other items to use them, drag items off to
-    /// take them off, drop items onto it to put them on. Click the scroll for the character's profile.
+    /// take them off, drop items onto it to put them on. Click the scroll for the character's profile;
+    /// double-click the virtue gem for the virtue gump, and (our own) the party scroll for the party window.
     /// </summary>
     public sealed class PaperdollWindow : UiWindow
     {
         private const float BodyX = 8, BodyY = 19;
+
+        // TazUO's PaperDollGump Settings: the profile and party scrolls (0x7D2) and the virtue gem (0x71).
+        private const int ScrollGump = 0x07D2, VirtueGem = 0x0071;
+        private const float ProfileX = 25, ProfileY = 196, VirtueX = 80, VirtueY = 4;
 
         // Back to front, as the classic paperdoll layers them.
         private static readonly byte[] PaperdollOrder =
@@ -62,6 +67,10 @@ namespace UOClient.Unity.UI
 
             DrawImage(Art.Gump(_serial == Session.World.PlayerSerial ? 0x07D0 : 0x07D1) ?? Art.Gump(0x07D0), 0, 0);
 
+            // The virtue gem on every paperdoll, under the body (TazUO adds its PaperDollInteractable after the gem).
+            UiImage virtue = Art.Gump(VirtueGem);
+            DrawImage(virtue, VirtueX, VirtueY);
+
             bool female = IsFemale(m.Body);
             DrawImage(Art.Gump(female ? 0x000D : 0x000C, m.Hue), BodyX, BodyY);
 
@@ -90,8 +99,17 @@ namespace UOClient.Unity.UI
             GUI.Label(new Rect(39, 262, 185, 40), _title ?? m.Name ?? "", _titleStyle);
 
             // The profile scroll (where ClassicUO puts it): asks the server for this character's profile (0xB8).
-            if (GumpButton(0x07D2, 0x07D2, 25, 196))
+            if (GumpButton(ScrollGump, ScrollGump, ProfileX, ProfileY))
                 Session.RequestProfile(_serial);
+
+            // Our own paperdoll's party manifest: the same scroll, 4 pixels into the profile's right edge.
+            UiImage party = null;
+            float partyX = 0;
+            if (_serial == Session.World.PlayerSerial && (party = Art.Gump(ScrollGump)) != null)
+            {
+                partyX = ProfileX + party.Width - 4;
+                DrawImage(party, partyX, ProfileY);
+            }
 
             // Our own paperdoll carries the classic column of buttons on the right.
             if (_serial == Session.World.PlayerSerial)
@@ -112,6 +130,24 @@ namespace UOClient.Unity.UI
             if (Event.current.type == EventType.Repaint)
                 Hovered = ItemAt(Event.current.mousePosition)?.Item.Serial ?? 0;
             HandleMouse();
+
+            // After the worn items, which sit on top and take their clicks first.
+            if (DoubleClicked(virtue, VirtueX, VirtueY))
+                Session.RequestVirtueGump(_serial);
+            else if (DoubleClicked(party, partyX, ProfileY))
+                Ui.Open(new PartyWindow()); // opens it, or brings the open one forward
+        }
+
+        /// <summary>A left double-click on a picture's opaque pixels (TazUO's GumpPic with a MouseDoubleClick handler).</summary>
+        private static bool DoubleClicked(UiImage img, float x, float y)
+        {
+            Event e = Event.current;
+            if (img == null || e.type != EventType.MouseDown || e.button != 0 || e.clickCount != 2)
+                return false;
+            if (!img.HitTest((int)(e.mousePosition.x - x), (int)(e.mousePosition.y - y)))
+                return false;
+            e.Use();
+            return true;
         }
 
         /// <summary>Topmost worn item under a local point (hair and beard can't be picked).</summary>

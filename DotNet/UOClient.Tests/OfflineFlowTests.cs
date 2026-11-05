@@ -299,6 +299,25 @@ public sealed class OfflineFlowTests
         Assert.Equal(new[] { 1 }, reply.Switches);
     }
 
+    // ---- paperdoll virtue gem ----
+
+    [Fact]
+    public void VirtueGemAsksForTheBeheldPlayersVirtueGump()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+
+        // DisplayGumpResponse: type 461, button 1 and a switch -> RequestVirtueGump(beholder, switch's player).
+        session.RequestVirtueGump(Bob);
+        var reply = ReadGumpReply(Assert.Single(sent));
+        Assert.Equal((Me, 461u, 1), (reply.Serial, reply.Type, reply.Button));
+        Assert.Equal(new[] { (int)Bob }, reply.Switches);
+
+        sent.Clear();
+        session.RequestVirtueGump(Me);
+        Assert.Equal(new[] { (int)Me }, ReadGumpReply(Assert.Single(sent)).Switches);
+    }
+
     /// <summary>0xDD as ModernUO's DynamicGump.SendTo writes it.</summary>
     private static byte[] CompressedGump(uint serial, uint typeId, string layout, params string[] lines)
     {
