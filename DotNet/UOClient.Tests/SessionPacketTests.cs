@@ -102,4 +102,44 @@ public sealed class SessionPacketTests
         // Cancel: code 0, empty text.
         Assert.Equal(new byte[] { 0xAC, 0, 13, 1, 2, 3, 4, 5, 9, 0, 0, 1, 0 }, GameSession.TextEntryReply(entry, null));
     }
+
+    [Fact]
+    public void QuestArrowShowsAndClearsOnHighSeasClients()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        var changes = new List<QuestArrow?>();
+        session.QuestArrowChanged += a => changes.Add(a);
+
+        // ModernUO's SendSetArrow for a High Seas client: 1, x, y, tracked serial (10 bytes).
+        byte[] set = new PacketWriter(0xBA, 10).Byte(1).UInt16(1520).UInt16(1650).UInt32(0x00001234).ToArray();
+        Assert.Equal(PacketLengths.For(ClientVersion.Default)[0xBA], set.Length);
+        session.Inject(set, false);
+
+        Assert.NotNull(session.QuestArrow);
+        Assert.Equal((1520, 1650, 0x1234u), (session.QuestArrow!.X, session.QuestArrow.Y, session.QuestArrow.Serial));
+        Assert.Single(changes);
+        Assert.Same(session.QuestArrow, changes[0]);
+
+        // SendCancelArrow on High Seas still carries the last location and serial.
+        session.Inject(new PacketWriter(0xBA, 10).Byte(0).UInt16(1520).UInt16(1650).UInt32(0x00001234).ToArray(), false);
+        Assert.Null(session.QuestArrow);
+        Assert.Equal(2, changes.Count);
+        Assert.Null(changes[1]);
+    }
+
+    [Fact]
+    public void QuestArrowShowsAndClearsOnOlderClients()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        var old = new ClientVersion(7, 0, 8, 0);
+
+        // Before 7.0.9 the packet is 6 bytes: 1, x, y to set; 0, -1, -1 to cancel.
+        byte[] set = new PacketWriter(0xBA, 6).Byte(1).UInt16(300).UInt16(400).ToArray();
+        Assert.Equal(PacketLengths.For(old)[0xBA], set.Length);
+        session.Inject(set, false);
+        Assert.Equal((300, 400, 0u), (session.QuestArrow!.X, session.QuestArrow.Y, session.QuestArrow.Serial));
+
+        session.Inject(new PacketWriter(0xBA, 6).Byte(0).UInt16(unchecked((ushort)-1)).UInt16(unchecked((ushort)-1)).ToArray(), false);
+        Assert.Null(session.QuestArrow);
+    }
 }

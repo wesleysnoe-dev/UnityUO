@@ -55,6 +55,7 @@ Not read yet: the HD animation packs (`HDArt/anim/*.uoanim`, about 5 GB), a form
 - **`0x99` placement:** the offsets are ModernUO's deed offsets (for example 0, 4, 0 for small houses). Check that the preview lines up with where the house actually lands.
 - **`0x76`:** ModernUO sends it on facet changes; check it with a moongate or a recall to another facet.
 - **`0xAB` / `0xAC`:** ModernUO neither sends `0xAB` nor handles `0xAC`. If the live shard has a custom script that uses it, confirm its layout.
+- **`0xBA` quest arrow (added later the same night, same caveat):** use Tracking on a nearby creature. The arrow should point toward it, follow it as it moves (ModernUO resends it), and disappear when tracking ends. The target has no z, so the on-screen marker sits at the player's height.
 
 ## Unity UO's own settings
 

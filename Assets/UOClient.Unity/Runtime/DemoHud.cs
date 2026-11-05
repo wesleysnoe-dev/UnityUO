@@ -21,7 +21,7 @@ namespace UOClient.Unity
 
         private readonly List<(string Time, string Speaker, string Text)> _journal = new List<(string, string, string)>();
         private readonly List<UnityEngine.Object> _owned = new List<UnityEngine.Object>();
-        private Texture2D _white, _panel, _border, _hits, _mana, _stamina, _vignette, _ring, _minimap;
+        private Texture2D _white, _panel, _border, _hits, _mana, _stamina, _vignette, _ring, _minimap, _arrow;
         private Color32[] _radar;
         private Color32[] _minimapPixels;
         private int _radarX0, _radarY0;
@@ -52,6 +52,13 @@ namespace UOClient.Unity
 
         public readonly List<(Vector2 Screen, float Ratio, Color Color)> HealthBars = new List<(Vector2, float, Color)>();
         public bool WarMode { get; set; }
+
+        /// <summary>
+        /// The quest arrow's target in screen pixels (top-left origin), or null when there is none. On screen it
+        /// is marked in place; off screen an arrow at the edge points toward it.
+        /// </summary>
+        public Vector2? QuestArrow { get; set; }
+        public Vector2Int QuestArrowTile { get; set; }
 
         /// <summary>Room left at the top of the screen for the top bar (UI units).</summary>
         public float TopInset { get; set; }
@@ -231,6 +238,9 @@ namespace UOClient.Unity
                 DrawOutlined(new Rect(screen.x / s - 120, screen.y / s - th - used, 240, th), text, _overhead, color);
             }
 
+            if (QuestArrow is Vector2 quest)
+                DrawQuestArrow(quest / s, w, h);
+
             if (WarMode)
                 DrawOutlined(new Rect(w * 0.5f - 60, 40 + TopInset, 120, 22), "WAR", _bar, new Color(1f, 0.3f, 0.25f));
 
@@ -313,6 +323,46 @@ namespace UOClient.Unity
             GUI.Label(new Rect(inner.x, inner.yMax + 2, inner.width, 16), $"{_playerX}, {_playerY}", _small);
         }
 
+        /// <summary>
+        /// A pulsing diamond on the target tile while it is in view, else an arrow at the screen edge on the line
+        /// from the screen center toward it. <paramref name="p"/> is in UI units.
+        /// </summary>
+        private void DrawQuestArrow(Vector2 p, float w, float h)
+        {
+            const float margin = 40f;
+            var color = new Color(1f, 0.82f, 0.25f, 0.75f + 0.25f * Mathf.Sin(Time.time * 6f));
+            var area = Rect.MinMaxRect(margin, margin + TopInset, w - margin, h - margin);
+            Matrix4x4 saved = GUI.matrix;
+            Vector2 at;
+            if (area.Contains(p))
+            {
+                at = p;
+                GUI.matrix = saved * Rotation(p, 45f);
+                GUI.color = new Color(0.1f, 0.06f, 0f, color.a);
+                GUI.DrawTexture(new Rect(p.x - 9, p.y - 9, 18, 18), _white);
+                GUI.color = color;
+                GUI.DrawTexture(new Rect(p.x - 7, p.y - 7, 14, 14), _white);
+            }
+            else
+            {
+                // Where the line from the center leaves the area.
+                Vector2 c = area.center, d = p - c;
+                float t = Mathf.Min(d.x != 0 ? (area.width * 0.5f) / Mathf.Abs(d.x) : float.MaxValue,
+                                    d.y != 0 ? (area.height * 0.5f) / Mathf.Abs(d.y) : float.MaxValue);
+                at = c + d * Mathf.Min(t, 1f);
+                GUI.matrix = saved * Rotation(at, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg);
+                GUI.color = color;
+                GUI.DrawTexture(new Rect(at.x - 16, at.y - 16, 32, 32), _arrow);
+            }
+            GUI.matrix = saved;
+            GUI.color = Color.white;
+            DrawOutlined(new Rect(at.x - 60, at.y + 16, 120, 18), $"{QuestArrowTile.x}, {QuestArrowTile.y}", _small, color);
+        }
+
+        /// <summary>A GUI matrix rotating by <paramref name="degrees"/> (clockwise on screen) around a point.</summary>
+        private static Matrix4x4 Rotation(Vector2 pivot, float degrees) =>
+            Matrix4x4.Translate(pivot) * Matrix4x4.Rotate(Quaternion.Euler(0, 0, degrees)) * Matrix4x4.Translate(-pivot);
+
         private void DrawJournal(Rect r)
         {
             DrawPanel(r, "Journal");
@@ -387,6 +437,7 @@ namespace UOClient.Unity
             _stamina = Own(Gradient(new Color(0.95f, 0.78f, 0.2f), new Color(0.55f, 0.4f, 0.04f)));
             _vignette = Own(VignetteTexture());
             _ring = Own(RingTexture(MinimapSize + 8));
+            _arrow = Own(ArrowTexture(32));
 
             _label = new GUIStyle(GUI.skin.label) { fontSize = 14, richText = false, clipping = TextClipping.Clip };
             _label.normal.textColor = Color.white;
@@ -465,6 +516,26 @@ namespace UOClient.Unity
                     float a = outer * inner;
                     float shade = 0.75f + 0.25f * Mathf.Clamp01((y / (float)size));
                     t.SetPixel(x, y, new Color(0.5f * shade, 0.4f * shade, 0.25f * shade, a));
+                }
+            t.Apply();
+            return t;
+        }
+
+        /// <summary>A white arrowhead pointing right (+x) with a dark rim, tinted when drawn.</summary>
+        private static Texture2D ArrowTexture(int size)
+        {
+            var t = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            float c = size / 2f;
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    // Inside the triangle (2, 2) - (size - 2, c) - (2, size - 2), measured as distance to its edges.
+                    float px = x + 0.5f, py = y + 0.5f;
+                    float half = (size - 2 - px) / (size - 4) * (c - 2);
+                    float edge = Mathf.Min(px - 2, half - Mathf.Abs(py - c));
+                    float a = Mathf.Clamp01(edge + 0.5f);
+                    float shade = Mathf.Clamp01(edge / 2.5f);
+                    t.SetPixel(x, y, new Color(0.15f + 0.85f * shade, 0.12f + 0.88f * shade, 0.08f + 0.92f * shade, a));
                 }
             t.Apply();
             return t;

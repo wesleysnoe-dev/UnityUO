@@ -7,7 +7,7 @@ namespace UOClient.Unity
 {
     /// <summary>
     /// Fills the HUD model each frame: the player's position and stats, the connection text, the name labels
-    /// over everyone in view, and the health bars under their feet.
+    /// over everyone in view, the health bars under their feet, and where the quest arrow points.
     /// </summary>
     public sealed class HudPresenter
     {
@@ -24,8 +24,19 @@ namespace UOClient.Unity
         {
             _ctx.Hud.UpdatePlayer(_ctx.Player.X, _ctx.Player.Y, _ctx.Player.IsMoving, Time.deltaTime);
             _ctx.Hud.Labels.Clear();
+            _ctx.Hud.QuestArrow = null;
             if (_ctx.Session == null)
                 return;
+
+            // Quest arrow: the target tile's center at the player's height (the packet has no z), as Avatar anchors it.
+            Core.QuestArrow arrow = _ctx.Session.QuestArrow;
+            if (arrow != null)
+            {
+                var tile = new Vector2((arrow.X - arrow.Y) * 22, (arrow.X + arrow.Y) * 22 + 22 - _ctx.Player.Z * 4) * _ctx.ArtScale;
+                Vector3 s = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(tile));
+                _ctx.Hud.QuestArrow = new Vector2(s.x, Screen.height - s.y);
+                _ctx.Hud.QuestArrowTile = new Vector2Int(arrow.X, arrow.Y);
+            }
 
             // Connection text only matters while not playing (connecting, or after a disconnect).
             _ctx.Hud.ConnectionStatus = _ctx.Session.State == SessionState.InWorld ? "" : _ctx.Session.Status;

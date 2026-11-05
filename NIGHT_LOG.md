@@ -86,3 +86,5 @@ One commit per packet. Each was built with `dotnet build` (Tests, Cli, EditorChe
 4. **`0xAB` text entry dialog** (`GameSession.Trade.cs`, `UI.TextEntryWindow`): caption, text or number box and help text, answered with `0xAC`. ModernUO never sends it, so the layout follows RunUO/POL and ClassicUO.
 
 The Unity editor stopped refreshing on its own after the second packet. The Unity code for 3 and 4 was type-checked with `UOClient.EditorCheck` (the Unity 6000.6.8f1 assemblies). The `.meta` for `MultiPlacementGhost.cs` was written by hand. What still needs a live server is in LIVE_PARITY.md.
+
+5. **`0xBA` quest arrow** (`GameSession.Tracking.cs`, `HudPresenter`/`DemoHud`): 6 or 10 bytes (tracked serial on 7.0.9+) as ModernUO's `SendArrow` writes it; a pulsing marker on the tile, or an arrow at the screen edge pointing toward it, cleared on active=0. Injected-packet tests only (46 tests pass), no login.
