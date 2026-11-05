@@ -36,7 +36,7 @@ namespace UOClient.IO.Formats
     public sealed class AnimationLibrary : IDisposable
     {
         // mobtypes.txt flags (TazUO AnimationFlags, AnimationsLoader.cs:1825-1849).
-        public const uint IdleAt8Frame = 0x4, CanFlying = 0x8, LowGroupExtended = 0x20, ByLowGroup = 0x40, ByPeopleGroup = 0x400;
+        public const uint Use2IfHitWhileRunning = 0x2, IdleAt8Frame = 0x4, CanFlying = 0x8, LowGroupExtended = 0x20, ByLowGroup = 0x40, ByPeopleGroup = 0x400;
         public const uint UseUopAnimation = 0x10000;
 
         private readonly string _dir;
@@ -45,7 +45,7 @@ namespace UOClient.IO.Formats
         private readonly UopFile[] _uop = new UopFile[4];    // AnimationFrame1..4.uop
         private bool _uopTried;
         private Dictionary<int, int[]> _sequences;          // AnimationSequence.uop: body -> drawn action per action
-        private readonly Dictionary<int, bool> _hasUop = new Dictionary<int, bool>();
+        private readonly Dictionary<int, int> _uopPackage = new Dictionary<int, int>(); // body -> recorded AnimationFrame index, or -1
         private readonly Dictionary<int, (int File, int Body)> _conv = new Dictionary<int, (int, int)>();
         private readonly Dictionary<int, (int Body, int Hue)> _replace = new Dictionary<int, (int, int)>();
         private readonly Dictionary<int, (MobType Type, uint Flags)> _mobTypes = new Dictionary<int, (MobType, uint)>();
@@ -74,15 +74,20 @@ namespace UOClient.IO.Formats
             if (!_mobTypes.TryGetValue(body, out var m) || (m.Flags & UseUopAnimation) == 0)
                 return false;
             lock (_lock)
-            {
-                if (_hasUop.TryGetValue(body, out bool has))
-                    return has;
-                has = false;
-                for (int a = 0; a < AnimationUop.MaxActions && !has; a++)
-                    has = TryUopEntry(body, a, out _, out _);
-                _hasUop[body] = has;
-                return has;
-            }
+                return UopPackage(body) >= 0;
+        }
+
+        /// <summary>
+        /// The AnimationFrame*.uop (0..3) a UOP body's actions are read from, or -1. TazUO's <c>GetIndices</c>
+        /// (AnimationsLoader.cs:321-345) searches the packages per action, but keeps only the package of the last
+        /// action it found, and <c>Animation.cs:224</c> reads every action from that one package.
+        /// </summary>
+        public int UopPackageOf(int body)
+        {
+            if (!_mobTypes.TryGetValue(body, out var m) || (m.Flags & UseUopAnimation) == 0)
+                return -1;
+            lock (_lock)
+                return UopPackage(body);
         }
 
         /// <summary>The action a UOP body really draws for <paramref name="action"/> (AnimationSequence.uop), or -1.</summary>
@@ -118,25 +123,79 @@ namespace UOClient.IO.Formats
         public (int File, int Body, int Hue) Resolve(int body) => Resolve(body, 0);
 
         /// <summary>Walk, run and stand outside war mode, as TazUO's <c>MobileAnimation.GetGroupForAnimation</c> picks them.</summary>
-        public (int Walk, int Run, int Stand) Actions(int body)
+        public (int Walk, int Run, int Stand) Actions(int body) => Actions(body, false);
+
+        /// <summary>
+        /// Walk, run and stand in or out of war mode, as TazUO's <c>MobileAnimation.GetGroupForAnimation</c> picks them.
+        /// War mode only changes UOP monsters and animals; other bodies (UOP humans included) keep their peace actions here.
+        /// </summary>
+        public (int Walk, int Run, int Stand) Actions(int body, bool warMode)
         {
             if (UsesUop(body) && _mobTypes.TryGetValue(body, out var m))
             {
-                // MobileAnimation.cs:1041-1107: animals without the extended flag, and CalculateHight (:99-197) for the rest.
+                // MobileAnimation.cs:1041-1107: animals without the extended flag.
                 if (m.Type == MobType.Animal && (m.Flags & LowGroupExtended) == 0)
-                    return (22, 24, 25);
+                {
+                    if (!warMode)
+                        return (22, 24, 25);
+                    return (HasUopAction(body, 0) ? 0 : 22, 24, HasUopAction(body, 1) ? 1 : 25);
+                }
+                // CalculateHight (:99-197) for monsters and extended animals; the flying group 19 needs a flying mobile.
                 if (m.Type == MobType.Monster || m.Type == MobType.Animal)
                 {
                     if ((m.Flags & ByPeopleGroup) != 0)
                         return (0, 0, 0); // :106-111 only sets idle to 0; moving keeps the current group
                     if ((m.Flags & ByLowGroup) != 0)
                         return (0, 1, 2);
-                    int stand = (m.Flags & IdleAt8Frame) != 0 && HasUopAction(body, 8) ? 8 : 25;
+                    int stand = (m.Flags & IdleAt8Frame) != 0 && HasUopAction(body, 8) ? 8 : warMode ? 1 : 25;
                     int run = (m.Flags & CanFlying) != 0 && HasUopAction(body, 19) ? 19 : 24;
-                    return (22, run, stand);
+                    return (warMode ? 0 : 22, run, stand);
                 }
             }
             return DefaultActions(GroupOf(body));
+        }
+
+        /// <summary>
+        /// The death action (first or second fall) as TazUO's <c>AnimationsLoader.GetDeathAction</c> picks it
+        /// (AnimationsLoader.cs:1236-1304). <paramref name="running"/> matters only for sea monsters.
+        /// The type comes from mobtypes.txt, or from the body's action layout when it is not listed.
+        /// </summary>
+        public int DeathAction(int body, bool second, bool running = false)
+        {
+            MobType type;
+            uint flags = 0;
+            if (!_mobTypes.TryGetValue(body, out var m))
+            {
+                AnimGroup g = GroupOf(body);
+                type = g == AnimGroup.Animal ? MobType.Animal : g == AnimGroup.Human ? MobType.Human : MobType.Monster;
+            }
+            else
+            {
+                type = m.Type;
+                flags = m.Flags;
+            }
+
+            if ((flags & ByLowGroup) != 0)
+                type = MobType.Animal;
+            if ((flags & LowGroupExtended) != 0)
+                type = MobType.Monster;
+            bool uop = (flags & UseUopAnimation) != 0;
+
+            switch (type)
+            {
+                case MobType.Animal:
+                    if ((flags & (Use2IfHitWhileRunning | CanFlying)) != 0)
+                        return 2;
+                    return uop ? (second ? 3 : 2) : second ? 12 : 8;   // LowAnimationGroup.Die2 / Die1
+                case MobType.SeaMonster:
+                    if (!running)
+                        return 8;
+                    goto case MobType.Monster;
+                case MobType.Monster:
+                    return second ? 3 : 2;                              // UOP and HighAnimationGroup.Die2 / Die1 agree
+                default:
+                    return second ? 22 : 21;                            // PeopleAnimationGroup.Die2 / Die1
+            }
         }
 
         /// <summary>Walk, run and stand of a classic action layout.</summary>
@@ -257,22 +316,46 @@ namespace UOClient.IO.Formats
             return AnimationUop.Decode(data, fileDirection, equipment);
         }
 
-        /// <summary>The first AnimationFrame*.uop that stores (body, action). Call under the lock.</summary>
+        /// <summary>
+        /// (body, action) in the body's recorded package only (<see cref="UopPackageOf"/>). When the action is stored
+        /// only in another package, TazUO reads that package's offset from the recorded file; we read nothing. Call under the lock.
+        /// </summary>
         private bool TryUopEntry(int body, int action, out UopFile file, out FileEntry entry)
         {
-            LoadUop();
-            ulong hash = UopHash.Create(AnimationUop.EntryName(body, action));
-            foreach (UopFile f in _uop)
-            {
-                if (f != null && f.TryGetByHash(hash, out entry))
-                {
-                    file = f;
-                    return true;
-                }
-            }
+            int package = UopPackage(body);
+            file = package >= 0 ? _uop[package] : null;
+            if (file != null && file.TryGetByHash(UopHash.Create(AnimationUop.EntryName(body, action)), out entry))
+                return true;
             file = null;
             entry = FileEntry.Invalid;
             return false;
+        }
+
+        /// <summary>
+        /// TazUO's <c>GetIndices</c> loop: for each action (after one AnimationSequence.uop swap), the first package
+        /// holding it; the package found for the last such action is kept. Call under the lock.
+        /// </summary>
+        private int UopPackage(int body)
+        {
+            if (_uopPackage.TryGetValue(body, out int package))
+                return package;
+            LoadUop();
+            package = -1;
+            _sequences.TryGetValue(body, out int[] seq);
+            for (int a = 0; a < AnimationUop.MaxActions; a++)
+            {
+                ulong hash = UopHash.Create(AnimationUop.EntryName(body, seq != null ? seq[a] : a));
+                for (int i = 0; i < _uop.Length; i++)
+                {
+                    if (_uop[i] != null && _uop[i].TryGetByHash(hash, out _))
+                    {
+                        package = i;
+                        break;
+                    }
+                }
+            }
+            _uopPackage[body] = package;
+            return package;
         }
 
         /// <summary>Opens AnimationFrame1..4.uop and reads AnimationSequence.uop, once. Call under the lock.</summary>
