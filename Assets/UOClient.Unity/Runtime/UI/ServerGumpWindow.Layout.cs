@@ -426,12 +426,49 @@ namespace UOClient.Unity.UI
         /// <summary>
         /// The html command that takes a wheel turn with the pointer at (<paramref name="x"/>, <paramref name="y"/>)
         /// in the gump, or -1. UIManager.OnMouseWheel (UIManager.cs:362-368) gives it only to the control under the
-        /// mouse, so an HtmlControl scrolls only while the pointer is inside it; where two overlap, the later (on top)
-        /// one. Only commands on page 0 or the page shown count.
+        /// mouse (<see cref="MouseOverCommand"/>); an HtmlControl's own scrollbar passes it up to the html
+        /// (Control.OnMouseWheel, Control.cs:870), but any other control there sends it to the gump, which does nothing.
+        /// So an html scrolls only with the pointer inside it and nothing on top of it there. <paramref name="covers"/>
+        /// says whether the i-th non-html command's own shape holds the point (null: none do); an html's is its box.
         /// </summary>
-        public static int HtmlWheelTarget(IList<GumpCommand> commands, int page, float x, float y)
+        public static int HtmlWheelTarget(IList<GumpCommand> commands, int page, float x, float y, Func<int, bool> covers = null)
         {
-            int target = -1, at = 0;
+            int over = MouseOverCommand(commands, page, i =>
+                IsHtml(commands[i].Name) ? InBox(commands[i], x, y) : covers != null && covers(i));
+            return over >= 0 && IsHtml(commands[over].Name) ? over : -1;
+        }
+
+        private static bool InBox(GumpCommand c, float x, float y) =>
+            x >= c.Arg(0) && x < c.Arg(0) + c.Arg(2) && y >= c.Arg(1) && y < c.Arg(1) + c.Arg(3);
+
+        /// <summary>
+        /// The command whose control the pointer is over, as UIManager.GetMouseOverControl's Control.HitTest
+        /// (Control.cs:596-627) picks it, or -1; the wheel and presses go to it alone. Only controls that take the mouse
+        /// count (<see cref="TakesMouse"/>), and only on page 0 or the page shown. In layout order, each hit replaces the
+        /// one so far unless that one has the higher ClickPriority (res.Priority &gt;= Priority): buttons, checkboxes and
+        /// radios are High (Button.cs:112, Checkbox.cs:75), as is any control a tooltip follows (GumpHelpers.cs:479-496,
+        /// which also makes it take the mouse), the rest Default. So a later control covers an earlier one, but only
+        /// another High one covers a button. <paramref name="contains"/> says whether the i-th command's own shape holds
+        /// the pointer (pixel tests for pictures and buttons, as their Contains).
+        /// </summary>
+        public static int MouseOverCommand(IList<GumpCommand> commands, int page, Func<int, bool> contains)
+        {
+            // A tooltip marks the gump's last control, whatever page that is on.
+            var tooltipped = new HashSet<int>();
+            int last = -1;
+            for (int i = 0; i < commands.Count; i++)
+            {
+                if (commands[i].Name == "tooltip")
+                {
+                    if (last >= 0)
+                        tooltipped.Add(last);
+                }
+                else if (IsControl(commands[i].Name))
+                    last = i;
+            }
+
+            int hit = -1, at = 0;
+            bool hitHigh = false;
             for (int i = 0; i < commands.Count; i++)
             {
                 GumpCommand c = commands[i];
@@ -440,14 +477,28 @@ namespace UOClient.Unity.UI
                     at = c.Arg(0);
                     continue;
                 }
-                if ((at != 0 && at != page) || !IsHtml(c.Name))
+                bool tip = tooltipped.Contains(i);
+                if ((at != 0 && at != page) || !(TakesMouse(c.Name) || tip) || !contains(i))
                     continue;
-                int cx = c.Arg(0), cy = c.Arg(1);
-                if (x >= cx && x < cx + c.Arg(2) && y >= cy && y < cy + c.Arg(3))
-                    target = i;
+                bool high = tip || IsHighPriority(c.Name);
+                if (hitHigh && !high)
+                    continue;
+                hit = i;
+                hitHigh = high;
             }
-            return target;
+            return hit;
         }
+
+        /// <summary>
+        /// Whether TazUO's control for a command takes the mouse (AcceptMouseInput): every Control does (Control.cs:32)
+        /// but Label, CroppedText and CheckerTrans (Label.cs:38, CroppedText.cs:26, CheckerTrans.cs:19).
+        /// </summary>
+        public static bool TakesMouse(string name) =>
+            IsControl(name) && name != "text" && name != "croppedtext" && name != "checkertrans";
+
+        /// <summary>Button (and ButtonTileArt), Checkbox and RadioButton are ClickPriority.High (Button.cs:112, Checkbox.cs:75).</summary>
+        public static bool IsHighPriority(string name) =>
+            name == "button" || name == "buttontileart" || name == "checkbox" || name == "radio";
 
         /// <summary>The client hue of gumppic's hue=N: GumpPic adds one, then TransformHue leaves 2 and below unhued.</summary>
         public static int PicHue(int serverHue)

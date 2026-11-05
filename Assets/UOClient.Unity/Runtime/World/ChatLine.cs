@@ -26,8 +26,8 @@ namespace UOClient.Unity
                 return;
             Event e = Event.current;
             // A window's text box (the chat window, a prompt) has the keyboard: its Enter is its own.
-            bool otherField = !Typing && ui != null && ui.HasKeyboardFocus;
-            if (!otherField && e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+            bool toChat = UI.UiRouting.EnterGoesToChat(Typing, ui != null && ui.HasKeyboardFocus);
+            if (toChat && e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
             {
                 if (Typing && _chat.Trim().Length > 0)
                     session.Say(_chat.Trim());

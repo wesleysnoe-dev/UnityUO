@@ -159,13 +159,17 @@ namespace UOClient.Unity.UI
     public sealed class UiManager
     {
         private readonly List<UiWindow> _windows = new List<UiWindow>();
+        private bool _restack; // the list order changed outside a click: IMGUI's stacking is to follow it (OnGUI)
 
         public UiManager(GameSession session, GumpArt art, Cliloc cliloc)
         {
             Session = session;
             Art = art;
             Cliloc = cliloc;
+            _rectOf = RectOf;
         }
+
+        private readonly Func<int, (float, float, float, float)> _rectOf;
 
         public GameSession Session { get; }
         public GumpArt Art { get; }
@@ -203,12 +207,13 @@ namespace UOClient.Unity.UI
                     UiWindow existing = _windows[i];
                     _windows.RemoveAt(i);
                     _windows.Add(existing);
-                    GUI.BringWindowToFront(existing.Id);
+                    _restack = true;
                     return existing as T ?? window;
                 }
             }
             window.Ui = this;
             _windows.Add(window);
+            _restack = true;
             window.OnOpened();
             PlaceNew(window);
             return window;
@@ -243,27 +248,37 @@ namespace UOClient.Unity.UI
 
         public UiWindow Find(string key) => _windows.Find(w => w.Key == key);
 
-        /// <summary>True when a screen point (Unity screen coordinates, bottom-left origin) is over a window.</summary>
+        /// <summary>
+        /// True when a screen point (Unity screen coordinates, bottom-left origin) is over a window: the whole window rect,
+        /// the one IMGUI takes the window's events in and clips its drawing to, at any ui.Scale (UiRouting.ScreenToUi).
+        /// </summary>
         public bool IsOverUi(Vector2 screen)
         {
-            var p = new Vector2(screen.x / Scale, (Screen.height - screen.y) / Scale);
-            foreach (UiWindow w in _windows)
-                if (w.Rect.Contains(p))
-                    return true;
-            return false;
+            (float x, float y) = UiRouting.ScreenToUi(screen.x, screen.y, Screen.height, Scale);
+            return TopWindowAt(new Vector2(x, y)) != null;
         }
 
-        /// <summary>The front window at a UI point (our list order is the stacking order), or null.</summary>
+        /// <summary>
+        /// The front window at a UI point, or null. Our list order is the stacking order: OnGUI makes IMGUI's follow it,
+        /// so this is also the window IMGUI hands the pointer's events to.
+        /// </summary>
         public UiWindow TopWindowAt(Vector2 uiPoint)
         {
-            for (int i = _windows.Count - 1; i >= 0; i--)
-                if (_windows[i].Rect.Contains(uiPoint))
-                    return _windows[i];
-            return null;
+            int top = UiRouting.TopAt(_windows.Count, _rectOf, uiPoint.x, uiPoint.y);
+            return top >= 0 ? _windows[top] : null;
+        }
+
+        private (float, float, float, float) RectOf(int i)
+        {
+            Rect r = _windows[i].Rect;
+            return (r.x, r.y, r.width, r.height);
         }
 
         /// <summary>True while a text box has the keyboard (movement keys should not walk).</summary>
         public bool HasKeyboardFocus => GUIUtility.keyboardControl != 0;
+
+        /// <summary>Takes the keyboard from whatever text box has it, giving it back to the world (TazUO's RestoreSystemChatFocus).</summary>
+        public void ReleaseKeyboard() => GUIUtility.keyboardControl = 0;
 
         /// <summary>Picks an item up: tells the server and lets the cursor carry it.</summary>
         public void BeginDrag(DraggedItem item)
@@ -351,6 +366,15 @@ namespace UOClient.Unity.UI
                 window.Rect = GUI.Window(window.Id, window.Rect, _ => DrawWindow(window), GUIContent.none, GUIStyle.none);
             }
 
+            // A window opened or brought forward by code: stack IMGUI's windows back to front in our order, so the window
+            // drawn on top is the one TopWindowAt (the wheel, IsOverUi, drops) takes for the front.
+            if (_restack && e.type == EventType.Layout)
+            {
+                foreach (UiWindow w in _windows)
+                    GUI.BringWindowToFront(w.Id);
+                _restack = false;
+            }
+
             GUI.matrix = saved;
         }
 
@@ -365,7 +389,8 @@ namespace UOClient.Unity.UI
         private void DrawWindow(UiWindow w)
         {
             Event e = Event.current;
-            if (e.type == EventType.MouseDown)
+            // Only the front window under the pointer takes a press (mousePosition is window-local here).
+            if (e.type == EventType.MouseDown && TopWindowAt(w.Rect.position + e.mousePosition) == w)
             {
                 // Clicked: bring forward (our list order is the stacking order used for drops).
                 if (_windows.Remove(w))

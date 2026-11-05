@@ -445,7 +445,7 @@ namespace UOClient.Unity
         private void HandleInput()
         {
             // Typing in the chat line or a gump's text box: keys are text, not commands.
-            if (_chatLine.Typing || (_ui != null && _ui.HasKeyboardFocus))
+            if (!UI.UiRouting.WorldTakesKeys(_chatLine.Typing, _ui != null && _ui.HasKeyboardFocus))
                 return;
 
             _input.HandleViewKeys(ref zoom);

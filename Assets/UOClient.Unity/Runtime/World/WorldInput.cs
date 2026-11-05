@@ -88,8 +88,16 @@ namespace UOClient.Unity
                     _ctx.Session.SingleClick(_pendingClick, _ctx.Data.TileData);
                 _pendingClick = 0;
             }
-            if (ui == null || _chat.Typing || ui.HasKeyboardFocus)
+            if (ui == null)
                 return;
+            if (!UI.UiRouting.WorldTakesKeys(_chat.Typing, ui.HasKeyboardFocus))
+            {
+                // A window's text box has the keys; a press on the world gives them back, as TazUO's does, and only that.
+                if (!_chat.Typing && (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
+                    && UI.UiRouting.WorldPress(OverWindowOrJournal(ui), ui.Dragging != null, fieldFocused: true) == UI.UiRouting.Press.ReleaseField)
+                    ui.ReleaseKeyboard();
+                return;
+            }
             _hotkeys()?.Update(_ctx.Session);
             _tooltip.UpdateHover(ui, _entities.PickAt);
             if (Input.GetKeyDown(KeyCode.P))
@@ -140,7 +148,7 @@ namespace UOClient.Unity
             }
 
             // A split stack rides the cursor with the button up: the next click is its drop, not a world click.
-            if (!Input.GetMouseButtonDown(0) || ui.Dragging != null || ui.IsOverUi(Input.mousePosition) || _ctx.Hud.JournalRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)))
+            if (!Input.GetMouseButtonDown(0) || UI.UiRouting.WorldPress(OverWindowOrJournal(ui), ui.Dragging != null, fieldFocused: false) != UI.UiRouting.Press.World)
                 return;
             Vector2 mouse = Input.mousePosition;
             uint picked = _entities.PickAt(mouse);
@@ -224,7 +232,11 @@ namespace UOClient.Unity
             }, split);
         }
 
-        private static bool ShiftHeld => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        /// <summary>The mouse is over a window or the HUD's journal, not the world.</summary>
+        private bool OverWindowOrJournal(UI.UiManager ui) =>
+            ui.IsOverUi(Input.mousePosition) || _ctx.Hud.JournalRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y));
+
+        private static bool ShiftHeld =>Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
         /// <summary>The mouse is over the quest arrow's on-screen or edge marker.</summary>
         public bool OverQuestArrow() =>

@@ -17,6 +17,7 @@ namespace UOClient.Unity.UI
         private readonly GumpControls _controls;
         private readonly Dictionary<int, HtmlScroll> _scroll = new Dictionary<int, HtmlScroll>(); // by command index
         private int _wheelTarget = -1; // the html command a wheel turn this event scrolls, or -1
+        private int _mouseOver = -1;   // the command a press or wheel turn this event goes to, or -1
         private HashSet<int> _faded; // commands a later checkertrans covers, worked out on the first draw
         private int _page = 1;
         private int _focusEntry; // the text entry still to be given the keyboard (FirstTextEntry), or -1 once done
@@ -90,11 +91,14 @@ namespace UOClient.Unity.UI
             _faded ??= CheckerFaded(_gump.Commands, Bounds);
             int page = 0;
             List<GumpCommand> commands = _gump.Commands;
-            // A wheel turn goes to the html control under the pointer, and only in the front window there.
+            // A press or wheel turn goes to the one control under the pointer (MouseOverCommand), and only in the front
+            // window there. The pointer is in the same window-local units the commands are drawn in.
             Event e = Event.current;
-            _wheelTarget = e.type == EventType.ScrollWheel && Ui.TopWindowAt(Rect.position + e.mousePosition) == this
-                ? HtmlWheelTarget(commands, _page, e.mousePosition.x, e.mousePosition.y)
+            bool routed = e.type == EventType.MouseDown || e.type == EventType.ScrollWheel;
+            _mouseOver = routed && Ui.TopWindowAt(Rect.position + e.mousePosition) == this
+                ? MouseOverCommand(commands, _page, i => CommandContains(commands[i], e.mousePosition))
                 : -1;
+            _wheelTarget = e.type == EventType.ScrollWheel && _mouseOver >= 0 && IsHtml(commands[_mouseOver].Name) ? _mouseOver : -1;
             for (int i = 0; i < commands.Count; i++)
             {
                 GumpCommand c = commands[i];
@@ -233,7 +237,7 @@ namespace UOClient.Unity.UI
 
                 case "button":
                 case "buttontileart":
-                    if (DrawButton(c))
+                    if (DrawButton(c, index))
                         return true;
                     break;
 
@@ -269,7 +273,9 @@ namespace UOClient.Unity.UI
             Event e = Event.current;
             EventType type = e.type;
             Vector2 at = e.mousePosition - r.position;
-            bool press = type == EventType.MouseDown && e.button == 0 && r.Contains(e.mousePosition);
+            // A press here is the entry's only if no control on top of it has the pointer (MouseOverCommand).
+            bool covered = type == EventType.MouseDown && _mouseOver != index;
+            bool press = type == EventType.MouseDown && e.button == 0 && !covered && r.Contains(e.mousePosition);
             string before = _controls.Text(index);
 
             // The keys and double-click stb handles its own way reach the focused entry's editor before the TextField,
@@ -281,7 +287,8 @@ namespace UOClient.Unity.UI
             Color cursorColor = settings.cursorColor, selectionColor = settings.selectionColor;
             settings.cursorColor = settings.selectionColor = Color.clear;
             GUI.SetNextControlName(name);
-            string after = GUI.TextField(r, before, c.TextLimit, _entry);
+            // Covered, the field still takes its control id (so later ids stay in step) but nowhere to be pressed.
+            string after = GUI.TextField(covered ? default : r, before, c.TextLimit, _entry);
             settings.cursorColor = cursorColor;
             settings.selectionColor = selectionColor;
 
@@ -425,7 +432,7 @@ namespace UOClient.Unity.UI
             return img;
         }
 
-        private bool DrawButton(GumpCommand c)
+        private bool DrawButton(GumpCommand c, int index)
         {
             int x = c.Arg(0), y = c.Arg(1);
             UiImage up = Art.Gump(c.Arg(2)), down = Art.Gump(c.Arg(3));
@@ -438,7 +445,7 @@ namespace UOClient.Unity.UI
             if (c.Name == "buttontileart")
                 DrawImage(Art.Item(c.Arg(7), c.Arg(8)), x + c.Arg(9), y + c.Arg(10));
 
-            if (!GUI.Button(r, GUIContent.none, GUIStyle.none))
+            if (!GUI.Button(PressArea(r, index), GUIContent.none, GUIStyle.none))
                 return false;
             (bool isPage, int value) = ButtonPress(c);
             if (isPage)
@@ -459,8 +466,49 @@ namespace UOClient.Unity.UI
             var r = new Rect(c.Arg(0), c.Arg(1), img.Width, img.Height);
             _lastArea = r;
             DrawImage(img, r.x, r.y);
-            if (GUI.Button(r, GUIContent.none, GUIStyle.none))
+            if (GUI.Button(PressArea(r, index), GUIContent.none, GUIStyle.none))
                 _controls.Click(index);
+        }
+
+        /// <summary>
+        /// Where a press reaches a control: its own rect, but on a press nowhere unless it is the control under the pointer
+        /// (MouseOverCommand), so one drawn first can't take a press meant for one on top, nor a press on a transparent
+        /// pixel. The control is still made (keeping IMGUI's control ids in step), so its release completes as usual.
+        /// </summary>
+        private Rect PressArea(Rect r, int index) =>
+            Event.current.type == EventType.MouseDown && _mouseOver != index ? default : r;
+
+        /// <summary>
+        /// Whether a command's own shape holds a gump-local point, as its TazUO control's Contains: pictures by their art's
+        /// pixels (GumpPic.cs:49-60, StaticPic.cs:99), a tiled picture by its tile's (GumpPicTiled.cs:129), the rest by
+        /// their box (Bounds): a server button is ContainsByBounds (Button.cs:100, ButtonTileArt), a checkbox has no
+        /// Contains of its own. A resizepic is taken by its box, though TazUO tests its nine pieces' pixels
+        /// (ResizePic.cs:43); their middles are solid.
+        /// </summary>
+        private bool CommandContains(GumpCommand c, Vector2 p)
+        {
+            int x = Mathf.FloorToInt(p.x) - c.Arg(0), y = Mathf.FloorToInt(p.y) - c.Arg(1);
+            switch (c.Name)
+            {
+                case "gumppic":
+                case "gumppichued":
+                case "gumppicphued":
+                    return Art.Gump(c.Arg(2))?.HitTest(x, y) ?? false;
+                case "tilepic":
+                case "tilepichue":
+                    return Art.Item(c.Arg(2))?.HitTest(x, y) ?? false;
+                case "gumppictiled":
+                {
+                    UiImage tile = Art.Gump(c.Arg(4));
+                    return tile != null && tile.Width > 0 && tile.Height > 0 && x >= 0 && y >= 0 && x < c.Arg(2) && y < c.Arg(3)
+                           && tile.HitTest(x % tile.Width, y % tile.Height);
+                }
+                default:
+                {
+                    (int bx, int by, int bw, int bh) = Bounds(c);
+                    return p.x >= bx && p.x < bx + bw && p.y >= by && p.y < by + bh;
+                }
+            }
         }
 
         /// <summary>
@@ -527,7 +575,7 @@ namespace UOClient.Unity.UI
             switch (e.GetTypeForControl(id))
             {
                 case EventType.MouseDown:
-                    if (hasBar && e.button == 0 && scroll.Press(parts, (int)bar.x, (int)bar.y))
+                    if (hasBar && e.button == 0 && index == _mouseOver && scroll.Press(parts, (int)bar.x, (int)bar.y))
                     {
                         GUIUtility.hotControl = id;
                         e.Use();
