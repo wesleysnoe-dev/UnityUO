@@ -252,6 +252,23 @@ namespace UOClient.Core
             JournalAdded?.Invoke(e);
         }
 
+        /// <summary>
+        /// The newest line said by or about <paramref name="serial"/> within <paramref name="seconds"/> of
+        /// <paramref name="now"/> (a single-click name, for an item drawn in a gump rather than the world), or null.
+        /// </summary>
+        public JournalEntry? RecentLine(uint serial, DateTime now, double seconds)
+        {
+            for (int i = Journal.Count - 1; i >= 0; i--)
+            {
+                JournalEntry e = Journal[i];
+                if ((now - e.Time).TotalSeconds > seconds)
+                    break;
+                if (e.Serial == serial)
+                    return e;
+            }
+            return null;
+        }
+
         internal void SetLight(int global)
         {
             GlobalLight = global;

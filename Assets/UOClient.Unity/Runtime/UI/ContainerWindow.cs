@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UOClient.Core;
@@ -7,7 +8,7 @@ namespace UOClient.Unity.UI
 {
     /// <summary>
     /// A container gump (backpack, bank box, chest) with its items at the positions the server gives.
-    /// Double-click an item to use it (a bag opens in its own window), drag items to move them within or
+    /// Click an item to name it, double-click to use it (a bag opens in its own window), drag items to move them within or
     /// between containers, onto the paperdoll, or out into the world.
     /// </summary>
     public sealed class ContainerWindow : UiWindow
@@ -19,6 +20,9 @@ namespace UOClient.Unity.UI
         private Vector2 _pressAt, _pressOffset;
         private float _lastClick;
         private uint _lastClickSerial;
+        private uint _pendingLook; // a single click held until it can't be the start of a double-click or a drag
+
+        private const float DoubleClickTime = 0.4f;
         private static int _cascade;
 
         public ContainerWindow(uint serial, ushort gump)
@@ -62,8 +66,35 @@ namespace UOClient.Unity.UI
             }
 
             if (Event.current.type == EventType.Repaint)
+            {
                 Hovered = ItemAt(Event.current.mousePosition)?.Item.Serial ?? 0;
+                DrawLabels();
+            }
+            // As in the world, a single click names the item (0x09) once it can't be a double-click any more.
+            if (_pendingLook != 0 && Time.realtimeSinceStartup - _lastClick >= DoubleClickTime)
+            {
+                if (Session.Target == null)
+                    Session.Look(_pendingLook);
+                _pendingLook = 0;
+            }
             HandleMouse();
+        }
+
+        /// <summary>
+        /// The server answers a single click with a label from the item's serial; items in a gump aren't in the
+        /// world's overhead text, so the newest line about each one is drawn over it here for a few seconds.
+        /// </summary>
+        private void DrawLabels()
+        {
+            DateTime now = DateTime.Now;
+            foreach (var (item, _, rect) in _drawn)
+            {
+                if (!(Session.World.RecentLine(item.Serial, now, 3) is JournalEntry line))
+                    continue;
+                var r = new Rect(rect.center.x - 90, Mathf.Max(0, rect.y - 16), 180, 16); // the window clips anything above its top
+                Text(new Rect(r.x + 1, r.y + 1, r.width, r.height), line.Text, Color.black, 11, TextAnchor.MiddleCenter);
+                Text(r, line.Text, Art.HueColor(line.Hue, new Color(0.95f, 0.95f, 0.9f)), 11, TextAnchor.MiddleCenter);
+            }
         }
 
         private (ContainedItem Item, Vector2 Offset)? ItemAt(Vector2 local)
@@ -105,16 +136,20 @@ namespace UOClient.Unity.UI
                         e.Use();
                         return;
                     }
-                    if (Time.realtimeSinceStartup - _lastClick < 0.4f && _lastClickSerial == _pressed.Serial)
+                    if (Time.realtimeSinceStartup - _lastClick < DoubleClickTime && _lastClickSerial == _pressed.Serial)
                     {
                         Session.Use(_pressed.Serial);
                         _lastClick = 0;
+                        _pendingLook = 0;
                         _pressed = null;
                     }
                     else
                     {
+                        if (_pendingLook != 0 && Session.Target == null)
+                            Session.Look(_pendingLook); // a quick click on another item: the first one still counts
                         _lastClick = Time.realtimeSinceStartup;
                         _lastClickSerial = _pressed.Serial;
+                        _pendingLook = _pressed.Serial;
                     }
                     e.Use();
                     break;
@@ -122,6 +157,7 @@ namespace UOClient.Unity.UI
                 case EventType.MouseDrag when e.button == 0 && _pressed != null:
                     if ((e.mousePosition - _pressAt).sqrMagnitude > 16)
                     {
+                        _pendingLook = 0; // a drag, not a click
                         Ui.BeginDrag(new DraggedItem
                         {
                             Serial = _pressed.Serial,

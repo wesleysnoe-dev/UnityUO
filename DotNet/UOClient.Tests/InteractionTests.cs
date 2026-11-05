@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using UOClient.Core;
 using UOClient.IO.Formats;
+using UOClient.Net;
 
 namespace UOClient.Tests;
 
@@ -24,6 +25,24 @@ public sealed class InteractionTests
         Assert.Equal(15, ground.Length);
         Assert.Equal(-5, (sbyte)ground[9]);
         Assert.Equal(0xFFFFFFFFu, BinaryPrimitives.ReadUInt32BigEndian(ground.AsSpan(11)));
+    }
+
+    [Fact]
+    public void SingleClickLabelOfAContainedItemIsFoundByItsSerial()
+    {
+        var session = new GameSession(new LoginSettings());
+        // ModernUO's Item.LabelTo: 0xC1 with the item's serial and graphic, type Label (6), no name, no args.
+        byte[] label = new PacketWriter(0xC1).UInt32(0x40000010).UInt16(0x0F0E).Byte(6).UInt16(0x3B2).UInt16(3)
+            .Int32(1041361).Zero(30).UInt16(0).ToArray();
+        session.Inject(label, true);
+
+        DateTime now = DateTime.Now;
+        JournalEntry? line = session.World.RecentLine(0x40000010, now, 3);
+        Assert.NotNull(line);
+        Assert.Equal(6, line!.Value.Type);
+        Assert.Contains("1041361", line.Value.Text); // no Cliloc.enu loaded: the number stands in for the name
+        Assert.Null(session.World.RecentLine(0x40000011, now, 3));
+        Assert.Null(session.World.RecentLine(0x40000010, now.AddSeconds(5), 3)); // gone after a few seconds
     }
 
     [Theory]
