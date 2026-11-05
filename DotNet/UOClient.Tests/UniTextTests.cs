@@ -302,4 +302,130 @@ public sealed class UniTextTests
     {
         Assert.Equal(argb, UniText.ReadColor(value));
     }
+
+    // ---- StbTextBox (textentry / textentrylimited) ----
+
+    /// <summary>The StableGump rename entry: textentrylimited 568 336 136 20, hue 0, EntryId 1, limit 16.</summary>
+    private static GumpCommand RenameEntry(out string name)
+    {
+        (List<GumpCommand> commands, string[] lines) = Fixture("stable-three-pets");
+        GumpCommand entry = Assert.Single(commands, c => c.Name == "textentrylimited");
+        Assert.Equal((136, 20, 16), (entry.Arg(2), entry.Arg(3), entry.TextLimit));
+        name = lines[entry.Arg(6)];
+        return entry;
+    }
+
+    [Fact]
+    public void RenameEntryDrawsItsNameInFontOneWithTheCaretAtTheEnd()
+    {
+        GumpCommand entry = RenameEntry(out string name);
+        Assert.Equal("Shadowmere", name);
+        int width = entry.Arg(2);
+
+        // The picture is laid out in the entry's width: 140 wide, one line, in the hue + 1's shade with the border.
+        UniTextImage img = ServerGumpWindow.EntryImage(_text, _hues, name, entry.Arg(4), width);
+        Assert.Equal((width + 4, 1), (img.Width, img.Lines));
+        // The same pixels as a label of it, the rest of the width empty.
+        Bitmap32 label = ServerGumpWindow.LabelImage(_text, _hues, name, entry.Arg(4)).Bitmap;
+        Assert.Equal(label.Height, img.Height);
+        for (int y = 0; y < img.Height; y++)
+            for (int x = 0; x < img.Width; x++)
+                Assert.Equal(x < label.Width ? label[x, y] : 0u, img.Bitmap[x, y]);
+
+        // StbTextBox focuses with the caret after the last char: x is the name's width in font 1.
+        Assert.Equal((_font.Measure(name), 0), ServerGumpWindow.EntryCaret(_text, name, name.Length, width));
+        Assert.Equal((0, 0), ServerGumpWindow.EntryCaret(_text, name, 0, width));
+        Assert.Equal((_font.GetCharWidth('S'), 0), ServerGumpWindow.EntryCaret(_text, name, 1, width));
+        Assert.Equal((0, 0), ServerGumpWindow.EntryCaret(_text, "", 0, width));
+
+        // The caret is "_" in the same font and border, unwrapped.
+        UniTextImage caret = ServerGumpWindow.EntryCaretImage(_text, _hues, entry.Arg(4));
+        Assert.Equal(ServerGumpWindow.LabelImage(_text, _hues, "_", entry.Arg(4)).Width, caret.Width);
+    }
+
+    [Fact]
+    public void SixteenWideCharsOverflowTheRenameEntryAndWrapUnderIt()
+    {
+        GumpCommand entry = RenameEntry(out _);
+        int width = entry.Arg(2), height = entry.Arg(3);
+        int w = _font.GetCharWidth('W');
+        string full = new string('W', entry.TextLimit);
+        Assert.True(w * full.Length > width); // the limit is in chars, not pixels
+
+        // One word longer than the line breaks where the next char would pass the width.
+        int fit = width / w;
+        List<(int CharStart, int CharCount, int Width, int MaxHeight)> lines =
+            _text.Lines(ServerGumpWindow.GumpFont, full, width, UniTextAlign.Left, ServerGumpWindow.EntryStyle);
+        Assert.Equal(2, lines.Count);
+        Assert.Equal((0, fit, fit * w), (lines[0].CharStart, lines[0].CharCount, lines[0].Width));
+        Assert.Equal((fit, full.Length - fit), (lines[1].CharStart, lines[1].CharCount));
+        Assert.Equal(2, ServerGumpWindow.EntryImage(_text, _hues, full, entry.Arg(4), width).Lines);
+
+        // The caret stays at the first line's end until a char of the second, then goes down a line, below the
+        // 20-pixel entry's top line; the entry's clip shows only what fits in its height.
+        Assert.Equal((fit * w, 0), ServerGumpWindow.EntryCaret(_text, full, fit, width));
+        Assert.Equal((w, lines[0].MaxHeight), ServerGumpWindow.EntryCaret(_text, full, fit + 1, width));
+        (int endX, int endY) = ServerGumpWindow.EntryCaret(_text, full, full.Length, width);
+        Assert.Equal(((full.Length - fit) * w, lines[0].MaxHeight), (endX, endY));
+        Assert.True(endY + lines[1].MaxHeight > height);
+
+        // A sixteen-char name of narrower letters stays on the entry's one line.
+        string name = "Shadowmere Steed";
+        Assert.Equal(entry.TextLimit, name.Length);
+        Assert.True(_font.Measure(name) <= width);
+        Assert.Equal(1, ServerGumpWindow.EntryImage(_text, _hues, name, entry.Arg(4), width).Lines);
+        Assert.Equal((_font.Measure(name), 0), ServerGumpWindow.EntryCaret(_text, name, name.Length, width));
+    }
+
+    [Fact]
+    public void AClickPutsTheCaretBeforeTheNearerHalfOfAChar()
+    {
+        GumpCommand entry = RenameEntry(out string name);
+        int width = entry.Arg(2);
+        for (int k = 0; k < name.Length; k++)
+        {
+            int x = ServerGumpWindow.EntryCaret(_text, name, k, width).X, cw = _font.GetCharWidth(name[k]);
+            Assert.Equal(k, ServerGumpWindow.EntryIndexAt(_text, name, width, x, 5));
+            Assert.Equal(k + 1, ServerGumpWindow.EntryIndexAt(_text, name, width, x + cw / 2f, 5));
+        }
+        Assert.Equal(name.Length, ServerGumpWindow.EntryIndexAt(_text, name, width, width - 1, 5));
+        Assert.Equal(0, ServerGumpWindow.EntryIndexAt(_text, name, width, -3, 5));
+        Assert.Equal(0, ServerGumpWindow.EntryIndexAt(_text, "", width, 50, 5));
+
+        // On a wrapped entry, a click below the first line's height lands in the second.
+        string full = new string('W', entry.TextLimit);
+        int fit = width / _font.GetCharWidth('W');
+        int lineHeight = _text.Lines(ServerGumpWindow.GumpFont, full, width, UniTextAlign.Left, ServerGumpWindow.EntryStyle)[0].MaxHeight;
+        Assert.Equal(fit, ServerGumpWindow.EntryIndexAt(_text, full, width, 0, lineHeight));
+        Assert.Equal(full.Length, ServerGumpWindow.EntryIndexAt(_text, full, width, width, lineHeight));
+    }
+
+    [Fact]
+    public void SelectionCoversItsCharsInFontOneWidths()
+    {
+        GumpCommand entry = RenameEntry(out string name);
+        int width = entry.Arg(2);
+        int h = _text.Lines(ServerGumpWindow.GumpFont, name, width, UniTextAlign.Left, ServerGumpWindow.EntryStyle)[0].MaxHeight;
+        int s = _font.GetCharWidth('S'), ha = _font.GetCharWidth('h') + _font.GetCharWidth('a');
+
+        Assert.Equal(new[] { (s, 1, ha, h + 1) }, ServerGumpWindow.EntrySelection(_text, name, width, 1, 3));
+        Assert.Equal(new[] { (s, 1, ha, h + 1) }, ServerGumpWindow.EntrySelection(_text, name, width, 3, 1));
+        // Running to the end of the line takes the rest of it.
+        Assert.Equal(new[] { (0, 1, _font.Measure(name), h + 1) }, ServerGumpWindow.EntrySelection(_text, name, width, 0, name.Length));
+        Assert.Empty(ServerGumpWindow.EntrySelection(_text, name, width, 4, 4));
+    }
+
+    [Fact]
+    public void ATypedCharFontOneCannotDrawIsRefused()
+    {
+        const char none = '\u0001';
+        Assert.False(_font.TryGetGlyph(none, out _));
+        Assert.Equal(-1, ServerGumpWindow.EntryRefusedChar(_text, "Shadow", "Shadowm"));
+        Assert.Equal(-1, ServerGumpWindow.EntryRefusedChar(_text, "Shadow", "Shadow "));
+        Assert.Equal(6, ServerGumpWindow.EntryRefusedChar(_text, "Shadow", "Shadow" + none));
+        Assert.Equal(2, ServerGumpWindow.EntryRefusedChar(_text, "Shadow", "Sh" + none + "adow"));
+        // A paste goes in whole, and so does a deletion.
+        Assert.Equal(-1, ServerGumpWindow.EntryRefusedChar(_text, "Shadow", "Shadow" + none + none));
+        Assert.Equal(-1, ServerGumpWindow.EntryRefusedChar(_text, "Shadow", "Shado"));
+    }
 }

@@ -81,6 +81,140 @@ namespace UOClient.Unity.UI
             text.Generate(line, GumpFont, LabelArgb(hues, TextHue(serverHue)), width, UniTextAlign.Left,
                 width > 0 ? UniTextStyle.BlackBorder | UniTextStyle.Cropped : UniTextStyle.BlackBorder, html: true);
 
+        /// <summary>
+        /// The style of a textentry's / textentrylimited's text, as StbTextBox(parts) builds its RenderedText
+        /// (StbTextBox.cs:25-93): BlackBorder | CropTexture asked for, CropTexture (and Cropped) taken off again before
+        /// RenderedText.Create, so the text is plain, bordered, and wraps in the entry's width like any RenderedText.
+        /// </summary>
+        public const UniTextStyle EntryStyle = UniTextStyle.BlackBorder;
+
+        /// <summary>
+        /// A text entry's picture (StbTextBox's _rendererText): font 1, the hue plus one in its <see cref="TextColorCell"/>
+        /// shade, laid out in the entry's width (wrapping onto lines the entry's height then clips) and drawn at its
+        /// corner. The picture is the width plus 4.
+        /// </summary>
+        public static UniTextImage EntryImage(UniText text, HueEntry[] hues, string value, int serverHue, int width) =>
+            text.Generate(value, GumpFont, LabelArgb(hues, TextHue(serverHue)), width, UniTextAlign.Left, EntryStyle);
+
+        /// <summary>StbTextBox's caret (_rendererCaret): "_" in the same font, hue and border, unwrapped.</summary>
+        public static UniTextImage EntryCaretImage(UniText text, HueEntry[] hues, int serverHue) =>
+            text.Generate("_", GumpFont, LabelArgb(hues, TextHue(serverHue)), 0, UniTextAlign.Left, EntryStyle);
+
+        /// <summary>
+        /// Where the caret before char <paramref name="cursor"/> is drawn inside the entry: RenderedText.GetCaretPosition
+        /// → GetCaretPosUnicode over the entry's width (StbTextBox.UpdateCaretScreenPosition, DrawCaret). Text wider than
+        /// the entry wraps, so a caret past the first line goes down a line, where the entry's height may clip it.
+        /// </summary>
+        public static (int X, int Y) EntryCaret(UniText text, string value, int cursor, int width) =>
+            text.CaretPosition(GumpFont, value, cursor, width, UniTextAlign.Left, EntryStyle);
+
+        /// <summary>
+        /// The char a click at (<paramref name="x"/>, <paramref name="y"/>) inside the entry puts the caret before: stb's
+        /// LocateCoord (StbTextedit/TextEdit.cs:148-220) over RenderedText.GetLayoutRow (rows from 0 to the picture's
+        /// width, as tall as their line) and GetCharWidthAtIndex: past the middle of a char is after it.
+        /// </summary>
+        public static int EntryIndexAt(UniText text, string value, int width, float x, float y)
+        {
+            int n = value?.Length ?? 0;
+            if (n == 0)
+                return 0;
+            List<(int CharStart, int CharCount, int Width, int MaxHeight)> lines =
+                text.Lines(GumpFont, value, width, UniTextAlign.Left, EntryStyle);
+            int i = 0, row = 0, count = 0;
+            float baseY = 0;
+            while (i < n)
+            {
+                if (row >= lines.Count || lines[row].CharCount <= 0)
+                    return n;
+                count = lines[row].CharCount;
+                if (i == 0 && y < baseY)
+                    return 0;
+                if (y < baseY + lines[row].MaxHeight)
+                    break;
+                i += count;
+                baseY += lines[row].MaxHeight;
+                row++;
+            }
+            if (i >= n)
+                return n;
+            if (x < 0)
+                return i;
+            if (x < width + 4)
+            {
+                float prevX = 0;
+                for (int k = 0; k < count && i + k < n; k++)
+                {
+                    float w = text.CharWidth(GumpFont, value[i + k]);
+                    if (x < prevX + w)
+                        return x < prevX + w / 2 ? i + k : i + k + 1;
+                    prevX += w;
+                }
+            }
+            int end = Math.Min(n, i + count);
+            return value[end - 1] == '\n' ? end - 1 : end;
+        }
+
+        /// <summary>
+        /// StbTextBox.DrawSelection (StbTextBox.cs:920-1010): the selected span as one rectangle per line inside the
+        /// entry, from 1 down, each its line's height plus 1; a span running to a line's end takes the rest of that line.
+        /// </summary>
+        public static List<(int X, int Y, int W, int H)> EntrySelection(UniText text, string value, int width, int selectStart,
+            int selectEnd)
+        {
+            var rects = new List<(int, int, int, int)>();
+            int start = Math.Min(selectStart, selectEnd), end = Math.Max(selectStart, selectEnd);
+            if (string.IsNullOrEmpty(value) || start >= end)
+                return rects;
+            int drawY = 1, lineStart = 0;
+            foreach ((_, int charCount, int lineWidth, int maxHeight) in text.Lines(GumpFont, value, width, UniTextAlign.Left, EntryStyle))
+            {
+                if (start >= end)
+                    break;
+                if (start >= lineStart && start < lineStart + charCount)
+                {
+                    int drawX = Widths(text, value, lineStart, start - lineStart);
+                    if (end >= lineStart && end < lineStart + charCount)
+                    {
+                        rects.Add((drawX, drawY, Widths(text, value, start, end - start), maxHeight + 1));
+                        break;
+                    }
+                    rects.Add((drawX, drawY, lineWidth - drawX, maxHeight + 1));
+                    start = lineStart + charCount;
+                }
+                lineStart += charCount;
+                drawY += maxHeight;
+            }
+            return rects;
+        }
+
+        private static int Widths(UniText text, string value, int from, int count)
+        {
+            int w = 0;
+            for (int i = from; i < from + count && i < value.Length; i++)
+                w += text.CharWidth(GumpFont, value[i]);
+            return w;
+        }
+
+        /// <summary>
+        /// The char of an edit StbTextBox.OnTextInput would have refused, or -1: one char typed (the text one longer,
+        /// otherwise the same) that font 1 gives no width (no glyph, and not a space) is dropped (StbTextBox.cs:884-893).
+        /// Pastes of more than one char go in whole.
+        /// </summary>
+        public static int EntryRefusedChar(UniText text, string before, string after)
+        {
+            before ??= "";
+            after ??= "";
+            if (after.Length != before.Length + 1)
+                return -1;
+            int k = 0;
+            while (k < before.Length && before[k] == after[k])
+                k++;
+            if (string.CompareOrdinal(before, k, after, k + 1, before.Length - k) != 0)
+                return -1;
+            char c = after[k];
+            return text.CharWidth(GumpFont, c) > 0 || c == '\n' ? -1 : k;
+        }
+
         /// <summary>xmfhtmlgumpcolor's and xmfhtmltok's colour part as GumpHelpers reads it (GumpHelpers.cs:319-322, :344-347): 0x7FFF is white.</summary>
         public static int HtmlColorPart(int color) => color == 0x7FFF ? 0x00FFFFFF : color;
 

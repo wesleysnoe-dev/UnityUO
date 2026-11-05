@@ -65,6 +65,12 @@ namespace UOClient.Unity.UI
             foreach (UiImage img in _texts.Values)
                 GumpArt.Release(img);
             _texts.Clear();
+            foreach ((string _, UiImage img) in _entryTexts.Values)
+                GumpArt.Release(img);
+            _entryTexts.Clear();
+            foreach (UiImage img in _entryCarets.Values)
+                GumpArt.Release(img);
+            _entryCarets.Clear();
         }
 
         private string EntryName(int index) => $"{Key}:entry:{index}";
@@ -228,23 +234,116 @@ namespace UOClient.Unity.UI
 
                 case "textentry":
                 case "textentrylimited":
-                {
-                    _entry.normal.textColor = _entry.focused.textColor = Art.GumpTextColor(TextHue(c.Arg(4)));
-                    GUI.SetNextControlName(EntryName(index));
-                    _controls.SetText(index, GUI.TextField(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), Math.Max(18, c.Arg(3))),
-                        _controls.Text(index), c.TextLimit, _entry));
-                    // The first entry takes the keyboard as the gump opens (FirstTextEntry). IMGUI can only focus a
-                    // drawn field, so one on a page not shown yet takes it when its page first shows.
-                    if (index == _focusEntry)
-                    {
-                        GUI.FocusControl(EntryName(index));
-                        _focusEntry = -1;
-                    }
-                    _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
+                    DrawEntry(c, index);
                     break;
-                }
             }
             return false;
+        }
+
+        /// <summary>
+        /// A text entry as TazUO's StbTextBox shows it: its text in unicode font 1 (EntryImage), wrapped in its width and
+        /// clipped to its width x height, the selection behind and the "_" caret on it while it has the keyboard. The
+        /// editing itself (keys, clipboard, undo, focus) stays IMGUI's TextField, laid over the entry with its own text,
+        /// cursor and selection made invisible; clicks and drags place the caret by font 1's widths (EntryIndexAt).
+        /// Still IMGUI's, not stb's: double-click word selection, Up/Down/Home/End over wrapped lines, and the char
+        /// limit (TextField's maxLength = TextLimit, where StbTextBox takes 255 for a plain textentry).
+        /// </summary>
+        private void DrawEntry(GumpCommand c, int index)
+        {
+            var r = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
+            int width = c.Arg(2);
+            string name = EntryName(index);
+            Event e = Event.current;
+            EventType type = e.type;
+            Vector2 at = e.mousePosition - r.position;
+            bool click = type == EventType.MouseDown && e.button == 0 && e.clickCount == 1 && r.Contains(e.mousePosition);
+            string before = _controls.Text(index);
+
+            GUISettings settings = GUI.skin.settings;
+            Color cursorColor = settings.cursorColor, selectionColor = settings.selectionColor;
+            settings.cursorColor = settings.selectionColor = Color.clear;
+            GUI.SetNextControlName(name);
+            string after = GUI.TextField(r, before, c.TextLimit, _entry);
+            settings.cursorColor = cursorColor;
+            settings.selectionColor = selectionColor;
+
+            // The first entry takes the keyboard as the gump opens (FirstTextEntry). IMGUI can only focus a
+            // drawn field, so one on a page not shown yet takes it when its page first shows.
+            if (index == _focusEntry)
+            {
+                GUI.FocusControl(name);
+                _focusEntry = -1;
+            }
+
+            TextEditor editor = GUI.GetNameOfFocusedControl() == name
+                ? (TextEditor)GUIUtility.GetStateObject(typeof(TextEditor), GUIUtility.keyboardControl)
+                : null;
+            int refused = EntryRefusedChar(Art.Text, before, after);
+            if (refused >= 0)
+            {
+                after = before;
+                if (editor != null)
+                {
+                    editor.text = before;
+                    editor.cursorIndex = editor.selectIndex = refused;
+                }
+            }
+            _controls.SetText(index, after);
+            string text = _controls.Text(index);
+
+            if (editor != null)
+            {
+                if (click)
+                    editor.cursorIndex = editor.selectIndex = EntryIndexAt(Art.Text, text, width, at.x, at.y);
+                else if (type == EventType.MouseDrag && GUIUtility.hotControl == GUIUtility.keyboardControl)
+                    editor.cursorIndex = EntryIndexAt(Art.Text, text, width, at.x, at.y);
+            }
+
+            if (type == EventType.Repaint)
+            {
+                GUI.BeginGroup(r);
+                if (editor != null)
+                {
+                    Color tint = GUI.color;
+                    GUI.color = new Color(EntrySelectionColor.r, EntrySelectionColor.g, EntrySelectionColor.b,
+                        EntrySelectionColor.a * tint.a);
+                    foreach ((int x, int y, int w, int h) in EntrySelection(Art.Text, text, width, editor.selectIndex, editor.cursorIndex))
+                        GUI.DrawTexture(new Rect(x, y, w, h), Texture2D.whiteTexture);
+                    GUI.color = tint;
+                }
+                DrawImage(EntryText(c, index, text), 0, 0);
+                if (editor != null)
+                {
+                    (int x, int y) = EntryCaret(Art.Text, text, editor.cursorIndex, width);
+                    DrawImage(EntryCaretTexture(c, index), x, y);
+                }
+                GUI.EndGroup();
+            }
+            _lastArea = r;
+        }
+
+        // StbTextBox's SELECTION_COLOR (packed 0x80a06020: r 0x20, g 0x60, b 0xa0, a 0x80) drawn at half alpha.
+        private static readonly Color EntrySelectionColor = new Color(0x20 / 255f, 0x60 / 255f, 0xa0 / 255f, 0x80 / 255f * 0.5f);
+
+        // Each entry's picture for the text it last drew, and its caret; remade when the text changes.
+        private readonly Dictionary<int, (string Text, UiImage Image)> _entryTexts = new Dictionary<int, (string, UiImage)>();
+        private readonly Dictionary<int, UiImage> _entryCarets = new Dictionary<int, UiImage>();
+
+        private UiImage EntryText(GumpCommand c, int index, string text)
+        {
+            if (_entryTexts.TryGetValue(index, out (string Text, UiImage Image) drawn) && drawn.Text == text)
+                return drawn.Image;
+            GumpArt.Release(drawn.Image);
+            UiImage img = GumpArt.TextImage(EntryImage(Art.Text, Art.Data.Hues.Entries, text, c.Arg(4), c.Arg(2)));
+            _entryTexts[index] = (text, img);
+            return img;
+        }
+
+        private UiImage EntryCaretTexture(GumpCommand c, int index)
+        {
+            if (!_entryCarets.TryGetValue(index, out UiImage img))
+                _entryCarets[index] = img = GumpArt.TextImage(EntryCaretImage(Art.Text, Art.Data.Hues.Entries, c.Arg(4)));
+            return img;
         }
 
         private bool DrawButton(GumpCommand c)
@@ -452,8 +551,14 @@ namespace UOClient.Unity.UI
         {
             if (_entry != null)
                 return;
+            // Only IMGUI's editing is used; DrawEntry draws the text in font 1.
             _entry = new GUIStyle(GUI.skin.textField) { fontSize = 14 };
-            _entry.normal.background = _entry.focused.background = _entry.hover.background = null;
+            foreach (GUIStyleState state in new[] { _entry.normal, _entry.focused, _entry.hover, _entry.active,
+                         _entry.onNormal, _entry.onFocused, _entry.onHover, _entry.onActive })
+            {
+                state.background = null;
+                state.textColor = Color.clear;
+            }
         }
     }
 }

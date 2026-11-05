@@ -129,6 +129,67 @@ namespace UOClient.IO.Formats
         /// <summary>GetTextByWidthUnicode (:1127-1218) on its own, with HTML off: what a crop to <paramref name="width"/> keeps.</summary>
         public string CropToWidth(int font, string text, int width, bool cropped) => TextByWidth((byte)font, text, width, cropped);
 
+        /// <summary>GetCharWidthUnicode (:1262-1282): a char's advance, 0 for '\0', '\r', chars with no glyph and no font.</summary>
+        public int CharWidth(int font, char c) => Font(font)?.GetCharWidth(c) ?? 0;
+
+        /// <summary>
+        /// The plain-text lines <paramref name="text"/> lays out in at most <paramref name="width"/> (GetInfoUnicode, as
+        /// GeneratePixelsUnicode wraps it): each line's first char, char count, width and height.
+        /// </summary>
+        public List<(int CharStart, int CharCount, int Width, int MaxHeight)> Lines(int font, string text, int width,
+            UniTextAlign align, UniTextStyle style)
+        {
+            var lines = new List<(int, int, int, int)>();
+            if (string.IsNullOrEmpty(text))
+                return lines;
+            if (width == 0)
+                width = Width(font, text);
+            for (Line info = Info((byte)font, text, text.Length, align, (ushort)style, width); info != null; info = info.Next)
+                lines.Add((info.CharStart, info.CharCount, info.Width, info.MaxHeight));
+            return lines;
+        }
+
+        /// <summary>
+        /// GetCaretPosUnicode (:3486-3598): where the caret before char <paramref name="pos"/> of plain
+        /// <paramref name="text"/> sits, laid out in <paramref name="width"/> (0: the text's own) as GetInfoUnicode wraps it.
+        /// Past a line's end it is at the line's width, the next line down by its height.
+        /// </summary>
+        public (int X, int Y) CaretPosition(int font, string text, int pos, int width, UniTextAlign align, UniTextStyle style)
+        {
+            int x = align == UniTextAlign.Center ? width >> 1 : align == UniTextAlign.Right ? width : 0, y = 0;
+            if (Font(font) == null || string.IsNullOrEmpty(text))
+                return (x, y);
+            if (width == 0)
+                width = Width(font, text);
+            for (Line info = Info((byte)font, text, text.Length, align, (ushort)style, width); info != null; info = info.Next)
+            {
+                x = info.Align == UniTextAlign.Center ? Math.Max(0, (width - info.Width) >> 1)
+                    : info.Align == UniTextAlign.Right ? width : 0;
+                int len = info.CharCount;
+                if (info.CharStart == pos)
+                    return (x, y);
+                if (pos <= info.CharStart + len && info.Data.Count >= len)
+                {
+                    for (int i = 0; i < len; i++)
+                    {
+                        char ch = info.Data[i].Item;
+                        UniGlyph g = Glyph(font, ch);
+                        if (ch != '\r' && g.Data != null)
+                            x += (sbyte)(g.OffsetX + g.Width + 1);
+                        else if (ch == ' ')
+                            x += SpaceWidth;
+                        if (info.CharStart + i + 1 == pos)
+                            return (x, y);
+                    }
+                }
+                else
+                    x = width;
+                if (info.Next != null)
+                    y += info.MaxHeight;
+            }
+            return (x, y);
+        }
+
         // ---- GenerateUnicode, :1044-1125 ----
 
         private UniTextImage GenerateUnicode(byte font, string str, uint color, int width, UniTextAlign align, ushort flags)
