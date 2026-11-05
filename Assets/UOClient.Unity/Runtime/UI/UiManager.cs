@@ -253,6 +253,15 @@ namespace UOClient.Unity.UI
             return false;
         }
 
+        /// <summary>The front window at a UI point (our list order is the stacking order), or null.</summary>
+        public UiWindow TopWindowAt(Vector2 uiPoint)
+        {
+            for (int i = _windows.Count - 1; i >= 0; i--)
+                if (_windows[i].Rect.Contains(uiPoint))
+                    return _windows[i];
+            return null;
+        }
+
         /// <summary>True while a text box has the keyboard (movement keys should not walk).</summary>
         public bool HasKeyboardFocus => GUIUtility.keyboardControl != 0;
 

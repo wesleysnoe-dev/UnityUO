@@ -11,6 +11,16 @@ namespace UOClient.Unity.UI
         /// <summary>TazUO's HtmlControl background (ResizePic 0x2486), narrowed by its 16-pixel scrollbar when there is one.</summary>
         public const int HtmlBackgroundGump = 0x2486, HtmlScrollbarWidth = 16;
 
+        /// <summary>
+        /// TazUO's ScrollBar gumps (ScrollBar.cs:15-22): the up and down arrows (pressed / not), the bar's top, tiled
+        /// middle and bottom, and the slider.
+        /// </summary>
+        public const int ScrollBarUpPressed = 250, ScrollBarUp = 251, ScrollBarDownPressed = 252, ScrollBarDown = 253,
+            ScrollBarSlider = 254, ScrollBarBottom = 255, ScrollBarMiddle = 256, ScrollBarTop = 257;
+
+        /// <summary>TazUO's ScrollFlag gumps (ScrollFlag.cs:13-15): its (undrawn) arrows and the flag.</summary>
+        public const int ScrollFlagUp = 0x0824, ScrollFlagDown = 0x0825, ScrollFlagThumb = 0x0828;
+
         /// <summary>The 50% black CheckerTrans draws, and the alpha it leaves the controls it covers at (GumpHelpers.ApplyTrans).</summary>
         public const float CheckerAlpha = 0.5f;
 
@@ -270,6 +280,70 @@ namespace UOClient.Unity.UI
         public static int HtmlScrollMax(int textHeight, int height, bool background) =>
             Math.Max(0, textHeight - height + (background ? 8 : 0));
 
+        /// <summary>Whether a command is one GumpHelpers turns into an HtmlControl.</summary>
+        public static bool IsHtml(string name) =>
+            name == "htmlgump" || name == "xmfhtmlgump" || name == "xmfhtmlgumpcolor" || name == "xmfhtmltok";
+
+        /// <summary>
+        /// An html command's background, scrollbar and colour as GumpHelpers reads them (GumpHelpers.cs:290-381,
+        /// HtmlControl.cs:35-37): a background only for exactly 1, a scrollbar for anything but 0.
+        /// </summary>
+        public static (bool Background, bool Scrollbar, int Color) HtmlParts(GumpCommand c)
+        {
+            (int background, int scrollbar) = HtmlRawParts(c);
+            int color = c.Name == "xmfhtmlgumpcolor" ? HtmlColorPart(c.Arg(7))
+                : c.Name == "xmfhtmltok" ? HtmlColorPart(c.Arg(6)) : 0;
+            return (background == 1, scrollbar != 0, color);
+        }
+
+        // The background and scrollbar parts as sent: htmlgump/xmfhtmlgump/xmfhtmlgumpcolor x y w h text bg sb,
+        // xmfhtmltok x y w h bg sb ...
+        private static (int Background, int Scrollbar) HtmlRawParts(GumpCommand c) =>
+            c.Name == "xmfhtmltok" ? (c.Arg(4), c.Arg(5)) : (c.Arg(5), c.Arg(6));
+
+        /// <summary>
+        /// The scrollbar an HtmlControl shows: none for scrollbar part 0, the ScrollFlag for part 2, else the ScrollBar.
+        /// htmlgump takes the flag for any 2 (HtmlControl.cs:36-37); the xmfhtml* ones only with a background part other
+        /// than 0 too (GumpHelpers.cs:304, :332, :370: gparams[bg] != "0" &amp;&amp; gparams[sb] == "2").
+        /// </summary>
+        public static HtmlScrollbarKind HtmlScrollbar(GumpCommand c)
+        {
+            (int background, int scrollbar) = HtmlRawParts(c);
+            if (scrollbar == 0)
+                return HtmlScrollbarKind.None;
+            bool flag = scrollbar == 2 && (c.Name == "htmlgump" || background != 0);
+            return flag ? HtmlScrollbarKind.Flag : HtmlScrollbarKind.Bar;
+        }
+
+        /// <summary>Where an HtmlControl's scrollbar sits: Width - 14 across, at the top (HtmlControl.cs:177, :182).</summary>
+        public static int HtmlScrollbarX(int width) => width - 14;
+
+        /// <summary>
+        /// The html command that takes a wheel turn with the pointer at (<paramref name="x"/>, <paramref name="y"/>)
+        /// in the gump, or -1. UIManager.OnMouseWheel (UIManager.cs:362-368) gives it only to the control under the
+        /// mouse, so an HtmlControl scrolls only while the pointer is inside it; where two overlap, the later (on top)
+        /// one. Only commands on page 0 or the page shown count.
+        /// </summary>
+        public static int HtmlWheelTarget(IList<GumpCommand> commands, int page, float x, float y)
+        {
+            int target = -1, at = 0;
+            for (int i = 0; i < commands.Count; i++)
+            {
+                GumpCommand c = commands[i];
+                if (c.Name == "page")
+                {
+                    at = c.Arg(0);
+                    continue;
+                }
+                if ((at != 0 && at != page) || !IsHtml(c.Name))
+                    continue;
+                int cx = c.Arg(0), cy = c.Arg(1);
+                if (x >= cx && x < cx + c.Arg(2) && y >= cy && y < cy + c.Arg(3))
+                    target = i;
+            }
+            return target;
+        }
+
         /// <summary>The client hue of gumppic's hue=N: GumpPic adds one, then TransformHue leaves 2 and below unhued.</summary>
         public static int PicHue(int serverHue)
         {
@@ -381,6 +455,164 @@ namespace UOClient.Unity.UI
                 _at[typeId] = (x, y);
             else
                 _at.Remove(typeId);
+        }
+    }
+
+    /// <summary>The scrollbar of an HtmlControl: none, TazUO's ScrollBar, or its ScrollFlag (UseFlagScrollbar).</summary>
+    public enum HtmlScrollbarKind
+    {
+        None,
+        Bar,
+        Flag,
+    }
+
+    /// <summary>
+    /// The sizes of a scrollbar's gumps: the up and down buttons, the thumb (ScrollBar's slider, ScrollFlag's flag) and
+    /// the bar's width, and the control's height the bar is stretched to (HtmlControl.cs:186).
+    /// </summary>
+    public readonly struct HtmlScrollParts
+    {
+        public readonly int UpW, UpH, DownW, DownH, ThumbW, ThumbH, BarW, Height;
+
+        public HtmlScrollParts(int upW, int upH, int downW, int downH, int thumbW, int thumbH, int barW, int height)
+        {
+            UpW = upW;
+            UpH = upH;
+            DownW = downW;
+            DownH = downH;
+            ThumbW = thumbW;
+            ThumbH = thumbH;
+            BarW = barW;
+            Height = height;
+        }
+    }
+
+    /// <summary>
+    /// An HtmlControl's scroll position as TazUO's ScrollBarBase keeps it (ScrollBarBase.cs, ScrollBar.cs, ScrollFlag.cs):
+    /// a value from 0 to the control's HtmlScrollMax, moved 50 a wheel notch, by holding an arrow, or by dragging the
+    /// thumb. The control draws its text ScrollY = Value up (HtmlControl.cs:192, :262, :288-291). Coordinates given to
+    /// <see cref="Press"/> and <see cref="Drag"/> are the bar's own, from its corner at (Width - 14, 0).
+    /// </summary>
+    public sealed class HtmlScroll
+    {
+        /// <summary>ScrollBarBase.ScrollStep: what one wheel notch moves (ScrollBarBase.cs:92, HtmlControl.cs:227-241).</summary>
+        public const int WheelStep = 50;
+
+        // ScrollBarBase's _StepChanger and _StepsDone (Control.cs:19-20), reset to 1 on mouse up.
+        private int _stepChanger = 1, _stepsDone = 1;
+
+        public HtmlScroll(HtmlScrollbarKind kind) => Kind = kind;
+
+        public HtmlScrollbarKind Kind { get; }
+        public int Value { get; private set; }
+        public int Max { get; private set; }
+        public bool UpHeld { get; private set; }
+        public bool DownHeld { get; private set; }
+        public bool Dragging { get; private set; }
+
+        /// <summary>The scroll range (HtmlControl.Update, :247-254); MaxValue never goes below 0 and pulls Value in.</summary>
+        public void SetMax(int max)
+        {
+            Max = Math.Max(0, max);
+            if (Value > Max)
+                Value = Max;
+        }
+
+        private void Set(int value) => Value = Math.Max(0, Math.Min(Max, value));
+
+        /// <summary>
+        /// A wheel notch: HtmlControl.OnMouseWheel moves the bar's Value by ScrollStep whether or not the bar shows, so a
+        /// control without one still scrolls text taller than itself.
+        /// </summary>
+        public void Wheel(bool up) => Set(Value + (up ? -WheelStep : WheelStep));
+
+        /// <summary>How far the thumb can travel: ScrollBar.GetScrollableArea (:177-187), ScrollFlag's (:98-103).</summary>
+        public int Area(in HtmlScrollParts p) =>
+            Kind == HtmlScrollbarKind.Flag ? p.Height - p.ThumbH : p.Height - p.UpH - p.DownH - p.ThumbH;
+
+        /// <summary>ScrollBarBase.GetSliderYPosition (:200-208): the thumb's offset along its travel.</summary>
+        public int SliderPosition(in HtmlScrollParts p) =>
+            Max == 0 ? 0 : (int)Math.Round(Area(p) * (Value / (float)Max));
+
+        /// <summary>Where the thumb is drawn in the bar: below the up arrow on a ScrollBar (:163-171), at the top on a flag (:69-74).</summary>
+        public int ThumbY(in HtmlScrollParts p) => (Kind == HtmlScrollbarKind.Flag ? 0 : p.UpH) + SliderPosition(p);
+
+        /// <summary>
+        /// Whether the bar takes a click at (x, y): all of a ScrollBar (ScrollBar.Contains, :247), only the flag of a
+        /// ScrollFlag (ScrollFlag.Contains, :144-156; the flag's box here where TazUO checks its pixels).
+        /// </summary>
+        public bool Contains(in HtmlScrollParts p, int x, int y)
+        {
+            switch (Kind)
+            {
+                case HtmlScrollbarKind.Bar:
+                    return x >= 0 && x <= p.BarW && y >= 0 && y <= p.Height;
+                case HtmlScrollbarKind.Flag:
+                    int top = SliderPosition(p);
+                    return x >= 0 && x < p.ThumbW && y >= top && y < top + p.ThumbH;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// A left press on the bar (ScrollBarBase.OnMouseDown, :161-185): the down arrow, else the up arrow, holds;
+        /// anywhere else on it grabs the thumb there. ScrollFlag keeps its arrows' boxes though it draws no arrows
+        /// (_showButtons is false, :26): the down box under the flag's own height, the up box at the top (:48-54).
+        /// Returns false when the bar is not under the press.
+        /// </summary>
+        public bool Press(in HtmlScrollParts p, int x, int y)
+        {
+            if (!Contains(p, x, y))
+                return false;
+            int downY = Kind == HtmlScrollbarKind.Flag ? p.ThumbH : p.Height - p.DownH;
+            if (x >= 0 && x < p.DownW && y >= downY && y < downY + p.DownH)
+                DownHeld = true;
+            else if (x >= 0 && x < p.UpW && y >= 0 && y < p.UpH)
+                UpHeld = true;
+            else
+            {
+                Dragging = true;
+                Drag(p, x, y);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// The thumb following the pointer (CalculateByPosition, ScrollBar.cs:199-245, ScrollFlag.cs:105-142): centred on
+        /// it, kept in its travel, and the value in proportion.
+        /// </summary>
+        public void Drag(in HtmlScrollParts p, int x, int y)
+        {
+            if (!Dragging)
+                return;
+            int area = Area(p);
+            if (area <= 0)
+                return;
+            y -= Kind == HtmlScrollbarKind.Flag ? p.ThumbH >> 1 : p.UpH + (p.ThumbH >> 1);
+            y = Math.Max(0, Math.Min(area, y));
+            Set((int)Math.Round(y / (float)area * Max));
+        }
+
+        /// <summary>The left button up (ScrollBarBase.OnMouseUp, :187-198): nothing held, the arrow speed back to 1.</summary>
+        public void Release()
+        {
+            UpHeld = DownHeld = Dragging = false;
+            _stepChanger = _stepsDone = 1;
+        }
+
+        /// <summary>
+        /// One update with an arrow held (ScrollBarBase.Update, :120-142): 1 + the step changer, which grows by one every
+        /// 8 steps, so a held arrow speeds up.
+        /// </summary>
+        public void Tick()
+        {
+            if (!UpHeld && !DownHeld)
+                return;
+            int step = 1 + _stepChanger;
+            Set(Value + (UpHeld ? -step : step));
+            if (++_stepsDone % 8 == 0)
+                _stepChanger++;
         }
     }
 

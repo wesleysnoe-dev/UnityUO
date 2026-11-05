@@ -290,6 +290,18 @@ public sealed class UniTextTests
         Assert.Equal(0u, none[20, 10]);
     }
 
+    [Fact]
+    public void HtmlLinksAreOnlyColoured()
+    {
+        // <A HREF> takes the link colour (and underline); the picture is all there is to it. TazUO's HtmlControl.OnMouseUp
+        // would open the address in a browser and send the server nothing; this client does neither (DrawHtml).
+        UniTextImage link = ServerGumpWindow.HtmlImage(_text, _hues, "<A HREF=https://www.uoguide.com>Guide</A>", 200, false, false, 0);
+        Assert.Contains(0xFF0000FFu, link.Bitmap.Pixels);
+        UniTextImage plain = ServerGumpWindow.HtmlImage(_text, _hues, "Guide", 200, false, false, 0);
+        Assert.DoesNotContain(0xFF0000FFu, plain.Bitmap.Pixels);
+        Assert.Equal((plain.Width, plain.Height, plain.Lines), (link.Width, link.Height, link.Lines));
+    }
+
     [Theory]
     [InlineData("#F4F4F4", 0xFFF4F4F4)]
     [InlineData("#0xF4F4F4", 0xFFF4F4F4)]

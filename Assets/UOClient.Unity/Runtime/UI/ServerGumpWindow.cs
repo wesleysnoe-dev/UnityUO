@@ -15,7 +15,8 @@ namespace UOClient.Unity.UI
     {
         private readonly ServerGump _gump;
         private readonly GumpControls _controls;
-        private readonly Dictionary<int, Vector2> _scroll = new Dictionary<int, Vector2>();
+        private readonly Dictionary<int, HtmlScroll> _scroll = new Dictionary<int, HtmlScroll>(); // by command index
+        private int _wheelTarget = -1; // the html command a wheel turn this event scrolls, or -1
         private HashSet<int> _faded; // commands a later checkertrans covers, worked out on the first draw
         private int _page = 1;
         private int _focusEntry; // the text entry still to be given the keyboard (FirstTextEntry), or -1 once done
@@ -87,6 +88,11 @@ namespace UOClient.Unity.UI
             _faded ??= CheckerFaded(_gump.Commands, Bounds);
             int page = 0;
             List<GumpCommand> commands = _gump.Commands;
+            // A wheel turn goes to the html control under the pointer, and only in the front window there.
+            Event e = Event.current;
+            _wheelTarget = e.type == EventType.ScrollWheel && Ui.TopWindowAt(Rect.position + e.mousePosition) == this
+                ? HtmlWheelTarget(commands, _page, e.mousePosition.x, e.mousePosition.y)
+                : -1;
             for (int i = 0; i < commands.Count; i++)
             {
                 GumpCommand c = commands[i];
@@ -216,8 +222,8 @@ namespace UOClient.Unity.UI
                 case "xmfhtmlgumpcolor":
                 case "xmfhtmltok":
                 {
-                    (bool background, bool scrollbar, _) = HtmlParts(c);
-                    DrawHtml(c, TextImage(c), background, scrollbar);
+                    (bool background, _, _) = HtmlParts(c);
+                    DrawHtml(c, index, TextImage(c), background);
                     break;
                 }
 
@@ -423,53 +429,126 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>
-        /// An html command's background, scrollbar and colour as GumpHelpers reads them (GumpHelpers.cs:290-381,
-        /// HtmlControl.cs:35-37): a background only for exactly 1, a scrollbar for anything but 0.
+        /// TazUO's HtmlControl.Draw (HtmlControl.cs:268-306), all clipped to the control: the background (ResizePic
+        /// 0x2486, short of the scrollbar), the ScrollBar or ScrollFlag at Width - 14, then the text 4 in from a background
+        /// with its top ScrollY = the bar's Value cut off. The wheel scrolls it only with the pointer over it
+        /// (<see cref="HtmlWheelTarget"/>), with or without a bar shown.
+        /// Links (&lt;A HREF&gt;) are coloured only: TazUO's OnMouseUp (:308-338) opens a clicked one in the browser and
+        /// tells the server nothing, and ModernUO's 0xB1 reply (GumpSystem.DisplayGumpResponse) carries only a button,
+        /// switches and text entries, refusing a button the gump does not have. So there is no in-gump or protocol action
+        /// for a link to take, and this client does not launch external links.
         /// </summary>
-        private static (bool Background, bool Scrollbar, int Color) HtmlParts(GumpCommand c)
-        {
-            switch (c.Name)
-            {
-                case "xmfhtmlgumpcolor":
-                    return (c.Arg(5) == 1, c.Arg(6) != 0, HtmlColorPart(c.Arg(7)));
-                case "xmfhtmltok":
-                    return (c.Arg(4) == 1, c.Arg(5) != 0, HtmlColorPart(c.Arg(6)));
-                default:
-                    return (c.Arg(5) == 1, c.Arg(6) != 0, 0);
-            }
-        }
-
-        /// <summary>
-        /// TazUO's HtmlControl: the background (ResizePic 0x2486, short of the scrollbar), and the text 4 in from it,
-        /// clipped to the control and scrolled by up to HtmlScrollMax.
-        /// </summary>
-        private void DrawHtml(GumpCommand c, UiImage text, bool background, bool scrollbar)
+        private void DrawHtml(GumpCommand c, int index, UiImage text, bool background)
         {
             var r = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
             _lastArea = r;
-            if (background)
-                DrawResizePic(HtmlBackgroundGump, r.x, r.y, r.width - (scrollbar ? HtmlScrollbarWidth : 0), r.height);
-            if (text == null)
-                return;
+            int id = GUIUtility.GetControlID(FocusType.Passive);
+            if (!_scroll.TryGetValue(index, out HtmlScroll scroll))
+                _scroll[index] = scroll = new HtmlScroll(HtmlScrollbar(c));
+            bool hasBar = scroll.Kind != HtmlScrollbarKind.None;
+            scroll.SetMax(text == null ? 0 : HtmlScrollMax(text.Height, (int)r.height, background));
+            HtmlScrollParts parts = ScrollParts(scroll.Kind, (int)r.height);
 
-            int offset = HtmlTextOffset(background);
-            if (!scrollbar)
+            Event e = Event.current;
+            Vector2 bar = e.mousePosition - new Vector2(r.x + HtmlScrollbarX((int)r.width), r.y);
+            switch (e.GetTypeForControl(id))
             {
-                GUI.BeginGroup(r);
-                DrawImage(text, offset, offset);
-                GUI.EndGroup();
-                return;
+                case EventType.MouseDown:
+                    if (hasBar && e.button == 0 && scroll.Press(parts, (int)bar.x, (int)bar.y))
+                    {
+                        GUIUtility.hotControl = id;
+                        e.Use();
+                    }
+                    break;
+                case EventType.MouseDrag:
+                    if (GUIUtility.hotControl == id)
+                    {
+                        scroll.Drag(parts, (int)bar.x, (int)bar.y);
+                        e.Use();
+                    }
+                    break;
+                case EventType.MouseUp:
+                    if (GUIUtility.hotControl == id)
+                    {
+                        GUIUtility.hotControl = 0;
+                        scroll.Release();
+                        e.Use();
+                    }
+                    break;
+                case EventType.ScrollWheel:
+                    if (index == _wheelTarget)
+                    {
+                        scroll.Wheel(e.delta.y < 0);
+                        e.Use();
+                    }
+                    break;
+                case EventType.Repaint:
+                    scroll.Tick();
+                    break;
             }
 
-            // The scroll range is TazUO's: the text's height less the control's, plus 8 with a background.
-            int key = c.Arg(0) * 10007 + c.Arg(1);
-            float content = r.height + HtmlScrollMax(text.Height, (int)r.height, background);
-            _scroll.TryGetValue(key, out Vector2 pos);
-            pos = GUI.BeginScrollView(r, pos, new Rect(0, 0, r.width - HtmlScrollbarWidth, content), false, false,
-                GUIStyle.none, GUI.skin.verticalScrollbar);
-            DrawImage(text, offset, offset);
-            GUI.EndScrollView();
-            _scroll[key] = pos;
+            GUI.BeginGroup(r);
+            if (background)
+                DrawResizePic(HtmlBackgroundGump, 0, 0, r.width - (hasBar ? HtmlScrollbarWidth : 0), r.height);
+            if (hasBar)
+                DrawScrollbar(scroll, parts, HtmlScrollbarX((int)r.width));
+            if (text != null)
+            {
+                int offset = HtmlTextOffset(background);
+                GUI.BeginGroup(new Rect(offset, offset, r.width - offset, r.height - offset));
+                DrawImage(text, 0, -scroll.Value);
+                GUI.EndGroup();
+            }
+            GUI.EndGroup();
+        }
+
+        private HtmlScrollParts ScrollParts(HtmlScrollbarKind kind, int height)
+        {
+            if (kind == HtmlScrollbarKind.Flag)
+            {
+                UiImage up = Art.Gump(ScrollFlagUp), down = Art.Gump(ScrollFlagDown), flag = Art.Gump(ScrollFlagThumb);
+                return new HtmlScrollParts(up?.Width ?? 0, up?.Height ?? 0, down?.Width ?? 0, down?.Height ?? 0,
+                    flag?.Width ?? 0, flag?.Height ?? 0, flag?.Width ?? 0, height);
+            }
+            UiImage u = Art.Gump(ScrollBarUp), d = Art.Gump(ScrollBarDown), s = Art.Gump(ScrollBarSlider), t = Art.Gump(ScrollBarTop);
+            return new HtmlScrollParts(u?.Width ?? 0, u?.Height ?? 0, d?.Width ?? 0, d?.Height ?? 0,
+                s?.Width ?? 0, s?.Height ?? 0, t?.Width ?? 0, height);
+        }
+
+        /// <summary>
+        /// ScrollBar.Draw (ScrollBar.cs:58-175): top, tiled middle and bottom (only the middle when too short), the arrows
+        /// (pressed while held) and the slider while there is a range; ScrollFlag.Draw (ScrollFlag.cs:61-96): the flag
+        /// alone while there is a range.
+        /// </summary>
+        private void DrawScrollbar(HtmlScroll scroll, in HtmlScrollParts p, int x)
+        {
+            if (scroll.Kind == HtmlScrollbarKind.Flag)
+            {
+                if (scroll.Max != 0)
+                    DrawImage(Art.Gump(ScrollFlagThumb), x, scroll.ThumbY(p));
+                return;
+            }
+            int h = p.Height;
+            if (h <= 0)
+                return;
+            UiImage top = Art.Gump(ScrollBarTop), middle = Art.Gump(ScrollBarMiddle), bottom = Art.Gump(ScrollBarBottom);
+            int topH = top?.Height ?? 0, bottomH = bottom?.Height ?? 0;
+            int middleH = h - p.UpH - p.DownH - topH - bottomH;
+            if (middleH > 0)
+            {
+                DrawImage(top, x, p.UpH);
+                DrawTiled(middle, x, p.UpH + topH, p.BarW, middleH);
+                DrawImage(bottom, x, h - p.DownH - bottomH);
+            }
+            else
+            {
+                middleH = h - p.UpH - p.DownH;
+                DrawTiled(middle, x, p.UpH, p.BarW, middleH);
+            }
+            DrawImage(Art.Gump(scroll.UpHeld ? ScrollBarUpPressed : ScrollBarUp), x, 0);
+            DrawImage(Art.Gump(scroll.DownHeld ? ScrollBarDownPressed : ScrollBarDown), x, h - p.DownH);
+            if (scroll.Max > 0 && middleH > 0)
+                DrawImage(Art.Gump(ScrollBarSlider), x + ((p.BarW - p.ThumbW) >> 1), scroll.ThumbY(p));
         }
 
         private string ClilocText(int number, string args)
