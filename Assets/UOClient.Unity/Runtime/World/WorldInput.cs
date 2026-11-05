@@ -138,7 +138,12 @@ namespace UOClient.Unity
                 else if (_ctx.Session.Target.AllowGround)
                 {
                     Vector3Int tile = MouseTile().Value;
-                    _ctx.Session.TargetGround(tile.x, tile.y, tile.z);
+                    // A static there (a tree to chop, a floor) is targeted as itself, else the land.
+                    var st = _ctx.Session.Target.IsMulti ? null : _ctx.Walk.TargetStaticAt(tile.x, tile.y, _ctx.Player.Z);
+                    if (st is var (cell, surface, height))
+                        _ctx.Session.TargetStatic(tile.x, tile.y, cell.Z, cell.Graphic, surface, height);
+                    else
+                        _ctx.Session.TargetGround(tile.x, tile.y, tile.z);
                 }
                 else
                 {

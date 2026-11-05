@@ -111,6 +111,20 @@ namespace UOClient.Unity
             return best;
         }
 
+        /// <summary>
+        /// The static a target cursor click on (x, y) means for someone at <paramref name="refZ"/> (map statics and
+        /// house parts), with its tiledata surface flag and height, or null to target the land.
+        /// </summary>
+        public (StaticCell Cell, bool Surface, int Height)? TargetStaticAt(int x, int y, int refZ)
+        {
+            StaticCell[] statics = StaticsAt(x, y);
+            int i = UOClient.Core.GameSession.PickTargetStatic(statics, refZ);
+            if (i < 0)
+                return null;
+            StaticTileData td = _tileData.GetStatic(statics[i].Graphic);
+            return (statics[i], td.IsSurface, td.Height);
+        }
+
         public int AverageLandZ(int x, int y)
         {
             int zTop = _map.GetLand(x, y).Z, zRight = _map.GetLand(x + 1, y).Z;

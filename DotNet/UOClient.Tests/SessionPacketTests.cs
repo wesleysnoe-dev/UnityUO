@@ -75,6 +75,35 @@ public sealed class SessionPacketTests
     }
 
     [Fact]
+    public void StaticTargetIsAnsweredAsModernUOMatchesIt()
+    {
+        var axe = new TargetRequest { Type = 1, CursorId = 0x00000102, Flags = 0 };
+
+        // A tree trunk (not a surface): graphic and its own z, so ModernUO finds tile.Z == z && tile.ID == graphic.
+        byte[] tree = GameSession.StaticTargetReply(axe, 1400, 1650, 3, 0x0CCA, false, 20, ClientVersion.Default);
+        Assert.Equal(new byte[] { 0x6C, 1, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0x05, 0x78, 0x06, 0x72, 0, 3, 0x0C, 0xCA }, tree);
+
+        // A surface on a 7.0.9+ client goes out at its top; ModernUO's HighSeas branch takes the height back off.
+        byte[] table = GameSession.StaticTargetReply(axe, 1400, 1650, -2, 0x0B90, true, 6, ClientVersion.Default);
+        Assert.Equal(4, (sbyte)table[16]);
+        Assert.Equal(0x0B90, (table[17] << 8) | table[18]);
+        // Older clients send the base.
+        byte[] old = GameSession.StaticTargetReply(axe, 1400, 1650, -2, 0x0B90, true, 6, new ClientVersion(7, 0, 8, 0));
+        Assert.Equal(-2, (sbyte)old[16]);
+
+        // The picked static: the highest one below head height, not the roof above.
+        var cells = new[]
+        {
+            new IO.Formats.StaticCell { Graphic = 0x0519, Z = 0 },  // floor
+            new IO.Formats.StaticCell { Graphic = 0x0CCA, Z = 5 },  // something on it
+            new IO.Formats.StaticCell { Graphic = 0x05F0, Z = 20 }, // roof over our head
+        };
+        Assert.Equal(1, GameSession.PickTargetStatic(cells, 0));
+        Assert.Equal(2, GameSession.PickTargetStatic(cells, 20)); // standing on the upper floor, it is what's underfoot
+        Assert.Equal(-1, GameSession.PickTargetStatic(Array.Empty<IO.Formats.StaticCell>(), 0));
+    }
+
+    [Fact]
     public void TextEntryDialogIsReadAndAnswered()
     {
         var session = new GameSession(new LoginSettings());

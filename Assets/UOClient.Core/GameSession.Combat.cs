@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UOClient.IO.Formats;
 using UOClient.Net;
 
 namespace UOClient.Core
@@ -153,6 +154,45 @@ namespace UOClient.Core
         public static byte[] GroundTargetReply(TargetRequest t, int x, int y, int z, int graphic = 0) =>
             new PacketWriter(0x6C, 19).Byte(1).UInt32(t.CursorId).Byte(t.Flags).UInt32(0)
                 .UInt16(x).UInt16(y).Byte(0).Byte((byte)(sbyte)z).UInt16(graphic).ToArray();
+
+        /// <summary>
+        /// Answers the target cursor with a static (a tree, a rock, a water tile, a floor) standing at (x, y, z).
+        /// ModernUO turns it into a StaticTarget only if a static with that graphic stands at exactly that z, so
+        /// trees for lumberjacking and the like can't be hit with a land target.
+        /// </summary>
+        public void TargetStatic(int x, int y, int z, ushort graphic, bool surface, int height)
+        {
+            TargetRequest t = Target;
+            if (t == null || State != SessionState.InWorld)
+                return;
+            Target = null;
+            _conn.Send(StaticTargetReply(t, x, y, z, graphic, surface, height, _settings.Version));
+            TargetEnded?.Invoke();
+        }
+
+        /// <summary>
+        /// 0x6C answering a cursor with a static. 7.0.9+ (High Seas) clients send a surface's top rather than its
+        /// base, and ModernUO takes the tile's height back off before matching, as ClassicUO does it.
+        /// </summary>
+        public static byte[] StaticTargetReply(TargetRequest t, int x, int y, int z, ushort graphic, bool surface, int height, ClientVersion version)
+        {
+            if (surface && version >= new ClientVersion(7, 0, 9, 0))
+                z += height;
+            return GroundTargetReply(t, x, y, z, graphic);
+        }
+
+        /// <summary>
+        /// Which static on a clicked tile a target cursor means: the highest one not over the head of someone
+        /// standing at <paramref name="refZ"/> (so a tree trunk, not the roof above us). -1 when there is none.
+        /// </summary>
+        public static int PickTargetStatic(IReadOnlyList<StaticCell> cells, int refZ)
+        {
+            int best = -1;
+            for (int i = 0; i < cells.Count; i++)
+                if (cells[i].Z < refZ + 14 && (best < 0 || cells[i].Z >= cells[best].Z))
+                    best = i;
+            return best;
+        }
 
         /// <summary>Escape: tells the server the cursor was cancelled (location -1, -1, no serial).</summary>
         public void CancelTarget()
