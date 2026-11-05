@@ -23,6 +23,7 @@ namespace UOClient.Net
         private readonly Huffman _huffman = new Huffman();
         private volatile bool _compressed;
         private volatile bool _closed;
+        private readonly Action<byte[]> _offline;
 
         // Framing buffer (decompressed bytes not yet forming a whole packet). Reader thread only.
         private byte[] _pending = new byte[0x10000];
@@ -45,6 +46,16 @@ namespace UOClient.Net
             _reader = new Thread(ReadLoop) { IsBackground = true, Name = $"UO net {Endpoint}" };
             _reader.Start();
         }
+
+        private NetConnection(ClientVersion version, Action<byte[]> sent)
+        {
+            _lengths = PacketLengths.For(version);
+            _offline = sent;
+            Endpoint = "offline";
+        }
+
+        /// <summary>A connection to no server (tests and packet replays): what is sent goes to <paramref name="sent"/>, nothing arrives.</summary>
+        public static NetConnection Offline(ClientVersion version, Action<byte[]> sent) => new NetConnection(version, sent);
 
         public string Endpoint { get; }
         public bool IsConnected => !_closed;
@@ -69,6 +80,12 @@ namespace UOClient.Net
         {
             if (_closed)
                 return;
+            if (_offline != null)
+            {
+                if (isPacket)
+                    _offline(bytes);
+                return;
+            }
             try
             {
                 lock (_sendLock)
@@ -176,7 +193,7 @@ namespace UOClient.Net
                 return;
             CloseReason = reason;
             _closed = true;
-            try { _tcp.Close(); } catch { /* already closed */ }
+            try { _tcp?.Close(); } catch { /* already closed */ }
         }
 
         public void Dispose() => Close("closed by client");

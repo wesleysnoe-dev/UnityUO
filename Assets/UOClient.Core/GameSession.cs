@@ -176,6 +176,17 @@ namespace UOClient.Core
             _conn.Send(new PacketWriter(0x80, 62).Ascii(_settings.Account, 30).Ascii(_settings.Password, 30).Byte(0x5D).ToArray());
         }
 
+        /// <summary>
+        /// Runs without a server (tests and packet replays): what the session sends goes to <paramref name="sent"/>, what
+        /// the server would send comes in through <see cref="Inject"/>; 0x1B then 0x55 put it in the world.
+        /// </summary>
+        public void StartOffline(Action<byte[]> sent)
+        {
+            _conn?.Dispose();
+            _conn = NetConnection.Offline(_settings.Version, sent);
+            SetState(SessionState.GameLogin, "Offline");
+        }
+
         /// <summary>Handles a packet as if the server had sent it (tests and packet replays).</summary>
         public void Inject(byte[] packet, bool variableLength)
         {
