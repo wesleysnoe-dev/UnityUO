@@ -49,7 +49,6 @@ namespace UOClient.Core
         public event Action<bool> WarModeChanged;
         public event Action<uint, int> Damaged;
         public event Action SkillsUpdated;
-        public event Action PlayerDied;
 
         private void RegisterCombatHandlers()
         {
@@ -63,8 +62,6 @@ namespace UOClient.Core
             _handlers[0xA3] = r => Stat(r, (m, max, cur) => { m.StaminaMax = max; m.Stamina = cur; });
             _handlers[0x2D] = MobileAttributes;
             _handlers[0x0B] = r => { uint s = r.ReadUInt32(); Damaged?.Invoke(s, r.ReadUInt16()); };
-            _handlers[0x2C] = r => { if (r.ReadByte() == 2) PlayerDied?.Invoke(); }; // ModernUO's death status is {0x2C, 2}
-            _handlers[0xAF] = _ => { };   // death animation; the corpse arrives as an item
             _handlers[0x3A] = SkillList;
             _handlers[0xD1] = _ => Fail("Logged out."); // logout acknowledged
         }

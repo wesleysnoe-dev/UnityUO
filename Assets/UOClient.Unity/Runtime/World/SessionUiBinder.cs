@@ -71,6 +71,7 @@ namespace UOClient.Unity
             s.Damaged += OnDamaged;
             s.World.JournalAdded += OnJournalOverhead;
             s.PlayerDied += OnPlayerDied;
+            s.PlayerDeadChanged += OnPlayerDeadChanged;
             _weatherLogged = WeatherType.None;
             s.WeatherChanged += OnWeatherChanged;
 
@@ -117,6 +118,7 @@ namespace UOClient.Unity
             s.Damaged -= OnDamaged;
             s.World.JournalAdded -= OnJournalOverhead;
             s.PlayerDied -= OnPlayerDied;
+            s.PlayerDeadChanged -= OnPlayerDeadChanged;
             s.WeatherChanged -= OnWeatherChanged;
             s.ContextMenuOpened -= OnContextMenuOpened;
             s.ShopOpened -= OnShopOpened;
@@ -175,7 +177,22 @@ namespace UOClient.Unity
                 _overheads.Add(j.Serial, j.Text, _gumpArt.HueColor(j.Hue, new Color(0.95f, 0.95f, 0.9f)), 14, 3f + j.Text.Length * 0.05f, false);
         }
 
-        private void OnPlayerDied() => _ctx.Hud.Log(null, "You are dead.");
+        private void OnPlayerDied()
+        {
+            // ModernUO's Kill drops whatever the player was holding without telling the client.
+            Ui.CancelDrag();
+            _ctx.Hud.DeathScreenUntil = Time.unscaledTime + DemoHud.DeathScreenSeconds;
+            _ctx.Hud.Log(null, "You are dead.");
+        }
+
+        private void OnPlayerDeadChanged(bool dead)
+        {
+            if (!dead)
+            {
+                _ctx.Hud.DeathScreenUntil = 0;
+                _ctx.Hud.Log(null, "You have been resurrected.");
+            }
+        }
 
         // ModernUO resends the weather every 30 seconds while it lasts, so only a change of kind is logged.
         private WeatherType _weatherLogged = WeatherType.None;

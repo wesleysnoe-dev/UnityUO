@@ -32,6 +32,7 @@ Shader "UOClient/WorldSprite"
             float4 _UOLightColor;  // rgb: point light color * intensity
             float4 _UOLightPos;    // xy: world position, z: radius
             float _UOCutZ;         // upper-floor cut: hide statics at or above this height (+1000); 0 = no cut
+            float _UODead;         // 0..1: how far the world is drained to grey (the player is a ghost)
 
             struct appdata
             {
@@ -74,7 +75,10 @@ Shader "UOClient/WorldSprite"
                 falloff *= falloff;
 
                 c.rgb *= _UOAmbient.rgb + _UOLightColor.rgb * falloff;
-                return c * i.color;
+                c *= i.color;
+                // As a ghost the classic client draws the world in black and white.
+                c.rgb = lerp(c.rgb, dot(c.rgb, float3(0.299, 0.587, 0.114)).xxx, _UODead);
+                return c;
             }
             ENDCG
         }

@@ -112,6 +112,7 @@ namespace UOClient.Core
             RegisterBuffHandlers();
             RegisterWeatherHandlers();
             RegisterBookHandlers();
+            RegisterDeathHandlers();
         }
 
         public World World { get; }

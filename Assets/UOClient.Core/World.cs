@@ -36,6 +36,15 @@ namespace UOClient.Core
         /// <summary>Changes whenever appearance changes (body, hue or equipment), so renderers can cache by it.</summary>
         public int AppearanceVersion;
 
+        /// <summary>
+        /// A ghost body: ModernUO's <c>Race.GhostBody</c> (human 402/403, elf 607/608, gargoyle 694/695), plus 970,
+        /// which ClassicUO's <c>Mobile.IsDead</c> also counts.
+        /// </summary>
+        public bool IsDead => IsGhostBody(Body);
+
+        public static bool IsGhostBody(ushort body) =>
+            body == 402 || body == 403 || body == 607 || body == 608 || body == 694 || body == 695 || body == 970;
+
         public bool IsHuman => Body == 400 || Body == 401 || Body == 402 || Body == 403 || Body == 605 || Body == 606 || Body == 666 || Body == 667 || Body == 744 || Body == 745 || Body == 987;
     }
 

@@ -28,7 +28,7 @@ namespace UOClient.Unity
         private int _playerX = int.MinValue, _playerY;
         private int _tab;
         private float _staminaValue = 92f;
-        private GUIStyle _label, _small, _title, _bar, _name, _tabStyle, _tabActive, _overhead;
+        private GUIStyle _label, _small, _title, _bar, _name, _tabStyle, _tabActive, _overhead, _death;
 
         public bool Visible { get; set; } = true;
         public string Summary { get; set; } = "";
@@ -52,6 +52,16 @@ namespace UOClient.Unity
 
         public readonly List<(Vector2 Screen, float Ratio, Color Color)> HealthBars = new List<(Vector2, float, Color)>();
         public bool WarMode { get; set; }
+
+        /// <summary>The player is a ghost: a resurrection hint stays on screen.</summary>
+        public bool Ghost { get; set; }
+
+        /// <summary>
+        /// <see cref="Time.unscaledTime"/> until which the death screen shows: black with "You are dead.", fading out,
+        /// like ClassicUO's 1.5 second death screen.
+        /// </summary>
+        public float DeathScreenUntil { get; set; }
+        public const float DeathScreenSeconds = 1.5f;
 
         /// <summary>
         /// The quest arrow's target in screen pixels (top-left origin), or null when there is none. On screen it
@@ -262,6 +272,9 @@ namespace UOClient.Unity
 
             if (WarMode)
                 DrawOutlined(new Rect(w * 0.5f - 60, 40 + TopInset, 120, 22), "WAR", _bar, new Color(1f, 0.3f, 0.25f));
+            if (Ghost)
+                DrawOutlined(new Rect(w * 0.5f - 300, 64 + TopInset, 600, 22),
+                             "You are a ghost. Seek a healer or an ankh to be resurrected.", _bar, new Color(0.8f, 0.85f, 0.95f));
 
             if (!string.IsNullOrEmpty(ConnectionStatus))
                 DrawOutlined(new Rect(w * 0.5f - 300, 12, 600, 22), ConnectionStatus, _bar, new Color(0.95f, 0.9f, 0.75f));
@@ -284,6 +297,17 @@ namespace UOClient.Unity
                 }
                 GUI.Label(new Rect(16, h - 44, 300, 18), TimeName + "  ·  " + "T time  R roofs  H hud", _small);
                 GUI.Label(new Rect(16, h - 26, Mathf.Max(300, w * 0.5f - 350), 18), Summary, _small);
+            }
+
+            float death = DeathScreenUntil - Time.unscaledTime;
+            if (death > 0)
+            {
+                // Over the whole HUD: solid black at first, fading out over the last half second.
+                float a = Mathf.Clamp01(death / 0.5f);
+                GUI.color = new Color(0, 0, 0, a);
+                GUI.DrawTexture(new Rect(0, 0, w, h), _white);
+                GUI.color = Color.white;
+                DrawOutlined(new Rect(0, h * 0.5f - 20, w, 40), "You are dead.", _death, new Color(0.9f, 0.9f, 0.9f, a));
             }
 
             GUI.matrix = saved;
@@ -553,7 +577,8 @@ namespace UOClient.Unity
             _title = new GUIStyle(_label) { fontSize = 15, fontStyle = FontStyle.Bold };
             _title.normal.textColor = new Color(0.96f, 0.88f, 0.68f);
             _bar = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            _name = new GUIStyle(_label) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            _death = new GUIStyle(_bar) { fontSize = 28 };
+            _name =new GUIStyle(_label) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             _overhead = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.LowerCenter, wordWrap = true };
             _tabStyle = new GUIStyle(GUI.skin.button) { fontSize = 13 };
             _tabStyle.normal.background = Own(UnityTextures.Solid(new Color(0.16f, 0.13f, 0.1f, 0.95f)));

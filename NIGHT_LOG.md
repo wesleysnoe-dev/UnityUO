@@ -118,3 +118,7 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
 ## Session: stack split (2026-11-05)
 
 1. **Shift-drag splits item stacks** (`GameSession.CanSplit`/`SplitAmount`/`ParseSplitAmount`, `UI.SplitStackWindow`, `UiManager.Lift`, `ContainerWindow`, `WorldInput`): as ClassicUO's `SplitMenuGump`, a Shift-drag on a stack in a container or on the ground asks how many (slider + number box, whole stack by default) and sends `0x07` with that amount; ModernUO's `Mobile.Lift` leaves the rest as a new item. Without Shift the whole stack lifts as before. Shift-click on a stack opens its context menu on release instead of on press. While a split stack rides the cursor, world and container mouse-downs are ignored so the next click is its drop. Byte-layout tests (157 tests pass), not seen in Unity, no login.
+
+## Session: death (2026-11-05)
+
+1. **Death tint and ghost state** (`GameSession.Death.cs`, `Mobile.IsDead`, `WorldSprite.shader` `_UODead`, `Lighting`, `DemoHud`, `SessionUiBinder`): ModernUO's `OnDeath` sends `0x2C` 2 and swaps in `Race.GhostBody`; `Resurrect` only restores the body. `0x2C` now starts a 1.5 s black "You are dead." screen and cancels the drag; `PlayerDead`/`PlayerDeadChanged` follow the player's body from `0x1B`/`0x20`/`0x77`/`0x78`/`0xF3`. As a ghost the world shader desaturates to grey and the HUD shows a healer/ankh hint; both clear on resurrection. Injected-packet tests (166 tests pass), not seen in Unity, no login.

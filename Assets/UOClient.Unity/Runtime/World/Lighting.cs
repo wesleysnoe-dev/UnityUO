@@ -9,6 +9,7 @@ namespace UOClient.Unity
         // Time of day: index into Times; -1 follows the server's light level.
         private int _timeOverride = -1;
         private TimeOfDay _timeCurrent = Times[0];
+        private float _dead;
 
         private static readonly TimeOfDay[] Times =
         {
@@ -58,12 +59,21 @@ namespace UOClient.Unity
                            + (session != null && session.Season != Season.Summer ? $", {session.Season.ToString().ToLowerInvariant()}" : "");
             hud.Vignette = _timeCurrent.Vignette;
 
+            // A ghost sees the world drained of color; it fades out again on resurrection.
+            _dead = Mathf.MoveTowards(_dead, session != null && session.PlayerDead ? 1f : 0f, Time.deltaTime * 1.5f);
+            Shader.SetGlobalFloat("_UODead", _dead);
+            hud.Ghost = session != null && session.PlayerDead;
+
             Vector2 light = playerUnity + new Vector2(0, 30 * artScale);
             Shader.SetGlobalVector("_UOLightPos", new Vector4(light.x, light.y, 170f * artScale, 0));
         }
 
         /// <summary>Daylight, before there is a world to light.</summary>
-        public static void ApplyDefault() => ApplyLighting(Times[0]);
+        public static void ApplyDefault()
+        {
+            ApplyLighting(Times[0]);
+            Shader.SetGlobalFloat("_UODead", 0f);
+        }
 
         /// <summary>Multiplied into the ambient light: fresh green in spring, warm in fall, cold in winter, grey and dim in desolation.</summary>
         private static Color SeasonTint(Season season) => season switch
