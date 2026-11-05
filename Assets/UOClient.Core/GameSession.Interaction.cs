@@ -287,6 +287,7 @@ namespace UOClient.Core
             {
                 ContainedItem item = ReadContained(ref r);
                 changed.Add(item.Container);
+                NoteBulletinItem(item);
             }
             foreach (uint c in changed)
                 World.RaiseContainerChanged(c);
@@ -296,6 +297,7 @@ namespace UOClient.Core
         {
             ContainedItem item = ReadContained(ref r);
             World.RaiseContainerChanged(item.Container);
+            NoteBulletinItem(item);
         }
 
         /// <summary>One container entry (7.0+ layout with the grid byte): serial, graphic, offset, amount, x, y, grid, container, hue.</summary>

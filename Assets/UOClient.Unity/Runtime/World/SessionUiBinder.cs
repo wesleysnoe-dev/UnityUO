@@ -86,6 +86,8 @@ namespace UOClient.Unity
             s.SpellbookContent += OnSpellbookContent;
             s.ProfileReceived += OnProfileReceived;
             s.BookOpened += OnBookOpened;
+            s.BulletinBoardOpened += OnBulletinBoardOpened;
+            s.BulletinPostOpened += OnBulletinPostOpened;
             s.MapDisplayed += OnMapDisplayed;
             s.EffectStarted += _effects.Start;
 
@@ -131,6 +133,8 @@ namespace UOClient.Unity
             s.SpellbookContent -= OnSpellbookContent;
             s.ProfileReceived -= OnProfileReceived;
             s.BookOpened -= OnBookOpened;
+            s.BulletinBoardOpened -= OnBulletinBoardOpened;
+            s.BulletinPostOpened -= OnBulletinPostOpened;
             s.MapDisplayed -= OnMapDisplayed;
             s.EffectStarted -= _effects.Start;
             s.SoundPlayed -= OnSoundPlayed;
@@ -276,6 +280,13 @@ namespace UOClient.Unity
 
         /// <summary>A cover (0xD4/0x93): open the book, or refresh the open one (pages arrive into it through 0x66).</summary>
         private void OnBookOpened(BookInfo book) => Ui.Open(new UI.BookWindow(book)).SetBook(book);
+
+        /// <summary>A board (0x71 0): open it, or refresh the open one (its messages follow as 0x3C, then 0x71 1).</summary>
+        private void OnBulletinBoardOpened(BulletinBoardInfo board) => Ui.Open(new UI.BulletinBoardWindow(board)).SetBoard(board);
+
+        /// <summary>A message's body (0x71 2): open it to read.</summary>
+        private void OnBulletinPostOpened(BulletinBoardInfo board, BulletinPost post) =>
+            Ui.Open(new UI.BulletinPostWindow(board, post)).SetPost(post);
 
         private void OnMapDisplayed(MapItemDetails map) => Ui.Open(new UI.MapItemWindow(map));
 
