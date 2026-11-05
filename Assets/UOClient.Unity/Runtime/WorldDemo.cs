@@ -286,97 +286,26 @@ namespace UOClient.Unity
         // ---- gumps ----
 
         private UI.GumpArt _gumpArt;
-        private UI.UiManager _ui;
+        private SessionUiBinder _binder;
+        private UI.UiManager _ui => _binder?.Ui;
+        private UI.ChatLog _chatLog => _binder?.ChatLog;
 
         /// <summary>Windows the server opens: paperdolls, containers and gumps.</summary>
         private void SetUpUi()
         {
             _gumpArt ??= new UI.GumpArt(_ctx.Data);
-            _ui = new UI.UiManager(_ctx.Session, _gumpArt, _ctx.Session.Cliloc)
-            {
-                // Released over the world: onto what is under the mouse, as in the classic client.
-                DropOutside = (item, gui) => _input.DropInWorld(item, new Vector2(gui.x, Screen.height - gui.y))
-            };
-            _ctx.Session.World.PaperdollOpened += (serial, title) =>
-            {
-                UI.PaperdollWindow w = _ui.Open(new UI.PaperdollWindow(serial, title));
-                w.SetTitle(title);
-            };
-            _ctx.Session.World.ContainerOpened += c => _ui.Open(new UI.ContainerWindow(c.Serial, c.Gump));
-            _ctx.Session.World.GumpOpened += g => _ui.Open(new UI.ServerGumpWindow(g));
-            _ctx.Session.LiftRejected += reason =>
-            {
-                _ui.CancelDrag();
-                _ctx.Hud.Log(null, reason switch
-                {
-                    1 => "That is too far away.",
-                    2 => "That is out of sight.",
-                    3 => "That item does not belong to you.",
-                    4 => "You are already holding an item.",
-                    _ => "You cannot pick that up."
-                });
-            };
-
-            _ui.Command = OnUiCommand;
-            _chatLog = new UI.ChatLog();
-            _ctx.Session.World.JournalAdded += _chatLog.Add;
-            _ui.Open(new UI.TopBarWindow());
-            _ctx.Hud.TopInset = UI.TopBarWindow.Height + 4;
-            Hotkeys = new Hotkeys(ProjectRoot) { Log = s => _ctx.Hud.Log(null, s), Command = OnUiCommand };
-            _ctx.Session.TargetRequested += _ => _cursor.Update(_ctx.Session, _ui);
-            _ctx.Session.TargetEnded += () => _cursor.Update(_ctx.Session, _ui);
-            _ctx.Session.WarModeChanged += war => _ctx.Hud.WarMode = war;
-            _ctx.Session.Damaged += (serial, amount) => _overheads.Add(serial, amount.ToString(), new Color(1f, 0.25f, 0.2f), 18, 1.6f, true);
-            _ctx.Session.World.JournalAdded += j =>
-            {
-                // Speech and labels appear over whoever said them (system messages only in the journal).
-                // Said, emoted, whispered, yelled, cast or a click label: overhead. Guild, alliance, broadcast: journal only.
-                bool local = j.Type == 0 || j.Type == 2 || (j.Type >= 6 && j.Type <= 10);
-                if (local && j.Serial != 0xFFFFFFFF && j.Serial != 0)
-                    _overheads.Add(j.Serial, j.Text, _gumpArt.HueColor(j.Hue, new Color(0.95f, 0.95f, 0.9f)), 14, 3f + j.Text.Length * 0.05f, false);
-            };
-            _ctx.Session.PlayerDied += () => _ctx.Hud.Log(null, "You are dead.");
-
-            _ctx.Session.ContextMenuOpened += menu =>
-            {
-                Vector2 m = Input.mousePosition;
-                _ui.Open(new UI.ContextMenuWindow(menu, new Vector2(m.x / _ui.Scale, (Screen.height - m.y) / _ui.Scale)));
-            };
-            _ctx.Session.ShopOpened += list => _ui.Open(new UI.ShopWindow(list));
-            _ctx.Session.ShopClosed += vendor =>
-            {
-                foreach (UI.UiWindow w in _ui.Windows.ToList())
-                    if (w is UI.ShopWindow s && s.Vendor == vendor)
-                        _ui.Close(w);
-            };
-            _ctx.Session.PromptRequested += _ => _ui.Open(new UI.PromptWindow());
-            _ctx.Session.TextEntryRequested += e => _ui.Open(new UI.TextEntryWindow(e));
-            _ctx.Session.SpellbookContent += (book, first, bits) => _ui.Open(new UI.SpellbookWindow(book, first, bits));
-            _ctx.Session.EffectStarted += StartEffect;
-
-            if (_ctx.Camera.GetComponent<AudioListener>() == null && FindAnyObjectByType<AudioListener>() == null)
-                _ctx.Camera.gameObject.AddComponent<AudioListener>();
-            if (Sound == null)
-            {
-                Sound = gameObject.AddComponent<Audio>();
-                Sound.Init(_ctx.Data);
-            }
-            _ctx.Session.SoundPlayed += (id, x, y, z) =>
-            {
-                if (_ctx.Player != null)
-                    Sound.PlaySound(id, x - _ctx.Player.X, y - _ctx.Player.Y);
-            };
-            _ctx.Session.MusicRequested += id => Sound.PlayMusic(id);
+            _binder?.Dispose();
+            _binder = new SessionUiBinder(_ctx, this, _gumpArt, _input, _cursor, _overheads, _effects, _chatLine, Sound);
+            _binder.LogoutConfirmed += () => _quitAfterLogout = true;
+            _binder.Attach(_ctx.Session);
         }
 
         /// <summary>Sound effects and music (null until online).</summary>
-        public Audio Sound { get; private set; }
+        public Audio Sound => _binder?.Sound;
 
         // ---- effects ----
 
         private EffectsLayer _effects;
-
-        private void StartEffect(GraphicEffect e) => _effects.Start(e);
 
         private EffectView MakeEffectView(GraphicEffect e) =>
             _ctx.World == null ? null : new EffectView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, e, _entities.Locate);
@@ -385,52 +314,12 @@ namespace UOClient.Unity
 
         /// <summary>The height upper floors are cut at right now (null outdoors).</summary>
         public int? CutZ => _roofs.CutZ;
-        private UI.ChatLog _chatLog;
 
         /// <summary>The paperdoll's buttons.</summary>
-        private void OnUiCommand(string command)
-        {
-            switch (command)
-            {
-                case "help": _ctx.Session.RequestHelp(); break;
-                case "options": _ui.Open(new UI.OptionsWindow(this)); break;
-                case "logout":
-                    _ui.Open(new UI.ConfirmWindow("Log out?", "Quit the game and return to the desktop?", () =>
-                    {
-                        _quitAfterLogout = true;
-                        _ctx.Session.Logout();
-                    }));
-                    break;
-                case "journal": _ctx.Hud.JournalVisible = !_ctx.Hud.JournalVisible; break;
-                case "skills": _ui.Open(new UI.SkillsWindow()); break;
-                case "chat": _chatLine.Open(); break;
-                case "war": _ctx.Session.SetWarMode(!_ctx.Session.WarMode); break;
-                case "status": _ui.Open(new UI.StatusWindow()); break;
-                // The top bar's own buttons.
-                case "minimap": _ctx.Hud.MinimapVisible = !_ctx.Hud.MinimapVisible; break;
-                case "paperdoll": _ctx.Session.OpenPaperdoll(); break;
-                case "backpack":
-                    if (!_ctx.Session.OpenBackpack())
-                        _ctx.Hud.Log(null, "You have no backpack.");
-                    break;
-                case "worldchat":
-                    if (_ui.Find("worldchat") is UI.UiWindow chatWindow)
-                        _ui.Close(chatWindow);
-                    else
-                        _ui.Open(new UI.WorldChatWindow(_chatLog, hue => _gumpArt.HueColor((int)hue, new Color(0.92f, 0.9f, 0.84f))));
-                    break;
-                case "worldmap":
-                    if (_ui.Find("worldmap") is UI.UiWindow mapWindow)
-                        _ui.Close(mapWindow);
-                    else
-                        _ui.Open(new UI.WorldMapWindow(_ctx.Data, Path.Combine(ProjectRoot, "Library", "UOClient")));
-                    break;
-                case "groups": _ctx.Session.Say("[groups"); break; // the server's Group Finder, as the UO Smallz client's button does
-            }
-        }
+        private void OnUiCommand(string command) => _binder.RunCommand(command);
 
         /// <summary>Keyboard macros (null until online).</summary>
-        public Hotkeys Hotkeys { get; private set; }
+        public Hotkeys Hotkeys => _binder?.Hotkeys;
 
         // ---- options the options window changes ----
 
@@ -1135,6 +1024,7 @@ namespace UOClient.Unity
 
         private void OnDestroy()
         {
+            _binder?.Dispose();
             _ctx.Session?.Dispose();
             _ctx.Player?.Dispose();
             _entities?.Dispose();
