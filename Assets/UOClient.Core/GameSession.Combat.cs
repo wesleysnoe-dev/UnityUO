@@ -127,11 +127,31 @@ namespace UOClient.Core
         public void TargetObject(uint serial) =>
             AnswerTarget(serial, serial == World.PlayerSerial ? "targetself" : "target " + MacroRecorder.Hex(serial));
 
+        /// <summary>
+        /// TazUO's TargetManager.Target (TargetManager.cs:379-424): a harmful or beneficial cursor answered with a mobile the
+        /// criminal query covers (<see cref="QueriesTarget"/>) asks first and sends nothing; the cursor stays up. Any other
+        /// answer goes straight out.
+        /// </summary>
         private void AnswerTarget(uint serial, string macro)
         {
             TargetRequest t = Target;
             if (t == null || State != SessionState.InWorld)
                 return;
+            if (TargetNeedsCriminalQuery(t, serial))
+            {
+                LastTarget = serial; // TazUO sets LastTargetInfo before it asks
+                if (PendingTargetQuery is TargetQuery up && up.Serial == serial)
+                    return;
+                var q = new TargetQuery(t, serial, macro);
+                _targetQuery = q;
+                TargetQueryRequested?.Invoke(q);
+                return;
+            }
+            SendTargetObject(t, serial, macro);
+        }
+
+        private void SendTargetObject(TargetRequest t, uint serial, string macro)
+        {
             Macros.Note(macro);
             Target = null;
             LastTarget = serial;
@@ -293,6 +313,79 @@ namespace UOClient.Core
         /// <summary>The notoriety half of the test: an innocent target, while we are innocent or an ally.</summary>
         public static bool QueriesAttack(byte player, byte target) =>
             (player == NotorietyInnocent || player == NotorietyAlly) && target == NotorietyInnocent;
+
+        // ---- target cursor criminal query ----
+
+        /// <summary>ClassicUO's NotorietyFlag Gray, Criminal and Murderer (ModernUO's CanBeAttacked, Criminal, Murderer).</summary>
+        public const byte NotorietyGray = 3, NotorietyCriminal = 4, NotorietyMurderer = 6;
+
+        /// <summary>TazUO's TargetType Harmful and Beneficial, the cursor's flags byte.</summary>
+        public const byte TargetHarmful = 1, TargetBeneficial = 2;
+
+        /// <summary>
+        /// Ask before a beneficial target on a criminal, murderer or gray mobile while we are innocent or an ally (TazUO's
+        /// Profile.EnabledBeneficialCriminalActionQuery, off by default).
+        /// </summary>
+        public bool BeneficialCriminalActionQuery { get; set; }
+
+        /// <summary>A target cursor answer held back by the "this may flag you criminal" question.</summary>
+        public sealed class TargetQuery
+        {
+            public readonly TargetRequest Request;
+            public readonly uint Serial;
+            internal readonly string Macro;
+
+            internal TargetQuery(TargetRequest request, uint serial, string macro)
+            {
+                Request = request;
+                Serial = serial;
+                Macro = macro;
+            }
+        }
+
+        private TargetQuery _targetQuery;
+
+        /// <summary>
+        /// The target answer waiting on the question, or null. It lapses once the cursor it answers is gone (answered,
+        /// cancelled by either side, or replaced by a new cursor).
+        /// </summary>
+        public TargetQuery PendingTargetQuery =>
+            _targetQuery != null && _targetQuery.Request == Target ? _targetQuery : null;
+
+        /// <summary>
+        /// A target answer needs the player's yes first: show the question and answer with <see cref="AnswerTargetQuery"/>.
+        /// A question already up for another mobile is replaced by this one. Nothing is sent until the answer is yes.
+        /// </summary>
+        public event Action<TargetQuery> TargetQueryRequested;
+
+        /// <summary>
+        /// The player's answer to <paramref name="query"/>: yes sends the held 0x6C object target and ends the cursor, as
+        /// TazUO's callback does (Send_TargetObject, ClearTargetingWithoutTargetCancelPacket); no sends nothing and leaves the
+        /// cursor up. A query that was replaced, or whose cursor is gone, sends nothing either way.
+        /// </summary>
+        public void AnswerTargetQuery(TargetQuery query, bool yes)
+        {
+            if (query == null || query != _targetQuery)
+                return;
+            _targetQuery = null;
+            if (yes && query.Request == Target && State == SessionState.InWorld)
+                SendTargetObject(query.Request, query.Serial, query.Macro);
+        }
+
+        /// <summary>TargetManager.Target's test: us innocent or an ally, a known mobile that is not us, and <see cref="QueriesTarget"/>.</summary>
+        public bool TargetNeedsCriminalQuery(TargetRequest t, uint serial) =>
+            t != null && World.Player is Mobile p && serial != World.PlayerSerial
+            && World.Mobiles.TryGetValue(serial, out Mobile m)
+            && QueriesTarget(t.Flags, p.Notoriety, m.Notoriety, CriminalActionQuery, BeneficialCriminalActionQuery);
+
+        /// <summary>
+        /// The notoriety half: while we are innocent or an ally, a harmful cursor on an innocent (with the criminal query on),
+        /// or a beneficial cursor on a criminal, murderer or gray (with the beneficial query on).
+        /// </summary>
+        public static bool QueriesTarget(byte flags, byte player, byte target, bool harmfulQuery, bool beneficialQuery) =>
+            flags == TargetHarmful ? harmfulQuery && QueriesAttack(player, target)
+            : flags == TargetBeneficial && beneficialQuery && (player == NotorietyInnocent || player == NotorietyAlly)
+              && (target == NotorietyCriminal || target == NotorietyMurderer || target == NotorietyGray);
 
         /// <summary>0x05 AttackRequest (TazUO's Send_AttackRequest; ModernUO's AttackReq reads the serial).</summary>
         public static byte[] AttackRequest(uint serial) => new PacketWriter(0x05, 5).UInt32(serial).ToArray();

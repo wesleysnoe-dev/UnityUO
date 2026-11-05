@@ -71,6 +71,7 @@ namespace UOClient.Unity
             s.Damaged += OnDamaged;
             s.LastAttackSet += OnLastAttackSet;
             s.AttackQueryRequested += OnAttackQueryRequested;
+            s.TargetQueryRequested += OnTargetQueryRequested;
             s.World.JournalAdded += OnJournalOverhead;
             s.PlayerDied += OnPlayerDied;
             s.PlayerDeadChanged += OnPlayerDeadChanged;
@@ -122,6 +123,7 @@ namespace UOClient.Unity
             s.Damaged -= OnDamaged;
             s.LastAttackSet -= OnLastAttackSet;
             s.AttackQueryRequested -= OnAttackQueryRequested;
+            s.TargetQueryRequested -= OnTargetQueryRequested;
             s.World.JournalAdded -= OnJournalOverhead;
             s.PlayerDied -= OnPlayerDied;
             s.PlayerDeadChanged -= OnPlayerDeadChanged;
@@ -168,9 +170,36 @@ namespace UOClient.Unity
             });
         }
 
-        private void OnTargetRequested(TargetRequest _) => _cursor.Update(_ctx.Session, Ui);
+        private void OnTargetRequested(TargetRequest _)
+        {
+            CloseLapsedTargetQuery();
+            _cursor.Update(_ctx.Session, Ui);
+        }
 
-        private void OnTargetEnded() => _cursor.Update(_ctx.Session, Ui);
+        private void OnTargetEnded()
+        {
+            CloseLapsedTargetQuery();
+            _cursor.Update(_ctx.Session, Ui);
+        }
+
+        /// <summary>
+        /// TargetManager.Target's criminal query: a question already up for another mobile goes (its answer no longer counts),
+        /// and this one's answer goes back to the session, which alone sends the target, on yes.
+        /// </summary>
+        private void OnTargetQueryRequested(GameSession.TargetQuery q)
+        {
+            if (Ui.Find(UI.QuestionWindow.KeyFor("target")) is UI.UiWindow old)
+                Ui.Close(old);
+            GameSession s = _session;
+            Ui.Open(new UI.QuestionWindow("target", UI.QuestionWindow.CriminalText, yes => s.AnswerTargetQuery(q, yes)));
+        }
+
+        /// <summary>The cursor a target question was holding went (answered, cancelled, replaced): its question goes too.</summary>
+        private void CloseLapsedTargetQuery()
+        {
+            if (_session?.PendingTargetQuery == null && Ui.Find(UI.QuestionWindow.KeyFor("target")) is UI.UiWindow w)
+                Ui.Close(w);
+        }
 
         private void OnWarModeChanged(bool war) => _ctx.Hud.WarMode = war;
 

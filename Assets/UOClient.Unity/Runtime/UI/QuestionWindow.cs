@@ -14,7 +14,7 @@ namespace UOClient.Unity.UI
         private Action<bool> _result;
         private readonly CachedLabel _label = new CachedLabel();
 
-        /// <summary><paramref name="key"/> names the question (TazUO's QuestionType): "attack" for the criminal query.</summary>
+        /// <summary><paramref name="key"/> names the question (TazUO's QuestionType): "attack" and "target" for the criminal queries.</summary>
         public QuestionWindow(string key, string text, Action<bool> result)
         {
             _key = key;
