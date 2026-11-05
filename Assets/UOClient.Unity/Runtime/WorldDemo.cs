@@ -100,6 +100,7 @@ namespace UOClient.Unity
 
         private void Start()
         {
+            _effects = new EffectsLayer(MakeEffectView);
             _camera = CameraRig.EnsureMainCamera();
             _cameraRig = new CameraRig(_camera);
             _hud = new DemoHud();
@@ -378,14 +379,12 @@ namespace UOClient.Unity
 
         // ---- effects ----
 
-        private readonly List<EffectView> _effects = new List<EffectView>();
+        private EffectsLayer _effects;
 
-        private void StartEffect(GraphicEffect e)
-        {
-            if (_world == null || _effects.Count > 64)
-                return; // a storm of effects should not cost more than the fight it decorates
-            _effects.Add(new EffectView(_data, _mobileArt, transform, _shader, _artScale, e, LocateSerial));
-        }
+        private void StartEffect(GraphicEffect e) => _effects.Start(e);
+
+        private EffectView MakeEffectView(GraphicEffect e) =>
+            _world == null ? null : new EffectView(_data, _mobileArt, transform, _shader, _artScale, e, LocateSerial);
 
         /// <summary>Tile position of a mobile we draw (the player included), or of a ground item.</summary>
         private Vector3Int? LocateSerial(uint serial)
@@ -397,49 +396,6 @@ namespace UOClient.Unity
             if (_session != null && _session.World.Items.TryGetValue(serial, out WorldItem item))
                 return new Vector3Int(item.X, item.Y, item.Z);
             return null;
-        }
-
-        private void UpdateEffects()
-        {
-            for (int i = _effects.Count - 1; i >= 0; i--)
-            {
-                EffectView v = _effects[i];
-                if (v.Done)
-                {
-                    GraphicEffect e = v.Effect;
-                    if (e.Type == GraphicEffect.Moving && e.Explode)
-                        StartEffect(new GraphicEffect
-                        {
-                            Type = GraphicEffect.AtLocation, Graphic = 0x36CB, Hue = e.Hue,
-                            SourceX = (int)v.Position.x, SourceY = (int)v.Position.y, SourceZ = (int)v.Position.z
-                        });
-                    v.Dispose();
-                    _effects.RemoveAt(i);
-                    continue;
-                }
-                v.Render(_world);
-            }
-        }
-
-        /// <summary>Lightning bolts are gump frames (0x4E20..) dropped onto the target.</summary>
-        private void DrawLightning()
-        {
-            foreach (EffectView v in _effects)
-            {
-                if (!v.IsLightning)
-                    continue;
-                UI.UiImage img = _gumpArt.Gump(0x4E20 + v.LightningFrame, v.Effect.Hue);
-                if (img == null)
-                    continue;
-                // Bottom-center on the target's feet, sized as world art (project the top too, to get the scale).
-                Vector3 p = v.Position;
-                var feetPx = new Vector2((p.x - p.y) * 22f, (p.x + p.y) * 22f + 22f - p.z * 4f) * _artScale;
-                Vector2 feet = _world.ToUnity(feetPx), top = _world.ToUnity(feetPx - new Vector2(0, img.Height * _artScale));
-                Vector3 s = _camera.WorldToScreenPoint(new Vector3(feet.x, feet.y, 0));
-                Vector3 t = _camera.WorldToScreenPoint(new Vector3(top.x, top.y, 0));
-                float h = Mathf.Abs(t.y - s.y), w = h * img.Width / Mathf.Max(1, img.Height);
-                GUI.DrawTexture(new Rect(s.x - w / 2, Screen.height - s.y - h, w, h), img.Texture);
-            }
         }
 
         private bool _quitAfterLogout;
@@ -950,7 +906,7 @@ namespace UOClient.Unity
                 v.Render(_world);
             RenderMultis(_roofsForced ? !_manualRoofs : under);
             _placement.Update(_session, _data, _world, p => new ItemView(_data, _mobileArt, transform, _shader, _artScale, p), MouseTile);
-            UpdateEffects();
+            _effects.Update(_world);
 
             _sections.Begin("camera+hud");
             _cameraRig.Follow(_avatar.AnchorPixels, _world, _artScale, zoom);
@@ -1130,7 +1086,7 @@ namespace UOClient.Unity
             }
 
             Vector3 head = _camera.WorldToScreenPoint(_world.ToUnity(_avatar.AnchorPixels - new Vector2(0, 75 * _artScale)));
-            DrawLightning();
+            _effects.DrawLightningGUI(_gumpArt, _camera, _world, _artScale);
             _hud.Draw(characterName, new Vector2(head.x, Screen.height - head.y));
             if (_ui != null)
             {
