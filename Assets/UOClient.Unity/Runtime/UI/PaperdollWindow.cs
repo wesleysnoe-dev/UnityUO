@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿// EquipConvEntry is the top-level struct in UOClient.IO (ClientOverrides.cs).
+using System.Collections.Generic;
 using UnityEngine;
 using UOClient.Core;
 using UOClient.IO;

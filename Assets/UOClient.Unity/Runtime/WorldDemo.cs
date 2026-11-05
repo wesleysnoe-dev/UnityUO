@@ -1,4 +1,5 @@
-﻿using System;
+﻿// The UO data folder comes from ClientPaths / ClientSettings; there is no uoPath field anymore.
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
