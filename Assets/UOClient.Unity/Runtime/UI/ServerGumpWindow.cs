@@ -10,13 +10,14 @@ namespace UOClient.Unity.UI
     /// Pages switch locally; reply buttons answer the server with the switches and text entries.
     /// Right-click closes it (answering button 0) unless the server marked it noclose.
     /// </summary>
-    public sealed class ServerGumpWindow : UiWindow
+    public sealed partial class ServerGumpWindow : UiWindow
     {
         private readonly ServerGump _gump;
         private readonly Dictionary<int, bool> _switches = new Dictionary<int, bool>();
-        private readonly Dictionary<int, int> _radioGroup = new Dictionary<int, int>();
+        private readonly Dictionary<int, int> _radioGroup;
         private readonly Dictionary<int, string> _texts = new Dictionary<int, string>();
         private readonly Dictionary<int, Vector2> _scroll = new Dictionary<int, Vector2>();
+        private HashSet<int> _faded; // commands a later checkertrans covers, worked out on the first draw
         private int _page = 1;
         private bool _answered;
         private GUIStyle _text, _html, _entry;
@@ -24,9 +25,9 @@ namespace UOClient.Unity.UI
         public ServerGumpWindow(ServerGump gump)
         {
             _gump = gump;
+            _radioGroup = RadioGroups(gump.Commands);
 
             // Initial state of switches and text entries, and the first page shown.
-            int group = 0;
             bool hasPage1 = false;
             foreach (GumpCommand c in gump.Commands)
             {
@@ -35,18 +36,9 @@ namespace UOClient.Unity.UI
                     case "page":
                         hasPage1 |= c.Arg(0) == 1;
                         break;
-                    case "group":
-                        group = c.Arg(0);
-                        break;
-                    case "endgroup":
-                        group = 0;
-                        break;
                     case "checkbox":
-                        _switches[c.Arg(5)] = c.Arg(4) != 0;
-                        break;
                     case "radio":
                         _switches[c.Arg(5)] = c.Arg(4) != 0;
-                        _radioGroup[c.Arg(5)] = group;
                         break;
                     case "textentry":
                     case "textentrylimited":
@@ -89,9 +81,12 @@ namespace UOClient.Unity.UI
         public override void Draw()
         {
             EnsureStyles();
+            _faded ??= CheckerFaded(_gump.Commands, Bounds);
             int page = 0;
-            foreach (GumpCommand c in _gump.Commands)
+            List<GumpCommand> commands = _gump.Commands;
+            for (int i = 0; i < commands.Count; i++)
             {
+                GumpCommand c = commands[i];
                 if (c.Name == "page")
                 {
                     page = c.Arg(0);
@@ -99,7 +94,10 @@ namespace UOClient.Unity.UI
                 }
                 if (page != 0 && page != _page)
                     continue;
-                if (DrawCommand(c))
+                GUI.color = _faded.Contains(i) ? new Color(1f, 1f, 1f, CheckerAlpha) : Color.white;
+                bool closed = DrawCommand(c);
+                GUI.color = Color.white;
+                if (closed)
                     return; // the window closed itself
             }
             if (Event.current.type == EventType.Repaint)
@@ -116,6 +114,7 @@ namespace UOClient.Unity.UI
         private Rect _lastArea;
         private uint _hoverInGump;
         private string _hoverTextInGump;
+        private Rect _hoverTextArea;
 
         /// <summary>Draws one command; returns true if it closed the gump.</summary>
         private bool DrawCommand(GumpCommand c)
@@ -131,7 +130,7 @@ namespace UOClient.Unity.UI
                 case "gumppichued":
                 case "gumppicphued":
                 {
-                    UiImage img = Art.Gump(c.Arg(2), c.Named("hue"));
+                    UiImage img = Art.Gump(c.Arg(2), PicHue(c.Named("hue")));
                     DrawImage(img, c.Arg(0), c.Arg(1));
                     _lastArea = new Rect(c.Arg(0), c.Arg(1), img?.Width ?? 0, img?.Height ?? 0);
                     break;
@@ -176,21 +175,26 @@ namespace UOClient.Unity.UI
                     break;
 
                 case "tooltip":
-                    // tooltip number [@args@]: a cliloc shown over the element drawn just before.
+                    // tooltip number [@args@]: a cliloc shown over the element drawn just before; a second tooltip
+                    // on the same element goes under the first, as TazUO appends it on a new line.
                     if (Event.current.type == EventType.Repaint && _lastArea.Contains(Event.current.mousePosition))
-                        _hoverTextInGump = ClilocText(c.Arg(0), c.ClilocArgs);
+                    {
+                        string text = ClilocText(c.Arg(0), c.ClilocArgs);
+                        _hoverTextInGump = _hoverTextInGump != null && _hoverTextArea == _lastArea ? _hoverTextInGump + "\n" + text : text;
+                        _hoverTextArea = _lastArea;
+                    }
                     break;
 
                 case "checkertrans":
-                    // Classic clients make the area see-through; a light veil reads the same here.
-                    GUI.color = new Color(0, 0, 0, 0.25f);
+                    // TazUO's CheckerTrans: 50% black; what it covers is already faded to half (CheckerFaded).
+                    GUI.color = new Color(0, 0, 0, CheckerAlpha);
                     GUI.DrawTexture(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3)), Texture2D.whiteTexture);
                     GUI.color = Color.white;
                     break;
 
                 case "text":
                 {
-                    _text.normal.textColor = Art.HueColor(c.Arg(2), new Color(0.1f, 0.1f, 0.1f));
+                    _text.normal.textColor = Art.HueColor(TextHue(c.Arg(2)), new Color(0.1f, 0.1f, 0.1f));
                     var content = new GUIContent(_gump.Line(c.Arg(3)));
                     GUI.Label(new Rect(c.Arg(0), c.Arg(1), 600, 22), content, _text);
                     _lastArea = new Rect(c.Arg(0), c.Arg(1), _text.CalcSize(content).x, 22);
@@ -198,7 +202,7 @@ namespace UOClient.Unity.UI
                 }
 
                 case "croppedtext":
-                    _text.normal.textColor = Art.HueColor(c.Arg(4), new Color(0.1f, 0.1f, 0.1f));
+                    _text.normal.textColor = Art.HueColor(TextHue(c.Arg(4)), new Color(0.1f, 0.1f, 0.1f));
                     GUI.Label(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3)), _gump.Line(c.Arg(5)), _text);
                     _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
                     break;
@@ -234,7 +238,7 @@ namespace UOClient.Unity.UI
                 case "textentrylimited":
                 {
                     int id = c.Arg(5);
-                    _entry.normal.textColor = _entry.focused.textColor = Art.HueColor(c.Arg(4), new Color(0.1f, 0.1f, 0.1f));
+                    _entry.normal.textColor = _entry.focused.textColor = Art.HueColor(TextHue(c.Arg(4)), new Color(0.1f, 0.1f, 0.1f));
                     string value = _texts.TryGetValue(id, out string v) ? v : "";
                     _texts[id] = GUI.TextField(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), Math.Max(18, c.Arg(3))), value, c.TextLimit, _entry);
                     _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
@@ -302,11 +306,13 @@ namespace UOClient.Unity.UI
             var r = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
             _lastArea = r;
             if (background)
-                DrawResizePic(0x0BB8, r.x, r.y, r.width, r.height);
+                DrawResizePic(HtmlBackgroundGump, r.x, r.y, r.width - (scrollbar ? HtmlScrollbarWidth : 0), r.height);
 
             string rich = GumpHtml.ToRichText(html, out bool centered);
             _html.alignment = centered ? TextAnchor.UpperCenter : TextAnchor.UpperLeft;
-            _html.normal.textColor = color ?? (background ? new Color(0.05f, 0.05f, 0.05f) : new Color(0.08f, 0.06f, 0.04f));
+            // Uncolored HTML is TazUO's 0x010101 (HtmlControl.InternalBuild). Its scrolling-without-background case
+            // (hue 0xFFFF) is left the same here: not checked against TazUO's font renderer.
+            _html.normal.textColor = color ?? new Color(1f / 255, 1f / 255, 1f / 255);
             var inner = new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4);
             if (!scrollbar)
             {
@@ -343,50 +349,63 @@ namespace UOClient.Unity.UI
             float w = 50, h = 50;
             foreach (GumpCommand c in _gump.Commands)
             {
-                float x = c.Arg(0), y = c.Arg(1), cw = 0, ch = 0;
-                switch (c.Name)
-                {
-                    case "resizepic": cw = c.Arg(3); ch = c.Arg(4); break;
-                    case "gumppictiled":
-                    case "checkertrans":
-                    case "htmlgump":
-                    case "xmfhtmlgump":
-                    case "xmfhtmlgumpcolor":
-                    case "xmfhtmltok":
-                    case "croppedtext":
-                    case "textentry":
-                    case "textentrylimited":
-                        cw = c.Arg(2); ch = c.Arg(3); break;
-                    case "picinpic":
-                    case "picinpichued":
-                    case "picinpicphued":
-                        cw = c.Arg(3); ch = c.Arg(4); break;
-                    case "gumppic":
-                    case "gumppichued":
-                    case "gumppicphued":
-                    {
-                        UiImage img = Art.Gump(c.Arg(2));
-                        cw = img?.Width ?? 0;
-                        ch = img?.Height ?? 0;
-                        break;
-                    }
-                    case "button":
-                    case "buttontileart":
-                    case "checkbox":
-                    case "radio":
-                    {
-                        UiImage img = Art.Gump(c.Arg(2));
-                        cw = img?.Width ?? 20;
-                        ch = img?.Height ?? 20;
-                        break;
-                    }
-                    case "text": cw = 120; ch = 20; break;
-                    default: continue;
-                }
+                (int x, int y, int cw, int ch) = Bounds(c);
+                if (cw == 0 && ch == 0)
+                    continue;
                 w = Math.Max(w, x + cw);
                 h = Math.Max(h, y + ch);
             }
             return new Vector2(w, h);
+        }
+
+        /// <summary>Where a command draws (0 x 0 for ones that draw nothing).</summary>
+        private (int X, int Y, int W, int H) Bounds(GumpCommand c)
+        {
+            int x = c.Arg(0), y = c.Arg(1);
+            switch (c.Name)
+            {
+                case "resizepic":
+                case "picinpic":
+                case "picinpichued":
+                case "picinpicphued":
+                    return (x, y, c.Arg(3), c.Arg(4));
+                case "gumppictiled":
+                case "checkertrans":
+                case "htmlgump":
+                case "xmfhtmlgump":
+                case "xmfhtmlgumpcolor":
+                case "xmfhtmltok":
+                case "croppedtext":
+                case "textentry":
+                case "textentrylimited":
+                    return (x, y, c.Arg(2), c.Arg(3));
+                case "gumppic":
+                case "gumppichued":
+                case "gumppicphued":
+                {
+                    UiImage img = Art.Gump(c.Arg(2));
+                    return (x, y, img?.Width ?? 0, img?.Height ?? 0);
+                }
+                case "tilepic":
+                case "tilepichue":
+                {
+                    UiImage img = Art.Item(c.Arg(2));
+                    return (x, y, img?.Width ?? 0, img?.Height ?? 0);
+                }
+                case "button":
+                case "buttontileart":
+                case "checkbox":
+                case "radio":
+                {
+                    UiImage img = Art.Gump(c.Arg(2));
+                    return (x, y, img?.Width ?? 20, img?.Height ?? 20);
+                }
+                case "text":
+                    // The label's own width, as TazUO's Label sizes to its text (a guess before styles exist).
+                    return (x, y, _text != null ? (int)_text.CalcSize(new GUIContent(_gump.Line(c.Arg(3)))).x : 120, 20);
+                default:
+                    return (x, y, 0, 0);
+            }
         }
 
         private void EnsureStyles()

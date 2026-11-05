@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using UOClient.Core;
 using UOClient.Net;
+using UOClient.Unity.UI;
 
 namespace UOClient.Tests;
 
@@ -166,6 +167,93 @@ public sealed class GumpTests
         ServerGump live = Assert.Single(session.World.Gumps);
         Assert.Same(opened[1], live);
         Assert.Equal("new", live.Line(0));
+    }
+
+    [Fact]
+    public void UncompressedGumpFromTheGmPanelOpensWithPaddedTextIndices()
+    {
+        // CustomBots' UncompressedGump.ToUncompressed: the 0xDD inflated into 0xB0 (u16 layout length, the layout
+        // with its 0, u16 line count, [u16 n][UTF-16BE] lines). StaticGump placeholders pad text indices to 5 digits.
+        string layout = "{ page 0 }{ resizepic 0 0 9270 560 470 }{ text 48 73 1153 00001 }{ htmlgump 24 20 512 22 00000 0 0 }\0";
+        var w = new PacketWriter(0xB0).UInt32(0x40000002).UInt32(0x77).Int32(120).Int32(70).UInt16(layout.Length);
+        foreach (byte b in Encoding.Latin1.GetBytes(layout))
+            w.Byte(b);
+        string[] lines = { "<B>Chat</B>", "Global" };
+        w.UInt16(lines.Length);
+        foreach (string line in lines)
+        {
+            w.UInt16(line.Length);
+            foreach (byte b in Encoding.BigEndianUnicode.GetBytes(line))
+                w.Byte(b);
+        }
+        var session = new GameSession(new LoginSettings());
+        ServerGump? opened = null;
+        session.World.GumpOpened += g => opened = g;
+
+        session.Inject(w.ToArray(), true);
+
+        Assert.NotNull(opened);
+        Assert.Equal((0x77u, 120, 70), (opened!.TypeId, opened.X, opened.Y));
+        Assert.Equal(new[] { "page", "resizepic", "text", "htmlgump" }, opened.Commands.Select(c => c.Name));
+        Assert.Equal("Global", opened.Line(opened.Commands[2].Arg(3)));
+        Assert.Equal("<B>Chat</B>", opened.Line(opened.Commands[3].Arg(4)));
+    }
+
+    [Fact]
+    public void GumpTextAndPictureHuesAreShiftedAsTazUOShiftsThem()
+    {
+        // Label, CroppedText and StbTextBox add one: ChatSettingsGump's 1153 labels and its "Hue N" swatches.
+        Assert.Equal(1154, ServerGumpWindow.TextHue(1153));
+        Assert.Equal(1, ServerGumpWindow.TextHue(0));
+        // GumpPic adds one, then TransformHue leaves 2 and below unhued.
+        Assert.Equal(0, ServerGumpWindow.PicHue(0));
+        Assert.Equal(0, ServerGumpWindow.PicHue(1));
+        Assert.Equal(3, ServerGumpWindow.PicHue(2));
+        Assert.Equal(34, ServerGumpWindow.PicHue(33));
+    }
+
+    [Fact]
+    public void RadioGroupsCountGroupCommandsAsTazUODoes()
+    {
+        // ChatSettingsGump: a checkbox, AddGroup(1) + the bot-talk radios, AddGroup(2) + the hue radios.
+        List<GumpCommand> chat = ServerGump.ParseLayout(
+            "{ page 0 }{ checkbox 24 72 210 211 1 100 }{ group 1 }{ radio 24 126 208 209 0 200 }{ radio 134 126 208 209 1 201 }" +
+            "{ group 2 }{ radio 24 200 208 209 1 300 }{ radio 128 200 208 209 0 301 }");
+        Dictionary<int, int> g = ServerGumpWindow.RadioGroups(chat);
+        Assert.Equal(g[200], g[201]);
+        Assert.Equal(g[300], g[301]);
+        Assert.NotEqual(g[200], g[300]);
+        Assert.False(g.ContainsKey(100));
+
+        // AuctionSellGump's AddGroup(0): its radios are a group apart from one laid before it, though both say 0.
+        g = ServerGumpWindow.RadioGroups(ServerGump.ParseLayout(
+            "{ radio 0 0 208 209 1 5 }{ group 0 }{ radio 0 20 208 209 1 6 }{ radio 0 40 208 209 0 7 }"));
+        Assert.NotEqual(g[5], g[6]);
+        Assert.Equal(g[6], g[7]);
+    }
+
+    [Fact]
+    public void AlphaRegionFadesOnlyWhatIsAlreadyUnderIt()
+    {
+        // ChatSettingsGump's head: background, AddAlphaRegion over it, then the title and labels laid on top.
+        List<GumpCommand> c = ServerGump.ParseLayout(
+            "{ page 0 }{ resizepic 0 0 9270 560 470 }{ checkertrans 12 12 536 446 }" +
+            "{ htmlgump 24 20 512 22 0 0 0 }{ text 48 73 1153 1 }{ button 340 428 4005 4007 1 0 2 }");
+        Assert.Equal(new[] { 1 }, ServerGumpWindow.CheckerFaded(c, Box).OrderBy(i => i));
+
+        // BotPanelGump-style pages: a region on page 2 reaches page 0 and page 2, not page 1, and not what lies beside it.
+        c = ServerGump.ParseLayout(
+            "{ page 0 }{ resizepic 0 0 9270 100 100 }{ gumppictiled 200 0 50 50 2624 }{ page 1 }{ gumppictiled 0 0 50 50 2624 }" +
+            "{ page 2 }{ gumppictiled 0 0 50 50 2624 }{ checkertrans 0 0 100 100 }");
+        Assert.Equal(new[] { 1, 6 },ServerGumpWindow.CheckerFaded(c, Box).OrderBy(i => i));
+
+        static (int, int, int, int) Box(GumpCommand g) => g.Name switch
+        {
+            "resizepic" => (g.Arg(0), g.Arg(1), g.Arg(3), g.Arg(4)),
+            "text" => (g.Arg(0), g.Arg(1), 80, 20),
+            "button" => (g.Arg(0), g.Arg(1), 60, 22),
+            _ => (g.Arg(0), g.Arg(1), g.Arg(2), g.Arg(3)),
+        };
     }
 
     /// <summary>0xDD as ModernUO's DynamicGump.SendTo writes it.</summary>

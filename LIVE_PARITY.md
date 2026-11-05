@@ -103,6 +103,16 @@ Works:
   - **Virtue gem:** gump `0x71` at (80,4) on every paperdoll, drawn under the body. A double-click sends `0xB1` from the player with type 461, button 1, and the paperdoll's serial as the only switch, as `VirtueMenu_MouseDoubleClickEvent` → `GameActions.ReplyGump` does. ModernUO's `DisplayGumpResponse` answers type 461 with button 1 and a switch with `VirtueGump.RequestVirtueGump(beholder, switch's player)`.
   - **Party manifest:** own paperdoll only. Gump `0x7D2` at (25 + its width − 4, 196), next to the profile scroll. A double-click opens the party window or brings it forward, as `PartyManifest_MouseDoubleClickEvent` does.
   - Verified: 228 tests pass (a new offline test reads the `0xB1` as `DisplayGumpResponse` does); Tests, Cli and EditorCheck build. Runtime and Editor also build as separate assemblies. Not verified: in Unity, and the live virtue gump. Known gaps: TazUO opens its party gump at screen centre −(272,240), ours opens where `PartyWindow` puts it. The gargoyle racial-abilities offset (+14 to the scrolls) is not done. Our profile scroll still opens on a single click; TazUO uses a double-click.
+- [x] **Shard gump commands (auction, group finder, chat, GM panel, stable claim, Animal Lore, vendors)** (`ServerGumpWindow` + `.Layout.cs`): I listed every layout command these shard gumps emit (all CustomBots gumps go out as `0xB0` through `UncompressedGump.Send`; stock ones as `0xDD`) and diffed them against TazUO's C# source (`GumpHelpers.CreateGump`/`ApplyTrans`, `Label`, `CroppedText`, `StbTextBox`, `GumpPic`, `HtmlControl`, `CheckerTrans`). The command-by-command table is in `_cc_logs/gump_audit.md` (gitignored). The shard has no bank gumps, and `AgentStable` is not a gump.
+  - **Fixed hues:** `text`, `croppedtext` and `textentry` hues are now hue+1, as TazUO does. They were one hue entry off on every label, including ChatSettingsGump's hue swatches. `gumppic hue=N` is now N+1, and 2 or below is drawn unhued (`TransformHue`).
+  - **Fixed `checkertrans`:** it is now 50% black, and controls already laid under it (page 0 or its own page) fade to half alpha, as `ApplyTrans` does. It used to be a 25% veil that faded nothing.
+  - **Fixed HTML:** the background is resize `0x2486`, narrowed by 16 px when there is a scrollbar. It used to be `0x0BB8`. Uncolored text is `0x010101`; it used to be dark brown.
+  - **Fixed radio groups:** they now count `group`/`endgroup` as TazUO does (`group++`). AuctionSellGump's `AddGroup(0)` is now its own group.
+  - **Fixed tooltips:** a second `tooltip` on the same element is now added on a new line.
+  - **Already correct:** zero-padded StaticGump text indices (`00003`), and `0xB0` in UncompressedGump's byte layout. Both now have tests.
+  - Verified: 232 tests pass (4 new, built from the ChatSettingsGump, AuctionSellGump, BotPanel and UncompressedGump sequences). Tests, Cli and EditorCheck build.
+  - Not verified: drawing in Unity, and anything live.
+  - Left as is: `gumppichued` ignores pages in TazUO. Scrolling HTML with no background is hue `0xFFFF` in TazUO, which I didn't check against its font renderer. TazUO draws text in its bordered unicode font; we use IMGUI text.
 
 Still missing:
 - [ ] The directional run cursors (`0x206A`–`0x2079`, `0x2053`–`0x2062`); the pointer is always the up-left gauntlet.

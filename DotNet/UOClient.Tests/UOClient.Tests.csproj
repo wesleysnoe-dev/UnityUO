@@ -24,6 +24,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\SecureTradeWindow.Layout.cs" Link="Unity\SecureTradeWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\BookWindow.Layout.cs" Link="Unity\BookWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\BulletinBoardWindow.Layout.cs" Link="Unity\BulletinBoardWindow.Layout.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\ServerGumpWindow.Layout.cs" Link="Unity\ServerGumpWindow.Layout.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />
