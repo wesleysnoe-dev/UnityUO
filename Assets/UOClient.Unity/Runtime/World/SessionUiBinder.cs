@@ -69,6 +69,7 @@ namespace UOClient.Unity
             s.TargetEnded += OnTargetEnded;
             s.WarModeChanged += OnWarModeChanged;
             s.Damaged += OnDamaged;
+            s.LastAttackSet += OnLastAttackSet;
             s.World.JournalAdded += OnJournalOverhead;
             s.PlayerDied += OnPlayerDied;
             s.PlayerDeadChanged += OnPlayerDeadChanged;
@@ -118,6 +119,7 @@ namespace UOClient.Unity
             s.TargetEnded -= OnTargetEnded;
             s.WarModeChanged -= OnWarModeChanged;
             s.Damaged -= OnDamaged;
+            s.LastAttackSet -= OnLastAttackSet;
             s.World.JournalAdded -= OnJournalOverhead;
             s.PlayerDied -= OnPlayerDied;
             s.PlayerDeadChanged -= OnPlayerDeadChanged;
@@ -169,6 +171,9 @@ namespace UOClient.Unity
         private void OnTargetEnded() => _cursor.Update(_ctx.Session, Ui);
 
         private void OnWarModeChanged(bool war) => _ctx.Hud.WarMode = war;
+
+        /// <summary>TazUO's OpenHealthBarForLastAttack (on by default, hardcoded here; nothing is written to the settings).</summary>
+        private void OnLastAttackSet(uint serial) => UI.HealthBarWindow.ShowLastAttack(Ui, serial);
 
         private void OnDamaged(uint serial, int amount) => _overheads.Add(serial, amount.ToString(), new Color(1f, 0.25f, 0.2f), 18, 1.6f, true);
 

@@ -20,6 +20,37 @@ namespace UOClient.Unity.UI
     }
 
     /// <summary>
+    /// A client-drawn gump label (status values, a health bar's name): unicode font 1 in a client hue, no border, remade
+    /// only when its text or hue changes. TazUO draws these with the ASCII fonts.mul font 1; we have no fonts.mul reader,
+    /// so this is the nearest font we draw. The owner calls <see cref="Release"/> when it closes.
+    /// </summary>
+    public sealed class CachedLabel
+    {
+        private string _text;
+        private int _hue;
+        private UiImage _img;
+
+        public UiImage Get(GumpArt art, string text, int clientHue)
+        {
+            if (_img != null && _text == text && _hue == clientHue)
+                return _img;
+            Release();
+            _text = text;
+            _hue = clientHue;
+            if (!string.IsNullOrEmpty(text))
+                _img = GumpArt.TextImage(art.Text.Generate(text, ServerGumpWindow.GumpFont,
+                    ServerGumpWindow.LabelArgb(art.Data.Hues.Entries, clientHue), 0, UniTextAlign.Left, UniTextStyle.None));
+            return _img;
+        }
+
+        public void Release()
+        {
+            GumpArt.Release(_img);
+            _img = null;
+        }
+    }
+
+    /// <summary>
     /// Gump art and item art for the UI, decoded on demand, hued, and cached as textures. UI art is small
     /// and only decoded when a window first shows it, so this runs on the main thread.
     /// </summary>

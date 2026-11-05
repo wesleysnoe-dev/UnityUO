@@ -713,7 +713,7 @@ namespace UOClient.Core
             m.Name = r.ReadAscii(30);
             m.Hits = r.ReadUInt16();
             m.HitsMax = r.ReadUInt16();
-            r.ReadByte(); // can rename
+            m.Renamable = r.ReadBool();
             int version = r.ReadByte();
             if (version > 0)
             {
@@ -939,7 +939,7 @@ namespace UOClient.Core
         private void Extended(PacketReader r)
         {
             int sub = r.ReadUInt16();
-            if (TradeExtended(sub, r) || HousingExtended(sub, r) || PartyExtended(sub, r))
+            if (TradeExtended(sub, r) || HousingExtended(sub, r) || PartyExtended(sub, r) || ExtendedStats(sub, r))
                 return;
             if (sub == 0x08) // set map
                 World.Map = r.ReadByte();

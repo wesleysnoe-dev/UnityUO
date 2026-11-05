@@ -17,11 +17,16 @@ using static UOClient.Unity.UI.ServerGumpWindow;
 // HtmlImage, EntryImage, HtmlParts, HtmlScrollbar, PicHue, CheckerFaded, GumpControls) and art (UOData.GetGump /
 // GetStatic, HueApplier, UniText on unifont1). Not drawn: hover/pressed button art, tooltips, the entry caret and
 // selection, HD art, Unity's texture sampling and ui.Scale. Pages switch locally, so [page] picks the one shown (1).
+//
+// usage: gumppreview <uoDataDir> --ux <outDir>
+// Synthetic health bars and the classic status window (UxPreview.cs), renderer-only.
 if (args.Length < 3)
 {
-    Console.Error.WriteLine("usage: gumppreview <uoDataDir> <fixture.json> <outDir> [page]");
+    Console.Error.WriteLine("usage: gumppreview <uoDataDir> <fixture.json> <outDir> [page]\n       gumppreview <uoDataDir> --ux <outDir>");
     return 2;
 }
+if (args[1] == "--ux")
+    return UxPreview.Run(args[0], args[2]);
 string dataDir = args[0], fixturePath = args[1], outDir = args[2];
 int shownPage = args.Length > 3 ? int.Parse(args[3]) : 1;
 

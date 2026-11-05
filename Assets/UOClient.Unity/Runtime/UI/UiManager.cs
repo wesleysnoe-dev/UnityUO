@@ -246,6 +246,33 @@ namespace UOClient.Unity.UI
                 window.OnClosed();
         }
 
+        private UiWindow _dragWindow; // a window carried by the held left button from a press outside it (BeginWindowDrag)
+        private Vector2 _dragGrab;
+
+        /// <summary>
+        /// Carries a window with the mouse while the left button stays down, held at <paramref name="grab"/> (window-local):
+        /// TazUO's UIManager.AttemptDragControl for a health bar opened by dragging a mobile, whose press began in the world
+        /// (so IMGUI's own GUI.DragWindow never saw it).
+        /// </summary>
+        public void BeginWindowDrag(UiWindow window, Vector2 grab)
+        {
+            _dragWindow = window;
+            _dragGrab = grab;
+        }
+
+        private void FollowWindowDrag()
+        {
+            if (_dragWindow == null)
+                return;
+            if (!_windows.Contains(_dragWindow) || !Input.GetMouseButton(0))
+            {
+                _dragWindow = null;
+                return;
+            }
+            (float x, float y) = UiRouting.ScreenToUi(Input.mousePosition.x, Input.mousePosition.y, Screen.height, Scale);
+            _dragWindow.Rect.position = new Vector2(x, y) - _dragGrab;
+        }
+
         public UiWindow Find(string key) => _windows.Find(w => w.Key == key);
 
         /// <summary>
@@ -360,6 +387,7 @@ namespace UOClient.Unity.UI
                 e.Use();
             }
 
+            FollowWindowDrag();
             foreach (UiWindow w in _windows.ToArray())
             {
                 UiWindow window = w;

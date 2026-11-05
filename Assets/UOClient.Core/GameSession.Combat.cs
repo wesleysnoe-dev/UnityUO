@@ -42,6 +42,18 @@ namespace UOClient.Core
         /// <summary>The mobile we are fighting (the server's current combatant), or 0.</summary>
         public uint Combatant { get; private set; }
 
+        /// <summary>
+        /// The mobile we last attacked or the server last made our combatant (TazUO's TargetManager.LastAttack, set by
+        /// GameActions.Attack and by 0xAA), or 0.
+        /// </summary>
+        public uint LastAttack { get; private set; }
+
+        /// <summary>
+        /// <see cref="LastAttack"/> was set to a mobile (never raised for 0 or an item serial): TazUO opens or retargets
+        /// the last attack health bar here (OpenHealthBarForLastAttack, on by default).
+        /// </summary>
+        public event Action<uint> LastAttackSet;
+
         public readonly Dictionary<int, SkillEntry> Skills = new Dictionary<int, SkillEntry>();
 
         public event Action<TargetRequest> TargetRequested;
@@ -55,7 +67,8 @@ namespace UOClient.Core
             _handlers[0x6C] = TargetCursor;
             _handlers[0x99] = MultiTargetCursor;
             _handlers[0x72] = r => { WarMode = r.ReadBool(); WarModeChanged?.Invoke(WarMode); };
-            _handlers[0xAA] = r => Combatant = r.ReadUInt32();
+            _handlers[0xAA] = r => { Combatant = r.ReadUInt32(); SetLastAttack(Combatant); };
+            _handlers[0x17] = HealthBarState;
             _handlers[0x2F] = _ => { };   // swing animation
             _handlers[0xA1] = r => Stat(r, (m, max, cur) => { m.HitsMax = max; m.Hits = cur; });
             _handlers[0xA2] = r => Stat(r, (m, max, cur) => { m.ManaMax = max; m.Mana = cur; });
@@ -218,8 +231,84 @@ namespace UOClient.Core
 
         public void Attack(uint serial)
         {
-            if (State == SessionState.InWorld)
-                _conn.Send(new PacketWriter(0x05, 5).UInt32(serial).ToArray());
+            if (State != SessionState.InWorld)
+                return;
+            SetLastAttack(serial);
+            _conn.Send(new PacketWriter(0x05, 5).UInt32(serial).ToArray());
+        }
+
+        private void SetLastAttack(uint serial)
+        {
+            LastAttack = serial;
+            if (IsMobileSerial(serial))
+                LastAttackSet?.Invoke(serial);
+        }
+
+        /// <summary>ClassicUO's SerialHelper.IsMobile: 1 through 0x3FFFFFFF.</summary>
+        public static bool IsMobileSerial(uint serial) => serial != 0 && serial < 0x40000000;
+
+        /// <summary>
+        /// 0x17 (ModernUO's CreateMobileHealthbar): serial, a count, then per entry a uint16 type (1 poison, 2 yellow) and
+        /// a byte level (0 off), as TazUO's NewHealthBarUpdate reads it.
+        /// </summary>
+        private void HealthBarState(PacketReader r)
+        {
+            uint serial = r.ReadUInt32();
+            if (!World.Mobiles.TryGetValue(serial, out Mobile m))
+                return;
+            int count = r.ReadUInt16();
+            for (int i = 0; i < count && r.Remaining >= 3; i++)
+            {
+                int type = r.ReadUInt16();
+                bool on = r.ReadByte() != 0;
+                if (type == 1)
+                    m.Poisoned = on;
+                else if (type == 2)
+                    m.YellowHits = on;
+            }
+            World.RaiseMobileUpdated(m);
+        }
+
+        /// <summary>
+        /// Changes a stat's gain lock (0 str, 1 dex, 2 int; 0 up, 1 down, 2 locked): 0xBF 0x1A, as TazUO's
+        /// Send_StatLockStateRequest writes it and ModernUO's StatLockChange reads it (in game only, a lock above 2 taken as up).
+        /// </summary>
+        public void SetStatLock(int stat, byte lockState)
+        {
+            if (State != SessionState.InWorld || stat < 0 || stat > 2)
+                return;
+            if (World.Player is Mobile p)
+            {
+                if (stat == 0) p.StrLock = lockState;
+                else if (stat == 1) p.DexLock = lockState;
+                else p.IntLock = lockState;
+            }
+            _conn.Send(StatLockRequest(stat, lockState));
+        }
+
+        public static byte[] StatLockRequest(int stat, byte lockState) =>
+            new PacketWriter(0xBF).UInt16(0x1A).Byte(stat).Byte(lockState).ToArray();
+
+        /// <summary>
+        /// 0xBF 0x19 extended stats. Version 2 (ModernUO's SendStatLockInfo, sent with our own 0x11 status): serial, a
+        /// byte, then the locks packed str &lt;&lt; 4 | dex &lt;&lt; 2 | int. Version 0 (bonded) is not kept.
+        /// </summary>
+        private bool ExtendedStats(int sub, PacketReader r)
+        {
+            if (sub != 0x19)
+                return false;
+            byte version = r.ReadByte();
+            uint serial = r.ReadUInt32();
+            if (version == 2 && serial == World.PlayerSerial && r.Remaining >= 2 && World.Player is Mobile p)
+            {
+                r.ReadByte();
+                byte state = r.ReadByte();
+                p.StrLock = (byte)((state >> 4) & 3);
+                p.DexLock = (byte)((state >> 2) & 3);
+                p.IntLock = (byte)(state & 3);
+                World.RaiseMobileUpdated(p);
+            }
+            return true;
         }
 
         private void Stat(PacketReader r, Action<Mobile, int, int> set)

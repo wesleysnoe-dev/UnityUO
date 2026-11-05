@@ -14,6 +14,8 @@
     <!-- The same UnityEngine-free layout files the test project compiles. -->
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\ServerGumpWindow.Layout.cs" Link="Unity\ServerGumpWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\GumpHtml.cs" Link="Unity\GumpHtml.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\HealthBarWindow.Layout.cs" Link="Unity\HealthBarWindow.Layout.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\StatusWindow.Layout.cs" Link="Unity\StatusWindow.Layout.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />

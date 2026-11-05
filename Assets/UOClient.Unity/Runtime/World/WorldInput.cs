@@ -24,6 +24,7 @@ namespace UOClient.Unity
         private uint _pressedItem;  // a movable ground item under the held left button: dragging it picks it up
         private Vector2 _pressedAt;
         private bool _shiftPressed; // _pressedItem was pressed with Shift on a stack: a drag splits, a release is a shift-click
+        private uint _pressedMobile; // a mobile under the held left button: dragging it pulls out its health bar
 
         private const float DoubleClickTime = 0.35f;
         private const float DragDistance = 6f; // screen pixels the mouse moves before a press becomes a drag
@@ -140,6 +141,26 @@ namespace UOClient.Unity
                 }
             }
 
+            // Pressing on a mobile and moving the mouse pulls out its health bar, centered on the press and carried until the
+            // button comes up (TazUO's OnMouseDragging, GameSceneInputHandler.cs:1298-1338: any drag, no modifier). The
+            // press's single click is dropped, as TazUO's OnDragBegin clears the delayed click.
+            if (_pressedMobile != 0)
+            {
+                if (!Input.GetMouseButton(0) || _ctx.Session.Target != null || ui.Dragging != null)
+                {
+                    _pressedMobile = 0;
+                }
+                else if (((Vector2)Input.mousePosition - _pressedAt).sqrMagnitude > DragDistance * DragDistance)
+                {
+                    (float px, float py) = UI.UiRouting.ScreenToUi(_pressedAt.x, _pressedAt.y, Screen.height, ui.Scale);
+                    UI.HealthBarWindow.DragOut(ui, _pressedMobile, new Vector2(px, py));
+                    if (_pendingClick == _pressedMobile)
+                        _pendingClick = 0;
+                    _lastWorldClick = 0;
+                    _pressedMobile = 0;
+                }
+            }
+
             // The quest arrow: left click notifies the server, right click cancels it (0xBF 0x07).
             if ((Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1)) && !ui.IsOverUi(Input.mousePosition) && OverQuestArrow())
             {
@@ -197,6 +218,7 @@ namespace UOClient.Unity
             }
 
             _pressedItem = picked != 0 && _ctx.Session.World.Items.TryGetValue(picked, out Core.WorldItem ground) && ground.Movable ? picked : 0;
+            _pressedMobile = _ctx.Session.World.Mobiles.ContainsKey(picked) ? picked : 0;
             _pressedAt = mouse;
 
             bool doubleClick = Time.realtimeSinceStartup - _lastWorldClick < DoubleClickTime && (mouse - _lastWorldClickAt).sqrMagnitude < 64;

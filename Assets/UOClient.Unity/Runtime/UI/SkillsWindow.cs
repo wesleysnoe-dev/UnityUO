@@ -71,42 +71,94 @@ namespace UOClient.Unity.UI
         }
     }
 
-    /// <summary>The status window: stats, resistances, gold, weight, followers (from the full status packet).</summary>
-    public sealed class StatusWindow : UiWindow
+    /// <summary>
+    /// The status window as TazUO's StatusGumpOld draws it (layout in StatusWindow.Layout): the 0x0802 scroll with the name,
+    /// str / dex / int and their gain locks, sex, armor, hits, mana, stamina, gold and weight from the full status (0x11).
+    /// A lock click cycles it and tells the server (0xBF 0x1A); a click in the bottom-right corner turns the status into
+    /// our health bar, and opening it closes that bar (StatusGumpBarMutuallyExclusive, on by default). TazUO's default
+    /// style is the modern one; the classic one is used here. TazUO's compact styles are drawn with plain colour boxes,
+    /// not gump art, so they are not offered.
+    /// </summary>
+    public sealed partial class StatusWindow : UiWindow
     {
+        private readonly CachedLabel _name = new CachedLabel();
+        private readonly CachedLabel[] _labels = Enumerable.Range(0, 10).Select(_ => new CachedLabel()).ToArray();
+        private Vector2? _pressedAt; // the window's position when the corner was pressed
+
         public StatusWindow()
         {
-            Rect = new Rect(40, 400, 400, 210);
+            Rect = new Rect(100, 100, 260, 130); // Profile.StatusGumpPosition's default; sized to 0x0802 on open
         }
 
         public override string Key => "status";
 
-        public override void OnOpened() => Session.RequestStatus(Session.World.PlayerSerial);
+        public override void OnOpened()
+        {
+            if (Ui.Find(HealthBarWindow.KeyFor(Session.World.PlayerSerial)) is UiWindow bar)
+                Ui.Close(bar);
+            UiImage bg = Art.Gump(Background);
+            if (bg != null)
+                Rect.size = new Vector2(bg.Width, bg.Height);
+            Session.RequestStatus(Session.World.PlayerSerial); // ModernUO answers with 0x11 and the stat locks (0xBF 0x19)
+        }
+
+        public override void OnClosed()
+        {
+            _name.Release();
+            foreach (CachedLabel l in _labels)
+                l.Release();
+        }
 
         public override void Draw()
         {
-            DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
+            Event e = Event.current;
+            if (e.type == EventType.MouseDown && e.button == 0 && TryTarget(Session.World.PlayerSerial))
+                return;
+
+            DrawImage(Art.Gump(Background), 0, 0);
             Mobile m = Session.World.Player;
             if (m == null)
                 return;
 
-            Text(new Rect(0, 10, Rect.width, 22), m.Name ?? "", new Color(1f, 0.9f, 0.6f), 16, TextAnchor.UpperCenter, true);
-            Color gold = new Color(1f, 0.85f, 0.45f);
-            float y = 42;
-            void Row(float x, string label, string value)
+            (int nx, int ny) = NamePos;
+            DrawImage(_name.Get(Art, m.Name ?? "", LabelHue), nx, ny);
+
+            bool uop = Art.Data.GumpFile is UOClient.IO.Files.UopFile;
+            for (int stat = 0; stat < 3; stat++)
             {
-                Text(new Rect(x, y, 90, 20), label, gold);
-                Text(new Rect(x + 70, y, 80, 20), value);
+                byte state = LockOf(m, stat);
+                UiImage lockArt = Art.Gump(LockGump(state));
+                if (lockArt == null)
+                    continue;
+                var r = new Rect(LockX(uop), LockY[stat], lockArt.Width, lockArt.Height);
+                DrawImage(lockArt, r.x, r.y);
+                if (GUI.Button(r, GUIContent.none, GUIStyle.none))
+                    Session.SetStatLock(stat, NextLock(state));
             }
 
-            Row(20, "Strength", m.Str.ToString()); Row(150, "Hits", $"{m.Hits}/{m.HitsMax}"); Row(280, "Physical", m.Armor.ToString()); y += 22;
-            Row(20, "Dexterity", m.Dex.ToString()); Row(150, "Stamina", $"{m.Stamina}/{m.StaminaMax}"); Row(280, "Fire", m.FireResist.ToString()); y += 22;
-            Row(20, "Intellect", m.Int.ToString()); Row(150, "Mana", $"{m.Mana}/{m.ManaMax}"); Row(280, "Cold", m.ColdResist.ToString()); y += 22;
-            Row(20, "Stat cap", m.StatCap.ToString()); Row(150, "Luck", m.Luck.ToString()); Row(280, "Poison", m.PoisonResist.ToString()); y += 22;
-            Row(20, "Gold", m.Gold.ToString("N0")); Row(150, "Weight", $"{m.Weight}/{m.MaxWeight}"); Row(280, "Energy", m.EnergyResist.ToString()); y += 22;
-            Row(20, "Damage", $"{m.DamageMin}-{m.DamageMax}"); Row(150, "Followers", $"{m.Followers}/{m.FollowersMax}"); Row(280, "Tithe", m.Tithe.ToString()); y += 22;
-            if (!m.HasFullStatus)
-                Text(new Rect(20, y + 4, 300, 20), "Waiting for the server…");
+            Label[] labels = Labels(m);
+            for (int i = 0; i < labels.Length; i++)
+                DrawImage(_labels[i].Get(Art, labels[i].Text, LabelHue), labels[i].X, labels[i].Y);
+
+            // StatusGumpBase.OnMouseUp: a click (dragged under 5 pixels) from (244, 112) on swaps the status for our health bar.
+            bool inCorner = e.mousePosition.x >= BarCornerX && e.mousePosition.y >= BarCornerY;
+            if (e.type == EventType.MouseDown && e.button == 0)
+                _pressedAt = inCorner ? Rect.position : (Vector2?)null;
+            else if (e.type == EventType.MouseUp && e.button == 0 && _pressedAt is Vector2 from)
+            {
+                _pressedAt = null;
+                if (inCorner && (Rect.position - from).sqrMagnitude < 25)
+                {
+                    uint player = Session.World.PlayerSerial;
+                    UiManager ui = Ui;
+                    Vector2 at = Rect.position;
+                    Close();
+                    if (ui.Find(HealthBarWindow.KeyFor(player)) is UiWindow old)
+                        ui.Close(old);
+                    ui.Open(new HealthBarWindow(player, at.x, at.y));
+                    e.Use();
+                }
+            }
         }
     }
 }

@@ -31,6 +31,19 @@ namespace UOClient.Core
         public int Str, Dex, Int, Gold, Armor, Weight, MaxWeight, StatCap, Followers, FollowersMax;
         public int FireResist, ColdResist, PoisonResist, EnergyResist, Luck, DamageMin, DamageMax, Tithe;
         public bool HasFullStatus;
+
+        /// <summary>Stat gain locks (0 up, 1 down, 2 locked) from 0xBF 0x19 version 2, our own character only.</summary>
+        public byte StrLock, DexLock, IntLock;
+
+        /// <summary>
+        /// The health bar's poison and yellow (blessed / invulnerable) states from 0x17, as TazUO's NewHealthBarUpdate
+        /// keeps them for 7.0+ clients (where flag 0x04 means flying, not poisoned).
+        /// </summary>
+        public bool Poisoned, YellowHits;
+
+        /// <summary>0x11's "can rename" byte: one of our pets (TazUO hues its health bar name 0x000E).</summary>
+        public bool Renamable;
+
         public readonly Dictionary<byte, EquippedItem> Equipment = new Dictionary<byte, EquippedItem>();
 
         /// <summary>Changes whenever appearance changes (body, hue or equipment), so renderers can cache by it.</summary>
