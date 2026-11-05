@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using UOClient.IO.Formats;
 using UOClient.Net;
 
@@ -462,12 +463,42 @@ namespace UOClient.Core
                     Lock = r.ReadByte(),
                     Cap = caps ? r.ReadUInt16() / 10.0 : 100.0
                 };
+                if (single && Skills.TryGetValue(id, out SkillEntry old))
+                    PrintSkillChange(id, old.Value, s.Value);
                 Skills[id] = s;
                 if (single)
                     break;
             }
             SkillsUpdated?.Invoke();
         }
+
+        /// <summary>
+        /// TazUO UpdateSkills: a single update (0xFF / 0xDF, ModernUO's SendSkillChange) whose shown value moved prints
+        /// "Your skill in {0} has {1} by {2:F1}.  It is now {3:F1}." (language.ini your_skill_in0_has1_by2_it_is_now3) as a
+        /// system line in hue 0x58: on by default (ShowSkillsChangedMessage), every 0.1 (ShowSkillsChangedDeltaValue 1).
+        /// TazUO compares against a zero skill when no list came first; here a skill not yet listed prints nothing.
+        /// </summary>
+        private void PrintSkillChange(int id, double oldValue, double newValue)
+        {
+            int before = (int)Math.Round(oldValue * 10), after = (int)Math.Round(newValue * 10);
+            if (before == after)
+                return;
+            string name = id < SkillNames.Length ? SkillNames[id] : $"Skill {id}";
+            string text = string.Format(CultureInfo.InvariantCulture, "Your skill in {0} has {1} by {2:F1}.  It is now {3:F1}.",
+                name, after < before ? "decreased" : "increased", Math.Abs(after - before) / 10.0, after / 10.0);
+            World.AddJournal(new JournalEntry
+            {
+                Time = DateTime.Now,
+                Name = "System",
+                Text = text,
+                Hue = SkillChangeHue,
+                Type = 1, // MessageType.System
+                Serial = 0xFFFFFFFF
+            });
+        }
+
+        /// <summary>The skill change line's hue (TazUO UpdateSkills prints it in 0x58).</summary>
+        public const ushort SkillChangeHue = 0x58;
 
         /// <summary>Skill names by id (AOS through Stygian Abyss).</summary>
         public static readonly string[] SkillNames =

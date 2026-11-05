@@ -112,6 +112,22 @@ namespace UOClient.IO
             return index == 1 ? GetUniFont(0) : null;
         }
 
+        /// <summary>
+        /// The skills window's default groups: skillgrp.mul when the client has a readable one, else TazUO's built-in
+        /// groups (SkillsGroupManager.MakeDefault). A fresh list each call; nothing is written.
+        /// </summary>
+        public List<SkillGroup> GetSkillGroups(int skillCount)
+        {
+            string path = PathOf("skillgrp.mul");
+            List<SkillGroup> groups = null;
+            if (File.Exists(path))
+            {
+                try { groups = Formats.SkillGroups.Parse(File.ReadAllBytes(path), skillCount); }
+                catch (IOException) { }
+            }
+            return groups != null && groups.Count != 0 ? groups : Formats.SkillGroups.BuiltIn(skillCount);
+        }
+
         /// <summary>Minimap color per land tile (0..0x3FFF) followed by statics (0x4000 + graphic), 15-bit RGB.</summary>
         public ushort[] RadarColors => _radarColors.Value;
 
