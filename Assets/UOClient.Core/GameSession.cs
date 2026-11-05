@@ -242,12 +242,18 @@ namespace UOClient.Core
 
         /// <summary>
         /// Speech in the world (0xAD unicode speech). As in ClassicUO, ": " emotes, "; " whispers and "! " yells;
-        /// with the default hue each of those takes the classic client's own hue for it.
+        /// with the default hue each of those takes the classic client's own hue for it. A line starting with "/" is
+        /// party chat (<see cref="PartyLine"/>).
         /// </summary>
         public void Say(string text, ushort hue = SpeechHue)
         {
             if (State != SessionState.InWorld || string.IsNullOrWhiteSpace(text))
                 return;
+            if (text.TrimStart().StartsWith("/", StringComparison.Ordinal))
+            {
+                PartyLine(text.Trim());
+                return;
+            }
             var (type, said, modeHue) = SpeechMode(text.Trim());
             if (said.Length == 0)
                 return;
@@ -913,7 +919,7 @@ namespace UOClient.Core
         private void Extended(PacketReader r)
         {
             int sub = r.ReadUInt16();
-            if (TradeExtended(sub, r) || HousingExtended(sub, r))
+            if (TradeExtended(sub, r) || HousingExtended(sub, r) || PartyExtended(sub, r))
                 return;
             if (sub == 0x08) // set map
                 World.Map = r.ReadByte();

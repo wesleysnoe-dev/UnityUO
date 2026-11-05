@@ -5,7 +5,7 @@ namespace UOClient.Unity.UI
     /// <summary>
     /// The bar along the top of the screen, as in the UO Smallz client (TazUO's top bar with the shard's
     /// changes): Map, Paperdoll, Inventory, Journal, Chat (the shard chat window), Help, World Map, Skills,
-    /// Status, Groups (the server's Group Finder) and Options. Buttons send their command through <see cref="UiManager.Command"/>.
+    /// Status, Party, Groups (the server's Group Finder) and Options. Buttons send their command through <see cref="UiManager.Command"/>.
     /// </summary>
     public sealed class TopBarWindow : UiWindow
     {
@@ -16,7 +16,7 @@ namespace UOClient.Unity.UI
         {
             ("Map", "minimap"), ("Paperdoll", "paperdoll"), ("Inventory", "backpack"), ("Journal", "journal"),
             ("Chat", "worldchat"), ("Help", "help"), ("World Map", "worldmap"), ("Skills", "skills"),
-            ("Status", "status"), ("Groups", "groups"), ("Options", "options")
+            ("Status", "status"), ("Party", "party"), ("Groups", "groups"), ("Options", "options")
         };
 
         private GUIStyle _button;

@@ -79,6 +79,7 @@ namespace UOClient.Unity
             s.ShopClosed += OnShopClosed;
             s.TradeOpened += OnTradeOpened;
             s.TradeClosed += OnTradeClosed;
+            s.PartyInvited += OnPartyInvited;
             s.PromptRequested += OnPromptRequested;
             s.TextEntryRequested += OnTextEntryRequested;
             s.SpellbookContent += OnSpellbookContent;
@@ -121,6 +122,7 @@ namespace UOClient.Unity
             s.ShopClosed -= OnShopClosed;
             s.TradeOpened -= OnTradeOpened;
             s.TradeClosed -= OnTradeClosed;
+            s.PartyInvited -= OnPartyInvited;
             s.PromptRequested -= OnPromptRequested;
             s.TextEntryRequested -= OnTextEntryRequested;
             s.SpellbookContent -= OnSpellbookContent;
@@ -232,6 +234,13 @@ namespace UOClient.Unity
         /// <summary>The server ended the trade (cancelled, or both accepted): the window goes without sending a cancel.</summary>
         private void OnTradeClosed(SecureTrade t) => CloseByKey(UI.SecureTradeWindow.KeyFor(t));
 
+        private void OnPartyInvited(uint leader)
+        {
+            // A newer invitation replaces an older one's window (that one would answer the wrong leader).
+            CloseByKey("partyinvite");
+            Ui.Open(new UI.PartyInviteWindow(leader));
+        }
+
         private void OnPromptRequested(TextPrompt prompt)
         {
             // A new prompt replaces an open one (the server cancelled it): a fresh window, so stale text isn't sent.
@@ -275,6 +284,12 @@ namespace UOClient.Unity
                 case "chat": _chatLine.Open(); break;
                 case "war": _ctx.Session.SetWarMode(!_ctx.Session.WarMode); break;
                 case "status": Ui.Open(new UI.StatusWindow()); break;
+                case "party":
+                    if (Ui.Find("party") is UI.UiWindow partyWindow)
+                        Ui.Close(partyWindow);
+                    else
+                        Ui.Open(new UI.PartyWindow());
+                    break;
                 // The top bar's own buttons.
                 case "minimap": _ctx.Hud.MinimapVisible = !_ctx.Hud.MinimapVisible; break;
                 case "paperdoll": _ctx.Session.OpenPaperdoll(); break;
