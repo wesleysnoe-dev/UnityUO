@@ -18,7 +18,7 @@ namespace UOClient.Editor
         // v2: the default moved to the game's data setting; an older saved EA path is not reused.
         private const string PathPrefKey = "UOClient.UOPath.v2";
         private const string ArtDirPrefKey = "UOClient.WorldPreview.ArtDir";
-        private static string DefaultPath => UOClient.Unity.WorldDemo.ReadSettingsFile().ResolvedDataPath;
+        private static string DefaultPath => UOClient.Unity.ClientSettingsStore.ReadSettingsFile().ResolvedDataPath;
         private const int MaxTiles = 128 * 128;
 
         private enum ArtSource { Original, Baked, Sprites }
@@ -278,7 +278,7 @@ namespace UOClient.Editor
             {
                 if (_data == null)
                     _data = new UOData(_uoPath);
-                UOClient.Unity.WorldDemo.ApplyOverrides(_data, UOClient.Unity.WorldDemo.ReadSettingsFile()); // the shard's custom art, as in the game
+                UOClient.Unity.ClientSettingsStore.ApplyOverrides(_data, UOClient.Unity.ClientSettingsStore.ReadSettingsFile()); // the shard's custom art, as in the game
 
                 var compositor = new IsoCompositor(_data) { HideRoofs = !_roofs };
                 string art = "original art";

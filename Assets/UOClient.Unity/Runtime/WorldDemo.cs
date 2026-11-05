@@ -42,9 +42,11 @@ namespace UOClient.Unity
         public ClientSettings Settings { get; private set; }
 
         /// <summary>The settings file as it is (no launch arguments), or null if there is none; for the editor windows too.</summary>
+        [Obsolete("Use ClientSettingsStore.ReadSettingsFile.")]
         public static ClientSettings ReadSettingsFile(bool orDefaults = true) => ClientSettingsStore.ReadSettingsFile(orDefaults);
 
         /// <summary>The client overrides for a data set opened by an editor tool, when the settings name a client folder.</summary>
+        [Obsolete("Use ClientSettingsStore.ApplyOverrides.")]
         public static void ApplyOverrides(UOData data, ClientSettings s) => ClientSettingsStore.ApplyOverrides(data, s);
 
         /// <summary>Reads the settings file (writing one with the detected folders on first run), then applies launch arguments.</summary>
@@ -520,6 +522,7 @@ namespace UOClient.Unity
         SessionUiBinder ICaptureHost.Ui => _binder;
 
         /// <summary>Written next to a player build: where the project (baked art, account file) lives on this machine.</summary>
+        [Obsolete("Use ClientPaths.PathsFileName.")]
         public const string PathsFileName = ClientPaths.PathsFileName;
 
         /// <summary>See <see cref="ClientPaths.ProjectRoot"/>.</summary>

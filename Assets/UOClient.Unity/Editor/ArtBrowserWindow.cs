@@ -11,7 +11,7 @@ namespace UOClient.Editor
     {
         // v2: the default moved to the game's data setting; an older saved EA path is not reused.
         private const string PathPrefKey = "UOClient.UOPath.v2";
-        private static string DefaultPath => UOClient.Unity.WorldDemo.ReadSettingsFile().ResolvedDataPath;
+        private static string DefaultPath => UOClient.Unity.ClientSettingsStore.ReadSettingsFile().ResolvedDataPath;
 
         private enum ArtKind { Land, Static, Gump }
 
@@ -105,7 +105,7 @@ namespace UOClient.Editor
             try
             {
                 _data = new UOData(_uoPath);
-                UOClient.Unity.WorldDemo.ApplyOverrides(_data, UOClient.Unity.WorldDemo.ReadSettingsFile()); // the shard's custom art, as in the game
+                UOClient.Unity.ClientSettingsStore.ApplyOverrides(_data, UOClient.Unity.ClientSettingsStore.ReadSettingsFile()); // the shard's custom art, as in the game
                 return true;
             }
             catch (Exception e)

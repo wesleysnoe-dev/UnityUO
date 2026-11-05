@@ -53,7 +53,7 @@ namespace UOClient.Editor
             BuildSummary s = report.summary;
             if (s.result == BuildResult.Succeeded)
             {
-                File.WriteAllText(Path.Combine(outDir, WorldDemo.PathsFileName),
+                File.WriteAllText(Path.Combine(outDir, ClientPaths.PathsFileName),
                     JsonUtility.ToJson(new PathsFile { projectRoot = ProjectRoot.Replace('\\', '/') }, true));
             }
 
