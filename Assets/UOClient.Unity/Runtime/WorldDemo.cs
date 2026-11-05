@@ -327,17 +327,17 @@ namespace UOClient.Unity
             _ui.Open(new UI.TopBarWindow());
             _hud.TopInset = UI.TopBarWindow.Height + 4;
             Hotkeys = new Hotkeys(ProjectRoot) { Log = s => _hud.Log(null, s), Command = OnUiCommand };
-            _session.TargetRequested += _ => UpdateCursor();
-            _session.TargetEnded += UpdateCursor;
+            _session.TargetRequested += _ => _cursor.Update(_session, _ui);
+            _session.TargetEnded += () => _cursor.Update(_session, _ui);
             _session.WarModeChanged += war => _hud.WarMode = war;
-            _session.Damaged += (serial, amount) => AddOverhead(serial, amount.ToString(), new Color(1f, 0.25f, 0.2f), 18, 1.6f, true);
+            _session.Damaged += (serial, amount) => _overheads.Add(serial, amount.ToString(), new Color(1f, 0.25f, 0.2f), 18, 1.6f, true);
             _session.World.JournalAdded += j =>
             {
                 // Speech and labels appear over whoever said them (system messages only in the journal).
                 // Said, emoted, whispered, yelled, cast or a click label: overhead. Guild, alliance, broadcast: journal only.
                 bool local = j.Type == 0 || j.Type == 2 || (j.Type >= 6 && j.Type <= 10);
                 if (local && j.Serial != 0xFFFFFFFF && j.Serial != 0)
-                    AddOverhead(j.Serial, j.Text, _gumpArt.HueColor(j.Hue, new Color(0.95f, 0.95f, 0.9f)), 14, 3f + j.Text.Length * 0.05f, false);
+                    _overheads.Add(j.Serial, j.Text, _gumpArt.HueColor(j.Hue, new Color(0.95f, 0.95f, 0.9f)), 14, 3f + j.Text.Length * 0.05f, false);
             };
             _session.PlayerDied += () => _hud.Log(null, "You are dead.");
 
@@ -503,34 +503,7 @@ namespace UOClient.Unity
 
         // ---- cursor ----
 
-        private Texture2D _crossNeutral, _crossHarmful, _crossBeneficial;
-
-        /// <summary>A crosshair while the server wants a target: white neutral, red harmful, blue beneficial.</summary>
-        private void UpdateCursor()
-        {
-            if (_ui != null && _ui.Dragging != null)
-                return;
-            TargetRequest t = _session?.Target;
-            Texture2D tex = null;
-            if (t != null)
-            {
-                _crossNeutral ??= Crosshair(new Color(0.95f, 0.95f, 0.95f));
-                _crossHarmful ??= Crosshair(new Color(1f, 0.3f, 0.25f));
-                _crossBeneficial ??= Crosshair(new Color(0.4f, 0.7f, 1f));
-                tex = t.Flags == 1 ? _crossHarmful : t.Flags == 2 ? _crossBeneficial : _crossNeutral;
-            }
-            if (_cursorSet && tex == _cursorTex)
-                return;
-            _cursorSet = true;
-            _cursorTex = tex;
-            if (tex == null)
-                Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
-            else
-                Cursor.SetCursor(tex, new Vector2(16, 16), CursorMode.ForceSoftware);
-        }
-
-        private bool _cursorSet;
-        private Texture2D _cursorTex;
+        private readonly UI.TargetCursor _cursor = new UI.TargetCursor();
         private readonly MultiPlacementGhost _placement = new MultiPlacementGhost();
 
         /// <summary>The map tile under the mouse with its surface z near the player, or null over a window.</summary>
@@ -543,170 +516,25 @@ namespace UOClient.Unity
             return new Vector3Int(tile.x, tile.y, _walk.SurfaceZ(tile.x, tile.y, _avatar.Z));
         }
 
-        private static Texture2D Crosshair(Color color)
-        {
-            var tex = new Texture2D(32, 32, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            var clear = new Color(0, 0, 0, 0);
-            var dark = new Color(0, 0, 0, 0.9f);
-            for (int y = 0; y < 32; y++)
-                for (int x = 0; x < 32; x++)
-                {
-                    int dx = x - 16, dy = y - 16;
-                    bool ring = Mathf.Abs(Mathf.Sqrt(dx * dx + dy * dy) - 9) < 1.2f;
-                    bool cross = (Mathf.Abs(dx) <= 1 && Mathf.Abs(dy) > 3 && Mathf.Abs(dy) < 15) || (Mathf.Abs(dy) <= 1 && Mathf.Abs(dx) > 3 && Mathf.Abs(dx) < 15);
-                    bool edge = (Mathf.Abs(dx) == 2 && Mathf.Abs(dy) > 3 && Mathf.Abs(dy) < 15) || (Mathf.Abs(dy) == 2 && Mathf.Abs(dx) > 3 && Mathf.Abs(dx) < 15);
-                    tex.SetPixel(x, y, ring || cross ? color : edge ? dark : clear);
-                }
-            tex.Apply();
-            return tex;
-        }
-
         // ---- overhead text ----
 
-        private readonly List<Overhead> _overheads = new List<Overhead>();
+        private readonly OverheadText _overheads = new OverheadText();
 
-        private sealed class Overhead
+        /// <summary>The drawn rectangle (world units) overhead text for a serial goes over, or null if it's not drawn.</summary>
+        private Rect? DrawnRect(uint serial)
         {
-            public uint Serial;
-            public string Text;
-            public Color Color;
-            public int Size;
-            public float Born, Life;
-            public bool Rises; // damage numbers float upward
-        }
-
-        private void AddOverhead(uint serial, string text, Color color, int size, float life, bool rises)
-        {
-            // Classic clients keep a few lines per speaker; older ones scroll off.
-            int count = 0;
-            for (int i = _overheads.Count - 1; i >= 0; i--)
-                if (_overheads[i].Serial == serial && !_overheads[i].Rises && ++count >= 3)
-                    _overheads.RemoveAt(i);
-            _overheads.Add(new Overhead { Serial = serial, Text = text, Color = color, Size = size, Born = Time.realtimeSinceStartup, Life = life, Rises = rises });
-        }
-
-        /// <summary>Where overhead text for a serial goes on screen (top-left origin), or null if it's not drawn.</summary>
-        private Vector2? OverheadAnchor(uint serial)
-        {
-            Rect r;
             if (_session != null && serial == _session.World.PlayerSerial)
-                r = _avatar.LastRect;
-            else if (_others.TryGetValue(serial, out Avatar a) && a.Visible)
-                r = a.LastRect;
-            else if (_items.TryGetValue(serial, out ItemView v))
-                r = v.LastRect;
-            else
-                return null;
-            if (r.width <= 0)
-                return null;
-            Vector3 s = _camera.WorldToScreenPoint(new Vector3(r.center.x, r.yMax, 0));
-            return new Vector2(s.x, Screen.height - s.y - 18);
-        }
-
-        private void UpdateOverheads()
-        {
-            _hud.Overheads.Clear();
-            float now = Time.realtimeSinceStartup;
-            _overheads.RemoveAll(o => now - o.Born > o.Life);
-            // Newest first: the HUD stacks each speaker's lines upward from the head as it measures them.
-            for (int i = _overheads.Count - 1; i >= 0; i--)
-            {
-                Overhead o = _overheads[i];
-                Vector2? anchor = OverheadAnchor(o.Serial);
-                if (anchor == null)
-                    continue;
-                Vector2 p = anchor.Value;
-                if (o.Rises)
-                    p.y -= (now - o.Born) * 40f;
-                float fade = Mathf.Clamp01((o.Life - (now - o.Born)) / 0.5f);
-                Color c = o.Color;
-                c.a = fade;
-                _hud.Overheads.Add((o.Text, p, c, o.Size, o.Rises ? 0u : o.Serial));
-            }
+                return _avatar.LastRect;
+            if (_others.TryGetValue(serial, out Avatar a) && a.Visible)
+                return a.LastRect;
+            if (_items.TryGetValue(serial, out ItemView v))
+                return v.LastRect;
+            return null;
         }
 
         // ---- tooltips ----
 
-        private uint _hoverSerial, _forcedHover;
-        private Vector2 _forcedHoverAt;
-        private float _hoverSince;
-        private GUIStyle _tooltipStyle;
-        private Texture2D _tooltipBack;
-
-        /// <summary>What the mouse rests on: an item in a window, else whatever is drawn under it in the world.</summary>
-        private void UpdateHover()
-        {
-            uint serial = 0;
-            Vector2 mouse = Input.mousePosition;
-            if (_ui.IsOverUi(mouse))
-            {
-                var p = new Vector2(mouse.x / _ui.Scale, (Screen.height - mouse.y) / _ui.Scale);
-                for (int i = _ui.Windows.Count - 1; i >= 0; i--)
-                    if (_ui.Windows[i].Rect.Contains(p))
-                    {
-                        serial = _ui.Windows[i].Hovered;
-                        break;
-                    }
-            }
-            else if (_ui.Dragging == null)
-            {
-                serial = PickAt(mouse);
-            }
-            if (_forcedHover != 0)
-                serial = _forcedHover; // the capture tour (no real mouse)
-            if (serial != _hoverSerial)
-            {
-                _hoverSerial = serial;
-                _hoverSince = Time.realtimeSinceStartup;
-            }
-        }
-
-        private void DrawTooltip()
-        {
-            if (_session == null || _hoverSerial == 0 || Time.realtimeSinceStartup - _hoverSince < 0.4f || _ui.Dragging != null)
-                return;
-            PropertyList props = _session.GetProperties(_hoverSerial);
-            if (props == null || props.Lines.Count == 0)
-                return;
-            if (_tooltipStyle == null)
-            {
-                _tooltipStyle = new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true, fontSize = 14, alignment = TextAnchor.UpperCenter, padding = new RectOffset(8, 8, 6, 6) };
-                _tooltipStyle.normal.textColor = new Color(0.93f, 0.91f, 0.84f);
-                _tooltipBack = new Texture2D(1, 1);
-                _tooltipBack.SetPixel(0, 0, new Color(0.05f, 0.04f, 0.03f, 0.88f));
-                _tooltipBack.Apply();
-            }
-            var sb = new StringBuilder();
-            for (int i = 0; i < props.Lines.Count; i++)
-            {
-                string line = UI.GumpHtml.ToRichText(props.Lines[i], out _);
-                sb.Append(i == 0 ? $"<color=#ffd27a><b>{line}</b></color>" : line);
-                if (i < props.Lines.Count - 1)
-                    sb.Append('\n');
-            }
-            var content = new GUIContent(sb.ToString());
-            float s = _ui.Scale;
-            Matrix4x4 saved = GUI.matrix;
-            GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1));
-            float width = Mathf.Min(320, _tooltipStyle.CalcSize(content).x + 4);
-            float height = _tooltipStyle.CalcHeight(content, width);
-            Vector2 m = _forcedHover != 0 ? _forcedHoverAt : Event.current.mousePosition / s;
-            var r = new Rect(m.x + 18, m.y + 18, width, height);
-            if (r.xMax > Screen.width / s) r.x = m.x - width - 8;
-            if (r.yMax > Screen.height / s) r.y = m.y - height - 8;
-            // Windows always draw above plain controls, so over a paperdoll or backpack the tooltip has to be
-            // a window too, kept in front.
-            GUI.Window(TooltipWindowId, r, _ =>
-            {
-                var local = new Rect(0, 0, r.width, r.height);
-                GUI.DrawTexture(local, _tooltipBack);
-                GUI.Label(local, content, _tooltipStyle);
-            }, GUIContent.none, GUIStyle.none);
-            GUI.BringWindowToFront(TooltipWindowId);
-            GUI.matrix = saved;
-        }
-
-        private const int TooltipWindowId = 0x7EEF;
+        private readonly UI.HoverTooltip _tooltip = new UI.HoverTooltip();
 
         // ---- input ----
 
@@ -719,7 +547,7 @@ namespace UOClient.Unity
             if (_ui == null || _session == null || _typing || _ui.HasKeyboardFocus)
                 return;
             Hotkeys?.Update(_session);
-            UpdateHover();
+            _tooltip.UpdateHover(_ui, PickAt);
             if (Input.GetKeyDown(KeyCode.P))
                 _session.OpenPaperdoll();
             if (Input.GetKeyDown(KeyCode.B) && !_session.OpenBackpack())
@@ -1128,8 +956,8 @@ namespace UOClient.Unity
             _cameraRig.Follow(_avatar.AnchorPixels, _world, _artScale, zoom);
             _lighting.Update(_session, _world.ToUnity(_avatar.AnchorPixels), _artScale, _hud);
             UpdateHud();
-            UpdateOverheads();
-            UpdateCursor();
+            _overheads.Update(_hud, DrawnRect, _camera);
+            _cursor.Update(_session, _ui);
             _sections.Begin(null);
         }
 
@@ -1308,7 +1136,7 @@ namespace UOClient.Unity
             {
                 _ui.Scale = Mathf.Clamp(Screen.height / 1000f, 0.75f, 2.5f);
                 _ui.OnGUI();
-                DrawTooltip();
+                _tooltip.OnGUI(_session, _ui);
             }
             DrawChat();
 
@@ -1660,8 +1488,7 @@ namespace UOClient.Unity
                 if (_ui.Windows.FirstOrDefault(w => w is UI.PaperdollWindow) is UI.UiWindow pd && _session.World.Player != null)
                 {
                     EquippedItem worn = _session.World.Player.Equipment.Values.FirstOrDefault(eq => eq.Layer != 11 && eq.Layer != 21 && eq.Layer != 16);
-                    _forcedHover = worn.Serial;
-                    _forcedHoverAt = pd.Rect.position + new Vector2(60, 120); // over the paperdoll's body
+                    _tooltip.ForceHover(worn.Serial, pd.Rect.position + new Vector2(60, 120)); // over the paperdoll's body
                     float tipUntil2 = Time.realtimeSinceStartup + 4f;
                     while (_session.GetProperties(worn.Serial) == null && Time.realtimeSinceStartup < tipUntil2)
                         yield return null;
@@ -1669,7 +1496,7 @@ namespace UOClient.Unity
                     ScreenCapture.CaptureScreenshot(Path.Combine(dir, "ui_8_paperdoll_tooltip.png"));
                     yield return WaitFrames(10);
                     paperdollTip = $"0x{worn.Serial:X} layer {worn.Layer}: {string.Join(" / ", _session.GetProperties(worn.Serial)?.Lines ?? new List<string>())}";
-                    _forcedHover = 0;
+                    _tooltip.ClearForced();
                     _ui.Close(pd);
                 }
                 OnUiCommand("worldchat");
