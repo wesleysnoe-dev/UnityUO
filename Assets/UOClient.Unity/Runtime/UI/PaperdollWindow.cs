@@ -11,7 +11,7 @@ namespace UOClient.Unity.UI
     /// The paperdoll: background gump, body gump in the skin hue, and each worn item's paperdoll art
     /// (tiledata AnimId + 50000 for male, + 60000 for female), layered like the classic client.
     /// Double-click the backpack to open it, double-click other items to use them, drag items off to
-    /// take them off, drop items onto it to put them on. Click the scroll for the character's profile;
+    /// take them off, drop items onto it to put them on. Double-click the scroll for the character's profile;
     /// double-click the virtue gem for the virtue gump, and (our own) the party scroll for the party window.
     /// </summary>
     public sealed class PaperdollWindow : UiWindow
@@ -98,9 +98,9 @@ namespace UOClient.Unity.UI
             }
             GUI.Label(new Rect(39, 262, 185, 40), _title ?? m.Name ?? "", _titleStyle);
 
-            // The profile scroll (where ClassicUO puts it): asks the server for this character's profile (0xB8).
-            if (GumpButton(ScrollGump, ScrollGump, ProfileX, ProfileY))
-                Session.RequestProfile(_serial);
+            // The profile scroll (where ClassicUO puts it): a double-click asks for this character's profile (0xB8).
+            UiImage profile = Art.Gump(ScrollGump);
+            DrawImage(profile, ProfileX, ProfileY);
 
             // Our own paperdoll's party manifest: the same scroll, 4 pixels into the profile's right edge.
             UiImage party = null;
@@ -136,6 +136,9 @@ namespace UOClient.Unity.UI
                 Session.RequestVirtueGump(_serial);
             else if (DoubleClicked(party, partyX, ProfileY))
                 Ui.Open(new PartyWindow()); // opens it, or brings the open one forward
+            // The party scroll overlaps the profile's right edge by 4px and sits above it, so it's tested first.
+            else if (DoubleClicked(profile, ProfileX, ProfileY))
+                Session.RequestProfile(_serial);
         }
 
         /// <summary>A left double-click on a picture's opaque pixels (TazUO's GumpPic with a MouseDoubleClick handler).</summary>
