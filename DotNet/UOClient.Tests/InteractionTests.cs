@@ -68,6 +68,46 @@ public sealed class InteractionTests
     }
 
     [Theory]
+    [InlineData(100, TileFlags.Generic, true)]   // a pile of gold
+    [InlineData(1, TileFlags.Generic, false)]    // a single coin: nothing to split
+    [InlineData(5, TileFlags.None, false)]       // not stackable in tiledata
+    [InlineData(0, TileFlags.Generic, false)]
+    public void ShiftDragSplitsOnlyAStackOfMoreThanOne(int amount, TileFlags flags, bool splits)
+    {
+        Assert.Equal(splits, GameSession.CanSplit(amount, flags));
+    }
+
+    [Fact]
+    public void SplitLiftCarriesTheChosenAmountNotTheStack()
+    {
+        // A stack of 100 split to 25: ModernUO's LiftReq gets 25, the rest stays behind as a new item.
+        byte[] split = GameSession.LiftRequest(0x40000020, GameSession.SplitAmount(25, 100));
+        Assert.Equal(new byte[] { 0x07, 0x40, 0, 0, 0x20, 0, 25 }, split);
+
+        // Without Shift the whole stack goes, as before.
+        Assert.Equal(new byte[] { 0x07, 0x40, 0, 0, 0x20, 0, 100 }, GameSession.LiftRequest(0x40000020, 100));
+
+        // A big stack's amount goes out big-endian.
+        Assert.Equal(new byte[] { 0x07, 0x40, 0, 0, 0x20, 0x03, 0xE8 }, GameSession.LiftRequest(0x40000020, GameSession.SplitAmount(1000, 60000)));
+
+        // The picker never asks for more than the stack, nor for none.
+        Assert.Equal(100, GameSession.SplitAmount(500, 100));
+        Assert.Equal(1, GameSession.SplitAmount(0, 100));
+        Assert.Equal(1, GameSession.SplitAmount(-3, 100));
+    }
+
+    [Theory]
+    [InlineData("25", 100, 25)]
+    [InlineData("", 100, 0)]        // cleared: nothing until something is typed
+    [InlineData("1a2", 100, 12)]    // only the digits count
+    [InlineData("999", 100, 100)]   // more than there is: the whole stack
+    [InlineData("99999999999", 60000, 60000)] // no overflow
+    public void SplitPickerTextIsAnAmountWithinTheStack(string text, int stack, int amount)
+    {
+        Assert.Equal(amount, GameSession.ParseSplitAmount(text, stack));
+    }
+
+    [Theory]
     [InlineData(0x00000123u, false, false)] // ourselves in peace: a plain use (dismount, else paperdoll)
     [InlineData(0x00000123u, true, false)]  // ourselves in war mode: still a use, never an attack on ourselves
     [InlineData(0x00000456u, false, false)] // another mobile in peace: use (its paperdoll, a pet's menu, ...)

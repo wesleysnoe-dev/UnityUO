@@ -23,6 +23,7 @@ namespace UOClient.Unity
         private uint _pendingClick; // a single click held until it can't be the start of a double-click
         private uint _pressedItem;  // a movable ground item under the held left button: dragging it picks it up
         private Vector2 _pressedAt;
+        private bool _shiftPressed; // _pressedItem was pressed with Shift on a stack: a drag splits, a release is a shift-click
 
         private const float DoubleClickTime = 0.35f;
         private const float DragDistance = 6f; // screen pixels the mouse moves before a press becomes a drag
@@ -113,14 +114,21 @@ namespace UOClient.Unity
 
             // Pressing on a movable ground item and moving the mouse picks it up (0x07), as in ClassicUO; the
             // UI carries it from there and the release decides the drop (a window, a mobile, an item, a tile).
+            // With Shift on a stack, the drag asks how many first, and a release without a drag opens the context menu.
             if (_pressedItem != 0)
             {
                 if (!Input.GetMouseButton(0) || _ctx.Session.Target != null || ui.Dragging != null)
+                {
+                    if (_shiftPressed && !Input.GetMouseButton(0) && _ctx.Session.Target == null && ui.Dragging == null)
+                        _ctx.Session.RequestContextMenu(_pressedItem);
                     _pressedItem = 0;
+                    _shiftPressed = false;
+                }
                 else if (((Vector2)Input.mousePosition - _pressedAt).sqrMagnitude > DragDistance * DragDistance)
                 {
-                    BeginGroundDrag(ui, _pressedItem);
+                    BeginGroundDrag(ui, _pressedItem, _shiftPressed || ShiftHeld);
                     _pressedItem = 0;
+                    _shiftPressed = false;
                 }
             }
 
@@ -131,7 +139,8 @@ namespace UOClient.Unity
                 return;
             }
 
-            if (!Input.GetMouseButtonDown(0) || ui.IsOverUi(Input.mousePosition) || _ctx.Hud.JournalRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)))
+            // A split stack rides the cursor with the button up: the next click is its drop, not a world click.
+            if (!Input.GetMouseButtonDown(0) || ui.Dragging != null || ui.IsOverUi(Input.mousePosition) || _ctx.Hud.JournalRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)))
                 return;
             Vector2 mouse = Input.mousePosition;
             uint picked = _entities.PickAt(mouse);
@@ -140,8 +149,17 @@ namespace UOClient.Unity
                 ui.Close(popup);
 
             // Shift+click: the context menu at once, for items too (a plain click on a mobile asks after the double-click time).
-            if (_ctx.Session.Target == null && picked != 0 && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)))
+            // On a movable stack it waits for the release, since dragging it splits the stack instead.
+            if (_ctx.Session.Target == null && picked != 0 && ShiftHeld)
             {
+                if (_ctx.Session.World.Items.TryGetValue(picked, out Core.WorldItem stack) && stack.Movable
+                    && Core.GameSession.CanSplit(stack.Amount, ui.Art.Data.TileData.GetStatic(stack.Graphic).Flags))
+                {
+                    _pressedItem = picked;
+                    _pressedAt = mouse;
+                    _shiftPressed = true;
+                    return;
+                }
                 _ctx.Session.RequestContextMenu(picked);
                 return;
             }
@@ -185,14 +203,14 @@ namespace UOClient.Unity
         }
 
         /// <summary>Lifts a ground item onto the cursor; a drop the server or a window refuses puts it back where it lay.</summary>
-        private void BeginGroundDrag(UI.UiManager ui, uint serial)
+        private void BeginGroundDrag(UI.UiManager ui, uint serial, bool split)
         {
             if (!_ctx.Session.World.Items.TryGetValue(serial, out Core.WorldItem item))
                 return;
             _pendingClick = 0; // a drag, not a click
             _lastWorldClick = 0;
             UI.UiImage art = ui.Art.Item(item.Graphic, item.Hue);
-            ui.BeginDrag(new UI.DraggedItem
+            ui.Lift(new UI.DraggedItem
             {
                 Serial = item.Serial,
                 Graphic = item.Graphic,
@@ -203,8 +221,10 @@ namespace UOClient.Unity
                 FromY = item.Y,
                 FromZ = item.Z,
                 Grab = art != null ? new Vector2(art.Width / 2f, art.Height / 2f) : Vector2.zero
-            });
+            }, split);
         }
+
+        private static bool ShiftHeld => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
         /// <summary>The mouse is over the quest arrow's on-screen or edge marker.</summary>
         public bool OverQuestArrow() =>

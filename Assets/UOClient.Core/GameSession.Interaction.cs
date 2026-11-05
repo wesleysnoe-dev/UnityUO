@@ -141,6 +141,30 @@ namespace UOClient.Core
         public static byte[] LiftRequest(uint serial, int amount) =>
             new PacketWriter(0x07, 7).UInt32(serial).UInt16(Math.Max(1, Math.Min(amount, 60000))).ToArray();
 
+        /// <summary>Shift-dragging splits a stack, as in ClassicUO: more than one of a stackable (tiledata Generic) thing.</summary>
+        public static bool CanSplit(int amount, TileFlags flags) => amount > 1 && (flags & TileFlags.Generic) != 0;
+
+        /// <summary>
+        /// The amount the split picker lifts: what was typed or slid to, kept within 1..the stack. ModernUO's Mobile.Lift
+        /// leaves the rest behind as a new item and the lifted part keeps the serial.
+        /// </summary>
+        public static int SplitAmount(int requested, int stack) => Math.Max(1, Math.Min(requested, Math.Max(1, stack)));
+
+        /// <summary>The split picker's text box: digits only, an empty box is 0 until something is typed.</summary>
+        public static int ParseSplitAmount(string text, int stack)
+        {
+            int value = 0;
+            foreach (char c in text ?? "")
+            {
+                if (c < '0' || c > '9')
+                    continue;
+                value = value * 10 + (c - '0');
+                if (value >= stack)
+                    return stack;
+            }
+            return value;
+        }
+
         /// <summary>Drops the held item into a container at (x, y) in the container gump.</summary>
         public void DropInto(uint serial, uint container, int x, int y)
         {

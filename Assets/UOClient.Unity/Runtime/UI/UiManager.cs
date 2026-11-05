@@ -256,6 +256,25 @@ namespace UOClient.Unity.UI
                 Cursor.SetCursor(art.Texture, item.Grab, CursorMode.ForceSoftware);
         }
 
+        /// <summary>
+        /// A drag starting: with Shift held on a stack, asks how many to lift first (ClassicUO's split menu); otherwise
+        /// lifts the whole thing at once.
+        /// </summary>
+        public void Lift(DraggedItem item, bool split)
+        {
+            if (Dragging != null)
+                return;
+            if (!split || !GameSession.CanSplit(item.Amount, Art.Data.TileData.GetStatic(item.Graphic).Flags))
+            {
+                BeginDrag(item);
+                return;
+            }
+            if (Find("split") is UiWindow old)
+                Close(old);
+            Vector2 m = Input.mousePosition;
+            Open(new SplitStackWindow(item, new Vector2(m.x / Scale, (Screen.height - m.y) / Scale)));
+        }
+
         /// <summary>Drops the cursor item without telling the server (it already refused the lift).</summary>
         public void CancelDrag() => EndDrag();
 

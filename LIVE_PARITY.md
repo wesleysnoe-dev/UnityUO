@@ -77,6 +77,7 @@ Works:
 - [x] **Status:** `0x11` (versions 0 to 6, the HS extras skipped), `0x2D` and `0xA1`–`0xA3` update the bars. The status window (C) asks with `0x34` type 4 when it opens. Double-clicking a mobile in war mode now also sends that query before the `0x05` attack, as ClassicUO does, so the target's name and health bar fill right away.
 - [x] **Skills:** the skills window (K) asks with `0x34` type 5. The `0x3A` full list (type 2, with caps) and the single updates (type `0xDF`) are read as ModernUO writes them. Usable skills have a use button (`0x12` type `0x24`); lock arrows send `0x3A`.
 - [x] **War mode:** Tab and the paperdoll button toggle it (`0x72`); the server's answer sets the "WAR" banner and now also the cursor, which becomes the classic red gauntlet (art `0x205C`) in war mode, keeps the crosshair while targeting, and comes back after a drag.
+- [x] **Stack split:** Shift-dragging a stack (amount > 1, tiledata Generic) on the ground or in a container opens ClassicUO's split menu (gump `0x085C`, slider, number box, OK `0x085D`; starts at the whole stack). OK/Enter lifts that amount with `0x07`; Escape/right-click lifts nothing; the next click drops it. Shift-click without a drag still opens the context menu (on release, for stacks). A plain drag lifts the whole stack as before. Paperdoll items are worn singly, so they always lift 1. Not seen live.
 
 Still missing:
 - [ ] Peace-mode UO cursor and the directional run cursors (`0x206A`–`0x2079`); peace keeps the system pointer.

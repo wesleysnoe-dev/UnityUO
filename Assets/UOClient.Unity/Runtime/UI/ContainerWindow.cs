@@ -17,6 +17,7 @@ namespace UOClient.Unity.UI
         private readonly ushort _gump;
         private readonly List<(ContainedItem Item, UiImage Image, Rect Rect)> _drawn = new List<(ContainedItem, UiImage, Rect)>();
         private ContainedItem _pressed;
+        private bool _shiftPressed; // pressed with Shift on a stack: a drag splits it, a release opens its context menu
         private Vector2 _pressAt, _pressOffset;
         private float _lastClick;
         private uint _lastClickSerial;
@@ -116,7 +117,7 @@ namespace UOClient.Unity.UI
             Event e = Event.current;
             switch (e.type)
             {
-                case EventType.MouseDown when e.button == 0:
+                case EventType.MouseDown when e.button == 0 && Ui.Dragging == null: // holding a split stack, the click is its drop
                 {
                     var hit = ItemAt(e.mousePosition);
                     _pressed = hit?.Item;
@@ -131,11 +132,19 @@ namespace UOClient.Unity.UI
                     }
                     if (e.shift)
                     {
+                        // On a stack the press may yet become a split drag: its context menu waits for the release.
+                        if (GameSession.CanSplit(_pressed.Amount, Art.Data.TileData.GetStatic(_pressed.Graphic).Flags))
+                        {
+                            _shiftPressed = true;
+                            e.Use();
+                            return;
+                        }
                         Session.RequestContextMenu(_pressed.Serial);
                         _pressed = null;
                         e.Use();
                         return;
                     }
+                    _shiftPressed = false;
                     if (Time.realtimeSinceStartup - _lastClick < DoubleClickTime && _lastClickSerial == _pressed.Serial)
                     {
                         Session.Use(_pressed.Serial);
@@ -158,7 +167,7 @@ namespace UOClient.Unity.UI
                     if ((e.mousePosition - _pressAt).sqrMagnitude > 16)
                     {
                         _pendingLook = 0; // a drag, not a click
-                        Ui.BeginDrag(new DraggedItem
+                        Ui.Lift(new DraggedItem
                         {
                             Serial = _pressed.Serial,
                             Graphic = _pressed.Graphic,
@@ -168,13 +177,17 @@ namespace UOClient.Unity.UI
                             FromX = _pressed.X,
                             FromY = _pressed.Y,
                             Grab = _pressOffset
-                        });
+                        }, e.shift || _shiftPressed);
                         _pressed = null;
+                        _shiftPressed = false;
                     }
                     e.Use();
                     break;
                 case EventType.MouseUp when e.button == 0:
+                    if (_shiftPressed && _pressed != null)
+                        Session.RequestContextMenu(_pressed.Serial); // a shift-click, not a split
                     _pressed = null;
+                    _shiftPressed = false;
                     break;
             }
         }
