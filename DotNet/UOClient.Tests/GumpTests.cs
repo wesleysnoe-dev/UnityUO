@@ -397,8 +397,25 @@ public sealed class GumpTests
         Assert.Equal("<color=#E0E0E0>Sir &lt;Fluffy&gt; &amp; Co (horse) leaves. This can't be undone.</color>",
             GumpHtml.ToRichText("<BASEFONT COLOR=#E0E0E0>Sir &lt;Fluffy&gt; &amp; Co (horse) leaves. This can't be undone.</BASEFONT>", out _));
 
-        // A bare '<' that isn't a tag still shows (as a look-alike, so IMGUI doesn't read it as markup).
-        Assert.Equal("1 ‹ 2 & 3", GumpHtml.ToRichText("1 < 2 & 3", out _));
+        // A bare '>' still shows (as a look-alike, so IMGUI doesn't read it as markup).
+        Assert.Equal("2 › 1 & 3", GumpHtml.ToRichText("2 > 1 & 3", out _));
+    }
+
+    [Fact]
+    public void StrayLessThanIsReadAsTagAsInTazUO()
+    {
+        // TazUO's GetHTMLData hands every '<' to ParseHTMLTag; an unreadable tag shows nothing, and the scan resumes
+        // after the next '>', or at the end of the text when there is none.
+        Assert.Equal("1 ", GumpHtml.ToRichText("1 < 2 & 3", out _));
+        Assert.Equal("a", GumpHtml.ToRichText("a<", out _));
+        Assert.Equal("ab", GumpHtml.ToRichText("a< 2 >b", out _));
+        Assert.Equal("ab", GumpHtml.ToRichText("a<x y>b", out _));
+        Assert.Equal("a", GumpHtml.ToRichText("a<b", out _));
+        // No name: only the stop character goes.
+        Assert.Equal("ab", GumpHtml.ToRichText("a<>b", out _));
+        Assert.Equal("ax›b", GumpHtml.ToRichText("a<=x>b", out _));
+        // Real tags around a stray one still apply.
+        Assert.Equal("<b>x</b><b>y</b>", GumpHtml.ToRichText("<B>x<? >y</B>", out _));
     }
 
     [Fact]

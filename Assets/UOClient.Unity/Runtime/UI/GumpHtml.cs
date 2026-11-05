@@ -32,10 +32,14 @@ namespace UOClient.Unity.UI
             // kind, and each character takes its look from everything still open (GetCurrentHTMLInfo). So a <B> the
             // server never closes stays bold to the end, and misnested tags don't leave stray markup.
             var open = new List<(string Name, string Color, int Size)>();
-            foreach (Match m in Tag.Matches(html))
+            for (int lt; (lt = html.IndexOf('<', last)) >= 0;)
             {
-                AppendRun(sb, html.Substring(last, m.Index - last), open);
-                last = m.Index + m.Length;
+                AppendRun(sb, html.Substring(last, lt - last), open);
+                last = TagEnd(html, lt);
+                // Every '<' is a tag to TazUO; one it can't read (unknown, unterminated, "1 < 2") shows nothing.
+                Match m = Tag.Match(html, lt, last - lt);
+                if (!m.Success || m.Index != lt || m.Length != last - lt)
+                    continue;
                 bool closing = m.Groups[1].Value == "/";
                 string name = m.Groups[2].Value.ToLowerInvariant();
                 switch (name)
@@ -90,6 +94,27 @@ namespace UOClient.Unity.UI
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Where the tag starting at <paramref name="lt"/> ends, as TazUO's FontsLoader.ParseHTMLTag consumes it: an
+        /// optional '/', spaces, a name up to ' ', '/', '>' or '='; with no name only that stop character goes,
+        /// otherwise everything through the next '>' (or to the end of the text when there is none).
+        /// </summary>
+        private static int TagEnd(string s, int lt)
+        {
+            int i = lt + 1;
+            if (i < s.Length && s[i] == '/')
+                i++;
+            while (i < s.Length && s[i] == ' ')
+                i++;
+            int j = i;
+            while (i < s.Length && s[i] != ' ' && s[i] != '/' && s[i] != '>' && s[i] != '=')
+                i++;
+            if (j != i)
+                while (i < s.Length && s[i] != '>')
+                    i++;
+            return i < s.Length ? i + 1 : s.Length;
+        }
+
         /// <summary>Text between tags, wrapped in balanced rich-text tags for what is open around it.</summary>
         private static void AppendRun(StringBuilder sb, string text, List<(string Name, string Color, int Size)> open)
         {
@@ -121,7 +146,7 @@ namespace UOClient.Unity.UI
         // Entities are not decoded: TazUO's GetHTMLData only reads '<' as a tag and copies every other character, so
         // ModernUO's EscapeHtml output (&lt; &gt; &amp; &quot; &#39;) shows exactly as sent. IMGUI rich text doesn't
         // decode them either.
-        // Rich text treats '<' as markup; plain text keeps angle brackets visible via a look-alike.
+        // No '<' reaches here (each one starts a tag); a stray '>' stays visible via a look-alike.
         private static string Escape(string text) => text.Replace("<", "‹").Replace(">", "›");
 
         private static string ColorValue(string v)
