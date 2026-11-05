@@ -727,6 +727,8 @@ public sealed class ShardGumpLayoutTests
         public void AddLabel(int x, int y, int hue, string text) => Add($"text {x} {y} {hue} {Text(text)}");
         public void AddLabelCropped(int x, int y, int w, int h, int hue, string text) => Add($"croppedtext {x} {y} {w} {h} {hue} {Text(text)}");
         public void AddHtml(int x, int y, int w, int h, string text) => Add($"htmlgump {x} {y} {w} {h} {Text(text)} 0 0");
+        public void AddHtml(int x, int y, int w, int h, string text, bool background, bool scrollbar) =>
+            Add($"htmlgump {x} {y} {w} {h} {Text(text)} {(background ? 1 : 0)} {(scrollbar ? 1 : 0)}");
         public void AddHtmlLocalized(int x, int y, int w, int h, int number) => Add($"xmfhtmlgump {x} {y} {w} {h} {number} 0 0");
         public void AddHtmlLocalized(int x, int y, int w, int h, int number, int color) => Add($"xmfhtmlgumpcolor {x} {y} {w} {h} {number} 0 0 {color}");
 

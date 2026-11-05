@@ -12,11 +12,14 @@ namespace UOClient.Tests;
 /// Saved shard gump layouts (Fixtures/Gumps/*.json) for working offline: each is a gump's compiled form as ModernUO
 /// sends it (the layout's commands in order, its lines, and the button ids, switch and text entry counts
 /// DisplayGumpResponse checks), built by replaying the source's Add* calls for one stated snapshot. Only gumps whose
-/// source is on this machine are here: StableGump and StableReleaseConfirmGump from uo-offline-dev @ 0d14143, and
-/// AuctionGump, GroupFinderGump and the stock AnimalLoreGump from ModernUO. Live's CustomBots/Taming redesign (the
-/// Breeding tab, the pet-picture Animal Lore) is not in either tree and has no fixture.
+/// source is on this machine are here: StableGump and StableReleaseConfirmGump from uo-offline-dev @ 0d14143,
+/// AuctionGump, GroupFinderGump and the stock AnimalLoreGump from ModernUO, and live's StableGump (its table and its
+/// Breeding tab) and PetLoreGump (its Care tab) from the copies in _cc_logs/references (LiveTamingGumps). Live's other
+/// Lore tabs and the stable table's Taming view read PetTiers, PetTraining, PetXp, PetTraits, PetAbilities and
+/// PetLoyalty, which are not in the references, and have no fixture.
 /// Serials and type ids are stand-ins (ModernUO numbers gumps by a counter and hashes the type's full name).
 /// Set UOCLIENT_WRITE_GUMP_FIXTURES=1 to rewrite the files from the builders.
+/// No Editor preview: ServerGumpWindow needs a live Session and runtime-loaded Art.
 /// </summary>
 public sealed class GumpFixtureTests
 {
@@ -71,7 +74,19 @@ public sealed class GumpFixtureTests
             "Dungeons tab, page 1 of 2: Covetous with Ann's forming party, Deceit with none", GroupFinderDungeons(), false),
         ["animal-lore-dragon"] = () => Save("AnimalLoreGump", ModernUO + "Skills/AnimalLore.cs (stock DynamicGump)",
             "a tamed dragon under AOS, SE and ML: five pages", AnimalLore(), true),
+        ["stable-live-all"] = () => Save("StableGump", LiveTamingGumps.Refs + "Stables/StableGump.cs, Gumps/CastleKit.cs (Art off)",
+            LiveTamingGumps.StableAllState, LiveTamingGumps.StableAll(), false),
+        ["stable-live-breeding-claim-first"] = () => Save("StableGump", LiveTamingGumps.Refs + LiveBreedingFiles,
+            LiveTamingGumps.BreedingClaimFirstState, LiveTamingGumps.BreedingClaimFirst(), false),
+        ["stable-live-breeding-courting"] = () => Save("StableGump", LiveTamingGumps.Refs + LiveBreedingFiles,
+            LiveTamingGumps.BreedingCourtingState, LiveTamingGumps.BreedingUnderWay(0x40000402, TimeSpan.FromHours(10)), false),
+        ["stable-live-breeding-due"] = () => Save("StableGump", LiveTamingGumps.Refs + LiveBreedingFiles,
+            LiveTamingGumps.BreedingDueState, LiveTamingGumps.BreedingUnderWay(0x40000403, TimeSpan.FromHours(80)), false),
+        ["pet-lore-care-courting"] = () => Save("PetLoreGump", LiveTamingGumps.Refs + "Taming/PetLoreGump.cs, PetLoreText.cs, PetCards.cs, " +
+                "Gumps/CastleKit.cs (Art off)", LiveTamingGumps.LoreCareState, LiveTamingGumps.LoreCare(), false),
     };
+
+    private const string LiveBreedingFiles = "Stables/StableGump.cs (Breeding tab), StableBreeding.cs, Taming/PetBreeding.cs, Gumps/CastleKit.cs (Art off)";
 
     private static string Dir => Path.Combine(AppContext.BaseDirectory, "Fixtures", "Gumps");
 
@@ -258,6 +273,121 @@ public sealed class GumpFixtureTests
         Assert.Equal((3, 1), (sell.Switches, sell.TextEntries));
         ServerGump gump = Open(InWorld(new List<byte[]>()), sell.ToPacket());
         Assert.Equal(new[] { 101 }, new GumpControls(gump).Switches());
+    }
+
+    // ---- live's StableGump and PetLoreGump (_cc_logs/references, LiveTamingGumps) ----
+
+    private static string HtmlLine(ServerGump g, int nth) => g.Line(g.Commands.Where(c => c.Name == "htmlgump").ElementAt(nth).Arg(4));
+
+    private static int[] TiledBars(ServerGump g) => g.Commands
+        .Where(c => c.Name == "gumppictiled" && c.Arg(3) == 11).Select(c => c.Arg(2) * 10000 + c.Arg(4)).ToArray();
+
+    [Fact]
+    public void LiveStableTableHasFourTabsAndAnswersCloseAsZero()
+    {
+        GumpFixture f = Load("stable-live-all");
+        ServerGump gump = Open(InWorld(new List<byte[]>()), f.ToPacket());
+
+        // The frame's close is reply 0 (CastleKit.cs:144); B_Close 1 is never drawn. Guide 901, the four tabs 20-23,
+        // Sort 10, three row gems 100-102, Claim 4, Rename 5, Release 6; one page, so no Prev 7 or Next 8.
+        Assert.Equal(new[] { 0, 2, 3, 4, 5, 6, 9, 10, 20, 21, 22, 23, 100, 101, 102, 901 }, f.ReplyButtons);
+        Assert.Equal((0, 0), (f.Switches, f.TextEntries));
+        Assert.Equal(f.ButtonIds, f.ReplyButtons);
+
+        // Sorted by name: Dobbin, Fang, Shadowmere; the selected row's gem is the gold 9720.
+        GumpCommand selGem = Assert.Single(gump.Commands, c => c.Name == "button" && c.Arg(6) == 102);
+        Assert.Equal(new[] { 38, 92 + 32 + 2 * 46 + 11, 9720, 9721 }, selGem.Args.Take(4));
+        Assert.Equal(new[] { 0x2599, 0x25D0, 0x259C, 0x259C }, gump.Commands.Where(c => c.Name == "tilepic").Select(c => c.Arg(2)));
+        Assert.Contains("Dire Wolf (dead)", gump.Lines);
+        Assert.Contains("Nightmare · 2 slots", gump.Lines);
+        Assert.Contains("fits: needs 2, have 5", gump.Lines);
+        Assert.Equal(new[] { "All (3)", "Mounts (2)", "Combat (1)", "Bonded (1)" },
+            gump.Commands.Where(c => c.Name == "text" && c.Arg(1) == 532 + 66 + 1).Select(c => gump.Line(c.Arg(3))));
+    }
+
+    [Fact]
+    public void LiveBreedingTabGreysAcceptWhileTheStabledParentIsNotHere()
+    {
+        GumpFixture f = Load("stable-live-breeding-claim-first");
+        ShardGump shard = f.ToShardGump();
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        ServerGump gump = Open(session, f.ToPacket());
+
+        // Five tabs (20-24) and both pickers' arrows (30-33); Accept 34 is a grey gem picture (GemBtn enabled: false).
+        Assert.Equal(new[] { 0, 2, 3, 9, 20, 21, 22, 23, 24, 30, 31, 32, 33, 901 }, f.ReplyButtons);
+        Assert.Equal("Button 34 doesn't exist", shard.Refusal(GameSession.GumpReply(f.Serial, f.TypeId, 34, Array.Empty<int>(), new List<(int, string)>())));
+        Assert.Contains(gump.Commands, c => c.Name == "gumppic" && c.Args.SequenceEqual(new[] { 454, 302, 2151 }));
+        Assert.Contains("1 not met", gump.Lines);
+
+        // Every one of the 17 rows is told: a 10 x 10 square each, red only for "Yours, here with you".
+        var squares = gump.Commands.Where(c => c.Name == "gumppictiled" && c.Arg(2) == 10 && c.Arg(3) == 10).Select(c => c.Arg(4)).ToArray();
+        Assert.Equal(17, squares.Length);
+        Assert.Equal(2, Array.IndexOf(squares, 0x805));
+        Assert.Equal(16, squares.Count(s => s == 0x808));
+        Assert.Contains("right: stabled, claim it", gump.Lines);
+        Assert.Contains("Level 30 or more", gump.Lines);
+
+        // The odds (escaped, <BR> lines) and the stable master's refusal as the red message line.
+        Assert.StartsWith("<BASEFONT COLOR=#B4B4B4>Stats: 60% the parents&#39; average (Str 490, Dex 107, Int 93)", HtmlLine(gump, 0));
+        Assert.Contains("<BR>Traits: each 35% (?), at most 2; 8% a new one.<BR>", HtmlLine(gump, 0));
+        Assert.Equal("<BASEFONT COLOR=#FF9090><I>The stable master: &quot;Both must be thine own living pets.&quot;</I></BASEFONT>", HtmlLine(gump, 1));
+
+        // The right picker's next arrow, as DisplayGumpResponse takes it.
+        session.ReplyGump(gump, 33, new GumpControls(gump).Switches(), new GumpControls(gump).Entries());
+        Assert.Equal(33, shard.Accept(Assert.Single(sent)).Button);
+    }
+
+    [Fact]
+    public void LiveBreedingUnderWayDrawsItsBarsAndOnlyADueBirthCollects()
+    {
+        GumpFixture courting = Load("stable-live-breeding-courting");
+        ServerGump c = Open(InWorld(new List<byte[]>()), courting.ToPacket());
+        // No arrows while a breeding is under way; Collect 35 is grey until the birth is due.
+        Assert.Equal(new[] { 0, 2, 3, 9, 20, 21, 22, 23, 24, 901 }, courting.ReplyButtons);
+        // 10 of 24 hours: 108 of the 260-wide green; gestation not begun: its red back alone.
+        Assert.Equal(new[] { 260 * 10000 + 0x805, 108 * 10000 + 0x808, 260 * 10000 + 0x805 }, TiledBars(c));
+        Assert.Contains("14h left", c.Lines);
+        Assert.Contains("due in 2d 14h", c.Lines);
+        Assert.Contains("Sire · in your stable", c.Lines);
+        Assert.Contains("under way", c.Lines);
+        Assert.Equal(2, c.Commands.Count(x => x.Name == "htmlgump")); // the advice and the odds; no message line
+
+        GumpFixture due = Load("stable-live-breeding-due");
+        ShardGump shard = due.ToShardGump();
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        ServerGump d = Open(session, due.ToPacket());
+        Assert.Equal(new[] { 0, 2, 3, 9, 20, 21, 22, 23, 24, 35, 901 }, due.ReplyButtons);
+        Assert.Equal(new[] { 260 * 10000 + 0x805, 260 * 10000 + 0x808, 260 * 10000 + 0x805, 260 * 10000 + 0x809 }, TiledBars(d));
+        Assert.Contains("ready!", d.Lines);
+        Assert.Contains("3d 8h ago", d.Lines);
+        Assert.Equal("<BASEFONT COLOR=#B4B4B4>Collect it here, or say &quot;breed&quot; to any stable master.</BASEFONT>", HtmlLine(d, 0));
+        session.ReplyGump(d, 35, new GumpControls(d).Switches(), new GumpControls(d).Entries());
+        Assert.Equal(35, shard.Accept(Assert.Single(sent)).Button);
+    }
+
+    [Fact]
+    public void LiveLoreCareTabOpensEveryTabForTheMastersStabledPet()
+    {
+        GumpFixture f = Load("pet-lore-care-courting");
+        ServerGump gump = Open(InWorld(new List<byte[]>()), f.ToPacket());
+
+        // B_Tab + LorePage: 11-16 all live for the master (a stabled pet reads as the master's, PetLore.cs:149-152).
+        Assert.Equal(new[] { 0, 11, 12, 13, 14, 15, 16, 901 }, f.ReplyButtons);
+        Assert.Equal((170, 24), (gump.X, gump.Y));
+        Assert.Single(gump.Commands, c => c.Name == "button" && c.Arg(6) == 16 && c.Arg(2) == 9720);
+        // The portrait: the 44 x 44 tile centred in the 198 x 160 cell over the parchment.
+        Assert.Contains(gump.Commands, c => c.Name == "tilepic" && c.Args.SequenceEqual(new[] { 113, 166, 0x259C }));
+        Assert.Contains(gump.Commands, c => c.Name == "gumppictiled" && c.Args.SequenceEqual(new[] { 36, 108, 198, 160, 2524 }));
+        // Five 109 x 11 backs: HP, Stam, Mana, and the loyalty bar in the portrait and in the tab.
+        Assert.Equal(5, gump.Commands.Count(c => c.Name == "gumppic" && c.Arg(2) == 0x805));
+        Assert.Contains("In your stable · bonded", gump.Lines);
+        Assert.Contains("Adoring: Wonderfully Happy", gump.Lines);
+        Assert.Equal("<BASEFONT COLOR=#E0E0E0>Feeding, grooming and stable care are not tracked yet.<BR>Bred 1 of 5; last 10 h ago</BASEFONT>",
+            HtmlLine(gump, 0));
+        Assert.Contains("tier IV: yes", gump.Lines);
+        Assert.Contains("Courting, 14 h left (keep stabled)", gump.Lines);
     }
 
     // ---- StableGump and StableReleaseConfirmGump (uo-offline-dev @ 0d14143 CustomBots/Stables) ----
