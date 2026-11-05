@@ -1,26 +1,27 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UOClient.Core;
+using UOClient.IO.Formats;
 
 namespace UOClient.Unity.UI
 {
     /// <summary>
     /// The mouse cursor: a crosshair while the server wants a target (white neutral, red harmful, blue beneficial),
     /// else the classic client's gauntlet: red in war mode, gold in peace (the system pointer only until art loads).
-    /// A dragged item owns the cursor.
+    /// Over the world the gauntlet points from the player toward the mouse, the way a right-drag would walk (TazUO
+    /// GameCursor.AssignGraphicByState); over a window it is the fat west-pointing one. A dragged item owns the cursor.
     /// </summary>
-    public sealed class TargetCursor
+    public sealed partial class TargetCursor
     {
-        /// <summary>
-        /// The pointers in art: the classic cursors are 16 statics each, from 0x206A in peace and 0x2053 in war;
-        /// the ninth (0x2073 / 0x205C) is the up-left gauntlet, its fingertip at the image's top-left corner
-        /// (ClassicUO's GameCursor uses _cursorData[war, 9] as its default pointer).
-        /// </summary>
-        public const int WarPointer = 0x2053 + 9;
-        public const int PeacePointer = 0x206A + 9;
-
-        private Texture2D _crossNeutral, _crossHarmful, _crossBeneficial, _warPointer, _peacePointer;
+        private Texture2D _crossNeutral, _crossHarmful, _crossBeneficial;
+        private readonly Dictionary<int, (Texture2D Tex, Vector2 Hot)> _pointers = new Dictionary<int, (Texture2D, Vector2)>();
         private bool _cursorSet;
         private Texture2D _cursorTex;
+        /// <summary>
+        /// Where the player stands on screen (GUI pixels, y down), set by the world each frame; null while the mouse is
+        /// off the world (over the journal, or no world drawn), which shows the window pointer.
+        /// </summary>
+        public Vector2? PlayerScreen { get; set; }
 
         public void Update(GameSession session, UiManager ui)
         {
@@ -42,10 +43,11 @@ namespace UOClient.Unity.UI
             }
             else if (ui?.Art != null)
             {
-                if (session != null && session.WarMode)
-                    tex = _warPointer ??= ui.Art.Item(WarPointer)?.Texture;
-                else
-                    tex = _peacePointer ??= ui.Art.Item(PeacePointer)?.Texture;
+                Vector2 m = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                Vector2 o = PlayerScreen ?? Vector2.zero;
+                bool overWorld = PlayerScreen.HasValue && !ui.IsOverUi(Input.mousePosition);
+                int index = PointerIndex(overWorld, Mathf.RoundToInt(o.x), Mathf.RoundToInt(o.y), Mathf.RoundToInt(m.x), Mathf.RoundToInt(m.y));
+                (tex, hotspot) = Pointer(ui.Art.Data, CursorGraphic(index, session != null && session.WarMode));
             }
             if (_cursorSet && tex == _cursorTex)
                 return;
@@ -55,6 +57,37 @@ namespace UOClient.Unity.UI
                 Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
             else
                 Cursor.SetCursor(tex, hotspot, CursorMode.ForceSoftware);
+        }
+
+        /// <summary>
+        /// A pointer from its stock art (not HD: a cursor is drawn 1:1), its border markers cleared and its hotspot read
+        /// from them (<see cref="CursorImage"/>). Readable, as Cursor.SetCursor needs. (null, 0) if the art is missing.
+        /// </summary>
+        private (Texture2D, Vector2) Pointer(UOClient.IO.UOData data, int graphic)
+        {
+            if (_pointers.TryGetValue(graphic, out var p))
+                return p;
+            Bitmap32 art = data?.GetStatic(graphic);
+            if (art != null)
+            {
+                Bitmap32 bmp = CursorImage(art, out int hotX, out int hotY);
+                var tex = new Texture2D(bmp.Width, bmp.Height, TextureFormat.RGBA32, false)
+                {
+                    name = $"cursor 0x{graphic:X4}", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp
+                };
+                var colors = new Color32[bmp.Width * bmp.Height];
+                for (int y = 0; y < bmp.Height; y++)
+                    for (int x = 0; x < bmp.Width; x++)
+                    {
+                        uint c = bmp[x, y];
+                        colors[(bmp.Height - 1 - y) * bmp.Width + x] = new Color32((byte)(c >> 16), (byte)(c >> 8), (byte)c, (byte)(c >> 24));
+                    }
+                tex.SetPixels32(colors);
+                tex.Apply(false, false);
+                p = (tex, new Vector2(hotX, hotY));
+            }
+            _pointers[graphic] = p;
+            return p;
         }
 
         private static Texture2D Crosshair(Color color)

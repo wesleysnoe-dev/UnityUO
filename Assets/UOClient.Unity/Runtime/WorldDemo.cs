@@ -436,6 +436,11 @@ namespace UOClient.Unity
             _lighting.Update(_ctx.Session, _ctx.World.ToUnity(_ctx.Player.AnchorPixels), _ctx.ArtScale, _ctx.Hud);
             _hudPresenter.Update();
             _overheads.Update(_ctx.Hud, _entities.DrawnRect, _ctx.Camera);
+            // The pointer aims from the player, the origin a right-drag walks from (PlayerMovement); off over the journal.
+            Vector3 playerScreen = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(_ctx.Player.AnchorPixels));
+            _cursor.PlayerScreen = _ctx.Hud.JournalRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y))
+                ? (Vector2?)null
+                : new Vector2(playerScreen.x, Screen.height - playerScreen.y);
             _cursor.Update(_ctx.Session, _ui);
             _sections.Begin(null);
         }
