@@ -76,6 +76,34 @@ namespace UOClient.Unity
             _lookKey = look.Key;
         }
 
+        /// <summary>In war mode (UOP creatures stand and walk ready) and dead (ghosts never take war actions).</summary>
+        public bool WarMode { get; private set; }
+        public bool Dead { get; private set; }
+
+        public void SetCombat(bool warMode, bool dead)
+        {
+            WarMode = warMode;
+            Dead = dead;
+        }
+
+        /// <summary>The fall being played (0xAF), or -1.</summary>
+        public int DeathAction { get; private set; } = -1;
+        public bool Dying => DeathAction >= 0;
+
+        /// <summary>The fall has played through once (it then holds its last frame until the view drops it).</summary>
+        public bool DeathFinished { get; private set; }
+
+        private float _deathTime;
+
+        /// <summary>Plays the body's fall once, as TazUO's DisplayDeath does for the dying mobile (DisplayDeath.cs:50-63).</summary>
+        public void BeginDeath(bool second)
+        {
+            DeathAction = second ? _look.DeathActions.Second : _look.DeathActions.First;
+            DeathFinished = false;
+            _deathTime = 0;
+            _stepDuration = 0;
+        }
+
         public static Vector2Int Delta(int direction)
         {
             switch (direction & 7)
@@ -144,10 +172,13 @@ namespace UOClient.Unity
         private bool _lastMirror;
         private int _prefetchedDir = -1;
         private MobileLook _prefetchedLook;
+        private bool _prefetchedWar;
 
         public void Tick(float dt)
         {
             _animTime += dt;
+            if (Dying)
+                _deathTime += dt;
             if (_stepDuration <= 0)
                 return;
             _stepTime += dt;
@@ -185,19 +216,40 @@ namespace UOClient.Unity
         public void Render(IWorldSpace view)
         {
             int fileDir = AnimationFile.FileDirection(Direction, out bool mirror);
-            if (fileDir != _prefetchedDir || !ReferenceEquals(_look, _prefetchedLook))
+            bool war = WarMode && !Dead;
+            if (fileDir != _prefetchedDir || !ReferenceEquals(_look, _prefetchedLook) || war != _prefetchedWar)
             {
-                // A new direction or look: ask for all its actions at once, so turning and starting to walk don't wait.
-                _art.Prefetch(_look, _lookKey, fileDir);
+                // A new direction, look or mode: ask for all its actions at once, so turning and starting to walk don't wait.
+                _art.Prefetch(_look, _lookKey, fileDir, WarMode, Dead);
                 _prefetchedDir = fileDir;
                 _prefetchedLook = _look;
+                _prefetchedWar = war;
             }
 
-            var (walk, run, stand) = MobileArt.Actions(_look);
-            int action = _stepDuration > 0 ? (_running ? run : walk) : stand;
-            MobileFrame[] frames = _art.Get(_look, _lookKey, action, fileDir);
-            if ((frames == null || frames.Length == 0) && action != stand)
-                frames = _art.Get(_look, _lookKey, stand, fileDir) ?? frames;
+            bool moving = _stepDuration > 0 && !Dying;
+            MobileFrame[] frames = null;
+            bool falling = false;
+            if (Dying)
+            {
+                MobileFrame[] fall = _art.Get(_look, _lookKey, DeathAction, fileDir);
+                if (fall != null && fall.Length > 0)
+                {
+                    frames = fall;
+                    falling = true;
+                }
+                else if (fall != null)
+                    DeathFinished = true; // no fall for this body: gone at once (TazUO, Mobile.cs:720-724)
+                else
+                    _deathTime = 0;       // still being built: the fall starts when it can be seen
+            }
+            if (!falling)
+            {
+                // War actions a body lacks fall back to the peace ones, then to standing.
+                var peace = MobileArt.Actions(_look);
+                int action = MobileActions.Pick(MobileArt.Actions(_look, WarMode, Dead), moving, _running);
+                frames = MobileActions.WithFallback(action, MobileActions.Pick(peace, moving, _running), peace.Stand,
+                    a => _art.Get(_look, _lookKey, a, fileDir), out _);
+            }
 
             if (frames == null)
             {
@@ -214,9 +266,19 @@ namespace UOClient.Unity
             _lastMirror = mirror;
             _renderer.enabled = true;
 
-            // Walk/run cycles span two tiles; standing idles slowly.
-            float frameDuration = action == stand ? 0.25f : StepTime(_running) * 2f / frames.Length;
-            MobileFrame f = frames[(int)(_animTime / frameDuration) % frames.Length];
+            MobileFrame f;
+            if (falling)
+            {
+                // Once through, then hold the last frame.
+                f = frames[MobileActions.DeathFrame(_deathTime, frames.Length)];
+                DeathFinished = MobileActions.DeathDone(_deathTime, frames.Length);
+            }
+            else
+            {
+                // Walk/run cycles span two tiles; standing idles slowly.
+                float frameDuration = !moving ? 0.25f : StepTime(_running) * 2f / frames.Length;
+                f = frames[(int)(_animTime / frameDuration) % frames.Length];
+            }
 
             Vector2 anchor = AnchorPixels;
             float left = anchor.x - (mirror ? f.Slot.Width - f.AnchorX : f.AnchorX);

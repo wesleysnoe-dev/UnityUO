@@ -1,4 +1,5 @@
 using System;
+using UOClient.Net;
 
 namespace UOClient.Core
 {
@@ -19,13 +20,31 @@ namespace UOClient.Core
         /// <summary><see cref="PlayerDead"/> changed: true on becoming a ghost, false on resurrection.</summary>
         public event Action<bool> PlayerDeadChanged;
 
+        /// <summary>
+        /// Another mobile we know of fell (<c>0xAF</c>): its serial, its corpse's (0 if none), and whether to play the
+        /// second fall. ModernUO's <c>Mobile.Kill</c> sends it to everyone in range but the one dying (Mobile.cs:4836-4852)
+        /// and then deletes an NPC or ghosts a player; TazUO's DisplayDeath plays the fall on the dying mobile and ignores
+        /// it for the player and for mobiles it does not know (DisplayDeath.cs:21-24).
+        /// </summary>
+        public event Action<uint, uint, bool> MobileDying;
+
         private void RegisterDeathHandlers()
         {
             // ModernUO only ever sends action 2. ClassicUO treats anything but 1 as death.
             _handlers[0x2C] = r => { if (r.ReadByte() != 1) PlayerDied?.Invoke(); };
-            _handlers[0xAF] = _ => { };   // death animation; the corpse arrives as an item
+            _handlers[0xAF] = DisplayDeath;
             World.MobileUpdated += CheckPlayerDead;
             World.MobileMoved += CheckPlayerDead;
+        }
+
+        private void DisplayDeath(PacketReader r)
+        {
+            uint serial = r.ReadUInt32();
+            uint corpse = r.ReadUInt32();
+            bool running = r.ReadUInt32() != 0;
+            if (serial == World.PlayerSerial || !World.Mobiles.ContainsKey(serial))
+                return;
+            MobileDying?.Invoke(serial, corpse, running);
         }
 
         private void CheckPlayerDead(Mobile m)

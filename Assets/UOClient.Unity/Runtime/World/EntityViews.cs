@@ -19,6 +19,11 @@ namespace UOClient.Unity
         private readonly Dictionary<uint, int> _otherLook = new Dictionary<uint, int>();
         private readonly Dictionary<uint, ItemView> _items = new Dictionary<uint, ItemView>();
         private readonly Dictionary<uint, List<ItemView>> _multis = new Dictionary<uint, List<ItemView>>();
+
+        // Mobiles playing their fall (0xAF), no longer tied to their serial: TazUO re-keys the dying mobile so a ghost
+        // update for the same serial gets a fresh one (DisplayDeath.cs:26-38), and hides its corpse until the fall is over
+        // (ItemView.cs:183).
+        private readonly List<(Avatar Avatar, uint Serial, uint Corpse)> _dying = new List<(Avatar, uint, uint)>();
         private int _playerLook = -1;
         private GameSession _attached;
 
@@ -47,6 +52,7 @@ namespace UOClient.Unity
             s.World.MobileMoved += OnMobileMoved;
             s.World.EntityRemoved += OnEntityRemoved;
             s.World.ItemUpdated += OnItemUpdated;
+            s.MobileDying += OnMobileDying;
         }
 
         public void Detach()
@@ -57,8 +63,12 @@ namespace UOClient.Unity
             _attached.World.MobileMoved -= OnMobileMoved;
             _attached.World.EntityRemoved -= OnEntityRemoved;
             _attached.World.ItemUpdated -= OnItemUpdated;
+            _attached.MobileDying -= OnMobileDying;
             _attached = null;
         }
+
+        /// <summary>Characters playing their fall right now.</summary>
+        public int DyingCount => _dying.Count;
 
         /// <summary>The player's avatar on entering the world (replacing any earlier one).</summary>
         public void SpawnPlayer(Core.Mobile p, string name)
@@ -80,17 +90,64 @@ namespace UOClient.Unity
 
         public void Tick(float dt)
         {
+            // The player's war mode is 0x72's (GameSession.WarMode); being dead is read off the ghost body.
+            if (_ctx.Session != null && _ctx.Player != null)
+                _ctx.Player.SetCombat(_ctx.Session.WarMode, _ctx.Session.PlayerDead);
             foreach (Avatar a in _others.Values)
                 a.Tick(dt);
+            foreach (var d in _dying)
+                d.Avatar.Tick(dt);
         }
 
         public void Render(bool hideUpperMultiParts)
         {
             foreach (Avatar a in _others.Values)
                 a.Render(_ctx.World);
-            foreach (ItemView v in _items.Values)
-                v.Render(_ctx.World);
+            foreach (var d in _dying)
+                d.Avatar.Render(_ctx.World);
+            foreach (KeyValuePair<uint, ItemView> kv in _items)
+            {
+                kv.Value.Hidden = IsFallingCorpse(kv.Key);
+                kv.Value.Render(_ctx.World);
+            }
             RenderMultis(hideUpperMultiParts);
+            DropFinishedFalls();
+        }
+
+        private bool IsFallingCorpse(uint serial)
+        {
+            if (_dying.Count == 0 || serial == 0)
+                return false;
+            foreach (var d in _dying)
+                if (d.Corpse == serial)
+                    return true;
+            return false;
+        }
+
+        private void OnMobileDying(uint serial, uint corpse, bool second)
+        {
+            if (!_others.TryGetValue(serial, out Avatar a))
+                return;
+            _others.Remove(serial);
+            _otherLook.Remove(serial);
+            a.BeginDeath(second);
+            _dying.Add((a, serial, corpse));
+        }
+
+        /// <summary>A fall that has played through is dropped (TazUO removes the dying mobile then, Mobile.cs:706-714).</summary>
+        private void DropFinishedFalls()
+        {
+            for (int i = _dying.Count - 1; i >= 0; i--)
+            {
+                var d = _dying[i];
+                if (!d.Avatar.DeathFinished)
+                    continue;
+                d.Avatar.Dispose();
+                _dying.RemoveAt(i);
+                // A player who died stays in view as a ghost; if no update has drawn it yet, draw it now.
+                if (_ctx.Session != null && !_others.ContainsKey(d.Serial) && _ctx.Session.World.Mobiles.TryGetValue(d.Serial, out Core.Mobile m))
+                    OnMobileUpdated(m);
+            }
         }
 
         /// <summary>Tile position of a mobile we draw (the player included), or of a ground item.</summary>
@@ -166,6 +223,7 @@ namespace UOClient.Unity
             {
                 a = new Avatar(_ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, LookOf(m), m.X, m.Y, m.Z, m.Name ?? $"Mobile 0x{m.Serial:X}");
                 a.Face(m.Direction);
+                a.SetCombat(m.WarMode, m.IsDead);
                 _others[m.Serial] = a;
                 _otherLook[m.Serial] = m.AppearanceVersion;
                 return;
@@ -175,6 +233,7 @@ namespace UOClient.Unity
                 _otherLook[m.Serial] = m.AppearanceVersion;
                 a.SetLook(LookOf(m));
             }
+            a.SetCombat(m.WarMode, m.IsDead);
             a.MoveTo(m.X, m.Y, m.Z, m.Direction, m.Running);
         }
 
@@ -187,6 +246,7 @@ namespace UOClient.Unity
                     _otherLook[m.Serial] = m.AppearanceVersion;
                     a.SetLook(LookOf(m));
                 }
+                a.SetCombat(m.WarMode, m.IsDead);
                 a.MoveTo(m.X, m.Y, m.Z, m.Direction, m.Running);
             }
             else
@@ -312,6 +372,9 @@ namespace UOClient.Unity
         {
             foreach (Avatar a in _others.Values)
                 a.Dispose();
+            foreach (var d in _dying)
+                d.Avatar.Dispose();
+            _dying.Clear();
             foreach (ItemView v in _items.Values)
                 v.Dispose();
         }

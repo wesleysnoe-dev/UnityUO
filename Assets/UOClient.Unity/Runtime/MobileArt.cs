@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Text;
 using System.Threading;
 using UnityEngine;
 using UOClient.ArtPipeline.Imaging;
@@ -12,122 +11,6 @@ using Debug = UnityEngine.Debug;
 
 namespace UOClient.Unity
 {
-    /// <summary>What a mobile looks like: body, skin hue, and worn items in draw order. Immutable once built.</summary>
-    public sealed class MobileLook
-    {
-        public struct Layer
-        {
-            public int Body;   // animation body id (the item's tiledata AnimId for equipment)
-            public int Hue;    // hues.mul index (entry + 1); 0 = unhued
-            public bool Partial;
-            public bool IsMount; // the creature being ridden: plays its own walk/run/stand under the rider
-        }
-
-        public readonly List<Layer> Layers = new List<Layer>();
-
-        /// <summary>The body's action layout (humans, animals and monsters number their actions differently).</summary>
-        public AnimGroup Group = AnimGroup.Human;
-
-        /// <summary>Riding: the rider uses the mounted actions, the mount layer its own.</summary>
-        public bool Mounted;
-
-        /// <summary>The mount's action layout, when mounted.</summary>
-        public AnimGroup MountGroup = AnimGroup.Animal;
-
-        /// <summary>The body's and the mount's walk/run/stand (UOP bodies number them differently from their layout).</summary>
-        public (int Walk, int Run, int Stand) BodyActions = AnimationLibrary.DefaultActions(AnimGroup.Human);
-        public (int Walk, int Run, int Stand) MountActions = AnimationLibrary.DefaultActions(AnimGroup.Animal);
-
-        /// <summary>Identifies the look for sharing frames between identical mobiles.</summary>
-        public string Key
-        {
-            get
-            {
-                var sb = new StringBuilder();
-                foreach (Layer l in Layers)
-                    sb.Append(l.IsMount ? "m" : "").Append(l.Body).Append(':').Append(l.Hue).Append(l.Partial ? "p" : "").Append(';');
-                return sb.ToString();
-            }
-        }
-
-        public int BaseBody
-        {
-            get
-            {
-                foreach (Layer l in Layers)
-                    if (!l.IsMount)
-                        return l.Body;
-                return 0;
-            }
-        }
-
-        // Paperdoll-style order for front-facing views: what is listed later is drawn on top.
-        private static readonly byte[] LayerOrder =
-        {
-            20, // cloak (behind the body when seen from the front)
-            5, 4, 3, 24, 13, 8, 9, 14, 19, 7, 23, 17, 10, 11, 22, 12, 16, 18, 6, 1, 2
-        };
-
-        /// <summary>Builds a look from a body and worn items (graphic, hue per layer), resolving each item's animation.</summary>
-        public static MobileLook From(UOData data, int body, int hue, IEnumerable<(byte Layer, int Graphic, int Hue)> equipment)
-        {
-            var look = new MobileLook();
-            AnimationLibrary anims = data.AnimationLibrary;
-            look.Group = anims.GroupOf(body);
-            look.BodyActions = anims.Actions(body);
-            int skin = hue & 0x3FFF;
-            if (skin == 0)
-                skin = anims.ReplacementHue(body); // Body.def stand-ins come with their own hue
-
-            var byLayer = new Dictionary<byte, (int Graphic, int Hue)>();
-            foreach (var e in equipment)
-                byLayer[e.Layer] = (e.Graphic, e.Hue);
-
-            // The mount goes first, so the rider is drawn over it.
-            if (look.Group == AnimGroup.Human && byLayer.TryGetValue(25, out var mount))
-            {
-                int mountBody = AnimationLibrary.MountBody(mount.Graphic);
-                if (mountBody == 0)
-                    mountBody = data.TileData.GetStatic(mount.Graphic).AnimId;
-                if (mountBody != 0)
-                {
-                    look.Mounted = true;
-                    look.MountGroup = anims.GroupOf(mountBody);
-                    look.MountActions = anims.Actions(mountBody);
-                    look.Layers.Add(new Layer { Body = mountBody, Hue = mount.Hue & 0x3FFF, IsMount = true });
-                }
-            }
-
-            look.Layers.Add(new Layer { Body = body, Hue = skin });
-            if (look.Group != AnimGroup.Human)
-                return look; // creatures wear nothing visible
-
-            foreach (byte layer in LayerOrder)
-            {
-                if (!byLayer.TryGetValue(layer, out var item))
-                    continue;
-                StaticTileData td = data.TileData.GetStatic(item.Graphic);
-                if (td.AnimId == 0)
-                    continue;
-                // Equipconv.def and the shard's EquipConv lines: e.g. a faction tabard drawn as the stock surcoat in its faction hue.
-                int anim = td.AnimId, itemHue = item.Hue & 0x3FFF;
-                if (data.TryEquipConv(body, anim, out EquipConvEntry conv))
-                {
-                    anim = conv.Anim;
-                    if (itemHue == 0)
-                        itemHue = conv.Hue & 0x3FFF;
-                }
-                look.Layers.Add(new Layer
-                {
-                    Body = anim,
-                    Hue = itemHue,
-                    Partial = (td.Flags & TileFlags.PartialHue) != 0 || (item.Hue & 0x8000) != 0
-                });
-            }
-            return look;
-        }
-    }
-
     public sealed class MobileFrame
     {
         public AtlasSlot Slot;
@@ -184,15 +67,15 @@ namespace UOClient.Unity
         public double WorkerMs { get; private set; }
         public int Built { get; private set; }
 
-        /// <summary>Walk/run/stand action numbers differ for humans, animals and monsters.</summary>
-        public static (int Walk, int Run, int Stand) Actions(MobileLook look)
-        {
-            if (look.Mounted) return (MountedWalk, MountedRun, MountedStand);
-            return look.BodyActions;
-        }
+        /// <summary>
+        /// Walk/run/stand action numbers differ for humans, animals and monsters, and for UOP creatures in war mode;
+        /// riders keep the mounted actions and the dead the peace ones (see <see cref="MobileActions.Select"/>).
+        /// </summary>
+        public static (int Walk, int Run, int Stand) Actions(MobileLook look, bool warMode = false, bool dead = false) =>
+            MobileActions.Select(look.Mounted, look.BodyActions, look.WarActions, warMode, dead);
 
         // Human actions while riding.
-        public const int MountedWalk = 23, MountedRun = 24, MountedStand = 25;
+        public const int MountedWalk = MobileActions.MountedWalk, MountedRun = MobileActions.MountedRun, MountedStand = MobileActions.MountedStand;
 
         /// <summary>What a mount plays while its rider plays <paramref name="riderAction"/>.</summary>
         private static int MountAction(MobileLook look, int riderAction)
@@ -214,13 +97,21 @@ namespace UOClient.Unity
             return null;
         }
 
-        /// <summary>Asks for a direction's stand, walk and run frames ahead of need.</summary>
-        public void Prefetch(MobileLook look, string key, int fileDir)
+        /// <summary>Asks for a direction's stand, walk and run frames ahead of need (the war set too when in war mode).</summary>
+        public void Prefetch(MobileLook look, string key, int fileDir, bool warMode = false, bool dead = false)
         {
-            var (walk, run, stand) = Actions(look);
+            var (walk, run, stand) = Actions(look, warMode, dead);
             Get(look, key, stand, fileDir);
             Get(look, key, walk, fileDir);
             Get(look, key, run, fileDir);
+            var peace = Actions(look);
+            if (peace != (walk, run, stand))
+            {
+                // The fallbacks for war actions a body lacks.
+                Get(look, key, peace.Stand, fileDir);
+                Get(look, key, peace.Walk, fileDir);
+                Get(look, key, peace.Run, fileDir);
+            }
         }
 
         /// <summary>A ground item's sprite: null while being built (requested on first call).</summary>

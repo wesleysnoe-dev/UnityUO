@@ -35,6 +35,8 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\StatusWindow.Layout.cs" Link="Unity\StatusWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\QuestionWindow.Layout.cs" Link="Unity\QuestionWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\TargetCursor.Direction.cs" Link="Unity\TargetCursor.Direction.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MobileActions.cs" Link="Unity\MobileActions.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MobileLook.cs" Link="Unity\MobileLook.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />

@@ -55,6 +55,9 @@ namespace UOClient.Core
         /// </summary>
         public bool IsDead => IsGhostBody(Body);
 
+        /// <summary>In war mode: flag 0x40 of 0x20/0x77/0x78, as ModernUO's <c>Mobile.GetPacketFlags</c> sets it and TazUO's <c>Mobile.InWarMode</c> reads it.</summary>
+        public bool WarMode => (Flags & 0x40) != 0;
+
         public static bool IsGhostBody(ushort body) =>
             body == 402 || body == 403 || body == 607 || body == 608 || body == 694 || body == 695 || body == 970;
 
