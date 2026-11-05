@@ -41,57 +41,18 @@ namespace UOClient.Unity
         /// <summary>Server, data folder and client overrides in use (the settings file plus launch arguments).</summary>
         public ClientSettings Settings { get; private set; }
 
-        private static string SettingsPath => Path.Combine(ProjectRoot, "UserSettings", ClientSettings.FileName);
+        private static string SettingsPath => ClientSettingsStore.SettingsPath;
 
         /// <summary>The settings file as it is (no launch arguments), or null if there is none; for the editor windows too.</summary>
-        public static ClientSettings ReadSettingsFile(bool orDefaults = true)
-        {
-            try
-            {
-                if (File.Exists(SettingsPath))
-                    return JsonUtility.FromJson<ClientSettings>(File.ReadAllText(SettingsPath));
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"UOClient: {SettingsPath} is unreadable ({e.Message}); using defaults.");
-            }
-            return orDefaults ? new ClientSettings() : null;
-        }
+        public static ClientSettings ReadSettingsFile(bool orDefaults = true) => ClientSettingsStore.ReadSettingsFile(orDefaults);
 
         /// <summary>The client overrides for a data set opened by an editor tool, when the settings name a client folder.</summary>
-        public static void ApplyOverrides(UOData data, ClientSettings s)
-        {
-            string dir = s.ResolvedOverridesPath;
-            if (dir != null)
-                data.UseOverrides(new ClientOverrides(dir, s.hdArt));
-        }
+        public static void ApplyOverrides(UOData data, ClientSettings s) => ClientSettingsStore.ApplyOverrides(data, s);
 
         /// <summary>Reads the settings file (writing one with the detected folders on first run), then applies launch arguments.</summary>
-        private ClientSettings LoadSettings()
-        {
-            ClientSettings s = ReadSettingsFile(orDefaults: false);
-            if (s == null)
-            {
-                s = new ClientSettings();
-                s.uoDataPath = s.ResolvedDataPath;
-                s.overridesPath = s.ResolvedOverridesPath ?? "none";
-                SaveSettings(s);
-            }
-            return s.ApplyArguments(Environment.GetCommandLineArgs());
-        }
+        private ClientSettings LoadSettings() => ClientSettingsStore.Load();
 
-        private void SaveSettings(ClientSettings s)
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
-                File.WriteAllText(SettingsPath, JsonUtility.ToJson(s, true));
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"UOClient: could not write {SettingsPath} ({e.Message}).");
-            }
-        }
+        private void SaveSettings(ClientSettings s) => ClientSettingsStore.Save(s);
 
         [Header("Offline start")]
         public int map;
