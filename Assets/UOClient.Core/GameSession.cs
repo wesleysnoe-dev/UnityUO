@@ -62,6 +62,9 @@ namespace UOClient.Core
         private readonly Queue<int> _pendingSteps = new Queue<int>();
         private readonly HashSet<uint> _nameRequested = new HashSet<uint>();
 
+        /// <summary>The client version we announce; some gumps are laid out by it, as in ClassicUO.</summary>
+        public ClientVersion Version => _settings.Version;
+
         public GameSession(LoginSettings settings)
         {
             _settings = settings;

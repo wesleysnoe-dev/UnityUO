@@ -18,6 +18,11 @@ namespace UOClient.Core
         public (ushort Graphic, ushort Hue)[] Equipment = Array.Empty<(ushort, ushort)>();
         /// <summary>The body lines; null until the message has been read.</summary>
         public string[] Lines;
+        /// <summary>When its latest summary came (0: none yet); the board lists by it.</summary>
+        public int Listed;
+
+        /// <summary>The row TazUO's BulletinBoardGump shows for it: poster, subject and time joined by " - ".</summary>
+        public string Summary => $"{Poster} - {Subject} - {Time}";
     }
 
     /// <summary>A bulletin board the server opened (0x71 0), with the message summaries it has sent.</summary>
@@ -26,6 +31,7 @@ namespace UOClient.Core
         public uint Serial;
         public string Name = "";
         public readonly Dictionary<uint, BulletinPost> Posts = new Dictionary<uint, BulletinPost>();
+        internal int SummaryCount;
     }
 
     /// <summary>Bulletin boards: 0x71 as ModernUO's BulletinBoardPackets write and read it.</summary>
@@ -58,6 +64,7 @@ namespace UOClient.Core
                     BulletinBoards[boardSerial] = opened = new BulletinBoardInfo { Serial = boardSerial };
                 opened.Name = r.ReadUtf8(30);
                 opened.Posts.Clear();
+                opened.SummaryCount = 0;
                 BulletinBoardOpened?.Invoke(opened);
                 return;
             }
@@ -74,7 +81,10 @@ namespace UOClient.Core
             if (!board.Posts.TryGetValue(serial, out BulletinPost post))
                 board.Posts[serial] = post = new BulletinPost { Serial = serial };
             if (command == 1)
+            {
                 post.Thread = thread;
+                post.Listed = ++board.SummaryCount;
+            }
             post.Poster = r.ReadUtf8(r.ReadByte());
             post.Subject = r.ReadUtf8(r.ReadByte());
             post.Time = r.ReadUtf8(r.ReadByte());
@@ -105,33 +115,23 @@ namespace UOClient.Core
         }
 
         /// <summary>
-        /// The board's messages still in it, threads in arrival order with each reply under the message it answers,
-        /// and how deep. A deleted message (0x1D) leaves the board, and its replies move up to its place.
+        /// The board's messages still in it, as TazUO's BulletinBoardGump lists them: one flat list in the order their
+        /// summaries came, a summary sent again moving its message to the end. A deleted message (0x1D) leaves it.
         /// </summary>
-        public List<(BulletinPost Post, int Depth)> BulletinThreads(BulletinBoardInfo board)
+        public List<BulletinPost> BulletinSummaries(BulletinBoardInfo board)
         {
-            var result = new List<(BulletinPost, int)>();
             if (board == null)
-                return result;
-            List<BulletinPost> live = board.Posts.Values
-                .Where(p => World.Contained.TryGetValue(p.Serial, out ContainedItem c) && c.Container == board.Serial).ToList();
-            var ids = new HashSet<uint>(live.Select(p => p.Serial));
-            void Add(uint parent, int depth)
-            {
-                foreach (BulletinPost p in live)
-                {
-                    bool root = p.Thread == 0 || !ids.Contains(p.Thread) || p.Thread == p.Serial;
-                    if (parent == 0 ? root : !root && p.Thread == parent)
-                    {
-                        result.Add((p, depth));
-                        if (depth < 10)
-                            Add(p.Serial, depth + 1);
-                    }
-                }
-            }
-            Add(0, 0);
-            return result;
+                return new List<BulletinPost>();
+            return board.Posts.Values
+                .Where(p => p.Listed > 0 && World.Contained.TryGetValue(p.Serial, out ContainedItem c) && c.Container == board.Serial)
+                .OrderBy(p => p.Listed).ToList();
         }
+
+        /// <summary>A message we posted: TazUO offers Remove on it instead of Reply.</summary>
+        public bool IsOwnBulletinPost(BulletinPost post) => post != null && post.Poster == World.Player?.Name;
+
+        /// <summary>A reply's subject as TazUO starts it: "RE:" and the subject replied to.</summary>
+        public static string BulletinReplySubject(string subject) => "RE:" + subject;
 
         /// <summary>The window closed: forget the board (the server sends it whole again when it is next opened).</summary>
         public void CloseBulletinBoard(BulletinBoardInfo board)

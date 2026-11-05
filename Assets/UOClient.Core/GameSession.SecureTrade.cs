@@ -44,7 +44,8 @@ namespace UOClient.Core
         /// Display (0, 47 bytes): the other player, our container, theirs, true, their name (30 bytes Latin-1).
         /// Close (1), Update (2: our accept, theirs), UpdateGold (3: their gold, platinum), UpdateLedger (4: our balance)
         /// are 17 bytes, each naming our container. ModernUO sends an Update before the Display; like ClassicUO, updates
-        /// for a trade not yet open are dropped.
+        /// for a trade not yet open are dropped. The accept checks are the server's: ModernUO clears both whenever an
+        /// item goes into or out of either offer (SecureTradeContainer.ClearChecks) and sends them here.
         /// </summary>
         private void SecureTradePacket(PacketReader r)
         {
@@ -53,6 +54,9 @@ namespace UOClient.Core
             if (command == 0)
             {
                 var trade = new SecureTrade { Them = serial, MyContainer = r.ReadUInt32(), TheirContainer = r.ReadUInt32() };
+                // As ClassicUO: no trade unless both containers were sent first (ModernUO equips them before the display).
+                if (!KnownItem(trade.MyContainer) || !KnownItem(trade.TheirContainer))
+                    return;
                 bool named = r.ReadBool();
                 trade.TheirName = named ? r.ReadAscii(30).TrimEnd('\0') : "";
                 if (string.IsNullOrEmpty(trade.TheirName) && World.Mobiles.TryGetValue(serial, out Mobile them))
@@ -87,6 +91,8 @@ namespace UOClient.Core
             }
             TradeChanged?.Invoke(t);
         }
+
+        private bool KnownItem(uint serial) => World.Contained.ContainsKey(serial) || World.Items.ContainsKey(serial);
 
         /// <summary>Still the server's trade for its container (not closed, nor replaced by a newer one there).</summary>
         public bool IsOpen(SecureTrade t) => t != null && Trades.TryGetValue(t.MyContainer, out SecureTrade open) && open == t;

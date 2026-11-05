@@ -1,5 +1,6 @@
 using UOClient.Core;
 using UOClient.Net;
+using UOClient.Unity.UI;
 
 namespace UOClient.Tests;
 
@@ -132,6 +133,112 @@ public sealed class SecureTradeTests
         var noLedger = new SecureTrade { MyContainer = 0x40000999 };
         session.OfferTradeGold(noLedger, 10, 0);
         Assert.Equal(0, noLedger.MyGold);
+    }
+
+    [Fact]
+    public void DisplayBeforeTheContainersIsIgnored()
+    {
+        // TazUO's SecureTrading.Receive: no gump unless both containers are already in the world.
+        var session = new GameSession(new LoginSettings());
+        var opened = new List<SecureTrade>();
+        session.TradeOpened += opened.Add;
+        session.Inject(Display("Bob"), true);
+        session.Inject(Equip(MyBox, 0x1E5E, 1, 0, 0, Me), false);
+        session.Inject(Display("Bob"), true); // their container still unknown
+        Assert.Empty(opened);
+        Assert.Empty(session.Trades);
+        session.Inject(Equip(TheirBox, 0x1E5E, 1, 0, 0, Them), false);
+        session.Inject(Display("Bob"), true);
+        Assert.Single(opened);
+    }
+
+    [Fact]
+    public void MovingAnItemClearsBothAcceptsAsModernUoSendsIt()
+    {
+        GameSession session = OpenTrade(out _, out _, out _);
+        SecureTrade t = session.Trades[MyBox];
+        session.Inject(Update(2, MyBox, 1, 1), true);
+        Assert.True(t.IAccept && t.TheyAccept);
+
+        // SecureTradeContainer.OnItemAdded -> ClearChecks -> Update(): the item, then 0x6F 2 with both clear.
+        session.Inject(Equip(0x40000200, 0x0EED, 500, 30, 20, TheirBox), false);
+        session.Inject(Update(2, MyBox, 0, 0), true);
+        Assert.False(t.IAccept);
+        Assert.False(t.TheyAccept);
+        Assert.True(session.IsOpen(t)); // a moved item only clears the checks, never the trade
+    }
+
+    [Fact]
+    public void TwoTradesStaySeparate()
+    {
+        const uint OtherMine = 0x40000300, OtherTheirs = 0x40000301, Carl = 0x00000099;
+        GameSession session = OpenTrade(out var opened, out _, out var closed);
+        session.Inject(Equip(OtherTheirs, 0x1E5E, 1, 0, 0, Carl), false);
+        session.Inject(Equip(OtherMine, 0x1E5E, 1, 0, 0, Me), false);
+        session.Inject(new PacketWriter(0x6F).Byte(0).UInt32(Carl).UInt32(OtherMine).UInt32(OtherTheirs).Bool(true).Ascii("Carl", 30).ToArray(), true);
+        SecureTrade bob = session.Trades[MyBox], carl = session.Trades[OtherMine];
+        Assert.Equal(2, opened.Count);
+
+        // An accept for one trade leaves the other alone; so does its close.
+        session.Inject(Update(2, OtherMine, 1, 1), true);
+        Assert.True(carl.IAccept);
+        Assert.False(bob.IAccept);
+        session.Inject(Update(1, OtherMine, 0, 0), true);
+        Assert.Same(carl, Assert.Single(closed));
+        Assert.True(session.IsOpen(bob));
+        Assert.False(session.IsOpen(carl)); // its window's close sends no cancel, so it can't end Bob's trade
+
+        // A trade object the server never opened is never open (CancelTrade / AcceptTrade send only for open trades).
+        Assert.False(session.IsOpen(new SecureTrade { MyContainer = MyBox }));
+        Assert.False(session.IsOpen(null));
+    }
+
+    // TazUO's TradingGump: 0x0866 before 7.0.45.65 (checks at 52,29 / 266,160, boxes at 45,70 / 192,70), 0x088A from it
+    // (checks 37,29 / 258,240, boxes 30,110 / 192,110, coins); boxes 110 x 80.
+    [Fact]
+    public void LayoutFollowsTheClientVersionAsTazUo()
+    {
+        SecureTradeWindow.TradeLayout classic = SecureTradeWindow.LayoutFor(ClientVersion.Default);
+        Assert.Equal(0x0866, classic.Background);
+        Assert.Equal((52, 29), classic.MyCheck);
+        Assert.Equal((266, 160), classic.TheirCheck);
+        Assert.Equal((84, 40), classic.MyName);
+        Assert.Equal((260, 170), (classic.TheirNameRight, classic.TheirNameY));
+        Assert.Equal((45, 70), classic.MyBox);
+        Assert.Equal((192, 70), classic.TheirBox);
+        Assert.False(classic.HasCoins);
+
+        Assert.Same(classic, SecureTradeWindow.LayoutFor(new ClientVersion(7, 0, 45, 64)));
+        SecureTradeWindow.TradeLayout coins = SecureTradeWindow.LayoutFor(new ClientVersion(7, 0, 45, 65));
+        Assert.Equal(0x088A, coins.Background);
+        Assert.Equal((37, 29), coins.MyCheck);
+        Assert.Equal((258, 240), coins.TheirCheck);
+        Assert.Equal((73, 32), coins.MyName);
+        Assert.Equal((250, 244), (coins.TheirNameRight, coins.TheirNameY));
+        Assert.Equal((30, 110), coins.MyBox);
+        Assert.Equal((192, 110), coins.TheirBox);
+        Assert.True(coins.HasCoins);
+        Assert.Equal(((43, 67), (180, 67)), (coins.MyGoldBalance, coins.MyPlatBalance));
+        Assert.Equal(((180, 190), (180, 210)), (coins.TheirGold, coins.TheirPlat));
+        Assert.Equal(((43, 190), (43, 210)), (coins.MyGoldEntry, coins.MyPlatEntry));
+
+        Assert.Equal((110, 80), (SecureTradeWindow.BoxWidth, SecureTradeWindow.BoxHeight));
+        Assert.Equal((0x0867, 0x0868, 0x0869, 0x086A),
+            (SecureTradeWindow.Unchecked, SecureTradeWindow.UncheckedPressed, SecureTradeWindow.Checked, SecureTradeWindow.CheckedPressed));
+    }
+
+    [Fact]
+    public void ItemsAreKeptInTheBoxAndDroppedCentredOnTheCursor()
+    {
+        // UpdateContents: the server's x, y, pulled back so the art fits the 110 x 80 box, never negative.
+        Assert.Equal((30, 20), SecureTradeWindow.FitInBox(30, 20, 20, 20));
+        Assert.Equal((110 - 44, 80 - 30), SecureTradeWindow.FitInBox(100, 70, 44, 30));
+        Assert.Equal((0, 0), SecureTradeWindow.FitInBox(-5, -5, 20, 20));
+        Assert.Equal((0, 0), SecureTradeWindow.FitInBox(50, 50, 200, 100)); // bigger than the box: top-left
+        // OnMouseUp: the art's centre goes where the cursor let go.
+        Assert.Equal((50 - 10, 40 - 7), SecureTradeWindow.DropInBox(50, 40, 20, 15));
+        Assert.Equal((0, 0), SecureTradeWindow.DropInBox(3, 3, 20, 20));
+        Assert.Equal((110 - 20, 80 - 20), SecureTradeWindow.DropInBox(109, 79, 20, 20));
     }
 
     [Fact]

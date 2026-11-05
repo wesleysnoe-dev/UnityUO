@@ -1,6 +1,7 @@
 using System.Text;
 using UOClient.Core;
 using UOClient.Net;
+using UOClient.Unity.UI;
 
 namespace UOClient.Tests;
 
@@ -71,28 +72,86 @@ public sealed class BulletinBoardTests
     }
 
     [Fact]
-    public void SummariesListAsThreads()
+    public void SummariesListInArrivalOrderAsTazUo()
     {
         var session = new GameSession(new LoginSettings());
         session.Inject(Display("Board"), true);
         BulletinBoardInfo board = session.BulletinBoards[Board];
-        session.Inject(Messages(0x41, 0x42, 0x43), true);
+        session.Inject(Messages(0x41, 0x42, 0x43, 0x44), true);
         session.Inject(Summary(0x41, 0, "Ann", "First", "Day 1 @ 10:00"), true);
         session.Inject(Summary(0x43, 0, "Bob", "Second", "Day 2 @ 11:00"), true);
-        session.Inject(Summary(0x42, 0x41, "Wes", "RE: First", "Day 3 @ 12:00"), true);
+        session.Inject(Summary(0x42, 0x41, "Wes", "RE:First", "Day 3 @ 12:00"), true);
 
         Assert.Equal("Ann", board.Posts[0x41].Poster);
         Assert.Equal("Day 1 @ 10:00", board.Posts[0x41].Time);
         Assert.Null(board.Posts[0x41].Lines);
-        var threads = session.BulletinThreads(board);
-        Assert.Equal(new uint[] { 0x41, 0x42, 0x43 }, threads.Select(t => t.Post.Serial));
-        Assert.Equal(new[] { 0, 1, 0 }, threads.Select(t => t.Depth));
+        // BulletinBoardGump.AddBulletinObject: one flat list, replies not nested, rows "poster - subject - time".
+        Assert.Equal(new uint[] { 0x41, 0x43, 0x42 }, session.BulletinSummaries(board).Select(p => p.Serial));
+        Assert.Equal("Ann - First - Day 1 @ 10:00", board.Posts[0x41].Summary);
+        // 0x44 is on the board but has no summary yet: not listed.
+        Assert.DoesNotContain(session.BulletinSummaries(board), p => p.Serial == 0x44);
 
-        // 0x41 deleted (0x1D): it leaves the list and its reply becomes a thread of its own.
+        // A summary sent again replaces its row at the end of the list.
+        session.Inject(Summary(0x41, 0, "Ann", "First (edited)", "Day 1 @ 10:00"), true);
+        Assert.Equal(new uint[] { 0x43, 0x42, 0x41 }, session.BulletinSummaries(board).Select(p => p.Serial));
+
+        // 0x41 deleted (0x1D): it leaves the list; its reply stays where it was.
         session.Inject(new PacketWriter(0x1D, 5).UInt32(0x41).ToArray(), false);
-        threads = session.BulletinThreads(board);
-        Assert.Equal(new uint[] { 0x43, 0x42 }, threads.Select(t => t.Post.Serial)); // summaries' arrival order
-        Assert.All(threads, t => Assert.Equal(0, t.Depth));
+        Assert.Equal(new uint[] { 0x43, 0x42 }, session.BulletinSummaries(board).Select(p => p.Serial));
+
+        // Opened again: the list starts over.
+        session.Inject(Display("Board"), true);
+        Assert.Empty(session.BulletinSummaries(board));
+    }
+
+    [Fact]
+    public void RepliesAndOwnMessagesAsTazUo()
+    {
+        // BulletinBoardItem: Reply starts the subject with TazLang "re" ("RE:"), even on a reply.
+        Assert.Equal("RE:First", GameSession.BulletinReplySubject("First"));
+        Assert.Equal("RE:RE:First", GameSession.BulletinReplySubject("RE:First"));
+
+        // BulletinBoardData: variant 2 (Remove) when the poster is the player's name, else 1 (Reply).
+        var session = new GameSession(new LoginSettings());
+        Assert.False(session.IsOwnBulletinPost(new BulletinPost { Poster = "Ann" })); // no player yet
+        Assert.False(session.IsOwnBulletinPost(null));
+    }
+
+    // TazUO's BulletinBoardGump and BulletinBoardItem, as built.
+    [Fact]
+    public void LayoutIsTazUosBoardGump()
+    {
+        Assert.Equal(0x087A, BulletinBoardWindow.Background);
+        Assert.Equal((159, 36, 170), (BulletinBoardWindow.NameX, BulletinBoardWindow.NameY, BulletinBoardWindow.NameWidth));
+        Assert.Equal((15, 170, 80), (BulletinBoardWindow.PostX, BulletinBoardWindow.PostY, BulletinBoardWindow.PostSize));
+        Assert.Equal((127, 159, 241), (BulletinBoardWindow.ListX, BulletinBoardWindow.ListY, BulletinBoardWindow.ListWidth));
+        Assert.Equal(18 * 9, BulletinBoardWindow.RowHeight * BulletinBoardWindow.ListRows);
+        Assert.Equal((0x1523, 230, 23, 1), (BulletinBoardWindow.RowIcon, BulletinBoardWindow.RowWidth, BulletinBoardWindow.RowTextX, BulletinBoardWindow.RowTextY));
+        Assert.Equal((1280 / 2 - 245f, 720 / 2 - 205f), BulletinBoardWindow.OpenAt(1280, 720));
+
+        Assert.Equal((0x0820, 408, 0x082E), (BulletinItemLayout.Scroll, BulletinItemLayout.ScrollHeight, BulletinItemLayout.Expander));
+        Assert.Equal((0x0883, 0x0886, 0x0884, 0x0885),
+            (BulletinItemLayout.PostHeader, BulletinItemLayout.PostButton, BulletinItemLayout.ReplyButton, BulletinItemLayout.RemoveButton));
+        Assert.Equal((97, 12), BulletinItemLayout.PostHeaderAt);
+        Assert.Equal((37, 235, 50), (BulletinItemLayout.LeftButtonX, BulletinItemLayout.RemoveButtonX, BulletinItemLayout.ButtonUp));
+        Assert.Equal((30, 40, 58, 77), (BulletinItemLayout.LabelX, BulletinItemLayout.AuthorY, BulletinItemLayout.DateY, BulletinItemLayout.TitleY));
+        Assert.Equal((0x0835, 30, 106, 235, 4), (BulletinItemLayout.Divider, BulletinItemLayout.DividerX, BulletinItemLayout.DividerY,
+            BulletinItemLayout.DividerWidth, BulletinItemLayout.DividerHeight));
+        Assert.Equal((40, 120, 220, 272, 224), (BulletinItemLayout.TextX, BulletinItemLayout.TextY, BulletinItemLayout.TextWidth,
+            BulletinItemLayout.TextAreaWidth, BulletinItemLayout.TextAreaHeight));
+        Assert.Equal(((40, 40), (400, 335)), (BulletinItemLayout.ReadAt, BulletinItemLayout.ComposeAt));
+    }
+
+    [Fact]
+    public void ScrollPiecesStackAsTazUosExpandableScroll()
+    {
+        // Made-up part sizes: top 300x60, right edge 250x30, middle 240x30, bottom 280x40, expander 20x10.
+        var p = BulletinItemLayout.ScrollPieces(408, (300, 60), (250, 30), (240, 30), (280, 40), (20, 10));
+        Assert.Equal(300, p.Width); // the widest part
+        Assert.Equal((0, 0), (p.Top.X, p.Top.Y));
+        Assert.Equal(((300 - 250) / 2, 60, 408 - 60 - 40 - 10), (p.Middle.X, p.Middle.Y, p.Middle.Height));
+        Assert.Equal((20 / 2 + 20 / 4, 408 - 40 - 10), (p.Bottom.X, p.Bottom.Y)); // off = top - bottom widths
+        Assert.Equal(((300 - 20) >> 1, 408 - 10 - 2), (p.Expander.X, p.Expander.Y));
     }
 
     [Fact]

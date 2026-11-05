@@ -4,15 +4,15 @@ using UOClient.Core;
 namespace UOClient.Unity.UI
 {
     /// <summary>
-    /// A book (0xD4 cover, 0x66 pages), laid out like ClassicUO's book gump: the open-book art 0x01FE with the page-turn
-    /// corners 0x01FF / 0x0200, the cover (title and author) on the first left page, then two pages per spread, 8 lines
-    /// each. A writable book edits in place; changed pages go to the server when the page is turned or the book closed,
-    /// and a changed title or author when it is closed.
+    /// A book (0xD4 cover, 0x66 pages), laid out like TazUO's ModernBookGump: the open-book art 0x01FE with the page-turn
+    /// corners 0x01FF / 0x0200 (a double-click jumps to the first or last spread), the cover (title, "by", author) on
+    /// the first left page, then two pages per spread, 8 lines each. A writable book edits in place; changed pages go to
+    /// the server when the page is turned or the book closed, and a changed title or author when it is closed.
     /// </summary>
-    public sealed class BookWindow : UiWindow
+    public sealed partial class BookWindow : UiWindow
     {
-        private const int Background = 0x01FE, PrevCorner = 0x01FF, NextCorner = 0x0200;
-        private const float LeftX = 38, RightX = 223, PageWidth = 155, TopY = 32, LineHeight = 18;
+        private const float LineHeight = (float)PageHeight / GameSession.BookLinesPerPage;
+        private const float DoubleClickTime = 0.4f;
         private static readonly Color Ink = new Color(0.12f, 0.09f, 0.06f), Faint = new Color(0.35f, 0.3f, 0.25f);
 
         private BookInfo _book;
@@ -20,6 +20,8 @@ namespace UOClient.Unity.UI
         private string _title, _author;
         /// <summary>The lines being edited per page (0-based); filled from the book once its page has arrived.</summary>
         private string[][] _edit;
+        private float _lastCornerClick;
+        private int _lastCorner;
 
         public BookWindow(BookInfo book)
         {
@@ -50,7 +52,7 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>Spread 0 is the cover and page 1; spread n holds pages 2n and 2n+1.</summary>
-        private int LastSpread => _book.PageCount / 2;
+        private int LastSpread => LastSpreadOf(_book.PageCount);
 
         public override void OnClosed()
         {
@@ -77,13 +79,13 @@ namespace UOClient.Unity.UI
             if (_spread == 0)
                 DrawCover();
             else
-                DrawPage(2 * _spread - 1, LeftX);
-            DrawPage(2 * _spread, RightX);
+                DrawPage(2 * _spread - 1);
+            DrawPage(2 * _spread);
 
             if (_spread > 0 && TurnButton(PrevCorner, 0, 0, "<"))
-                Turn(-1);
-            if (_spread < LastSpread && TurnButton(NextCorner, Rect.width - 26, 0, ">"))
-                Turn(1);
+                Turn(-1, PrevCorner, 0);
+            if (_spread < LastSpread && TurnButton(NextCorner, NextCornerX, 0, ">"))
+                Turn(1, NextCorner, LastSpread);
         }
 
         private bool TurnButton(int gump, float x, float y, string fallback)
@@ -93,48 +95,55 @@ namespace UOClient.Unity.UI
             return GUI.Button(new Rect(x + 4, y + 4, 22, 20), fallback);
         }
 
-        private void Turn(int by)
+        /// <summary>A click turns one spread; a second click on the same corner (TazUO's double-click) goes to the end.</summary>
+        private void Turn(int by, int corner, int end)
         {
             SaveVisible();
-            _spread = Mathf.Clamp(_spread + by, 0, LastSpread);
+            bool twice = _lastCorner == corner && Time.realtimeSinceStartup - _lastCornerClick < DoubleClickTime;
+            _spread = Mathf.Clamp(twice ? end : _spread + by, 0, LastSpread);
+            _lastCorner = twice ? 0 : corner;
+            _lastCornerClick = Time.realtimeSinceStartup;
         }
 
+        /// <summary>The cover as TazUO's: title and author in the same boxes whether or not they can be edited.</summary>
         private void DrawCover()
         {
+            var title = new Rect(CoverX, TitleY, CoverWidth, CoverHeight);
+            var author = new Rect(CoverX, AuthorY, CoverWidth, CoverHeight);
             if (_book.Writable)
             {
-                Text(new Rect(LeftX, TopY, PageWidth, 18), "Title", Faint, 12);
-                _title = GUI.TextField(new Rect(LeftX, TopY + 20, PageWidth, 20), _title ?? "", GameSession.MaxBookTitleBytes);
-                Text(new Rect(LeftX, TopY + 80, PageWidth, 18), "by", Faint, 12);
-                _author = GUI.TextField(new Rect(LeftX, TopY + 100, PageWidth, 20), _author ?? "", GameSession.MaxBookAuthorBytes);
+                _title = GUI.TextField(title, _title ?? "", TitleMaxChars);
+                _author = GUI.TextField(author, _author ?? "", AuthorMaxChars);
             }
             else
             {
-                Text(new Rect(LeftX, TopY + 20, PageWidth, 54), _book.Title, Ink, 13, TextAnchor.UpperCenter, true);
-                Text(new Rect(LeftX, TopY + 80, PageWidth, 18), "by", Faint, 12, TextAnchor.UpperCenter);
-                Text(new Rect(LeftX, TopY + 100, PageWidth, 20), _book.Author, Ink, 12, TextAnchor.UpperCenter);
+                Text(title, _book.Title, Ink, 13);
+                Text(author, _book.Author, Ink, 13);
             }
+            Text(new Rect(CoverX, ByY, CoverWidth, 18), "by", Ink, 13);
         }
 
-        private void DrawPage(int page, float x)
+        private void DrawPage(int page)
         {
             if (page < 0 || page >= _book.PageCount)
                 return;
-            Text(new Rect(x, Rect.height - 36, PageWidth, 16), (page + 1).ToString(), Faint, 11, TextAnchor.UpperCenter);
+            float x = PageX(page);
+            (int nx, int ny) = PageNumberAt(page);
+            Text(new Rect(nx, ny, 40, 16), (page + 1).ToString(), Faint, 11);
 
             string[] lines = _book.Pages[page];
             if (lines == null)
             {
                 // Not sent yet (ModernUO sends every page with the cover, so only other servers get here).
                 Session.RequestBookPage(_book, page);
-                Text(new Rect(x, TopY, PageWidth, 18), "...", Faint, 12);
+                Text(new Rect(x, UpperMargin, PageWidth, LineHeight), "...", Faint, 12);
                 return;
             }
 
             if (!_book.Writable)
             {
                 for (int i = 0; i < lines.Length; i++)
-                    Text(new Rect(x, TopY + i * LineHeight, PageWidth, LineHeight), lines[i], Ink, 12);
+                    Text(new Rect(x, UpperMargin + i * LineHeight, PageWidth, LineHeight), lines[i], Ink, 12);
                 return;
             }
 
@@ -146,7 +155,7 @@ namespace UOClient.Unity.UI
                     edit[i] = i < lines.Length ? lines[i] : "";
             }
             for (int i = 0; i < edit.Length; i++)
-                edit[i] = GUI.TextField(new Rect(x, TopY + i * LineHeight, PageWidth, LineHeight - 1), edit[i] ?? "", GameSession.MaxBookLineLength);
+                edit[i] = GUI.TextField(new Rect(x, UpperMargin + i * LineHeight, PageWidth, LineHeight - 1), edit[i] ?? "", LineMaxChars);
         }
 
         /// <summary>Sends the pages on view that were edited (the session skips unchanged ones).</summary>

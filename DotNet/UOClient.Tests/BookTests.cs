@@ -1,6 +1,7 @@
 using System.Text;
 using UOClient.Core;
 using UOClient.Net;
+using UOClient.Unity.UI;
 
 namespace UOClient.Tests;
 
@@ -165,5 +166,38 @@ public sealed class BookTests
             GameSession.BookPageContentRequest(Book, 3, new[] { "a", "é" }));
         Assert.Equal(new byte[] { 0x66, 0, 13, 0x40, 0x00, 0x12, 0x34, 0, 1, 0, 3, 0xFF, 0xFF },
             GameSession.BookPageRequest(Book, 3));
+    }
+
+    // TazUO's ModernBookGump.BuildGump: 0x1FE at 0,0, back corner 0x1FF at 0,0, forward 0x200 at 356,0; title entry
+    // (40,60) 155x25 of 47 chars, "by" at (40,130), author (40,160) of 29; pages at LEFT_X 38 / RIGHT_X 223, 34 down.
+    [Fact]
+    public void LayoutIsTazUosBookGump()
+    {
+        Assert.Equal((0x01FE, 0x01FF, 0x0200, 356), (BookWindow.Background, BookWindow.PrevCorner, BookWindow.NextCorner, BookWindow.NextCornerX));
+        Assert.Equal((38, 223, 34, 156, 166), (BookWindow.LeftX, BookWindow.RightX, BookWindow.UpperMargin, BookWindow.PageWidth, BookWindow.PageHeight));
+        Assert.Equal((40, 60, 130, 160, 155, 25), (BookWindow.CoverX, BookWindow.TitleY, BookWindow.ByY, BookWindow.AuthorY, BookWindow.CoverWidth, BookWindow.CoverHeight));
+        Assert.Equal((47, 29, 53), (BookWindow.TitleMaxChars, BookWindow.AuthorMaxChars, BookWindow.LineMaxChars));
+        // TazUO's typing limits sit within what ModernUO's HeaderChange takes (bytes of UTF-8).
+        Assert.True(BookWindow.TitleMaxChars <= GameSession.MaxBookTitleBytes);
+        Assert.True(BookWindow.AuthorMaxChars <= GameSession.MaxBookAuthorBytes);
+        Assert.True(BookWindow.LineMaxChars <= GameSession.MaxBookLineLength);
+    }
+
+    [Fact]
+    public void PagesSitOnTheSpreadsTazUoGivesThem()
+    {
+        // Page k (1-based) is on ActivePage ((k + 1) rounded up to even) / 2: the cover with page 1, then 2-3, 4-5...
+        Assert.Equal(new[] { 0, 1, 1, 2, 2, 3 }, Enumerable.Range(0, 6).Select(BookWindow.SpreadOf));
+        // Odd pages (1-based) on the right, even on the left; each number 80 in, 200 down.
+        Assert.Equal((223 + 80, 200), BookWindow.PageNumberAt(0));
+        Assert.Equal((38 + 80, 200), BookWindow.PageNumberAt(1));
+        Assert.Equal((223 + 80, 200), BookWindow.PageNumberAt(2));
+        // MaxPage = (pages >> 1) + 1, so the last spread holds the last page.
+        Assert.Equal(0, BookWindow.LastSpreadOf(0));
+        Assert.Equal(1, BookWindow.LastSpreadOf(2));
+        Assert.Equal(1, BookWindow.LastSpreadOf(3));
+        Assert.Equal(10, BookWindow.LastSpreadOf(20));
+        foreach (int pages in new[] { 1, 2, 3, 16, 20 })
+            Assert.Equal(BookWindow.LastSpreadOf(pages), BookWindow.SpreadOf(pages - 1));
     }
 }
