@@ -719,6 +719,7 @@ public sealed class ShardGumpLayoutTests
         public void AddBackground(int x, int y, int w, int h, int id) => Add($"resizepic {x} {y} {id} {w} {h}");
         public void AddAlphaRegion(int x, int y, int w, int h) => Add($"checkertrans {x} {y} {w} {h}");
         public void AddImage(int x, int y, int id) => Add($"gumppic {x} {y} {id}");
+        public void AddImage(int x, int y, int id, int hue) => Add(hue == 0 ? $"gumppic {x} {y} {id}" : $"gumppic {x} {y} {id} hue={hue}");
         public void AddImageTiled(int x, int y, int w, int h, int id) => Add($"gumppictiled {x} {y} {w} {h} {id}");
         public void AddItem(int x, int y, int id, int hue) => Add(hue == 0 ? $"tilepic {x} {y} {id}" : $"tilepichue {x} {y} {id} {hue}");
         public void AddItemProperty(uint serial) => Add($"itemproperty {serial}");

@@ -173,16 +173,17 @@ namespace UOClient.Unity.UI
 
                 case "text":
                 {
-                    _text.normal.textColor = Art.HueColor(TextHue(c.Arg(2)), new Color(0.1f, 0.1f, 0.1f));
                     var content = new GUIContent(_gump.Line(c.Arg(3)));
-                    GUI.Label(new Rect(c.Arg(0), c.Arg(1), 600, 22), content, _text);
+                    DrawLabel(new Rect(c.Arg(0), c.Arg(1), 600, 22), content, TextHue(c.Arg(2)));
                     _lastArea = new Rect(c.Arg(0), c.Arg(1), _text.CalcSize(content).x, 22);
                     break;
                 }
 
                 case "croppedtext":
-                    _text.normal.textColor = Art.HueColor(TextHue(c.Arg(4)), new Color(0.1f, 0.1f, 0.1f));
-                    GUI.Label(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3)), _gump.Line(c.Arg(5)), _text);
+                    // The border stays inside the box, as TazUO's is drawn into the cropped texture.
+                    GUI.BeginGroup(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3)));
+                    DrawLabel(new Rect(0, 0, c.Arg(2), c.Arg(3)), new GUIContent(_gump.Line(c.Arg(5))), TextHue(c.Arg(4)));
+                    GUI.EndGroup();
                     _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
                     break;
 
@@ -216,7 +217,7 @@ namespace UOClient.Unity.UI
                 case "textentry":
                 case "textentrylimited":
                 {
-                    _entry.normal.textColor = _entry.focused.textColor = Art.HueColor(TextHue(c.Arg(4)), new Color(0.1f, 0.1f, 0.1f));
+                    _entry.normal.textColor = _entry.focused.textColor = Art.GumpTextColor(TextHue(c.Arg(4)));
                     GUI.SetNextControlName(EntryName(index));
                     _controls.SetText(index, GUI.TextField(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), Math.Max(18, c.Arg(3))),
                         _controls.Text(index), c.TextLimit, _entry));
@@ -270,6 +271,23 @@ namespace UOClient.Unity.UI
             DrawImage(img, r.x, r.y);
             if (GUI.Button(r, GUIContent.none, GUIStyle.none))
                 _controls.Click(index);
+        }
+
+        /// <summary>
+        /// A label as TazUO's unicode font draws it: the hue's TextColorCell shade, with a one-pixel black border on
+        /// all eight sides unless the text is itself black (TextArgb, HasBlackBorder).
+        /// </summary>
+        private void DrawLabel(Rect r, GUIContent content, int clientHue)
+        {
+            uint argb = Art.GumpTextArgb(clientHue);
+            if (HasBlackBorder(argb))
+            {
+                _text.normal.textColor = GumpArt.ToColor(TextBlackArgb);
+                foreach ((int dx, int dy) in BlackBorderOffsets)
+                    GUI.Label(new Rect(r.x + dx, r.y + dy, r.width, r.height), content, _text);
+            }
+            _text.normal.textColor = GumpArt.ToColor(argb);
+            GUI.Label(r, content, _text);
         }
 
         private void DrawHtml(GumpCommand c, string html, bool background, bool scrollbar, Color? color)

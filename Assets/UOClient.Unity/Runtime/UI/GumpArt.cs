@@ -103,6 +103,14 @@ namespace UOClient.Unity.UI
             return c;
         }
 
+        /// <summary>A server gump label's colour in client hue <paramref name="hue"/>: TazUO's unicode text shade (ServerGumpWindow.TextArgb).</summary>
+        public Color GumpTextColor(int hue) => ToColor(GumpTextArgb(hue));
+
+        public uint GumpTextArgb(int hue) => ServerGumpWindow.TextArgb(_data.Hues.Entries, hue);
+
+        public static Color ToColor(uint argb) =>
+            new Color(((argb >> 16) & 0xFF) / 255f, ((argb >> 8) & 0xFF) / 255f, (argb & 0xFF) / 255f, 1f);
+
         public void Dispose()
         {
             foreach (UiImage i in _gumps.Values)

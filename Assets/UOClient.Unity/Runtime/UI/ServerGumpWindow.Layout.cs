@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UOClient.Core;
+using UOClient.IO.Formats;
 
 namespace UOClient.Unity.UI
 {
@@ -18,6 +19,41 @@ namespace UOClient.Unity.UI
         /// as gump hues are 0-based (a label at 1152 shows as hue 1153, white).
         /// </summary>
         public static int TextHue(int serverHue) => (ushort)(serverHue + 1);
+
+        /// <summary>
+        /// The shade of a hue's 32-entry ramp a text, croppedtext or textentry is drawn in. TazUO's Label, CroppedText
+        /// and StbTextBox never pass a cell, so RenderedText.Create's default (cell = 30, RenderedText.cs:169) reaches
+        /// FontsLoader.GeneratePixelsUnicode → HuesLoader.GetPolygoneColor(30, hue) (FontsLoader.cs:1725, HuesLoader.cs:161).
+        /// </summary>
+        public const int TextColorCell = 30;
+
+        /// <summary>GetPolygoneColor's answer for hue 0 or a hue past the table, and the BlackBorder colour (0xFF010101).</summary>
+        public const uint TextBlackArgb = 0xFF010101;
+
+        /// <summary>
+        /// The colour of a gump label in client hue <paramref name="clientHue"/> (already <see cref="TextHue"/>'d), as
+        /// GetPolygoneColor picks it: entry hue-1's <see cref="TextColorCell"/> shade when 0 &lt; hue &lt; HuesCount
+        /// (HuesCount = every hue in hues.mul), else near-black.
+        /// </summary>
+        public static uint TextArgb(HueEntry[] hues, int clientHue)
+        {
+            if (hues == null || clientHue <= 0 || clientHue >= hues.Length)
+                return TextBlackArgb;
+            ushort[] ramp = hues[clientHue - 1].Colors;
+            return ramp != null && ramp.Length > TextColorCell ? Color16.ToArgb32(ramp[TextColorCell]) : TextBlackArgb;
+        }
+
+        /// <summary>
+        /// Whether a label of this colour gets TazUO's black border. Label, CroppedText and StbTextBox all ask for
+        /// FontStyle.BlackBorder; GeneratePixelsUnicode skips it for text that is itself black (every channel 8 or less,
+        /// FontsLoader.cs:1878-1881, 2055).
+        /// </summary>
+        public static bool HasBlackBorder(uint argb) =>
+            ((argb >> 16) & 0xFF) > 8 || ((argb >> 8) & 0xFF) > 8 || (argb & 0xFF) > 8;
+
+        /// <summary>The border's pixels around each text pixel: all eight neighbours, one pixel out (FontsLoader.cs:2057-2100).</summary>
+        public static readonly (int Dx, int Dy)[] BlackBorderOffsets =
+            { (-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1) };
 
         /// <summary>The client hue of gumppic's hue=N: GumpPic adds one, then TransformHue leaves 2 and below unhued.</summary>
         public static int PicHue(int serverHue)
