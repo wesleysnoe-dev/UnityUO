@@ -21,8 +21,11 @@ namespace UOClient.Unity
         private float _lastWorldClick;
         private Vector2 _lastWorldClickAt;
         private uint _pendingClick; // a single click held until it can't be the start of a double-click
+        private uint _pressedItem;  // a movable ground item under the held left button: dragging it picks it up
+        private Vector2 _pressedAt;
 
         private const float DoubleClickTime = 0.35f;
+        private const float DragDistance = 6f; // screen pixels the mouse moves before a press becomes a drag
 
         /// <summary>The window manager and the macros are read through <paramref name="ui"/> and <paramref name="hotkeys"/> on every use: each login makes new ones.</summary>
         public WorldInput(GameContext ctx, EntityViews entities, UI.HoverTooltip tooltip, ChatLine chat, Lighting lighting,
@@ -68,7 +71,8 @@ namespace UOClient.Unity
         /// <summary>
         /// P paperdoll, B backpack, F1 help, Tab war mode, Escape cancels a target. Clicks in the world: single
         /// click names (and on a mobile opens its context menu: a vendor's Buy/Sell/Train), double-click uses
-        /// (attacks in war mode), shift-click opens anything's context menu, and with a target cursor up, a click targets.
+        /// (attacks in war mode), shift-click opens anything's context menu, dragging a ground item picks it up, and with a
+        /// target cursor up, a click targets.
         /// </summary>
         public void Update()
         {
@@ -76,7 +80,8 @@ namespace UOClient.Unity
             if (_ctx.Session == null)
                 return;
             // Like ClassicUO, the single click waits out the double-click time, so a double-click doesn't flash a popup.
-            if (_pendingClick != 0 && Time.realtimeSinceStartup - _lastWorldClick >= DoubleClickTime)
+            // A press still held on a movable item may yet become a drag: its click waits for the release.
+            if (_pendingClick != 0 && Time.realtimeSinceStartup - _lastWorldClick >= DoubleClickTime && !(_pressedItem != 0 && Input.GetMouseButton(0)))
             {
                 if (_ctx.Session.Target == null)
                     _ctx.Session.SingleClick(_pendingClick);
@@ -104,6 +109,19 @@ namespace UOClient.Unity
                     _ctx.Session.CancelTarget();
                 else if (ui.Windows.LastOrDefault(w => w.CanClose) is UI.UiWindow top)
                     ui.Close(top); // the topmost window that can close (not the top bar)
+            }
+
+            // Pressing on a movable ground item and moving the mouse picks it up (0x07), as in ClassicUO; the
+            // UI carries it from there and the release decides the drop (a window, a mobile, an item, a tile).
+            if (_pressedItem != 0)
+            {
+                if (!Input.GetMouseButton(0) || _ctx.Session.Target != null || ui.Dragging != null)
+                    _pressedItem = 0;
+                else if (((Vector2)Input.mousePosition - _pressedAt).sqrMagnitude > DragDistance * DragDistance)
+                {
+                    BeginGroundDrag(ui, _pressedItem);
+                    _pressedItem = 0;
+                }
             }
 
             // The quest arrow: left click notifies the server, right click cancels it (0xBF 0x07).
@@ -152,6 +170,9 @@ namespace UOClient.Unity
                 return;
             }
 
+            _pressedItem = picked != 0 && _ctx.Session.World.Items.TryGetValue(picked, out Core.WorldItem ground) && ground.Movable ? picked : 0;
+            _pressedAt = mouse;
+
             bool doubleClick = Time.realtimeSinceStartup - _lastWorldClick < DoubleClickTime && (mouse - _lastWorldClickAt).sqrMagnitude < 64;
             _lastWorldClick = doubleClick ? 0 : Time.realtimeSinceStartup;
             _lastWorldClickAt = mouse;
@@ -166,6 +187,28 @@ namespace UOClient.Unity
                 _ctx.Session.Attack(picked);
             else
                 _ctx.Session.Use(picked);
+        }
+
+        /// <summary>Lifts a ground item onto the cursor; a drop the server or a window refuses puts it back where it lay.</summary>
+        private void BeginGroundDrag(UI.UiManager ui, uint serial)
+        {
+            if (!_ctx.Session.World.Items.TryGetValue(serial, out Core.WorldItem item))
+                return;
+            _pendingClick = 0; // a drag, not a click
+            _lastWorldClick = 0;
+            UI.UiImage art = ui.Art.Item(item.Graphic, item.Hue);
+            ui.BeginDrag(new UI.DraggedItem
+            {
+                Serial = item.Serial,
+                Graphic = item.Graphic,
+                Hue = item.Hue,
+                Amount = Math.Max(1, item.Amount),
+                FromGround = true,
+                FromX = item.X,
+                FromY = item.Y,
+                FromZ = item.Z,
+                Grab = art != null ? new Vector2(art.Width / 2f, art.Height / 2f) : Vector2.zero
+            });
         }
 
         /// <summary>The mouse is over the quest arrow's on-screen or edge marker.</summary>

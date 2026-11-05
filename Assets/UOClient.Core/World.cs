@@ -52,6 +52,9 @@ namespace UOClient.Core
         public sbyte Z;
         public ushort Hue;
         public byte Flags;
+
+        /// <summary>The server lets it be picked up (ModernUO sets 0x20 for Movable items); multis never are.</summary>
+        public bool Movable => !IsMulti && (Flags & 0x20) != 0;
     }
 
     public struct JournalEntry

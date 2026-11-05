@@ -45,6 +45,28 @@ public sealed class InteractionTests
         Assert.Null(session.World.RecentLine(0x40000010, now.AddSeconds(5), 3)); // gone after a few seconds
     }
 
+    [Fact]
+    public void OnlyMovableGroundItemsCanBePickedUp()
+    {
+        var session = new GameSession(new LoginSettings());
+        // ModernUO's 0xF3 world item: 1, type, serial, graphic, direction, amount x2, x, y, z, light, hue, flags (0x20 = Movable).
+        byte[] Item(uint serial, byte type, ushort graphic, byte flags) => new PacketWriter(0xF3, 26).UInt16(1).Byte(type)
+            .UInt32(serial).UInt16(graphic).Byte(0).UInt16(5).UInt16(5).UInt16(1500).UInt16(1600).Byte(0).Byte(0)
+            .UInt16(0).Byte(flags).UInt16(0).ToArray();
+        session.Inject(Item(0x40000020, 0, 0x0EED, 0x20), false);
+        session.Inject(Item(0x40000021, 0, 0x0B90, 0x00), false);   // locked down / static decoration
+        session.Inject(Item(0x40000022, 2, 0x0064, 0x20), false);   // a house: never
+
+        Assert.True(session.World.Items[0x40000020].Movable);
+        Assert.Equal(5, session.World.Items[0x40000020].Amount);
+        Assert.False(session.World.Items[0x40000021].Movable);
+        Assert.False(session.World.Items[0x40000022].Movable);
+
+        // The lift for the whole stack, as ModernUO's LiftReq reads it: serial, amount.
+        Assert.Equal(new byte[] { 0x07, 0x40, 0, 0, 0x20, 0, 5 }, GameSession.LiftRequest(0x40000020, 5));
+        Assert.Equal(1, GameSession.LiftRequest(0x40000020, 0)[6]); // never 0
+    }
+
     [Theory]
     [InlineData(0x0F0E, TileFlags.None, 0x0E75, TileFlags.Container, true)]   // a bottle onto a backpack
     [InlineData(0x0F0E, TileFlags.None, 0x2006, TileFlags.None, true)]        // onto a corpse

@@ -130,15 +130,16 @@ namespace UOClient.Unity.UI
         }
     }
 
-    /// <summary>An item picked up from a window, following the cursor until dropped.</summary>
+    /// <summary>An item picked up from a window or the ground, following the cursor until dropped.</summary>
     public sealed class DraggedItem
     {
         public uint Serial;
         public ushort Graphic;
         public ushort Hue;
         public int Amount;
-        public uint FromContainer;    // 0 if it came from the paperdoll
-        public int FromX, FromY;
+        public uint FromContainer;    // 0 if it came from the paperdoll or the ground
+        public bool FromGround;       // picked up in the world at (FromX, FromY, FromZ)
+        public int FromX, FromY, FromZ;
         public Vector2 Grab;           // where in the art it was grabbed (art pixels)
     }
 
@@ -294,6 +295,8 @@ namespace UOClient.Unity.UI
                 {
                     if (DropOutside != null && !IsPointInWindows(e.mousePosition))
                         DropOutside(item, new Vector2(e.mousePosition.x * Scale, e.mousePosition.y * Scale));
+                    else if (item.FromGround)
+                        Session.DropOnGround(item.Serial, item.FromX, item.FromY, item.FromZ); // put it back
                     else if (item.FromContainer != 0)
                         Session.DropInto(item.Serial, item.FromContainer, item.FromX, item.FromY); // put it back
                     else

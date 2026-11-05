@@ -104,9 +104,13 @@ namespace UOClient.Core
                 return;
             Holding = serial;
             // ModernUO refuses a lift inside the action delay of a use (and a lift starts one), so it waits its turn.
-            _actions.Paced(new PacketWriter(0x07, 7).UInt32(serial).UInt16(Math.Max(1, Math.Min(amount, 60000))).ToArray());
+            _actions.Paced(LiftRequest(serial, amount));
             SendQueuedActions();
         }
+
+        /// <summary>0x07 as ModernUO's LiftReq reads it: serial, amount (at least 1).</summary>
+        public static byte[] LiftRequest(uint serial, int amount) =>
+            new PacketWriter(0x07, 7).UInt32(serial).UInt16(Math.Max(1, Math.Min(amount, 60000))).ToArray();
 
         /// <summary>Drops the held item into a container at (x, y) in the container gump.</summary>
         public void DropInto(uint serial, uint container, int x, int y)
