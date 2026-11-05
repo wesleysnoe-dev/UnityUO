@@ -2070,38 +2070,10 @@ namespace UOClient.Unity
         }
 
         /// <summary>Written next to a player build: where the project (baked art, account file) lives on this machine.</summary>
-        public const string PathsFileName = "unity-uo-paths.json";
+        public const string PathsFileName = ClientPaths.PathsFileName;
 
-        [Serializable]
-        private sealed class PathsFile
-        {
-            public string projectRoot = "";
-        }
-
-        private static string _projectRoot;
-
-        /// <summary>
-        /// Folder relative paths (baked art, account file, capture output) resolve against: the project in the
-        /// editor; in a player, the project named by the paths file next to the executable, else the player's folder.
-        /// </summary>
-        private static string ProjectRoot
-        {
-            get
-            {
-                if (_projectRoot != null)
-                    return _projectRoot;
-                string appFolder = Path.GetDirectoryName(Application.dataPath);
-                _projectRoot = appFolder;
-                string paths = Path.Combine(appFolder, PathsFileName);
-                if (!Application.isEditor && File.Exists(paths))
-                {
-                    string root = JsonUtility.FromJson<PathsFile>(File.ReadAllText(paths)).projectRoot;
-                    if (!string.IsNullOrEmpty(root) && Directory.Exists(root))
-                        _projectRoot = root;
-                }
-                return _projectRoot;
-            }
-        }
+        /// <summary>See <see cref="ClientPaths.ProjectRoot"/>.</summary>
+        private static string ProjectRoot => ClientPaths.ProjectRoot;
 
         private void OnDestroy()
         {
