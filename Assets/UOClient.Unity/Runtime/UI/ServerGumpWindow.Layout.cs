@@ -27,22 +27,124 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>
-        /// The radio group of each radio by switch id. TazUO counts group and endgroup alike (group++), whatever
+        /// The radio group of each radio by command index. TazUO counts group and endgroup alike (group++), whatever
         /// number the group carries, so radios after an endgroup never join those before it.
         /// </summary>
         public static Dictionary<int, int> RadioGroups(IList<GumpCommand> commands)
         {
             var groups = new Dictionary<int, int>();
             int group = 0;
-            foreach (GumpCommand c in commands)
+            for (int i = 0; i < commands.Count; i++)
             {
+                GumpCommand c = commands[i];
                 if (c.Name == "group" || c.Name == "endgroup")
                     group++;
                 else if (c.Name == "radio")
-                    groups[c.Arg(5)] = group;
+                    groups[i] = group;
             }
             return groups;
         }
+
+        /// <summary>
+        /// The page a page button shows: TazUO's Gump.Update turns ActivePage 0 into 1, so a button to page 0 (and a
+        /// gump with no page button pressed yet) shows page 1.
+        /// </summary>
+        public static int PageShown(int page) => page == 0 ? 1 : page;
+
+        /// <summary>
+        /// What pressing a button or buttontileart (x y up down type param id ...) does, as TazUO's Button(parts):
+        /// type 0 switches to page param locally, any other type replies with id (never param).
+        /// </summary>
+        public static (bool IsPage, int Value) ButtonPress(GumpCommand c) =>
+            c.Arg(4) == 0 ? (true, PageShown(c.Arg(5))) : (false, c.Arg(6));
+    }
+
+    /// <summary>
+    /// The checkboxes, radios and text entries of a server gump and what the 0xB1 reply carries from them, kept per
+    /// control (command) as TazUO keeps one Checkbox/RadioButton/StbTextBox each. Gump.OnButtonClick walks the
+    /// controls in layout order, every page alike: each checked one adds its switch id, each text box its (id, text).
+    /// </summary>
+    public sealed class GumpControls
+    {
+        private readonly List<GumpCommand> _commands;
+        private readonly Dictionary<int, int> _radioGroup;
+        private readonly Dictionary<int, bool> _checked = new Dictionary<int, bool>();
+        private readonly Dictionary<int, string> _texts = new Dictionary<int, string>();
+
+        public GumpControls(ServerGump gump)
+        {
+            _commands = gump.Commands;
+            _radioGroup = ServerGumpWindow.RadioGroups(_commands);
+            for (int i = 0; i < _commands.Count; i++)
+            {
+                GumpCommand c = _commands[i];
+                switch (c.Name)
+                {
+                    case "checkbox":
+                    case "radio":
+                        // Checkbox(parts): IsChecked = parts[5] == "1". Set before the radio has a parent, so a
+                        // group the server sends with two radios on keeps both on.
+                        _checked[i] = c.Arg(4) == 1;
+                        break;
+                    case "textentry":
+                    case "textentrylimited":
+                        // StbTextBox.SetText cuts the starting text to its limit, as typing is.
+                        string text = gump.Line(c.Arg(6));
+                        _texts[i] = text.Length > c.TextLimit ? text.Substring(0, c.TextLimit) : text;
+                        break;
+                }
+            }
+        }
+
+        public bool IsChecked(int index) => _checked.TryGetValue(index, out bool on) && on;
+
+        /// <summary>
+        /// A left click on a checkbox or radio: Checkbox.OnMouseUp flips it, radios included, so a checked radio
+        /// clicked again goes off. A radio turning on (RadioButton.HandleClick) turns off the rest of its group.
+        /// </summary>
+        public void Click(int index)
+        {
+            if (!_checked.ContainsKey(index))
+                return;
+            bool on = !_checked[index];
+            _checked[index] = on;
+            if (on && _radioGroup.TryGetValue(index, out int group))
+                foreach (KeyValuePair<int, int> other in _radioGroup)
+                    if (other.Value == group && other.Key != index)
+                        _checked[other.Key] = false;
+        }
+
+        public string Text(int index) => _texts.TryGetValue(index, out string t) ? t : "";
+
+        public void SetText(int index, string text)
+        {
+            if (_texts.ContainsKey(index))
+                _texts[index] = text ?? "";
+        }
+
+        /// <summary>The switch ids of the checked checkboxes and radios, in layout order.</summary>
+        public List<int> Switches()
+        {
+            var on = new List<int>();
+            for (int i = 0; i < _commands.Count; i++)
+                if (IsChecked(i))
+                    on.Add(_commands[i].Arg(5));
+            return on;
+        }
+
+        /// <summary>Every text entry as (id, text), in layout order.</summary>
+        public List<(int Id, string Text)> Entries()
+        {
+            var entries = new List<(int, string)>();
+            for (int i = 0; i < _commands.Count; i++)
+                if (_texts.TryGetValue(i, out string t))
+                    entries.Add((_commands[i].Arg(5), t));
+            return entries;
+        }
+    }
+
+    public sealed partial class ServerGumpWindow
+    {
 
         /// <summary>Commands TazUO turns into a control of the gump (the ones checkertrans and tooltips can reach).</summary>
         public static bool IsControl(string name)

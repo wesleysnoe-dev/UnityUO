@@ -113,6 +113,15 @@ Works:
   - Verified: 232 tests pass (4 new, built from the ChatSettingsGump, AuctionSellGump, BotPanel and UncompressedGump sequences). Tests, Cli and EditorCheck build.
   - Not verified: drawing in Unity, and anything live.
   - Left as is: `gumppichued` ignores pages in TazUO. Scrolling HTML with no background is hue `0xFFFF` in TazUO, which I didn't check against its font renderer. TazUO draws text in its bordered unicode font; we use IMGUI text.
+- [x] **Shard gump replies and remaining widgets** (`GumpControls` in `ServerGumpWindow.Layout.cs`, `GumpHtml`): the `0xB1` bytes already matched both TazUO's `Send_GumpResponse` and ModernUO's `DisplayGumpResponse` (the 239-character cut included). These changes are to what goes into the reply. Checked against TazUO's `Gump.OnButtonClick`, `Checkbox`, `RadioButton`, `StbTextBox(parts)` and `Button(parts)`, and ModernUO's `GumpLayoutBuilder`.
+  - **Reply state per control:** switches and text entries are now kept per command, as TazUO keeps one control each, and sent in layout order from every page. Before, they were keyed by id in dictionaries, so two text boxes with the same id shared their text and were sent once.
+  - **Radios:** clicking a checked radio now turns it off, because TazUO's `Checkbox.OnMouseUp` flips radios too. Turning one on still clears the rest of its group. A checkbox or radio starts checked only when its state is `1` (`parts[5] == "1"`).
+  - **Text entries:** the starting text is now cut to the entry's limit (a `textentrylimited` size, else 239), as `StbTextBox.SetText` cuts it. Before, a long starting line on a page that was never shown went out uncut up to 239.
+  - **Buttons:** a page button to page 0 now shows page 1 (`Gump.Update` turns `ActivePage` 0 into 1). Before, it showed only page 0. `button`/`buttontileart` with type ≠ 0 reply with their id and never the param. Both now go through `ButtonPress`, which has tests.
+  - **HTML:** rich text is now built per text run from the open-tag stack, as TazUO's `GetHTMLData`/`GetCurrentHTMLInfo` do: a closing tag removes the last open tag of its kind. A `<B>` the server never closes, or misnested `<B><BASEFONT>`, no longer leaves IMGUI showing raw tags. Player text escaped by ModernUO's `EscapeHtml` (chat, group finder) is decoded before `<`/`>` become look-alikes. Before, `&lt;color=red&gt;` became live rich-text markup.
+  - Verified: 241 tests pass. The 9 new tests are built from the ChatSettingsGump, AuctionOrderGump and AuctionSellGump layouts, and one reads a reply back as `DisplayGumpResponse` does. Tests, Cli and EditorCheck build.
+  - Not verified: clicking or typing in Unity, and anything live.
+  - Left as is: TazUO doesn't decode entities at all, so `&#39;`/`&quot;` (from `EscapeHtml`) and even `&amp;` show raw there. We decode `&lt; &gt; &amp; &nbsp;` and, like TazUO, show `&#39;`/`&quot;` raw. TazUO focuses the first text entry when a gump opens; we don't. Fonts are still IMGUI's.
 
 Still missing:
 - [ ] The directional run cursors (`0x206A`–`0x2079`, `0x2053`–`0x2062`); the pointer is always the up-left gauntlet.

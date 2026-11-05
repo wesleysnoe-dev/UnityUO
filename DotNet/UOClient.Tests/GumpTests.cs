@@ -219,17 +219,180 @@ public sealed class GumpTests
         List<GumpCommand> chat = ServerGump.ParseLayout(
             "{ page 0 }{ checkbox 24 72 210 211 1 100 }{ group 1 }{ radio 24 126 208 209 0 200 }{ radio 134 126 208 209 1 201 }" +
             "{ group 2 }{ radio 24 200 208 209 1 300 }{ radio 128 200 208 209 0 301 }");
-        Dictionary<int, int> g = ServerGumpWindow.RadioGroups(chat);
-        Assert.Equal(g[200], g[201]);
-        Assert.Equal(g[300], g[301]);
-        Assert.NotEqual(g[200], g[300]);
-        Assert.False(g.ContainsKey(100));
+        Dictionary<int, int> g = ServerGumpWindow.RadioGroups(chat); // by command index
+        Assert.Equal(g[3], g[4]);
+        Assert.Equal(g[6], g[7]);
+        Assert.NotEqual(g[3], g[6]);
+        Assert.False(g.ContainsKey(1));
 
         // AuctionSellGump's AddGroup(0): its radios are a group apart from one laid before it, though both say 0.
         g = ServerGumpWindow.RadioGroups(ServerGump.ParseLayout(
             "{ radio 0 0 208 209 1 5 }{ group 0 }{ radio 0 20 208 209 1 6 }{ radio 0 40 208 209 0 7 }"));
-        Assert.NotEqual(g[5], g[6]);
-        Assert.Equal(g[6], g[7]);
+        Assert.NotEqual(g[0], g[2]);
+        Assert.Equal(g[2], g[3]);
+    }
+
+    [Fact]
+    public void ChatSettingsReplyCarriesWhatIsCheckedInLayoutOrder()
+    {
+        // ChatSettingsGump (legacy, 0xB0): channel checkboxes, AddGroup(1) bot radios, AddGroup(2) hue radios, sound.
+        var gump = Gump(
+            "{ page 0 }{ checkbox 24 72 210 211 1 100 }{ checkbox 134 72 210 211 0 101 }" +
+            "{ group 1 }{ radio 24 126 208 209 0 200 }{ radio 134 126 208 209 1 201 }{ radio 244 126 208 209 0 202 }" +
+            "{ group 2 }{ radio 24 200 208 209 1 300 }{ radio 128 200 208 209 0 301 }" +
+            "{ checkbox 24 300 210 211 1 400 }{ button 340 428 4005 4007 1 0 2 }");
+        var controls = new GumpControls(gump);
+        Assert.Equal(new[] { 100, 201, 300, 400 }, controls.Switches());
+
+        controls.Click(2);  // channel 101 on
+        controls.Click(1);  // channel 100 off
+        controls.Click(6);  // bot radio 202: 201 goes off, the hue group is untouched
+        Assert.Equal(new[] { 101, 202, 300, 400 }, controls.Switches());
+
+        controls.Click(9);  // hue radio 301
+        Assert.Equal(new[] { 101, 202, 301, 400 }, controls.Switches());
+
+        // TazUO's Checkbox.OnMouseUp flips a radio like a checkbox: clicking the checked one turns it off.
+        controls.Click(9);
+        Assert.Equal(new[] { 101, 202, 400 }, controls.Switches());
+        Assert.Empty(controls.Entries());
+
+        // The save button replies id 2 (its last argument), not the param.
+        Assert.Equal((false, 2), ServerGumpWindow.ButtonPress(gump.Commands[11]));
+    }
+
+    [Fact]
+    public void SwitchesStartOnOnlyForOneAndTwoOnInAGroupStayOn()
+    {
+        // Checkbox(parts): IsChecked = parts[5] == "1"; set before the radio has a group to clear.
+        var controls = new GumpControls(Gump("{ group 1 }{ radio 0 0 208 209 1 1 }{ radio 0 20 208 209 1 2 }{ radio 0 40 208 209 0 3 }{ checkbox 0 60 210 211 2 4 }"));
+        Assert.Equal(new[] { 1, 2 }, controls.Switches());
+        controls.Click(3);
+        Assert.Equal(new[] { 3 }, controls.Switches());
+    }
+
+    [Fact]
+    public void AuctionReplyKeepsEveryPagesEntriesAndSwitches()
+    {
+        // AuctionOrderGump: amount + price entries, AddGroup(0) duration radios; the reply carries them in layout
+        // order wherever they are, and a page-1 switch counts while page 2 shows.
+        var gump = Gump(
+            "{ page 0 }{ resizepic 0 0 9270 420 260 }{ textentry 136 111 90 20 0 2 0 }" +
+            "{ page 1 }{ textentry 136 145 150 20 0 3 1 }{ group 0 }{ radio 110 180 208 209 0 10 }{ radio 210 180 208 209 1 11 }" +
+            "{ button 300 220 4005 4007 0 2 0 }" +
+            "{ page 2 }{ checkbox 20 20 210 211 1 20 }{ button 300 220 4023 4025 1 0 5 }",
+            "3", "1500");
+        var controls = new GumpControls(gump);
+
+        controls.SetText(2, "12");
+        Assert.Equal(new List<(int, string)> { (2, "12"), (3, "1500") }, controls.Entries());
+        Assert.Equal(new[] { 11, 20 }, controls.Switches());
+        Assert.Equal((true, 2), ServerGumpWindow.ButtonPress(gump.Commands[8]));
+        Assert.Equal((false, 5), ServerGumpWindow.ButtonPress(gump.Commands[11]));
+
+        // Through the packet, as DisplayGumpResponse reads it: counts within what the gump declared.
+        byte[] p = GameSession.GumpReply(gump.Serial, gump.TypeId, 5, controls.Switches(), controls.Entries());
+        (int button, int[] switches, List<(int, string)> texts) = ReadReply(p);
+        Assert.Equal(5, button);
+        Assert.Equal(new[] { 11, 20 }, switches);
+        Assert.True(switches.Length <= 3, "a gump with 3 switch controls");
+        Assert.Equal(new List<(int, string)> { (2, "12"), (3, "1500") }, texts);
+    }
+
+    [Fact]
+    public void TextEntriesWithTheSameIdAreSeparateBoxes()
+    {
+        // TazUO keeps one StbTextBox per command and sends each; ModernUO's GetTextEntry takes the first.
+        var controls = new GumpControls(Gump("{ textentry 0 0 100 20 0 1 0 }{ textentry 0 30 100 20 0 1 1 }", "first", "second"));
+        controls.SetText(1, "edited");
+        Assert.Equal(new List<(int, string)> { (1, "first"), (1, "edited") }, controls.Entries());
+    }
+
+    [Fact]
+    public void StartingTextIsCutToTheEntrysLimit()
+    {
+        string longText = new string('a', 300);
+        var controls = new GumpControls(Gump(
+            "{ textentrylimited 0 0 100 20 0 1 0 25 }{ textentrylimited 0 30 100 20 0 2 0 0 }{ textentry 0 60 100 20 0 3 0 }{ textentry 0 90 100 20 0 4 9 }",
+            longText));
+        List<(int Id, string Text)> e = controls.Entries();
+        Assert.Equal(25, e[0].Text.Length);   // StbTextBox.SetText cuts to the size
+        Assert.Equal(239, e[1].Text.Length);  // size 0: no limit of its own; ModernUO takes 239
+        Assert.Equal(239, e[2].Text.Length);
+        Assert.Equal("", e[3].Text);          // a missing line starts empty
+    }
+
+    [Fact]
+    public void PageButtonToPageZeroShowsPageOne()
+    {
+        // Gump.Update: ActivePage 0 becomes 1.
+        Assert.Equal(1, ServerGumpWindow.PageShown(0));
+        Assert.Equal((true, 1), ServerGumpWindow.ButtonPress(ServerGump.ParseLayout("{ button 0 0 4005 4007 0 0 0 }")[0]));
+        Assert.Equal((false, 9), ServerGumpWindow.ButtonPress(ServerGump.ParseLayout("{ buttontileart 0 0 4005 4007 1 0 9 3823 0 18 12 }")[0]));
+    }
+
+    [Fact]
+    public void ShardHtmlShowsWithBalancedRichText()
+    {
+        // AuctionGump's title: color + size + bold, all closed.
+        Assert.Equal("<size=16><color=#F4F4F4><b>Auction House</b></color></size>",
+            GumpHtml.ToRichText("<BASEFONT COLOR=#F4F4F4 SIZE=4><B>Auction House</B></BASEFONT>", out _));
+
+        // A <B> never closed (AdminTools' "<B>{text}" lines were closed, but a cut-off one is not) stays bold to the
+        // end as in TazUO, and the rich text stays balanced.
+        Assert.Equal("<b>Spawn</b><b> here</b>", GumpHtml.ToRichText("<B>Spawn<BR> here", out _).Replace("\n", ""));
+
+        // Misnested: TazUO closes the last tag of each kind; no stray </b> or </color> is left.
+        Assert.Equal("<color=#FF0000><b>a</b></color><color=#FF0000>b</color>c",
+            GumpHtml.ToRichText("<BASEFONT COLOR=#FF0000><B>a</B>b</BASEFONT>c", out _));
+        Assert.Equal("<color=#FF0000><b>a</b></color><color=#FF0000>b</color>",
+            GumpHtml.ToRichText("<B><BASEFONT COLOR=#FF0000>a</B>b</BASEFONT>", out _));
+    }
+
+    [Fact]
+    public void EscapedPlayerTextStaysText()
+    {
+        // ChatGumps / GroupFinder write a player's words through ModernUO's EscapeHtml.
+        string rich = GumpHtml.ToRichText("<BASEFONT COLOR=#FFD24A>&lt;color=red&gt;hi&lt;/color&gt; &amp; bye</BASEFONT>", out _);
+        Assert.Equal("<color=#FFD24A>‹color=red›hi‹/color› & bye</color>", rich);
+    }
+
+    [Fact]
+    public void CenteredHtmlIsCentered()
+    {
+        GumpHtml.ToRichText("<CENTER>Group Finder</CENTER>", out bool centered);
+        Assert.True(centered);
+        GumpHtml.ToRichText("<DIV ALIGN=CENTER>x</DIV>", out centered);
+        Assert.True(centered);
+        GumpHtml.ToRichText("x", out centered);
+        Assert.False(centered);
+    }
+
+    private static ServerGump Gump(string layout, params string[] lines) => new ServerGump
+    {
+        Serial = 0x40000010, TypeId = 0x1234, Commands = ServerGump.ParseLayout(layout), Lines = lines
+    };
+
+    /// <summary>The 0xB1 body as GumpSystem.DisplayGumpResponse reads it.</summary>
+    private static (int Button, int[] Switches, List<(int, string)> Texts) ReadReply(byte[] p)
+    {
+        Assert.Equal(p.Length, BinaryPrimitives.ReadUInt16BigEndian(p.AsSpan(1)));
+        int pos = 11;
+        int Int() { int v = BinaryPrimitives.ReadInt32BigEndian(p.AsSpan(pos)); pos += 4; return v; }
+        int UShort() { int v = BinaryPrimitives.ReadUInt16BigEndian(p.AsSpan(pos)); pos += 2; return v; }
+        int button = Int();
+        int[] switches = new int[Int()];
+        for (int i = 0; i < switches.Length; i++)
+            switches[i] = Int();
+        var texts = new List<(int, string)>();
+        for (int n = Int(), i = 0; i < n; i++)
+        {
+            int id = UShort(), length = UShort();
+            texts.Add((id, Encoding.BigEndianUnicode.GetString(p, pos, length * 2)));
+            pos += length * 2;
+        }
+        Assert.Equal(p.Length, pos);
+        return (button, switches, texts);
     }
 
     [Fact]

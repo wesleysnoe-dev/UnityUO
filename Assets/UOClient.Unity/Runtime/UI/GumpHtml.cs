@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -24,14 +25,16 @@ namespace UOClient.Unity.UI
             if (string.IsNullOrEmpty(html))
                 return "";
 
-            var sb = new StringBuilder(html.Length);
+            var sb = new StringBuilder(html.Length + 32);
             int last = 0;
             bool center = false;
-            // What each open font tag added (color and/or size), closed in reverse when the tag closes.
-            var open = new System.Collections.Generic.Stack<string>();
+            // The open tags, as TazUO's GetHTMLData stacks them: a closing tag takes away the last open one of its
+            // kind, and each character takes its look from everything still open (GetCurrentHTMLInfo). So a <B> the
+            // server never closes stays bold to the end, and misnested tags don't leave stray markup.
+            var open = new List<(string Name, string Color, int Size)>();
             foreach (Match m in Tag.Matches(html))
             {
-                sb.Append(Escape(html.Substring(last, m.Index - last)));
+                AppendRun(sb, html.Substring(last, m.Index - last), open);
                 last = m.Index + m.Length;
                 bool closing = m.Groups[1].Value == "/";
                 string name = m.Groups[2].Value.ToLowerInvariant();
@@ -51,42 +54,74 @@ namespace UOClient.Unity.UI
                         break;
                     case "b":
                     case "i":
-                        sb.Append(closing ? $"</{name}>" : $"<{name}>");
-                        break;
                     case "basefont":
                     case "font":
+                    {
+                        string kind = name == "font" ? "basefont" : name;
                         if (closing)
                         {
-                            if (open.Count > 0)
-                                sb.Append(open.Pop());
+                            for (int k = open.Count - 1; k >= 0; k--)
+                                if (open[k].Name == kind)
+                                {
+                                    open.RemoveAt(k);
+                                    break;
+                                }
+                            break;
                         }
-                        else
+                        string color = null;
+                        int size = 0;
+                        if (kind == "basefont")
                         {
-                            string closeWith = "";
                             Match c = ColorAttr.Match(m.Groups[3].Value);
                             if (c.Success)
-                            {
-                                sb.Append("<color=").Append(ColorValue(c.Groups[1].Value)).Append('>');
-                                closeWith = "</color>";
-                            }
+                                color = ColorValue(c.Groups[1].Value);
                             Match s = SizeAttr.Match(m.Groups[3].Value);
-                            if (s.Success && int.TryParse(s.Groups[1].Value, out int size) && size >= 1 && size <= 7)
-                            {
-                                sb.Append("<size=").Append(SizePixels[size]).Append('>');
-                                closeWith = "</size>" + closeWith;
-                            }
-                            open.Push(closeWith);
+                            if (s.Success && int.TryParse(s.Groups[1].Value, out int n) && n >= 1 && n <= 7)
+                                size = SizePixels[n];
                         }
+                        open.Add((kind, color, size));
                         break;
+                    }
                 }
             }
-            sb.Append(Escape(html.Substring(last)));
-            while (open.Count > 0)
-                sb.Append(open.Pop());
+            AppendRun(sb, html.Substring(last), open);
 
             centered = center;
-            return sb.ToString().Replace("&nbsp;", " ").Replace("&lt;", "<").Replace("&gt;", ">").Replace("&amp;", "&");
+            return sb.ToString();
         }
+
+        /// <summary>Text between tags, wrapped in balanced rich-text tags for what is open around it.</summary>
+        private static void AppendRun(StringBuilder sb, string text, List<(string Name, string Color, int Size)> open)
+        {
+            if (text.Length == 0)
+                return;
+            bool bold = false, italic = false;
+            string color = null;
+            int size = 0;
+            foreach (var (name, c, s) in open)
+            {
+                bold |= name == "b";
+                italic |= name == "i";
+                if (c != null)
+                    color = c;
+                if (s != 0)
+                    size = s;
+            }
+            if (size != 0) sb.Append("<size=").Append(size).Append('>');
+            if (color != null) sb.Append("<color=").Append(color).Append('>');
+            if (bold) sb.Append("<b>");
+            if (italic) sb.Append("<i>");
+            sb.Append(Escape(Decode(text)));
+            if (italic) sb.Append("</i>");
+            if (bold) sb.Append("</b>");
+            if (color != null) sb.Append("</color>");
+            if (size != 0) sb.Append("</size>");
+        }
+
+        // The entities shards write in text (ModernUO's EscapeHtml for a player's words). Decoded before Escape, so an
+        // escaped "<b>" in a chat line shows as text instead of turning into rich-text markup.
+        private static string Decode(string text) =>
+            text.Replace("&nbsp;", " ").Replace("&lt;", "<").Replace("&gt;", ">").Replace("&amp;", "&");
 
         // Rich text treats '<' as markup; plain text keeps angle brackets visible via a look-alike.
         private static string Escape(string text) => text.Replace("<", "‹").Replace(">", "›");

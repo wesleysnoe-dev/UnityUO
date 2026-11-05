@@ -13,9 +13,7 @@ namespace UOClient.Unity.UI
     public sealed partial class ServerGumpWindow : UiWindow
     {
         private readonly ServerGump _gump;
-        private readonly Dictionary<int, bool> _switches = new Dictionary<int, bool>();
-        private readonly Dictionary<int, int> _radioGroup;
-        private readonly Dictionary<int, string> _texts = new Dictionary<int, string>();
+        private readonly GumpControls _controls;
         private readonly Dictionary<int, Vector2> _scroll = new Dictionary<int, Vector2>();
         private HashSet<int> _faded; // commands a later checkertrans covers, worked out on the first draw
         private int _page = 1;
@@ -25,28 +23,7 @@ namespace UOClient.Unity.UI
         public ServerGumpWindow(ServerGump gump)
         {
             _gump = gump;
-            _radioGroup = RadioGroups(gump.Commands);
-
-            // Initial state of switches and text entries, and the first page shown.
-            bool hasPage1 = false;
-            foreach (GumpCommand c in gump.Commands)
-            {
-                switch (c.Name)
-                {
-                    case "page":
-                        hasPage1 |= c.Arg(0) == 1;
-                        break;
-                    case "checkbox":
-                    case "radio":
-                        _switches[c.Arg(5)] = c.Arg(4) != 0;
-                        break;
-                    case "textentry":
-                    case "textentrylimited":
-                        _texts[c.Arg(5)] = gump.Line(c.Arg(6));
-                        break;
-                }
-            }
-            _page = hasPage1 ? 1 : 0;
+            _controls = new GumpControls(gump);
             Rect = new Rect(gump.X, gump.Y, 1, 1);
         }
 
@@ -68,14 +45,7 @@ namespace UOClient.Unity.UI
         private void Reply(int button)
         {
             _answered = true;
-            var on = new List<int>();
-            foreach (KeyValuePair<int, bool> s in _switches)
-                if (s.Value)
-                    on.Add(s.Key);
-            var texts = new List<(int, string)>();
-            foreach (KeyValuePair<int, string> t in _texts)
-                texts.Add((t.Key, t.Value ?? ""));
-            Session.ReplyGump(_gump, button, on, texts);
+            Session.ReplyGump(_gump, button, _controls.Switches(), _controls.Entries());
         }
 
         public override void Draw()
@@ -95,7 +65,7 @@ namespace UOClient.Unity.UI
                 if (page != 0 && page != _page)
                     continue;
                 GUI.color = _faded.Contains(i) ? new Color(1f, 1f, 1f, CheckerAlpha) : Color.white;
-                bool closed = DrawCommand(c);
+                bool closed = DrawCommand(c, i);
                 GUI.color = Color.white;
                 if (closed)
                     return; // the window closed itself
@@ -116,8 +86,8 @@ namespace UOClient.Unity.UI
         private string _hoverTextInGump;
         private Rect _hoverTextArea;
 
-        /// <summary>Draws one command; returns true if it closed the gump.</summary>
-        private bool DrawCommand(GumpCommand c)
+        /// <summary>Draws one command (the index-th of the layout); returns true if it closed the gump.</summary>
+        private bool DrawCommand(GumpCommand c, int index)
         {
             switch (c.Name)
             {
@@ -231,16 +201,15 @@ namespace UOClient.Unity.UI
 
                 case "checkbox":
                 case "radio":
-                    DrawSwitch(c);
+                    DrawSwitch(c, index);
                     break;
 
                 case "textentry":
                 case "textentrylimited":
                 {
-                    int id = c.Arg(5);
                     _entry.normal.textColor = _entry.focused.textColor = Art.HueColor(TextHue(c.Arg(4)), new Color(0.1f, 0.1f, 0.1f));
-                    string value = _texts.TryGetValue(id, out string v) ? v : "";
-                    _texts[id] = GUI.TextField(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), Math.Max(18, c.Arg(3))), value, c.TextLimit, _entry);
+                    _controls.SetText(index, GUI.TextField(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), Math.Max(18, c.Arg(3))),
+                        _controls.Text(index), c.TextLimit, _entry));
                     _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
                     break;
                 }
@@ -263,42 +232,27 @@ namespace UOClient.Unity.UI
 
             if (!GUI.Button(r, GUIContent.none, GUIStyle.none))
                 return false;
-            int type = c.Arg(4), param = c.Arg(5), id = c.Arg(6);
-            if (type == 0)
+            (bool isPage, int value) = ButtonPress(c);
+            if (isPage)
             {
-                _page = param; // page switch, local only
+                _page = value; // page switch, local only
                 return false;
             }
-            Reply(id);
+            Reply(value);
             Close();
             return true;
         }
 
-        private void DrawSwitch(GumpCommand c)
+        private void DrawSwitch(GumpCommand c, int index)
         {
-            int id = c.Arg(5);
-            bool on = _switches.TryGetValue(id, out bool v) && v;
-            UiImage img = Art.Gump(on ? c.Arg(3) : c.Arg(2));
+            UiImage img = Art.Gump(_controls.IsChecked(index) ? c.Arg(3) : c.Arg(2));
             if (img == null)
                 return;
             var r = new Rect(c.Arg(0), c.Arg(1), img.Width, img.Height);
             _lastArea = r;
             DrawImage(img, r.x, r.y);
-            if (!GUI.Button(r, GUIContent.none, GUIStyle.none))
-                return;
-
-            if (c.Name == "radio")
-            {
-                int group = _radioGroup.TryGetValue(id, out int g) ? g : 0;
-                foreach (KeyValuePair<int, int> other in _radioGroup)
-                    if (other.Value == group)
-                        _switches[other.Key] = false;
-                _switches[id] = true;
-            }
-            else
-            {
-                _switches[id] = !on;
-            }
+            if (GUI.Button(r, GUIContent.none, GUIStyle.none))
+                _controls.Click(index);
         }
 
         private void DrawHtml(GumpCommand c, string html, bool background, bool scrollbar, Color? color)
