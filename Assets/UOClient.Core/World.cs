@@ -150,6 +150,21 @@ namespace UOClient.Core
         public event Action<JournalEntry> JournalAdded;
         public event Action<int> LightChanged;
 
+        /// <summary>Custom house designs by house serial (kept when the house leaves view; the revision says when to refresh).</summary>
+        public readonly Dictionary<uint, HouseDesign> HouseDesigns = new Dictionary<uint, HouseDesign>();
+
+        /// <summary>The latest design revision the server announced per house (0xBF 0x1D).</summary>
+        public readonly Dictionary<uint, int> HouseRevisions = new Dictionary<uint, int>();
+
+        /// <summary>A house's design arrived or changed: redraw it from <see cref="HouseDesigns"/>.</summary>
+        public event Action<HouseDesign> HouseDesignChanged;
+
+        internal void SetHouseDesign(HouseDesign design)
+        {
+            HouseDesigns[design.Serial] = design;
+            HouseDesignChanged?.Invoke(design);
+        }
+
         internal Mobile GetOrCreateMobile(uint serial)
         {
             if (!Mobiles.TryGetValue(serial, out Mobile m))

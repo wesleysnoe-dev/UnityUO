@@ -102,6 +102,7 @@ namespace UOClient.Core
             RegisterCombatHandlers();
             RegisterTradeHandlers();
             RegisterTooltipHandlers();
+            RegisterHousingHandlers();
         }
 
         public World World { get; }
@@ -809,7 +810,7 @@ namespace UOClient.Core
         private void Extended(PacketReader r)
         {
             int sub = r.ReadUInt16();
-            if (TradeExtended(sub, r))
+            if (TradeExtended(sub, r) || HousingExtended(sub, r))
                 return;
             if (sub == 0x08) // set map
                 World.Map = r.ReadByte();

@@ -963,6 +963,7 @@ namespace UOClient.Unity
             _session.World.MobileMoved += OnMobileMoved;
             _session.World.EntityRemoved += OnEntityRemoved;
             _session.World.ItemUpdated += OnItemUpdated;
+            CustomHouses.Attach(_session, h => { if (_world != null) ShowMulti(h); }, s => _hud.Log(null, s));
 
             _hud.ConnectionStatus = $"Connecting to {login.Host}:{login.Port}â€¦";
             try
@@ -1103,7 +1104,7 @@ namespace UOClient.Unity
         {
             RemoveMulti(multi.Serial);
             var views = new List<ItemView>();
-            foreach (MultiComponent part in _data.Multis.Get(multi.Graphic))
+            foreach (MultiComponent part in CustomHouses.PartsOf(_data, _session?.World, multi))
             {
                 if (!part.Fixed || part.Graphic <= 1) // placeholders and the invisible anchor
                     continue;
