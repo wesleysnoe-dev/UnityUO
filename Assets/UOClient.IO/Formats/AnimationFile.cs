@@ -69,12 +69,7 @@ namespace UOClient.IO.Formats
         public static AnimationFrame[] Decode(byte[] data)
         {
             ReadOnlySpan<byte> d = data;
-            var palette = new uint[256];
-            for (int i = 0; i < 256; i++)
-            {
-                ushort c = BinaryPrimitives.ReadUInt16LittleEndian(d.Slice(i * 2));
-                palette[i] = c == 0 ? 0 : Color16.ToArgb32(c);
-            }
+            uint[] palette = Palette(d);
 
             int dataStart = 512;
             int frameCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(dataStart));
@@ -85,49 +80,68 @@ namespace UOClient.IO.Formats
             for (int f = 0; f < frameCount; f++)
             {
                 int pos = dataStart + (int)BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(dataStart + 4 + f * 4));
-                if (pos + 8 > d.Length)
+                frames[f] = DecodeSprite(d, pos, palette);
+                if (frames[f] == null)
                     return Array.Empty<AnimationFrame>();
-
-                short centerX = BinaryPrimitives.ReadInt16LittleEndian(d.Slice(pos));
-                short centerY = BinaryPrimitives.ReadInt16LittleEndian(d.Slice(pos + 2));
-                short width = BinaryPrimitives.ReadInt16LittleEndian(d.Slice(pos + 4));
-                short height = BinaryPrimitives.ReadInt16LittleEndian(d.Slice(pos + 6));
-                pos += 8;
-
-                var frame = new AnimationFrame { CenterX = centerX, CenterY = centerY };
-                if (width <= 0 || height <= 0 || width > 1024 || height > 1024)
-                {
-                    frame.Image = new Bitmap32(1, 1);
-                    frames[f] = frame;
-                    continue;
-                }
-
-                var bmp = new Bitmap32(width, height);
-                while (pos + 4 <= d.Length)
-                {
-                    uint header = BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(pos));
-                    pos += 4;
-                    if (header == FrameEnd)
-                        break;
-
-                    header ^= DoubleXor;
-                    int x = (int)((header >> 22) & 0x3FF) + centerX - 0x200;
-                    int y = (int)((header >> 12) & 0x3FF) + centerY + height - 0x200;
-                    int run = (int)(header & 0xFFF);
-
-                    for (int k = 0; k < run && pos < d.Length; k++, pos++)
-                    {
-                        int px = x + k;
-                        if ((uint)px < (uint)width && (uint)y < (uint)height)
-                            bmp.Pixels[y * width + px] = palette[d[pos]];
-                    }
-                }
-
-                frame.Image = bmp;
-                frames[f] = frame;
             }
 
             return frames;
+        }
+
+        /// <summary>A 256-entry 16-bit palette at the start of <paramref name="d"/>; colour 0 is transparent.</summary>
+        internal static uint[] Palette(ReadOnlySpan<byte> d)
+        {
+            var palette = new uint[256];
+            for (int i = 0; i < 256; i++)
+            {
+                ushort c = BinaryPrimitives.ReadUInt16LittleEndian(d.Slice(i * 2));
+                palette[i] = c == 0 ? 0 : Color16.ToArgb32(c);
+            }
+            return palette;
+        }
+
+        /// <summary>One frame (centre, size, run-length pixels) at <paramref name="pos"/>; null if the header is cut off.</summary>
+        internal static AnimationFrame DecodeSprite(ReadOnlySpan<byte> d, int pos, uint[] palette)
+        {
+            if (pos < 0 || pos + 8 > d.Length)
+                return null;
+
+            short centerX = BinaryPrimitives.ReadInt16LittleEndian(d.Slice(pos));
+            short centerY = BinaryPrimitives.ReadInt16LittleEndian(d.Slice(pos + 2));
+            short width = BinaryPrimitives.ReadInt16LittleEndian(d.Slice(pos + 4));
+            short height = BinaryPrimitives.ReadInt16LittleEndian(d.Slice(pos + 6));
+            pos += 8;
+
+            var frame = new AnimationFrame { CenterX = centerX, CenterY = centerY };
+            if (width <= 0 || height <= 0 || width > 1024 || height > 1024)
+            {
+                frame.Image = new Bitmap32(1, 1);
+                return frame;
+            }
+
+            var bmp = new Bitmap32(width, height);
+            while (pos + 4 <= d.Length)
+            {
+                uint header = BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(pos));
+                pos += 4;
+                if (header == FrameEnd)
+                    break;
+
+                header ^= DoubleXor;
+                int x = (int)((header >> 22) & 0x3FF) + centerX - 0x200;
+                int y = (int)((header >> 12) & 0x3FF) + centerY + height - 0x200;
+                int run = (int)(header & 0xFFF);
+
+                for (int k = 0; k < run && pos < d.Length; k++, pos++)
+                {
+                    int px = x + k;
+                    if ((uint)px < (uint)width && (uint)y < (uint)height)
+                        bmp.Pixels[y * width + px] = palette[d[pos]];
+                }
+            }
+
+            frame.Image = bmp;
+            return frame;
         }
 
         public void Dispose() => _file.Dispose();

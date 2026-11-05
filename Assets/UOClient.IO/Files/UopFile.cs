@@ -39,10 +39,30 @@ namespace UOClient.IO.Files
             }
         }
 
+        /// <summary>A package read only by name hash (<see cref="TryGetByHash"/>), with no sequential indices.</summary>
+        public UopFile(string path) : base(path)
+        {
+            ReadTables();
+            _entries = Array.Empty<FileEntry>();
+            _extraResolved = Array.Empty<bool>();
+        }
+
         public override int Count => _entries.Length;
 
         /// <summary>Total number of entries stored in the package, mapped or not.</summary>
         public int PackageEntryCount => _byHash.Count;
+
+        /// <summary>The entry stored under a virtual filename's hash (<see cref="UopHash.Create"/>).</summary>
+        public bool TryGetByHash(ulong hash, out FileEntry entry)
+        {
+            if (_byHash.TryGetValue(hash, out entry))
+                return true;
+            entry = FileEntry.Invalid;
+            return false;
+        }
+
+        /// <summary>Every entry in the package, in no particular order.</summary>
+        public IEnumerable<FileEntry> AllEntries => _byHash.Values;
 
         public override bool TryGetEntry(int index, out FileEntry entry)
         {

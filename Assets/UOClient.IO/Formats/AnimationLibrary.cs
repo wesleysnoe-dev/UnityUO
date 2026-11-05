@@ -14,19 +14,41 @@ namespace UOClient.IO.Formats
         Human
     }
 
+    /// <summary>mobtypes.txt's type column (TazUO's <c>AnimationGroupsType</c> order).</summary>
+    public enum MobType
+    {
+        Monster,
+        SeaMonster,
+        Animal,
+        Human,
+        Equipment
+    }
+
     /// <summary>
     /// All classic mobile animations: anim.mul plus the expansion files anim2..anim6. Bodyconv.def moves a
     /// body into one of the expansion files (often under another number), and each file lays bodies out
     /// differently. Body.def names a stand-in body (and hue) for bodies with no art at all.
     /// Rules follow ClassicUO's MUL animation loader (BSD-2-Clause).
+    /// Bodies whose mobtypes.txt flags have <see cref="UseUopAnimation"/> come from AnimationFrame1..4.uop instead,
+    /// with no Bodyconv.def or Body.def, as in TazUO's <c>AnimationsLoader.GetIndices</c> (AnimationsLoader.cs:314-349).
+    /// When those packages hold nothing for such a body, it falls back to the MUL rules above (TazUO would draw nothing).
     /// </summary>
     public sealed class AnimationLibrary : IDisposable
     {
+        // mobtypes.txt flags (TazUO AnimationFlags, AnimationsLoader.cs:1825-1849).
+        public const uint IdleAt8Frame = 0x4, CanFlying = 0x8, LowGroupExtended = 0x20, ByLowGroup = 0x40, ByPeopleGroup = 0x400;
+        public const uint UseUopAnimation = 0x10000;
+
         private readonly string _dir;
         private readonly MulFile[] _files = new MulFile[6];   // anim, anim2 .. anim6
         private readonly bool[] _tried = new bool[6];
+        private readonly UopFile[] _uop = new UopFile[4];    // AnimationFrame1..4.uop
+        private bool _uopTried;
+        private Dictionary<int, int[]> _sequences;          // AnimationSequence.uop: body -> drawn action per action
+        private readonly Dictionary<int, bool> _hasUop = new Dictionary<int, bool>();
         private readonly Dictionary<int, (int File, int Body)> _conv = new Dictionary<int, (int, int)>();
         private readonly Dictionary<int, (int Body, int Hue)> _replace = new Dictionary<int, (int, int)>();
+        private readonly Dictionary<int, (MobType Type, uint Flags)> _mobTypes = new Dictionary<int, (MobType, uint)>();
         private readonly object _lock = new object();
 
         public AnimationLibrary(string directory)
@@ -34,13 +56,104 @@ namespace UOClient.IO.Formats
             _dir = directory;
             ReadBodyConv(Path.Combine(directory, "Bodyconv.def"));
             ReadBodyDef(Path.Combine(directory, "Body.def"));
+            ReadMobTypes(Path.Combine(directory, "mobtypes.txt"));
+        }
+
+        /// <summary>mobtypes.txt's type and flags for a body, if it lists it.</summary>
+        public bool TryGetMobType(int body, out MobType type, out uint flags)
+        {
+            bool found = _mobTypes.TryGetValue(body, out var m);
+            type = m.Type;
+            flags = m.Flags;
+            return found;
+        }
+
+        /// <summary>True when the body is drawn from AnimationFrame*.uop: flagged in mobtypes.txt and present there.</summary>
+        public bool UsesUop(int body)
+        {
+            if (!_mobTypes.TryGetValue(body, out var m) || (m.Flags & UseUopAnimation) == 0)
+                return false;
+            lock (_lock)
+            {
+                if (_hasUop.TryGetValue(body, out bool has))
+                    return has;
+                has = false;
+                for (int a = 0; a < AnimationUop.MaxActions && !has; a++)
+                    has = TryUopEntry(body, a, out _, out _);
+                _hasUop[body] = has;
+                return has;
+            }
+        }
+
+        /// <summary>The action a UOP body really draws for <paramref name="action"/> (AnimationSequence.uop), or -1.</summary>
+        public int UopAction(int body, int action)
+        {
+            if ((uint)action >= AnimationUop.MaxActions)
+                return -1;
+            lock (_lock)
+            {
+                LoadUop();
+                // TazUO swaps twice: GetIndices files action a under the entry for seq[a] (AnimationsLoader.cs:324),
+                // then GetAnimationFrames looks up slot seq[a] (Animation.cs:286-305), so a is drawn as seq[seq[a]].
+                if (_sequences.TryGetValue(body, out int[] seq))
+                {
+                    int slot = seq[action];
+                    if ((uint)slot >= AnimationUop.MaxActions)
+                        return -1;
+                    action = seq[slot];
+                }
+                return (uint)action < AnimationUop.MaxActions ? action : -1;
+            }
+        }
+
+        /// <summary>Whether a UOP body has frames stored for an action (after AnimationSequence.uop).</summary>
+        public bool HasUopAction(int body, int action)
+        {
+            int real = UopAction(body, action);
+            lock (_lock)
+                return real >= 0 && TryUopEntry(body, real, out _, out _);
         }
 
         /// <summary>Where a body's animation actually lives: (file 0..5, body in that file, replacement hue or 0).</summary>
         public (int File, int Body, int Hue) Resolve(int body) => Resolve(body, 0);
 
+        /// <summary>Walk, run and stand outside war mode, as TazUO's <c>MobileAnimation.GetGroupForAnimation</c> picks them.</summary>
+        public (int Walk, int Run, int Stand) Actions(int body)
+        {
+            if (UsesUop(body) && _mobTypes.TryGetValue(body, out var m))
+            {
+                // MobileAnimation.cs:1041-1107: animals without the extended flag, and CalculateHight (:99-197) for the rest.
+                if (m.Type == MobType.Animal && (m.Flags & LowGroupExtended) == 0)
+                    return (22, 24, 25);
+                if (m.Type == MobType.Monster || m.Type == MobType.Animal)
+                {
+                    if ((m.Flags & ByPeopleGroup) != 0)
+                        return (0, 0, 0); // :106-111 only sets idle to 0; moving keeps the current group
+                    if ((m.Flags & ByLowGroup) != 0)
+                        return (0, 1, 2);
+                    int stand = (m.Flags & IdleAt8Frame) != 0 && HasUopAction(body, 8) ? 8 : 25;
+                    int run = (m.Flags & CanFlying) != 0 && HasUopAction(body, 19) ? 19 : 24;
+                    return (22, run, stand);
+                }
+            }
+            return DefaultActions(GroupOf(body));
+        }
+
+        /// <summary>Walk, run and stand of a classic action layout.</summary>
+        public static (int Walk, int Run, int Stand) DefaultActions(AnimGroup group)
+        {
+            switch (group)
+            {
+                case AnimGroup.Human: return (0, 2, 4);
+                case AnimGroup.Animal: return (0, 1, 2);
+                default: return (0, 0, 1);
+            }
+        }
+
         private (int File, int Body, int Hue) Resolve(int body, int depth)
         {
+            if (UsesUop(body))
+                return (-1, body, 0);
             (int file, int real) = _conv.TryGetValue(body, out var c) && File(c.File) != null ? c : (0, body);
             if (HasAny(file, real) || depth >= 3 || !_replace.TryGetValue(body, out var rep) || rep.Body == body)
                 return (file, real, 0);
@@ -53,13 +166,22 @@ namespace UOClient.IO.Formats
         public AnimGroup GroupOf(int body)
         {
             var (file, real, _) = Resolve(body);
+            if (file < 0)
+                return GroupOf(_mobTypes[real].Type);
             return Layout(file, real).Group;
         }
+
+        private static AnimGroup GroupOf(MobType type) =>
+            type == MobType.Animal ? AnimGroup.Animal
+            : type == MobType.Human || type == MobType.Equipment ? AnimGroup.Human
+            : AnimGroup.Monster;
 
         /// <summary>Frames for (body, action, stored direction 0..4); empty when there is no art.</summary>
         public AnimationFrame[] Read(int body, int action, int fileDirection)
         {
             var (file, real, _) = Resolve(body);
+            if (file < 0)
+                return ReadUop(real, action, fileDirection);
             byte[] data = ReadRaw(file, real, action, fileDirection);
             if (data == null || data.Length < 512 + 4)
                 return Array.Empty<AnimationFrame>();
@@ -119,6 +241,109 @@ namespace UOClient.IO.Formats
             int index = start + action * 5 + fileDirection;
             lock (_lock)
                 return f.TryGetEntry(index, out FileEntry e) ? f.Read(e) : null;
+        }
+
+        private AnimationFrame[] ReadUop(int body, int action, int fileDirection)
+        {
+            int real = UopAction(body, action);
+            byte[] data;
+            lock (_lock)
+            {
+                if (real < 0 || !TryUopEntry(body, real, out UopFile file, out FileEntry entry))
+                    return Array.Empty<AnimationFrame>();
+                data = file.Read(entry);
+            }
+            bool equipment = _mobTypes.TryGetValue(body, out var m) && m.Type == MobType.Equipment;
+            return AnimationUop.Decode(data, fileDirection, equipment);
+        }
+
+        /// <summary>The first AnimationFrame*.uop that stores (body, action). Call under the lock.</summary>
+        private bool TryUopEntry(int body, int action, out UopFile file, out FileEntry entry)
+        {
+            LoadUop();
+            ulong hash = UopHash.Create(AnimationUop.EntryName(body, action));
+            foreach (UopFile f in _uop)
+            {
+                if (f != null && f.TryGetByHash(hash, out entry))
+                {
+                    file = f;
+                    return true;
+                }
+            }
+            file = null;
+            entry = FileEntry.Invalid;
+            return false;
+        }
+
+        /// <summary>Opens AnimationFrame1..4.uop and reads AnimationSequence.uop, once. Call under the lock.</summary>
+        private void LoadUop()
+        {
+            if (_uopTried)
+                return;
+            _uopTried = true;
+            _sequences = new Dictionary<int, int[]>();
+            for (int i = 0; i < _uop.Length; i++)
+            {
+                string path = Path.Combine(_dir, $"AnimationFrame{i + 1}.uop");
+                if (System.IO.File.Exists(path))
+                    _uop[i] = new UopFile(path);
+            }
+
+            string seqPath = Path.Combine(_dir, "AnimationSequence.uop");
+            if (!System.IO.File.Exists(seqPath))
+                return;
+            using (var seq = new UopFile(seqPath))
+            {
+                foreach (FileEntry e in seq.AllEntries)
+                {
+                    var parsed = AnimationUop.ParseSequence(seq.Read(e));
+                    if (parsed.HasValue)
+                        _sequences[parsed.Value.Body] = parsed.Value.Actions;
+                }
+            }
+        }
+
+        /// <summary>
+        /// mobtypes.txt: "id type flags" with hex flags, as TazUO reads it (AnimationsLoader.cs:124-204):
+        /// lines must start with a digit, and a '#' in the flags column ends it.
+        /// </summary>
+        private void ReadMobTypes(string path)
+        {
+            if (!System.IO.File.Exists(path))
+                return;
+            foreach (string raw in System.IO.File.ReadAllLines(path))
+            {
+                string line = raw.Trim();
+                if (line.Length == 0 || !char.IsDigit(line[0]))
+                    continue;
+                string[] parts = line.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 3 || !int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int id))
+                    continue;
+                string flags = parts[2];
+                int hash = flags.IndexOf('#');
+                if (hash == 0)
+                    continue;
+                if (hash > 0)
+                    flags = flags.Substring(0, hash).Trim();
+                if (!uint.TryParse(flags, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint value))
+                    continue;
+                MobType? type = ParseMobType(parts[1]);
+                if (type.HasValue)
+                    _mobTypes[id] = (type.Value, value);
+            }
+        }
+
+        private static MobType? ParseMobType(string s)
+        {
+            switch (s.ToLowerInvariant())
+            {
+                case "monster": return MobType.Monster;
+                case "sea_monster": return MobType.SeaMonster;
+                case "animal": return MobType.Animal;
+                case "human": return MobType.Human;
+                case "equipment": return MobType.Equipment;
+                default: return null;
+            }
         }
 
         /// <summary>The first index entry of a body in a file, and the layout that implies.</summary>
@@ -216,8 +441,12 @@ namespace UOClient.IO.Formats
         public void Dispose()
         {
             lock (_lock)
+            {
                 foreach (MulFile f in _files)
                     f?.Dispose();
+                foreach (UopFile f in _uop)
+                    f?.Dispose();
+            }
         }
     }
 }

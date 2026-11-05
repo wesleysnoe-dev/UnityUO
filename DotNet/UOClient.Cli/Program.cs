@@ -178,9 +178,10 @@ switch (argList[0])
             int b = ParseId(s);
             var (file, real, hue) = data.AnimationLibrary.Resolve(b);
             AnimGroup group = data.AnimationLibrary.GroupOf(b);
-            int stand = group == AnimGroup.Human ? 4 : group == AnimGroup.Animal ? 2 : 1;
+            var (walk, run, stand) = data.AnimationLibrary.Actions(b);
             int frames = data.AnimationLibrary.Read(b, stand, 1).Length;
-            Console.WriteLine($"body {b} (0x{b:X}): anim{(file == 0 ? "" : (file + 1).ToString())} as {real}, {group}, hue {hue}, stand frames {frames}");
+            string source = file < 0 ? "AnimationFrame*.uop" : "anim" + (file == 0 ? "" : (file + 1).ToString());
+            Console.WriteLine($"body {b} (0x{b:X}): {source} as {real}, {group}, hue {hue}, walk/run/stand {walk}/{run}/{stand}, stand frames {frames}");
         }
         return 0;
     case "compose" when argList.Count >= 7:

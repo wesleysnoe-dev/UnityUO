@@ -34,6 +34,10 @@ namespace UOClient.Unity
         /// <summary>The mount's action layout, when mounted.</summary>
         public AnimGroup MountGroup = AnimGroup.Animal;
 
+        /// <summary>The body's and the mount's walk/run/stand (UOP bodies number them differently from their layout).</summary>
+        public (int Walk, int Run, int Stand) BodyActions = AnimationLibrary.DefaultActions(AnimGroup.Human);
+        public (int Walk, int Run, int Stand) MountActions = AnimationLibrary.DefaultActions(AnimGroup.Animal);
+
         /// <summary>Identifies the look for sharing frames between identical mobiles.</summary>
         public string Key
         {
@@ -70,6 +74,7 @@ namespace UOClient.Unity
             var look = new MobileLook();
             AnimationLibrary anims = data.AnimationLibrary;
             look.Group = anims.GroupOf(body);
+            look.BodyActions = anims.Actions(body);
             int skin = hue & 0x3FFF;
             if (skin == 0)
                 skin = anims.ReplacementHue(body); // Body.def stand-ins come with their own hue
@@ -88,6 +93,7 @@ namespace UOClient.Unity
                 {
                     look.Mounted = true;
                     look.MountGroup = anims.GroupOf(mountBody);
+                    look.MountActions = anims.Actions(mountBody);
                     look.Layers.Add(new Layer { Body = mountBody, Hue = mount.Hue & 0x3FFF, IsMount = true });
                 }
             }
@@ -182,17 +188,7 @@ namespace UOClient.Unity
         public static (int Walk, int Run, int Stand) Actions(MobileLook look)
         {
             if (look.Mounted) return (MountedWalk, MountedRun, MountedStand);
-            return Actions(look.Group);
-        }
-
-        public static (int Walk, int Run, int Stand) Actions(AnimGroup group)
-        {
-            switch (group)
-            {
-                case AnimGroup.Human: return (0, 2, 4);
-                case AnimGroup.Animal: return (0, 1, 2);
-                default: return (0, 0, 1);
-            }
+            return look.BodyActions;
         }
 
         // Human actions while riding.
@@ -201,7 +197,7 @@ namespace UOClient.Unity
         /// <summary>What a mount plays while its rider plays <paramref name="riderAction"/>.</summary>
         private static int MountAction(MobileLook look, int riderAction)
         {
-            var (walk, run, stand) = Actions(look.MountGroup);
+            var (walk, run, stand) = look.MountActions;
             return riderAction == MountedWalk ? walk : riderAction == MountedRun ? run : stand;
         }
 
