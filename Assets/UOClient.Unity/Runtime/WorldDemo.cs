@@ -77,12 +77,13 @@ namespace UOClient.Unity
         private Avatar _avatar;
         private Walkability _walk;
         private Camera _camera;
+        private CameraRig _cameraRig;
         private DemoHud _hud;
         private int _artScale, _bakedCount;
         private bool _roofsForced, _manualRoofs = true;
         private bool _ready;
         private string _loadError;
-        private Task<DemoHud.RadarData> _radarTask;
+        private readonly MinimapUpdater _minimap = new MinimapUpdater();
         private readonly FrameStats _frames = new FrameStats();
         private bool _showStats;
 
@@ -95,34 +96,14 @@ namespace UOClient.Unity
         private bool _typing;
         private string _chat = "";
 
-        // Time of day: index into Times; -1 follows the server's light level.
-        private int _timeOverride = -1;
-        private TimeOfDay _timeCurrent = Times[0];
-
-        private static readonly TimeOfDay[] Times =
-        {
-            new TimeOfDay("Day", new Color(1.00f, 1.00f, 1.00f), Color.black, 0.10f),
-            new TimeOfDay("Golden hour", new Color(1.08f, 0.94f, 0.78f), new Color(0.12f, 0.08f, 0.02f), 0.22f),
-            new TimeOfDay("Dusk", new Color(0.62f, 0.56f, 0.76f), new Color(0.55f, 0.38f, 0.18f), 0.38f),
-            new TimeOfDay("Night", new Color(0.30f, 0.34f, 0.54f), new Color(0.95f, 0.68f, 0.34f), 0.55f)
-        };
+        private readonly Lighting _lighting = new Lighting();
 
         private void Start()
         {
-            _camera = Camera.main;
-            if (_camera == null)
-            {
-                var camGo = new GameObject("Main Camera") { tag = "MainCamera" };
-                _camera = camGo.AddComponent<Camera>();
-            }
-            _camera.orthographic = true;
-            _camera.clearFlags = CameraClearFlags.SolidColor;
-            _camera.backgroundColor = new Color(0.05f, 0.05f, 0.06f);
-            // Depth keys span roughly +-5000 units around the depth origin (see DepthKey).
-            _camera.nearClipPlane = 0.1f;
-            _camera.farClipPlane = 20000f;
+            _camera = CameraRig.EnsureMainCamera();
+            _cameraRig = new CameraRig(_camera);
             _hud = new DemoHud();
-            ApplyLighting(Times[0]);
+            Lighting.ApplyDefault();
 
             try
             {
@@ -1107,7 +1088,7 @@ namespace UOClient.Unity
             _sections.Begin("chunks");
             _world.Update(_avatar.X, _avatar.Y);
             _sections.Begin("minimap");
-            UpdateMinimap();
+            _minimap.Update(_data, _world.Map, _avatar.X, _avatar.Y, _hud);
 
             // Show the world once the chunks around the player are in; until then keep loading.
             if (!_ready)
@@ -1144,8 +1125,8 @@ namespace UOClient.Unity
             UpdateEffects();
 
             _sections.Begin("camera+hud");
-            UpdateCamera();
-            UpdateLighting();
+            _cameraRig.Follow(_avatar.AnchorPixels, _world, _artScale, zoom);
+            _lighting.Update(_session, _world.ToUnity(_avatar.AnchorPixels), _artScale, _hud);
             UpdateHud();
             UpdateOverheads();
             UpdateCursor();
@@ -1154,26 +1135,6 @@ namespace UOClient.Unity
 
         private readonly FrameSections _sections = new FrameSections();
 
-        /// <summary>Recomputes the minimap grid on a background thread when the player nears its edge.</summary>
-        private void UpdateMinimap()
-        {
-            if (_radarTask != null)
-            {
-                if (!_radarTask.IsCompleted)
-                    return;
-                if (_radarTask.Status == TaskStatus.RanToCompletion)
-                    _hud.SetRadar(_radarTask.Result);
-                _radarTask = null;
-            }
-
-            bool far = Math.Max(Math.Abs(_avatar.X - _hud.RadarCenterX), Math.Abs(_avatar.Y - _hud.RadarCenterY)) > 40;
-            if (_hud.RadarCenterX == int.MinValue || far)
-            {
-                int m = _world.Map, x = _avatar.X, y = _avatar.Y;
-                _radarTask = Task.Run(() => DemoHud.ComputeRadar(_data, m, x, y));
-            }
-        }
-
         private void HandleInput()
         {
             // Typing in the chat line or a gump's text box: keys are text, not commands.
@@ -1181,10 +1142,7 @@ namespace UOClient.Unity
                 return;
 
             if (Input.GetKeyDown(KeyCode.T))
-            {
-                _timeOverride = _timeOverride + 1 >= Times.Length ? (_session != null ? -1 : 0) : _timeOverride + 1;
-                _hud.Log(null, _timeOverride < 0 ? "Light follows the server's time of day." : $"Light set to {Times[_timeOverride].Name.ToLowerInvariant()}.");
-            }
+                _hud.Log(null, _lighting.CycleOverride(_session != null));
             if (Input.GetKeyDown(KeyCode.R))
             {
                 // First press takes over from the automatic indoor check; each press flips.
@@ -1270,55 +1228,6 @@ namespace UOClient.Unity
             float angle = Mathf.Atan2(v.y, v.x) * Mathf.Rad2Deg;
             int octant = Mathf.RoundToInt(angle / 45f);
             return ((octant + 1) % 8 + 8) % 8;
-        }
-
-        private void UpdateCamera()
-        {
-            _camera.orthographicSize = Screen.height / 2f / zoom;
-            // Center on the body (about 45 UO pixels above the feet), then drop the view a little so the
-            // character sits above the journal panel.
-            Vector2 target = _world.ToUnity(_avatar.AnchorPixels) + new Vector2(0, 45 * _artScale - Screen.height * 0.12f / zoom);
-            Vector3 pos = _camera.transform.position;
-            Vector2 smoothed = Vector2.Lerp(new Vector2(pos.x, pos.y), target, 1f - Mathf.Exp(-Time.deltaTime * 10f));
-            if ((new Vector2(pos.x, pos.y) - target).sqrMagnitude > 4_000_000f || pos.z > -1)
-                smoothed = target;
-            _camera.transform.position = new Vector3(Mathf.Round(smoothed.x), Mathf.Round(smoothed.y), -10000f);
-        }
-
-        private void UpdateLighting()
-        {
-            TimeOfDay target;
-            if (_timeOverride >= 0)
-            {
-                target = Times[_timeOverride];
-            }
-            else if (_session != null)
-            {
-                // Server light: 0 = full day, ~26 and above = deep night.
-                float night = Mathf.Clamp01((_session.World.GlobalLight - 2) / 22f);
-                target = night < 0.5f
-                    ? TimeOfDay.Lerp(Times[0], Times[2], night * 2f)
-                    : TimeOfDay.Lerp(Times[2], Times[3], night * 2f - 1f);
-                target = new TimeOfDay(night < 0.15f ? "Day" : night < 0.6f ? "Dusk" : "Night", target.Ambient, target.Light, target.Vignette);
-            }
-            else
-            {
-                target = Times[0];
-            }
-
-            _timeCurrent = TimeOfDay.Lerp(_timeCurrent, target, 1f - Mathf.Exp(-Time.deltaTime * 2f));
-            ApplyLighting(_timeCurrent);
-            _hud.TimeName = target.Name + (_timeOverride < 0 && _session != null ? $" (server light {_session.World.GlobalLight})" : "");
-            _hud.Vignette = _timeCurrent.Vignette;
-
-            Vector2 light = _world.ToUnity(_avatar.AnchorPixels) + new Vector2(0, 30 * _artScale);
-            Shader.SetGlobalVector("_UOLightPos", new Vector4(light.x, light.y, 170f * _artScale, 0));
-        }
-
-        private static void ApplyLighting(TimeOfDay t)
-        {
-            Shader.SetGlobalVector("_UOAmbient", t.Ambient);
-            Shader.SetGlobalVector("_UOLightColor", t.Light);
         }
 
         private void UpdateHud()
@@ -1971,25 +1880,6 @@ namespace UOClient.Unity
             _mobileArt?.Dispose();
             _hud?.Dispose();
             _data?.Dispose();
-        }
-
-        private readonly struct TimeOfDay
-        {
-            public readonly string Name;
-            public readonly Color Ambient, Light;
-            public readonly float Vignette;
-
-            public TimeOfDay(string name, Color ambient, Color light, float vignette)
-            {
-                Name = name;
-                Ambient = ambient;
-                Light = light;
-                Vignette = vignette;
-            }
-
-            public static TimeOfDay Lerp(TimeOfDay a, TimeOfDay b, float t) =>
-                new TimeOfDay(b.Name, Color.LerpUnclamped(a.Ambient, b.Ambient, t), Color.LerpUnclamped(a.Light, b.Light, t),
-                              Mathf.Lerp(a.Vignette, b.Vignette, t));
         }
     }
 }
