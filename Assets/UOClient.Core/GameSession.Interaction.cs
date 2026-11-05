@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using UOClient.IO.Formats;
 using UOClient.Net;
 
 namespace UOClient.Core
@@ -112,7 +113,7 @@ namespace UOClient.Core
         {
             if (State != SessionState.InWorld)
                 return;
-            _actions.Follow(new PacketWriter(0x08, 15).UInt32(serial).UInt16(x).UInt16(y).Byte(0).Byte(0).UInt32(container).ToArray());
+            _actions.Follow(DropRequest(serial, x, y, 0, container));
             SendQueuedActions();
         }
 
@@ -121,9 +122,31 @@ namespace UOClient.Core
         {
             if (State != SessionState.InWorld)
                 return;
-            _actions.Follow(new PacketWriter(0x08, 15).UInt32(serial).UInt16(x).UInt16(y).Byte((byte)(sbyte)z).Byte(0).UInt32(0xFFFFFFFF).ToArray());
+            _actions.Follow(DropRequest(serial, x, y, z, 0xFFFFFFFF));
             SendQueuedActions();
         }
+
+        /// <summary>
+        /// 0x08 as ModernUO's DropReq reads it from a client with container grid lines: serial, x, y, z, grid index,
+        /// destination (0xFFFFFFFF = the ground). x = y = 0xFFFF (-1) into an item is "onto it": a container takes it
+        /// wherever it fits, a like stack merges.
+        /// </summary>
+        public static byte[] DropRequest(uint serial, int x, int y, int z, uint destination) =>
+            new PacketWriter(0x08, 15).UInt32(serial).UInt16(x).UInt16(y).Byte((byte)(sbyte)z).Byte(0).UInt32(destination).ToArray();
+
+        public const ushort CorpseGraphic = 0x2006;
+
+        /// <summary>Spellbooks take scrolls dropped onto them though tiledata doesn't call them containers.</summary>
+        private static readonly HashSet<ushort> Spellbooks = new HashSet<ushort> { 0x0EFA, 0x2252, 0x2253, 0x238C, 0x23A0, 0x2D50, 0x2D9D };
+
+        /// <summary>
+        /// Whether an item dropped onto another goes into it, as ClassicUO decides: a container, a corpse, a spellbook,
+        /// or a stack of the same thing. Sent "onto" anything else, ModernUO's Item.OnDragDrop refuses and it bounces back,
+        /// so the drop goes beside it instead (on the ground there, or at that spot in the open container).
+        /// </summary>
+        public static bool DropsInto(ushort held, TileFlags heldFlags, ushort target, TileFlags targetFlags) =>
+            (targetFlags & TileFlags.Container) != 0 || target == CorpseGraphic || Spellbooks.Contains(target)
+            || (held == target && (heldFlags & TileFlags.Generic) != 0);
 
         /// <summary>Equips the held item on a mobile (usually ourselves); the server picks the layer.</summary>
         public void Equip(uint serial, byte layer, uint mobile)

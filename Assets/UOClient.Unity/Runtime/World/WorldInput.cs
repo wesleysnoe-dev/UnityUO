@@ -174,16 +174,28 @@ namespace UOClient.Unity
 
         /// <summary>
         /// A dragged item released over the world at a screen point (bottom-left origin): onto a character there
-        /// (giving it, or loading a pack animal), into an item there (a chest, a stack), else onto that tile.
-        /// The server decides; what it refuses bounces back.
+        /// (giving it, or loading a pack animal), into a container, corpse or like stack there, beside any other
+        /// item (on its tile, on top of a table), else onto the tile under the cursor. What the server refuses bounces back.
         /// </summary>
         public void DropInWorld(UI.DraggedItem item, Vector2 screen)
         {
             uint under = _entities.PickAt(screen);
             if (under != 0 && under != item.Serial)
             {
-                _ctx.Session.DropInto(item.Serial, under, 0xFFFF, 0xFFFF); // a mobile or item serial; the server sorts out which
-                return;
+                if (!_ctx.Session.World.Items.TryGetValue(under, out Core.WorldItem onto))
+                {
+                    _ctx.Session.DropInto(item.Serial, under, 0xFFFF, 0xFFFF); // a mobile
+                    return;
+                }
+                if (!onto.IsMulti)
+                {
+                    IO.Formats.StaticTileData data = _ctx.Data.TileData.GetStatic(onto.Graphic);
+                    if (Core.GameSession.DropsInto(item.Graphic, _ctx.Data.TileData.GetStatic(item.Graphic).Flags, onto.Graphic, data.Flags))
+                        _ctx.Session.DropInto(item.Serial, under, 0xFFFF, 0xFFFF);
+                    else
+                        _ctx.Session.DropOnGround(item.Serial, onto.X, onto.Y, onto.Z + (data.IsSurface ? data.Height : 0));
+                    return;
+                }
             }
             Vector3 wp = _ctx.Camera.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0));
             Vector2Int tile = _ctx.World.TileAt(_ctx.World.FromUnity(new Vector2(wp.x, wp.y)), _ctx.Player.Z);

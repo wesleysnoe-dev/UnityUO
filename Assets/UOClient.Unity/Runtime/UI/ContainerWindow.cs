@@ -145,6 +145,14 @@ namespace UOClient.Unity.UI
 
         public override bool Drop(DraggedItem item, Vector2 local)
         {
+            // Onto a bag, a corpse or a like stack in here: into it (the server places it or merges the stack).
+            ContainedItem under = ItemAt(local)?.Item;
+            if (under != null && under.Serial != item.Serial && GameSession.DropsInto(item.Graphic,
+                    Art.Data.TileData.GetStatic(item.Graphic).Flags, under.Graphic, Art.Data.TileData.GetStatic(under.Graphic).Flags))
+            {
+                Session.DropInto(item.Serial, under.Serial, 0xFFFF, 0xFFFF);
+                return true;
+            }
             // The item's top-left goes where it was grabbed from relative to the cursor, kept inside the gump.
             UiImage art = Art.Item(item.Graphic, item.Hue);
             int x = Mathf.Clamp((int)(local.x - item.Grab.x), 0, Mathf.Max(0, (int)Rect.width - (art?.Width ?? 20)));
