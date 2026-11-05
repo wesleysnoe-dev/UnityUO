@@ -6,7 +6,7 @@ using UOClient.Core;
 namespace UOClient.Unity.UI
 {
     /// <summary>The property tooltip of what the mouse rests on, in a window or in the world.</summary>
-    public sealed class HoverTooltip
+    public sealed partial class HoverTooltip
     {
         public const int TooltipWindowId = 0x7EEF;
 
@@ -82,10 +82,12 @@ namespace UOClient.Unity.UI
             GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1));
             float width = Mathf.Min(320, _tooltipStyle.CalcSize(content).x + 4);
             float height = _tooltipStyle.CalcHeight(content, width);
-            Vector2 m = _forcedHover != 0 ? _forcedHoverAt : Event.current.mousePosition / s;
-            var r = new Rect(m.x + 18, m.y + 18, width, height);
-            if (r.xMax > Screen.width / s) r.x = m.x - width - 8;
-            if (r.yMax > Screen.height / s) r.y = m.y - height - 8;
+            // The mouse in UI units, straight from the screen so it doesn't depend on how IMGUI maps it through GUI.matrix
+            // (it already applies the scale to Event.current.mousePosition; dividing that again put the tooltip up-left).
+            Vector2 m = _forcedHover != 0 ? _forcedHoverAt
+                : new Vector2(Input.mousePosition.x / s, (Screen.height - Input.mousePosition.y) / s);
+            (float x, float y) = Place(m.x, m.y, width, height, Screen.width / s, Screen.height / s);
+            var r = new Rect(x, y, width, height);
             // Windows always draw above plain controls, so over a paperdoll or backpack the tooltip has to be
             // a window too, kept in front.
             GUI.Window(TooltipWindowId, r, _ =>

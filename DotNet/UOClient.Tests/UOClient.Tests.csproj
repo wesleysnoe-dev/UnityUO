@@ -19,6 +19,7 @@
     <!-- Unity-side files with no UnityEngine dependency, compiled here so their rules can be tested. -->
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\AccountStore.PathRule.cs" Link="Unity\AccountStore.PathRule.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\LaunchOptions.cs" Link="Unity\LaunchOptions.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\HoverTooltip.Placement.cs" Link="Unity\HoverTooltip.Placement.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />
