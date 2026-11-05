@@ -40,11 +40,15 @@ namespace UOClient.IO.Formats
 
         public int Count => _entries.Count;
 
-        /// <summary>Ids of every pattern the text matches, ascending. A leading/trailing '*' allows any prefix/suffix.</summary>
+        /// <summary>
+        /// Ids of every pattern the text matches, ascending and without repeats (ModernUO drops repeats anyway, and
+        /// rejects the whole line past 50 ids). As in ClassicUO's SpeechesLoader.GetKeywords: the text is trimmed of
+        /// spaces, a leading/trailing '*' allows any prefix/suffix, and a keyword only counts as a whole word.
+        /// </summary>
         public List<int> Match(string text)
         {
             var ids = new List<int>();
-            string input = (text ?? "").ToLowerInvariant();
+            string input = (text ?? "").Trim(' ');
             foreach (var e in _entries)
             {
                 if (ids.Contains(e.Id) || !IsMatch(input, e.Words, e.AnyStart, e.AnyEnd))
@@ -57,11 +61,14 @@ namespace UOClient.IO.Formats
 
         private void Add(int id, string pattern)
         {
-            pattern = pattern.Trim().ToLowerInvariant();
             string[] words = pattern.Split(new[] { '*' }, StringSplitOptions.RemoveEmptyEntries);
             if (words.Length > 0)
                 _entries.Add((id, words, pattern.StartsWith("*", StringComparison.Ordinal), pattern.EndsWith("*", StringComparison.Ordinal)));
         }
+
+        // ClassicUO's SpeechesLoader.IsMatch: case-insensitive (invariant culture), and the hit must not run into a
+        // letter on either side, so "*bank*" tags "bank please" but not "banker", and "*or*" never tags "vendor".
+        private const StringComparison Compare = StringComparison.InvariantCultureIgnoreCase;
 
         private static bool IsMatch(string input, string[] words, bool anyStart, bool anyEnd)
         {
@@ -69,12 +76,18 @@ namespace UOClient.IO.Formats
             {
                 if (w.Length > input.Length)
                     continue;
-                if (!anyStart && !input.StartsWith(w, StringComparison.Ordinal))
+                if (!anyStart && input.IndexOf(w, 0, w.Length, Compare) == -1)
                     continue;
-                if (!anyEnd && !input.EndsWith(w, StringComparison.Ordinal))
+                if (!anyEnd && input.IndexOf(w, input.Length - w.Length, Compare) == -1)
                     continue;
-                if (input.IndexOf(w, StringComparison.Ordinal) >= 0)
-                    return true;
+                for (int at = input.IndexOf(w, Compare); at >= 0; at = input.IndexOf(w, at + 1, Compare))
+                {
+                    if (at - 1 >= 0 && !char.IsWhiteSpace(input[at - 1]) && char.IsLetter(input[at - 1]))
+                        continue;
+                    int after = at + w.Length;
+                    if (after >= input.Length || char.IsWhiteSpace(input[after]) || !char.IsLetter(input[after]))
+                        return true;
+                }
             }
             return false;
         }

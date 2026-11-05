@@ -51,6 +51,8 @@ internal static class Online
         string speech = Path.Combine(uoPath, "speech.mul");
         if (File.Exists(speech))
             session.SpeechKeywords = new SpeechKeywords(speech);
+        else
+            Console.Error.WriteLine($"speech.mul not found at {speech}; speech goes out untagged and keyword NPCs (banker, stablemaster, vendors) will ignore it.");
 
         StreamWriter? log = logPath != null ? new StreamWriter(logPath) { AutoFlush = true } : null;
         var counts = new System.Collections.Concurrent.ConcurrentDictionary<byte, int>();

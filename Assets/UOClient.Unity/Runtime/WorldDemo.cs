@@ -316,7 +316,12 @@ namespace UOClient.Unity
                 _ctx.Session.Cliloc = new Cliloc(cliloc);
             string speech = Path.Combine(_ctx.Data.Directory, "speech.mul");
             if (File.Exists(speech))
+            {
                 _ctx.Session.SpeechKeywords = new SpeechKeywords(speech);
+                Debug.Log($"UOClient: speech.mul loaded ({_ctx.Session.SpeechKeywords.Count} keywords)");
+            }
+            else
+                Debug.LogError($"UOClient: speech.mul not found at {speech}; speech goes out untagged and bankers, stablemasters and vendors will ignore keywords.");
 
             _ctx.Session.StatusChanged += s => _ctx.Hud.ConnectionStatus = s;
             _ctx.Session.Entered += OnEnteredWorld;

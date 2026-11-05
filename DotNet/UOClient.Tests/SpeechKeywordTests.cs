@@ -54,6 +54,21 @@ public sealed class SpeechKeywordTests
         Assert.Equal(expected, Table.Match(text));
     }
 
+    // ClassicUO's SpeechesLoader.IsMatch only takes whole words: a letter on either side of the hit rejects it.
+    [Theory]
+    [InlineData("banker", new int[0])]
+    [InlineData("bankbox", new int[0])]
+    [InlineData("stablemaster", new int[0])]
+    [InlineData("bank, please", new[] { 0x0002 })]
+    [InlineData("bank!", new[] { 0x0002 })]
+    [InlineData("  bank  ", new[] { 0x0002 })]
+    [InlineData("my bank", new[] { 0x0002 })]
+    [InlineData("banker bank", new[] { 0x0002 })] // a later whole-word hit still counts
+    public void KeywordsOnlyMatchWholeWords(string text, int[] expected)
+    {
+        Assert.Equal(expected, Table.Match(text));
+    }
+
     [Theory]
     [InlineData("bank")]
     [InlineData("balance bank check stable")]
@@ -156,6 +171,22 @@ public sealed class SpeechMulInstallTests
         Assert.Contains(0x0002, table.Match("bank"));
         Assert.Contains(0x0001, table.Match("balance"));
         Assert.Contains(0x0008, table.Match("stable"));
+    }
+
+    // Ids TazUO's own SpeechesLoader.GetKeywords returns for these lines from the same speech.mul (a substring
+    // match used to add 0x134 "*or*" to "vendor buy" and 0x199 "*guard*" to "guards").
+    [Theory]
+    [InlineData("vendor buy", new[] { 0x03C, 0x171 })]
+    [InlineData("vendor sell", new[] { 0x14D, 0x177 })]
+    [InlineData("guards", new[] { 0x007 })]
+    [InlineData("help guards", new[] { 0x007, 0x016 })]
+    [InlineData("orders", new[] { 0x0E6 })]
+    [InlineData("banker", new int[0])]
+    [InlineData("stablemaster", new int[0])]
+    public void InstallTableMatchesClassicUO(string text, int[] expected)
+    {
+        var table = new SpeechKeywords(Path.Combine(_data.Directory, "speech.mul"));
+        Assert.Equal(expected, table.Match(text));
     }
 
     [Theory]
