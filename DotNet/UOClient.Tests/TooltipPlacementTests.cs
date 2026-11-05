@@ -4,31 +4,49 @@ namespace UOClient.Tests;
 
 public sealed class TooltipPlacementTests
 {
+    // TazUO: GameCursor.DrawToolTip calls Tooltip.Draw(mouse.X, mouse.Y + 24), which clamps to the logical window
+    // and draws at (x - 4, y - 2).
     [Fact]
-    public void SitsDownRightOfTheCursor()
+    public void SitsJustUnderTheCursor()
     {
         (float x, float y) = HoverTooltip.Place(400, 300, 200, 60, 1280, 720);
-        Assert.Equal(400 + HoverTooltip.CursorOffset, x);
-        Assert.Equal(300 + HoverTooltip.CursorOffset, y);
+        Assert.Equal(400 - 4, x);
+        Assert.Equal(300 + 24 - 2, y);
     }
 
     [Fact]
-    public void FlipsToTheOtherSideAtTheRightAndBottomEdges()
+    public void IsPushedBackOntoTheViewAtTheRightAndBottomEdges()
     {
+        // No flip to the other side of the cursor: clamped to the edge, as TazUO does.
         (float x, float y) = HoverTooltip.Place(1200, 700, 200, 60, 1280, 720);
-        Assert.Equal(1200 - 200 - HoverTooltip.FlipGap, x);
-        Assert.Equal(700 - 60 - HoverTooltip.FlipGap, y);
+        Assert.Equal(1280 - 200 - 4, x);
+        Assert.Equal(720 - 60 - 2, y);
     }
 
     [Fact]
-    public void StaysOnTheViewWhenNeitherSideFits()
+    public void ClampsBeforeTheInset()
     {
-        (float x, float y) = HoverTooltip.Place(250, 20, 300, 40, 400, 300); // too wide for either side of the cursor
-        Assert.Equal(0, x);
-        Assert.Equal(20 + HoverTooltip.CursorOffset, y);
-        (x, y) = HoverTooltip.Place(5, 5, 400, 200, 300, 150);
-        Assert.Equal(0, x);
-        Assert.Equal(0, y);
+        (float x, float y) = HoverTooltip.Place(-10, -50, 100, 40, 1280, 720);
+        Assert.Equal(-4, x);
+        Assert.Equal(-2, y);
+        (x, y) = HoverTooltip.Place(5, 5, 400, 200, 300, 150); // bigger than the view: held at view - size, as TazUO
+        Assert.Equal(300 - 400 - 4, x);
+        Assert.Equal(150 - 200 - 2, y);
+    }
+
+    // The tooltip draws under GUI.matrix = Scale(s) with the mouse and view divided by s once: the screen point it
+    // lands on must be the TazUO offset scaled once, at any UI scale (a second scale put it up-left of the cursor).
+    [Theory]
+    [InlineData(0.75f)]
+    [InlineData(1f)]
+    [InlineData(1.44f)]
+    [InlineData(2.5f)]
+    public void ScalesOnceWithTheUi(float scale)
+    {
+        const float screenW = 2560, screenH = 1440, mouseX = 800, mouseY = 500;
+        (float x, float y) = HoverTooltip.Place(mouseX / scale, mouseY / scale, 200, 60, screenW / scale, screenH / scale);
+        Assert.Equal(mouseX - 4 * scale, x * scale, 3);
+        Assert.Equal(mouseY + 22 * scale, y * scale, 3);
     }
 }
 
