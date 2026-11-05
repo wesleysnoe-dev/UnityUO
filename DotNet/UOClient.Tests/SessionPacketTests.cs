@@ -73,4 +73,33 @@ public sealed class SessionPacketTests
         byte[] reply = GameSession.GroundTargetReply(house, 1500, 1600, 5);
         Assert.Equal(new byte[] { 0x6C, 1, 0, 0, 0xAB, 0xCD, 0, 0, 0, 0, 0, 0x05, 0xDC, 0x06, 0x40, 0, 5, 0, 0 }, reply);
     }
+
+    [Fact]
+    public void TextEntryDialogIsReadAndAnswered()
+    {
+        var session = new GameSession(new LoginSettings());
+        TextEntryRequest? entry = null;
+        session.TextEntryRequested += e => entry = e;
+
+        // serial, parent, button, caption (length incl. terminator), cancel, style 2 (number), max, description.
+        session.Inject(new PacketWriter(0xAB).UInt32(0x01020304).Byte(5).Byte(9)
+            .UInt16(12).AsciiZ("How many?!!").Bool(true).Byte(2).UInt32(500)
+            .UInt16(9).AsciiZ("1 to 500").ToArray(), true);
+        Assert.Equal(-1, PacketLengths.For(ClientVersion.Default)[0xAB]);
+
+        Assert.NotNull(entry);
+        Assert.Equal(0x01020304u, entry!.Serial);
+        Assert.Equal((5, 9), (entry.ParentId, entry.ButtonId));
+        Assert.Equal("How many?!!", entry.Text);
+        Assert.True(entry.CanCancel);
+        Assert.True(entry.Numeric);
+        Assert.Equal(500, entry.Max);
+        Assert.Equal("1 to 500", entry.Description);
+
+        // 0xAC: serial, parent, button, 1 = OK, length incl. terminator, text.
+        Assert.Equal(new byte[] { 0xAC, 0, 16, 1, 2, 3, 4, 5, 9, 1, 0, 4, (byte)'4', (byte)'2', (byte)'0', 0 },
+            GameSession.TextEntryReply(entry, "420"));
+        // Cancel: code 0, empty text.
+        Assert.Equal(new byte[] { 0xAC, 0, 13, 1, 2, 3, 4, 5, 9, 0, 0, 1, 0 }, GameSession.TextEntryReply(entry, null));
+    }
 }

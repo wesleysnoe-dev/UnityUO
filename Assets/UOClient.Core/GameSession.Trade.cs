@@ -47,6 +47,23 @@ namespace UOClient.Core
         public bool Unicode;
     }
 
+    /// <summary>A gump text entry dialog (0xAB): a captioned box for a line of text or a number, answered with 0xAC.</summary>
+    public sealed class TextEntryRequest
+    {
+        public uint Serial;
+        public byte ParentId;
+        public byte ButtonId;
+        /// <summary>The caption above the box.</summary>
+        public string Text;
+        public bool CanCancel;
+        /// <summary>0 no entry, 1 text (up to <see cref="Max"/> characters), 2 a number (up to <see cref="Max"/>).</summary>
+        public byte Style;
+        public int Max;
+        /// <summary>Help text under the box.</summary>
+        public string Description;
+        public bool Numeric => Style == 2;
+    }
+
     /// <summary>Context menus, vendors, text prompts and spellbook contents.</summary>
     public sealed partial class GameSession
     {
@@ -54,6 +71,7 @@ namespace UOClient.Core
         public event Action<ShopList> ShopOpened;
         public event Action<uint> ShopClosed;
         public event Action<TextPrompt> PromptRequested;
+        public event Action<TextEntryRequest> TextEntryRequested;
         public event Action<uint, int, ulong> SpellbookContent; // book, first spell id, known-spell bits
 
         public TextPrompt Prompt { get; private set; }
@@ -67,6 +85,7 @@ namespace UOClient.Core
             _handlers[0x3B] = r => ShopClosed?.Invoke(r.ReadUInt32());
             _handlers[0x9A] = r => AskPrompt(r, false);
             _handlers[0xC2] = r => AskPrompt(r, true);
+            _handlers[0xAB] = TextEntryDialog;
         }
 
         /// <summary>0xBF sub-commands handled here; true if consumed.</summary>
@@ -276,6 +295,43 @@ namespace UOClient.Core
                 w.AsciiZ(text);
             }
             _conn.Send(w.ToArray());
+        }
+
+        // ---- gump text entry dialogs ----
+
+        /// <summary>
+        /// 0xAB: serial, parent id, button id, caption (u16 length incl. terminator, ASCII), cancel allowed,
+        /// style (0 none, 1 text, 2 number), max length or value (u32), description (u16 length, ASCII).
+        /// The layout of RunUO/POL-era servers and ClassicUO; ModernUO itself doesn't send it.
+        /// </summary>
+        private void TextEntryDialog(PacketReader r)
+        {
+            var e = new TextEntryRequest { Serial = r.ReadUInt32(), ParentId = r.ReadByte(), ButtonId = r.ReadByte() };
+            e.Text = r.ReadAscii(r.ReadUInt16());
+            e.CanCancel = r.ReadBool();
+            e.Style = r.ReadByte();
+            e.Max = (int)Math.Min(r.ReadUInt32(), int.MaxValue);
+            e.Description = r.ReadAscii(r.ReadUInt16());
+            TextEntryRequested?.Invoke(e);
+        }
+
+        /// <summary>Answers a text entry dialog (0xAC); null cancels it.</summary>
+        public void AnswerTextEntry(TextEntryRequest e, string text)
+        {
+            if (e != null && State == SessionState.InWorld)
+                _conn.Send(TextEntryReply(e, text));
+        }
+
+        /// <summary>0xAC: serial, parent id, button id, 1 ok / 0 cancel, u16 length incl. terminator, ASCII text.</summary>
+        public static byte[] TextEntryReply(TextEntryRequest e, string text)
+        {
+            bool ok = text != null;
+            text ??= "";
+            int max = e.Numeric || e.Max <= 0 ? 256 : Math.Min(e.Max, 256);
+            if (text.Length > max)
+                text = text.Substring(0, max);
+            return new PacketWriter(0xAC).UInt32(e.Serial).Byte(e.ParentId).Byte(e.ButtonId).Bool(ok)
+                .UInt16(text.Length + 1).AsciiZ(text).ToArray();
         }
     }
 }

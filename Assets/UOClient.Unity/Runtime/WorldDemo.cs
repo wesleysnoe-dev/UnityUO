@@ -482,6 +482,7 @@ namespace UOClient.Unity
                         _ui.Close(w);
             };
             _session.PromptRequested += _ => _ui.Open(new UI.PromptWindow());
+            _session.TextEntryRequested += e => _ui.Open(new UI.TextEntryWindow(e));
             _session.SpellbookContent += (book, first, bits) => _ui.Open(new UI.SpellbookWindow(book, first, bits));
             _session.EffectStarted += StartEffect;
 

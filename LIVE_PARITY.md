@@ -48,6 +48,14 @@ Not read yet: the HD animation packs (`HDArt/anim/*.uoanim`, about 5 GB), a form
 - `Distribution/Configuration/expansion.json` and `modernuo.json`, with secrets removed
 - the hashes of its UO data folder: `sha256sum *.mul *.uop *.def`
 
+## Packets added without live traffic (2026-11-05)
+
+`0xD8`, `0x76`, `0x99` and `0xAB` were written against ModernUO's source on this PC and checked only with injected packets in `DotNet/UOClient.Tests`. To confirm on a server:
+- **`0xD8` custom houses:** the floor grids are laid out over the foundation's multi.mul bounds plus one row of steps, as ModernUO's `GetEmptyFoundation` builds them. A live server running another ModernUO revision should be checked with a customized house in view (walls and floors in the right tiles, stairs at the right height).
+- **`0x99` placement:** the offsets are ModernUO's deed offsets (for example 0, 4, 0 for small houses). Check that the preview lines up with where the house actually lands.
+- **`0x76`:** ModernUO sends it on facet changes; check it with a moongate or a recall to another facet.
+- **`0xAB` / `0xAC`:** ModernUO neither sends `0xAB` nor handles `0xAC`. If the live shard has a custom script that uses it, confirm its layout.
+
 ## Unity UO's own settings
 
 - The server is a setting. It's 127.0.0.1:2593 unless `UserSettings/unity-uo-settings.json` or `-server` says otherwise.

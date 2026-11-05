@@ -72,3 +72,17 @@ Goal: make Unity UO playable as intended against the local ModernUO shard ("UO O
 - **Unknown 160×50 gump.** The shard's small "Groups" gump at the top is shown as sent; its first draw costs about 30 ms (once per session).
 - **Music hitch.** The first music cue costs about 130 ms once at login (audio and web-request warm-up).
 - **Not done yet:** party, trade window (0x6F), bulletin boards, books, maps, the death screen tint, macros recorded in-game, and paperdoll profile scrolls.
+
+## Session: four more incoming packets (2026-11-05, ~03:30–04:15)
+
+One commit per packet. Each was built with `dotnet build` (Tests, Cli, EditorCheck) and passed `dotnet test` (38 tests, 9 new). Nothing logged in: the local server was only checked to be reachable, and every packet path was exercised by injecting packets laid out as ModernUO writes them.
+1. **`0xD8` custom houses** (`GameSession.Housing.cs`, `CustomHouses.cs`).
+   - Decodes the zlib planes and stair lists. Designs are cached per house and refreshed when `0xBF 0x1D` announces a new revision, by asking with `0xBF 0x1E`.
+   - Begin and end of customizing (`0xBF 0x20`) are noted in the journal.
+   - A house with a design is drawn from it instead of its multi.mul layout.
+   - Unity compiled it cleanly.
+2. **`0x76` server change** (`GameSession.cs`): moves the player, resizes the map, drops steps in flight, and reports it in the status line. Unity compiled it cleanly.
+3. **`0x99` placement cursor** (`GameSession.Combat.cs`, `MultiPlacementGhost.cs`): previews the house or boat under the mouse at the tile minus the server's offset. A click answers with a `0x6C` ground target.
+4. **`0xAB` text entry dialog** (`GameSession.Trade.cs`, `UI.TextEntryWindow`): caption, text or number box and help text, answered with `0xAC`. ModernUO never sends it, so the layout follows RunUO/POL and ClassicUO.
+
+The Unity editor stopped refreshing on its own after the second packet. The Unity code for 3 and 4 was type-checked with `UOClient.EditorCheck` (the Unity 6000.6.8f1 assemblies). The `.meta` for `MultiPlacementGhost.cs` was written by hand. What still needs a live server is in LIVE_PARITY.md.

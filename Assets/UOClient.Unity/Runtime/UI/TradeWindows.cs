@@ -158,6 +158,68 @@ namespace UOClient.Unity.UI
         }
     }
 
+    /// <summary>A server gump's text entry dialog (0xAB): a caption, a text or number box and help text; answered with 0xAC.</summary>
+    public sealed class TextEntryWindow : UiWindow
+    {
+        private readonly TextEntryRequest _entry;
+        private string _text = "";
+        private bool _focused, _answered;
+
+        public TextEntryWindow(TextEntryRequest entry)
+        {
+            _entry = entry;
+            Rect = new Rect(300, 240, 420, 170);
+        }
+
+        public override string Key => $"textentry-{_entry.Serial:X}-{_entry.ParentId}-{_entry.ButtonId}";
+
+        public override void OnClosed()
+        {
+            if (!_answered)
+                Session.AnswerTextEntry(_entry, null); // closing without an answer cancels
+        }
+
+        public override void Draw()
+        {
+            DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
+            Text(new Rect(16, 10, Rect.width - 32, 22), string.IsNullOrEmpty(_entry.Text) ? "Enter text" : _entry.Text,
+                new Color(1f, 0.9f, 0.6f), 15, TextAnchor.UpperCenter, true);
+            if (_entry.Style != 0)
+            {
+                GUI.SetNextControlName("textentry-text");
+                int max = _entry.Numeric || _entry.Max <= 0 ? 10 : Mathf.Min(_entry.Max, 256);
+                string typed = GUI.TextField(new Rect(20, 44, Rect.width - 40, 24), _text, _entry.Numeric ? 10 : max);
+                if (_entry.Numeric)
+                    typed = new string(typed.Where(char.IsDigit).ToArray());
+                _text = typed;
+                if (!_focused)
+                {
+                    GUI.FocusControl("textentry-text");
+                    _focused = true;
+                }
+            }
+            if (!string.IsNullOrEmpty(_entry.Description))
+                Text(new Rect(20, 74, Rect.width - 40, 40), _entry.Description, new Color(0.85f, 0.85f, 0.85f), 12, TextAnchor.UpperLeft, false);
+
+            bool enter = Event.current.type == EventType.KeyDown && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
+            if (GUI.Button(new Rect(40, Rect.height - 44, 110, 28), "OK") || enter)
+            {
+                if (_entry.Numeric && _entry.Max > 0 && long.TryParse(_text, out long n) && n > _entry.Max)
+                    _text = _entry.Max.ToString();
+                Answer(_text);
+            }
+            if (_entry.CanCancel && GUI.Button(new Rect(Rect.width - 150, Rect.height - 44, 110, 28), "Cancel"))
+                Answer(null);
+        }
+
+        private void Answer(string text)
+        {
+            _answered = true;
+            Session.AnswerTextEntry(_entry, text);
+            Close();
+        }
+    }
+
     /// <summary>A spellbook: the spells it holds, by circle; click one to cast it.</summary>
     public sealed class SpellbookWindow : UiWindow
     {

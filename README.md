@@ -276,5 +276,9 @@ The output folder holds:
 - [x] Double-click, paperdoll, containers, drag and drop, server gumps; compressed `Cliloc.enu` from newer clients
 - [ ] Targeting cursor, context menus, single-click names, status and skills gumps, vendor buy/sell, spellbook, UO bitmap fonts in gumps, paperdoll buttons
 - [ ] Verify button replies, page switching and drag and drop by hand (the automated run opens the windows but doesn't click)
+- [x] Custom houses: `0xD8` designs (zlib floor planes and stair lists) drawn in place of the foundation's multi.mul layout, cached per house by revision (`0xBF 0x1D`, asked for with `0xBF 0x1E`), and customize mode (`0xBF 0x20`). Covered by injected-packet tests; not yet seen from the server.
+- [x] Server change (`0x76`): moves the player and resizes the map; the facet follows from `0xBF 0x08`. Injected-packet test only.
+- [x] House and boat placement cursor (`0x99`): the multi is previewed under the mouse where the server will center it, and the click answers with `0x6C`. Injected-packet test only.
+- [x] Gump text entry dialogs (`0xAB`, answered with `0xAC`). ModernUO doesn't use this packet; the layout follows RunUO/POL and ClassicUO. Injected-packet test only.
 
 Credits: parts of the format handling are ported from [ClassicUO](https://github.com/ClassicUO/ClassicUO) (BSD-2-Clause): the Mythic decompressor, the Huffman decoding tree, the packet length table and the MUL animation layout. Packet layouts were checked against the ModernUO source.
