@@ -66,6 +66,31 @@ namespace UOClient.Core
         /// <summary>Opens our own paperdoll (double-click on self with the paperdoll flag).</summary>
         public void OpenPaperdoll() => Use(World.PlayerSerial | 0x80000000);
 
+        /// <summary>
+        /// A double-click in the world, as ClassicUO's GameActions.DoubleClick: in war mode another mobile is
+        /// attacked, after asking for its status so its health bar fills; anything else is used. On ourselves that
+        /// is a plain use, not the paperdoll flag: ModernUO's Mobile.OnDoubleClick dismounts a rider and shows the
+        /// paperdoll otherwise.
+        /// </summary>
+        public void DoubleClick(uint serial)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            if (AttacksOnDoubleClick(serial, World.PlayerSerial, WarMode))
+            {
+                _conn.Send(StatusRequest(serial));
+                Attack(serial);
+            }
+            else
+            {
+                Use(serial);
+            }
+        }
+
+        /// <summary>A double-click attacks only in war mode, and only another mobile (mobile serials are below 0x40000000).</summary>
+        public static bool AttacksOnDoubleClick(uint serial, uint player, bool warMode) =>
+            warMode && serial != 0 && serial < 0x40000000 && serial != player;
+
         /// <summary>Opens our backpack, if we wear one.</summary>
         public bool OpenBackpack()
         {
@@ -87,8 +112,12 @@ namespace UOClient.Core
         public void RequestStatus(uint serial)
         {
             if (State == SessionState.InWorld)
-                _conn.Send(new PacketWriter(0x34, 10).UInt32(0xEDEDEDED).Byte(4).UInt32(serial).ToArray());
+                _conn.Send(StatusRequest(serial));
         }
+
+        /// <summary>0x34 type 4, as ModernUO's MobileQuery reads it; answered with 0x11 if the mobile is in view.</summary>
+        public static byte[] StatusRequest(uint serial) =>
+            new PacketWriter(0x34, 10).UInt32(0xEDEDEDED).Byte(4).UInt32(serial).ToArray();
 
         /// <summary>The Help button: the server answers with its help gump.</summary>
         public void RequestHelp()

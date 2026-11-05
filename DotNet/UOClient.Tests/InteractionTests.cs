@@ -68,6 +68,24 @@ public sealed class InteractionTests
     }
 
     [Theory]
+    [InlineData(0x00000123u, false, false)] // ourselves in peace: a plain use (dismount, else paperdoll)
+    [InlineData(0x00000123u, true, false)]  // ourselves in war mode: still a use, never an attack on ourselves
+    [InlineData(0x00000456u, false, false)] // another mobile in peace: use (its paperdoll, a pet's menu, ...)
+    [InlineData(0x00000456u, true, true)]   // another mobile in war mode: attack
+    [InlineData(0x40000010u, true, false)]  // an item in war mode: use (a door, a bandage)
+    public void DoubleClickAttacksOnlyAnotherMobileInWarMode(uint serial, bool war, bool attacks)
+    {
+        Assert.Equal(attacks, GameSession.AttacksOnDoubleClick(serial, 0x123, war));
+    }
+
+    [Fact]
+    public void StatusRequestMatchesModernUOsMobileQuery()
+    {
+        // MobileQuery: 0xEDEDEDED, type 4 (stats), serial. The war-mode double-click sends it before the 0x05 attack.
+        Assert.Equal(new byte[] { 0x34, 0xED, 0xED, 0xED, 0xED, 0x04, 0x00, 0x00, 0x04, 0x56 }, GameSession.StatusRequest(0x456));
+    }
+
+    [Theory]
     [InlineData(0x0F0E, TileFlags.None, 0x0E75, TileFlags.Container, true)]   // a bottle onto a backpack
     [InlineData(0x0F0E, TileFlags.None, 0x2006, TileFlags.None, true)]        // onto a corpse
     [InlineData(0x1F4C, TileFlags.None, 0x0EFA, TileFlags.None, true)]        // a scroll onto a spellbook

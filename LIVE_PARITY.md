@@ -64,6 +64,25 @@ Not read yet: the HD animation packs (`HDArt/anim/*.uoanim`, about 5 GB), a form
 - **`0xDF` buffs (same caveat):** cast Bless, Night Sight or Protection on yourself. Each should show as a chip under the status bars with its cliloc name and a m:ss countdown, and disappear when ModernUO sends the remove. ModernUO only sends these when the shard has `BuffInfo.Enabled` on and the client supports buff icons. Text only: the buff-icon gumps are not drawn, and the description and arguments (`Buff.Description`, `Buff.Args`) are kept but not shown yet.
 - **`0x65` weather (same caveat):** ModernUO's weather regions (`Misc/Weather.cs`: a few fixed areas plus moving storms) send it every 30 seconds to players inside them, ramping the count from 0 to 70 and back over a 15-minute cycle (rain when warm, snow when the temperature is negative; stage 0 sends `0xFE` with count 0). Stand in a weather region and check that rain or snow falls over the screen, thickens and thins, and the journal says when it starts and clears. ModernUO sends nothing when a region goes inactive or when you walk out of it, so the last weather stays until the next packet (the classic client fades it out on its own; we do not). No weather sounds.
 
+## TazUO parity (2026-11-05)
+
+Checked against ModernUO's `UseReq`, `MobileQuery`, `PlayerMobile.OnDoubleClick` and the skill/status packets. Byte-layout and routing tests only, no login.
+
+Works:
+- [x] **Paperdoll:** P, the top bar and the paperdoll hotkey send the flagged use (`0x06` serial | `0x80000000`). Double-clicking yourself now sends a plain use as ClassicUO does, so ModernUO dismounts you if you ride and shows the paperdoll otherwise (before, you could never dismount by double-click). Double-clicking another mobile in peace uses it (its paperdoll, a pet's menu).
+- [x] **Backpack:** B and the top bar's Inventory use the item on layer 0x15; the `0x24` / `0x3C` replies open the container window.
+- [x] **Status:** `0x11` (versions 0 to 6, the HS extras skipped), `0x2D` and `0xA1`–`0xA3` update the bars. The status window (C) asks with `0x34` type 4 when it opens. Double-clicking a mobile in war mode now also sends that query before the `0x05` attack, as ClassicUO does, so the target's name and health bar fill right away.
+- [x] **Skills:** the skills window (K) asks with `0x34` type 5. The `0x3A` full list (type 2, with caps) and the single updates (type `0xDF`) are read as ModernUO writes them. Usable skills have a use button (`0x12` type `0x24`); lock arrows send `0x3A`.
+- [x] **War mode:** Tab and the paperdoll button toggle it (`0x72`); the server's answer sets the "WAR" banner and now also the cursor, which becomes the classic red gauntlet (art `0x205C`) in war mode, keeps the crosshair while targeting, and comes back after a drag.
+
+Still missing:
+- [ ] Peace-mode UO cursor and the directional run cursors (`0x206A`–`0x2079`); peace keeps the system pointer.
+- [ ] Health bar gumps you can drag off a mobile, and the TazUO compact status bar. The status window is text, not the classic gump.
+- [ ] Skill groups and a skill-gain display (the `0x3A` updates are applied but not called out).
+- [ ] The paperdoll's virtue (`0xB1` virtue gump) and party buttons.
+- [ ] Criminal-action query before attacking an innocent (TazUO's optional confirmation).
+- [ ] Not seen live: dismount on double-click, and the status query filling a target's bar.
+
 ## Unity UO's own settings
 
 - The server is a setting. It's 127.0.0.1:2593 unless `UserSettings/unity-uo-settings.json` or `-server` says otherwise.

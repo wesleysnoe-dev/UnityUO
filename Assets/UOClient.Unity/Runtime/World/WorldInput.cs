@@ -71,7 +71,7 @@ namespace UOClient.Unity
         /// <summary>
         /// P paperdoll, B backpack, F1 help, Tab war mode, Escape cancels a target. Clicks in the world: single
         /// click names (and on a mobile opens its context menu: a vendor's Buy/Sell/Train), double-click uses
-        /// (attacks in war mode), shift-click opens anything's context menu, dragging a ground item picks it up, and with a
+        /// (on yourself: dismount or paperdoll; another mobile in war mode: attack), shift-click opens anything's context menu, dragging a ground item picks it up, and with a
         /// target cursor up, a click targets.
         /// </summary>
         public void Update()
@@ -181,12 +181,7 @@ namespace UOClient.Unity
             _pendingClick = doubleClick ? 0 : picked;
             if (picked == 0 || !doubleClick)
                 return; // a single click goes out once the double-click time passes
-            if (picked == _ctx.Session.World.PlayerSerial)
-                _ctx.Session.OpenPaperdoll();
-            else if (_ctx.Session.WarMode && _ctx.Session.World.Mobiles.ContainsKey(picked))
-                _ctx.Session.Attack(picked);
-            else
-                _ctx.Session.Use(picked);
+            _ctx.Session.DoubleClick(picked);
         }
 
         /// <summary>Lifts a ground item onto the cursor; a drop the server or a window refuses puts it back where it lay.</summary>
