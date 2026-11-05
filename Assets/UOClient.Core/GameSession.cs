@@ -237,13 +237,39 @@ namespace UOClient.Core
             return true;
         }
 
-        /// <summary>Speech in the world (0xAD unicode speech, regular type).</summary>
-        public void Say(string text, ushort hue = 0x3B2)
+        public const ushort SpeechHue = 0x3B2;
+
+        /// <summary>
+        /// Speech in the world (0xAD unicode speech). As in ClassicUO, ": " emotes, "; " whispers and "! " yells;
+        /// with the default hue each of those takes the classic client's own hue for it.
+        /// </summary>
+        public void Say(string text, ushort hue = SpeechHue)
         {
             if (State != SessionState.InWorld || string.IsNullOrWhiteSpace(text))
                 return;
-            text = text.Trim();
-            _conn.Send(UnicodeSpeechRequest(text, SpeechKeywords?.Match(text), hue));
+            var (type, said, modeHue) = SpeechMode(text.Trim());
+            if (said.Length == 0)
+                return;
+            _conn.Send(UnicodeSpeechRequest(said, SpeechKeywords?.Match(said), hue == SpeechHue ? modeHue : hue, type));
+        }
+
+        /// <summary>
+        /// The speech type (ModernUO MessageType: 0 regular, 2 emote, 8 whisper, 9 yell), the text to send and the
+        /// default hue for a typed line. An emote goes out as "*text*", the way ClassicUO sends it.
+        /// </summary>
+        public static (byte Type, string Text, ushort Hue) SpeechMode(string line)
+        {
+            if (line.Length >= 2 && line[1] == ' ')
+            {
+                string rest = line.Substring(2).Trim();
+                switch (line[0])
+                {
+                    case ':': return (2, rest.Length > 0 ? "*" + rest + "*" : "", 0x21);
+                    case ';': return (8, rest, 0x33);
+                    case '!': return (9, rest, 0x21);
+                }
+            }
+            return (0, line, SpeechHue);
         }
 
         /// <summary>

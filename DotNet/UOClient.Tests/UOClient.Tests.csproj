@@ -20,6 +20,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\AccountStore.PathRule.cs" Link="Unity\AccountStore.PathRule.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\LaunchOptions.cs" Link="Unity\LaunchOptions.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\HoverTooltip.Placement.cs" Link="Unity\HoverTooltip.Placement.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\ContextMenuWindow.Placement.cs" Link="Unity\ContextMenuWindow.Placement.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />

@@ -189,11 +189,27 @@ namespace UOClient.Unity
 
         private void OnContextMenuOpened(Core.ContextMenu menu)
         {
+            // A newer menu replaces an open one: Open would keep the old window (same key), and with it the old
+            // serial, so a click would choose an entry of the menu the server no longer has.
+            CloseByKey("context");
             Vector2 m = Input.mousePosition;
-            Ui.Open(new UI.ContextMenuWindow(menu, new Vector2(m.x / Ui.Scale, (Screen.height - m.y) / Ui.Scale)));
+            var at = new Vector2(m.x / Ui.Scale, (Screen.height - m.y) / Ui.Scale);
+            Ui.Open(new UI.ContextMenuWindow(menu, at)).FitTo(at, Screen.width / Ui.Scale, Screen.height / Ui.Scale);
         }
 
-        private void OnShopOpened(ShopList list) => Ui.Open(new UI.ShopWindow(list));
+        private void OnShopOpened(ShopList list)
+        {
+            // A fresh list from the same vendor (asked again, or after a trade) replaces the open one's stale stock and prices.
+            var shop = new UI.ShopWindow(list);
+            CloseByKey(shop.Key);
+            Ui.Open(shop);
+        }
+
+        private void CloseByKey(string key)
+        {
+            if (Ui.Find(key) is UI.UiWindow open)
+                Ui.Close(open);
+        }
 
         private void OnShopClosed(uint vendor)
         {

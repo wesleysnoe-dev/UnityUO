@@ -7,7 +7,7 @@ using ContextMenu = UOClient.Core.ContextMenu;
 namespace UOClient.Unity.UI
 {
     /// <summary>A context (popup) menu at the mouse: each entry sends its choice; anything else closes it.</summary>
-    public sealed class ContextMenuWindow : UiWindow
+    public sealed partial class ContextMenuWindow : UiWindow
     {
         private const float Row = 22;
         private readonly ContextMenu _menu;
@@ -20,6 +20,16 @@ namespace UOClient.Unity.UI
         }
 
         public override string Key => "context";
+
+        // A press that drifts on the frame must not drag the menu away from under the click.
+        public override bool Movable => false;
+
+        /// <summary>Puts the whole menu on a view of the given size (UI units), at the cursor or flipped to its other side.</summary>
+        public void FitTo(Vector2 mouse, float viewWidth, float viewHeight)
+        {
+            var (x, y) = Place(mouse.x, mouse.y, Rect.width, Rect.height, viewWidth, viewHeight);
+            Rect = new Rect(x, y, Rect.width, Rect.height);
+        }
 
         public override void Draw()
         {

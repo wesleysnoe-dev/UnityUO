@@ -3,7 +3,10 @@ using UOClient.Core;
 
 namespace UOClient.Unity
 {
-    /// <summary>The speech line: Enter opens it; Enter again sends it, Escape cancels.</summary>
+    /// <summary>
+    /// The speech line: Enter opens it; Enter again sends it, Escape cancels. ": " emotes, "; " whispers, "! " yells
+    /// (<see cref="GameSession.Say"/>, which the chat window's Say box shares).
+    /// </summary>
     public sealed class ChatLine
     {
         private string _chat = "";

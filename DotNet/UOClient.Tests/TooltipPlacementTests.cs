@@ -31,3 +31,33 @@ public sealed class TooltipPlacementTests
         Assert.Equal(0, y);
     }
 }
+
+public sealed class ContextMenuPlacementTests
+{
+    [Fact]
+    public void OpensWithItsCornerAtTheCursor()
+    {
+        (float x, float y) = ContextMenuWindow.Place(400, 300, 160, 104, 1280, 720);
+        Assert.Equal((400f, 300f), (x, y));
+    }
+
+    [Fact]
+    public void FlipsSoTheLastEntryIsOnScreenAtTheBottomRight()
+    {
+        // A vendor clicked near the bottom-right corner: Buy, Sell, Train... all have to be reachable.
+        (float x, float y) = ContextMenuWindow.Place(1250, 700, 160, 104, 1280, 720);
+        Assert.Equal(1250 - 160, x);
+        Assert.Equal(700 - 104, y);
+        Assert.True(x + 160 <= 1280 && y + 104 <= 720);
+    }
+
+    [Fact]
+    public void ATallMenuIsKeptOnTheView()
+    {
+        (float x, float y) = ContextMenuWindow.Place(10, 200, 160, 500, 1280, 600); // fits neither above nor below the cursor
+        Assert.Equal(10, x);
+        Assert.Equal(0, y); // flipped above, then held at the top: all 500 rows on the 600-high view
+        (x, y) = ContextMenuWindow.Place(10, 10, 160, 900, 1280, 600); // taller than the view: the top stays visible
+        Assert.Equal(0, y);
+    }
+}

@@ -90,6 +90,41 @@ public sealed class SpeechKeywordTests
         Assert.Equal(text, Encoding.UTF8.GetString(p, pos, end - pos));
     }
 
+    [Theory]
+    [InlineData("hello there", 0, "hello there", 0x3B2)]
+    [InlineData(": waves", 2, "*waves*", 0x21)]
+    [InlineData("; psst, over here", 8, "psst, over here", 0x33)]
+    [InlineData("! Guards!", 9, "Guards!", 0x21)]
+    [InlineData(":)", 0, ":)", 0x3B2)]             // a smiley is not an emote
+    [InlineData("!bank", 0, "!bank", 0x3B2)]       // no space: said as typed
+    [InlineData("[g hi all", 0, "[g hi all", 0x3B2)] // the chat window's channel commands are plain speech
+    [InlineData(": ", 2, "", 0x21)]                 // nothing to emote: Say sends nothing
+    public void TypedPrefixesPickTheSpeechMode(string line, int type, string text, int hue)
+    {
+        var (t, said, h) = GameSession.SpeechMode(line);
+        Assert.Equal((byte)type, t);
+        Assert.Equal(text, said);
+        Assert.Equal((ushort)hue, h);
+    }
+
+    [Fact]
+    public void AnEmoteReachesModernUOAsAnEmote()
+    {
+        var (type, text, hue) = GameSession.SpeechMode(": bows to the bank");
+        byte[] p = GameSession.UnicodeSpeechRequest(text, Table.Match(text), hue, type);
+
+        // IncomingMessagePackets.UnicodeSpeech: type with the encoded bits cleared, hue, and the keywords still tagged.
+        Assert.Equal(0xC0, p[3] & 0xC0);
+        Assert.Equal(2, p[3] & ~0xC0);
+        Assert.Equal(0x21, BinaryPrimitives.ReadInt16BigEndian(p.AsSpan(4)));
+        Assert.Equal(new byte[] { 0x00, 0x10, 0x02 }, p[12..15]);
+        Assert.Equal("*bows to the bank*", Encoding.UTF8.GetString(p, 15, p.Length - 16));
+
+        (type, text, hue) = GameSession.SpeechMode("! help");
+        p = GameSession.UnicodeSpeechRequest(text, Table.Match(text), hue, type);
+        Assert.Equal(9, p[3]); // yell, not encoded
+    }
+
     [Fact]
     public void ParsesSpeechMulEntries()
     {
