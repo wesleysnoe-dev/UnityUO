@@ -41,8 +41,6 @@ namespace UOClient.Unity
         /// <summary>Server, data folder and client overrides in use (the settings file plus launch arguments).</summary>
         public ClientSettings Settings { get; private set; }
 
-        private static string SettingsPath => ClientSettingsStore.SettingsPath;
-
         /// <summary>The settings file as it is (no launch arguments), or null if there is none; for the editor windows too.</summary>
         public static ClientSettings ReadSettingsFile(bool orDefaults = true) => ClientSettingsStore.ReadSettingsFile(orDefaults);
 
@@ -51,8 +49,6 @@ namespace UOClient.Unity
 
         /// <summary>Reads the settings file (writing one with the detected folders on first run), then applies launch arguments.</summary>
         private ClientSettings LoadSettings() => ClientSettingsStore.Load();
-
-        private void SaveSettings(ClientSettings s) => ClientSettingsStore.Save(s);
 
         [Header("Offline start")]
         public int map;
@@ -228,7 +224,7 @@ namespace UOClient.Unity
 
         // ---- online ----
 
-        private UI.LoginScreen _login;
+        private LoginFlow _login;
 
         // Built on use, so it always sees the current accountFile (as the inline code it replaced did).
         private AccountStore Accounts => new AccountStore(accountFile);
@@ -236,43 +232,9 @@ namespace UOClient.Unity
         private void ShowLoginScreen()
         {
             _gumpArt ??= new UI.GumpArt(_ctx.Data);
-            _login = new UI.LoginScreen(_gumpArt, Path.Combine(ProjectRoot, "Tools", "ComfyRestyle", "style", "mockup_scene.png"));
-            _login.Host = Settings.host;
-            _login.Port = Settings.port;
-            if (Accounts.Stored(Settings.host) is (var account, var password))
-            {
-                _login.Account = account;
-                _login.Password = password;
-                _login.RememberPassword = !string.IsNullOrEmpty(password);
-            }
-            _login.QuitPressed = Quit;
-            _login.RememberedFor = host => Accounts.Remembered(host);
-            _login.LoginPressed = screen =>
-            {
-                Accounts.Save(screen.Host, screen.Account, screen.Password, screen.RememberPassword);
-                // A server typed on the login screen becomes the setting (unless -server chose it for this run).
-                if ((screen.Host != Settings.host || screen.Port != Settings.port) && !ServerFromArguments)
-                {
-                    Settings.host = screen.Host;
-                    Settings.port = screen.Port;
-                    ClientSettings onDisk = File.Exists(SettingsPath) ? JsonUtility.FromJson<ClientSettings>(File.ReadAllText(SettingsPath)) : Settings;
-                    onDisk.host = screen.Host;
-                    onDisk.port = screen.Port;
-                    SaveSettings(onDisk);
-                }
-                var login = new LoginSettings
-                {
-                    Host = screen.Host, Port = screen.Port, Account = screen.Account, Password = screen.Password,
-                    Interactive = true,
-                    Version = Accounts.ReadVersion(Settings.host)
-                };
-                StartOnline(login);
-                if (_ctx.Session != null)
-                    _login.Attach(_ctx.Session);
-            };
+            _login = new LoginFlow(_ctx, _gumpArt, () => Accounts, Settings, StartOnline, Quit);
+            _login.Show();
         }
-
-        private static bool ServerFromArguments => LaunchOptions.FromCommandLine().ServerFromArguments;
 
         private static void Quit()
         {
@@ -988,17 +950,17 @@ namespace UOClient.Unity
             yield return WaitFrames(30);
             ScreenCapture.CaptureScreenshot(Path.Combine(dir, "login_1_form.png"));
             yield return WaitFrames(10);
-            _login.LoginPressed(_login);
+            _login.Screen.LoginPressed(_login.Screen);
             float until = Time.realtimeSinceStartup + 10f;
-            while (_login.Current != UI.LoginScreen.Page.Characters && Time.realtimeSinceStartup < until)
+            while (_login.Screen.Current != UI.LoginScreen.Page.Characters && Time.realtimeSinceStartup < until)
                 yield return null;
             yield return WaitFrames(10);
             ScreenCapture.CaptureScreenshot(Path.Combine(dir, "login_2_characters.png"));
             yield return WaitFrames(10);
-            string report = $"page after login: {_login.Current}; status: {_login.Status}";
-            if (_login.Current == UI.LoginScreen.Page.Characters)
+            string report = $"page after login: {_login.Screen.Current}; status: {_login.Screen.Status}";
+            if (_login.Screen.Current == UI.LoginScreen.Page.Characters)
             {
-                _login.Current = UI.LoginScreen.Page.Create;
+                _login.Screen.Current = UI.LoginScreen.Page.Create;
                 yield return WaitFrames(20);
                 ScreenCapture.CaptureScreenshot(Path.Combine(dir, "login_3_create.png"));
                 yield return WaitFrames(10);
