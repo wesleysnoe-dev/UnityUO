@@ -200,7 +200,13 @@ namespace UOClient.Unity
                     Ui.Close(w);
         }
 
-        private void OnPromptRequested(TextPrompt _) => Ui.Open(new UI.PromptWindow());
+        private void OnPromptRequested(TextPrompt prompt)
+        {
+            // A new prompt replaces an open one (the server cancelled it): a fresh window, so stale text isn't sent.
+            if (Ui.Find("prompt") is UI.PromptWindow old)
+                Ui.Close(old);
+            Ui.Open(new UI.PromptWindow(prompt));
+        }
 
         private void OnTextEntryRequested(TextEntryRequest e) => Ui.Open(new UI.TextEntryWindow(e));
 

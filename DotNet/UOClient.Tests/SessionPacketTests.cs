@@ -104,6 +104,98 @@ public sealed class SessionPacketTests
     }
 
     [Fact]
+    public void UnicodePromptIsReadAndAnswered()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        var asked = new List<TextPrompt>();
+        session.PromptRequested += asked.Add;
+
+        // ModernUO's SendPrompt: 0xC2, length 21, the prompt's serial twice, 10 zero bytes (type, language, empty text).
+        byte[] packet = new PacketWriter(0xC2).UInt32(0x00000007).UInt32(0x00000007).Zero(10).ToArray();
+        Assert.Equal(21, packet.Length);
+        Assert.Equal(-1, PacketLengths.For(ClientVersion.Default)[0xC2]);
+        session.Inject(packet, true);
+
+        TextPrompt p = Assert.Single(asked);
+        Assert.Same(p, session.Prompt);
+        Assert.Equal((7u, 7, true), (p.Serial, p.PromptId, p.Unicode));
+
+        // The answer, as ModernUO's UnicodePromptResponse reads it: serial, prompt id, type 1, "ENU\0", LE UTF-16, terminator.
+        Assert.Equal(new byte[] { 0xC2, 0, 25, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 1, (byte)'E', (byte)'N', (byte)'U', 0,
+            (byte)'R', 0, 0xE9, 0, 0, 0 }, GameSession.PromptReply(p, "Ré"));
+        // Cancel: type 0, empty text.
+        Assert.Equal(new byte[] { 0xC2, 0, 21, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 0, (byte)'E', (byte)'N', (byte)'U', 0, 0, 0 },
+            GameSession.PromptReply(p, null));
+        // An empty answer is still an answer (type 1).
+        Assert.Equal(1, GameSession.PromptReply(p, "")[14]);
+    }
+
+    [Fact]
+    public void PromptReplyRoundTripsThroughModernUoLayout()
+    {
+        var p = new TextPrompt { Serial = 0x8000ABCD, PromptId = unchecked((int)0x8000ABCD), Unicode = true };
+        string text = "Fido the Brave ♥ 犬";
+        byte[] reply = GameSession.PromptReply(p, text);
+
+        // Parse it back the way ModernUO does: length, uint serial, int prompt, int type, 4-byte language, LE UTF-16 to the 0.
+        Assert.Equal(0xC2, reply[0]);
+        Assert.Equal(reply.Length, (reply[1] << 8) | reply[2]);
+        Assert.Equal(0x8000ABCDu, (uint)((reply[3] << 24) | (reply[4] << 16) | (reply[5] << 8) | reply[6]));
+        Assert.Equal(unchecked((int)0x8000ABCD), (reply[7] << 24) | (reply[8] << 16) | (reply[9] << 8) | reply[10]);
+        Assert.Equal(1, (reply[11] << 24) | (reply[12] << 16) | (reply[13] << 8) | reply[14]);
+        Assert.Equal("ENU", System.Text.Encoding.ASCII.GetString(reply, 15, 3));
+        string back = System.Text.Encoding.Unicode.GetString(reply, 19, reply.Length - 19).TrimEnd('\0');
+        Assert.Equal(text, back);
+        Assert.Equal(19 + text.Length * 2 + 2, reply.Length);
+
+        // Longer than ModernUO accepts (it would drop the reply and leave the prompt pending): clipped to 128.
+        string longText = new string('a', 200);
+        byte[] clipped = GameSession.PromptReply(p, longText);
+        Assert.Equal(19 + GameSession.MaxPromptLength * 2 + 2, clipped.Length);
+        // A surrogate pair straddling the limit is dropped whole, not split.
+        string emoji = new string('a', GameSession.MaxPromptLength - 1) + "😀";
+        string kept = System.Text.Encoding.Unicode.GetString(GameSession.PromptReply(p, emoji), 19, (GameSession.MaxPromptLength - 1) * 2);
+        Assert.Equal(new string('a', GameSession.MaxPromptLength - 1), kept);
+        Assert.Equal(19 + (GameSession.MaxPromptLength - 1) * 2 + 2, GameSession.PromptReply(p, emoji).Length);
+    }
+
+    [Fact]
+    public void AsciiPromptIsAnsweredWithAsciiReply()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        // Older servers' 0x9A: serial, prompt id, type, then text (ModernUO never sends it, but reads the reply).
+        session.Inject(new PacketWriter(0x9A).UInt32(0x01020304).UInt32(0x00000009).UInt32(0).AsciiZ("").ToArray(), true);
+        Assert.Equal(-1, PacketLengths.For(ClientVersion.Default)[0x9A]);
+        TextPrompt p = session.Prompt!;
+        Assert.False(p.Unicode);
+        Assert.Equal((0x01020304u, 9), (p.Serial, p.PromptId));
+
+        // ModernUO's AsciiPromptResponse: serial, prompt id, type, Latin-1 text to the 0.
+        Assert.Equal(new byte[] { 0x9A, 0, 18, 1, 2, 3, 4, 0, 0, 0, 9, 0, 0, 0, 1, (byte)'h', (byte)'i', 0 },
+            GameSession.PromptReply(p, "hi"));
+        Assert.Equal(new byte[] { 0x9A, 0, 16, 1, 2, 3, 4, 0, 0, 0, 9, 0, 0, 0, 0, 0 }, GameSession.PromptReply(p, null));
+    }
+
+    [Fact]
+    public void ANewPromptReplacesTheOldAndStaleAnswersAreDropped()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        session.Inject(new PacketWriter(0xC2).UInt32(1).UInt32(1).Zero(10).ToArray(), true);
+        TextPrompt first = session.Prompt!;
+        session.Inject(new PacketWriter(0xC2).UInt32(2).UInt32(2).Zero(10).ToArray(), true);
+        TextPrompt second = session.Prompt!;
+        Assert.NotSame(first, second);
+        Assert.Equal(2u, second.Serial);
+
+        // The first prompt's window closing (cancel) must not touch the second, which the server is waiting on.
+        session.AnswerPrompt(first, null);
+        session.AnswerPrompt(first, "late");
+        Assert.Same(second, session.Prompt);
+        session.AnswerPrompt(null, null);
+        Assert.Same(second, session.Prompt);
+    }
+
+    [Fact]
     public void ProfileIsReadAndRequested()
     {
         GameSession session = InWorldAs(0x00000042, 1495, 1629);

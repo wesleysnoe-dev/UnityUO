@@ -266,6 +266,14 @@ namespace UOClient.Core
 
         // ---- text prompts ----
 
+        /// <summary>ModernUO drops a prompt response longer than this (and keeps waiting), so replies are clipped to it.</summary>
+        public const int MaxPromptLength = 128;
+
+        /// <summary>
+        /// 0x9A / 0xC2: serial, prompt id, then (unused here) type, language and text. ModernUO only sends 0xC2, 21 bytes,
+        /// with its prompt's serial in both fields and the rest zero. A new prompt replaces the pending one: the server
+        /// has already cancelled the old one itself, and it never tells the client a prompt went away.
+        /// </summary>
         private void AskPrompt(PacketReader r, bool unicode)
         {
             Prompt = new TextPrompt { Serial = r.ReadUInt32(), PromptId = r.ReadInt32(), Unicode = unicode };
@@ -273,28 +281,44 @@ namespace UOClient.Core
         }
 
         /// <summary>Answers the pending prompt; null cancels it.</summary>
-        public void AnswerPrompt(string text)
+        public void AnswerPrompt(string text) => AnswerPrompt(Prompt, text);
+
+        /// <summary>
+        /// Answers <paramref name="prompt"/> if it is still the pending one; null cancels it. An answer for a prompt a
+        /// newer one replaced is dropped, so it can't cancel or fill in the newer one.
+        /// </summary>
+        public void AnswerPrompt(TextPrompt prompt, string text)
         {
-            TextPrompt p = Prompt;
-            if (p == null || State != SessionState.InWorld)
+            if (prompt == null || prompt != Prompt || State != SessionState.InWorld)
                 return;
             Prompt = null;
+            _conn.Send(PromptReply(prompt, text));
+        }
+
+        /// <summary>
+        /// The reply ModernUO's PromptResponse handlers read: serial and prompt id echoed, type (1 answer, 0 cancel), then
+        /// for 0xC2 a 4-byte language and little-endian UTF-16 text, for 0x9A Latin-1 text; zero-terminated either way.
+        /// The answer goes out the way the prompt came in.
+        /// </summary>
+        public static byte[] PromptReply(TextPrompt prompt, string text)
+        {
             int type = text == null ? 0 : 1;
             text ??= "";
-            if (text.Length > 128)
-                text = text.Substring(0, 128);
-            var w = new PacketWriter(p.Unicode ? (byte)0xC2 : (byte)0x9A).UInt32(p.Serial).Int32(p.PromptId).Int32(type);
-            if (p.Unicode)
+            if (text.Length > MaxPromptLength)
+                text = text.Substring(0, char.IsHighSurrogate(text[MaxPromptLength - 1]) ? MaxPromptLength - 1 : MaxPromptLength);
+            var w = new PacketWriter(prompt.Unicode ? (byte)0xC2 : (byte)0x9A).UInt32(prompt.Serial).Int32(prompt.PromptId).Int32(type);
+            if (prompt.Unicode)
             {
                 w.Ascii("ENU", 4);
-                foreach (byte b in Encoding.Unicode.GetBytes(text)) // little-endian, no terminator
+                foreach (byte b in Encoding.Unicode.GetBytes(text)) // little-endian
                     w.Byte(b);
+                w.UInt16(0);
             }
             else
             {
                 w.AsciiZ(text);
             }
-            _conn.Send(w.ToArray());
+            return w.ToArray();
         }
 
         // ---- gump text entry dialogs ----

@@ -120,41 +120,54 @@ namespace UOClient.Unity.UI
     /// <summary>The server asked for a line of text (a name, a rune description, ...).</summary>
     public sealed class PromptWindow : UiWindow
     {
+        private readonly TextPrompt _prompt;
         private string _text = "";
         private bool _focused;
 
-        public PromptWindow()
+        public PromptWindow(TextPrompt prompt)
         {
+            _prompt = prompt;
             Rect = new Rect(300, 260, 380, 130);
         }
 
         public override string Key => "prompt";
 
-        public override void OnClosed()
-        {
-            if (Session.Prompt != null)
-                Session.AnswerPrompt(null); // closing without an answer cancels
-        }
+        // Closing without an answer cancels (a no-op once answered, or once a newer prompt replaced this one).
+        public override void OnClosed() => Session.AnswerPrompt(_prompt, null);
 
         public override void Draw()
         {
+            // Keys first, before the text box sees them: while it has the keyboard the world's Escape doesn't run.
+            Event e = Event.current;
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
+            {
+                e.Use();
+                Finish(null);
+                return;
+            }
+            bool enter = e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter);
+
             DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
             Text(new Rect(0, 10, Rect.width, 22), "Enter text", new Color(1f, 0.9f, 0.6f), 15, TextAnchor.UpperCenter, true);
             GUI.SetNextControlName("prompt-text");
-            _text = GUI.TextField(new Rect(20, 44, Rect.width - 40, 24), _text, 128);
+            _text = GUI.TextField(new Rect(20, 44, Rect.width - 40, 24), _text, GameSession.MaxPromptLength);
             if (!_focused)
             {
                 GUI.FocusControl("prompt-text");
                 _focused = true;
             }
-            bool enter = Event.current.type == EventType.KeyDown && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
             if (GUI.Button(new Rect(40, 84, 110, 28), "OK") || enter)
-            {
-                Session.AnswerPrompt(_text);
-                Close();
-            }
-            if (GUI.Button(new Rect(Rect.width - 150, 84, 110, 28), "Cancel"))
-                Close();
+                Finish(_text);
+            else if (GUI.Button(new Rect(Rect.width - 150, 84, 110, 28), "Cancel"))
+                Finish(null);
+        }
+
+        /// <summary>Sends the answer (null cancels), closes, and gives the keyboard back to the world.</summary>
+        private void Finish(string text)
+        {
+            Session.AnswerPrompt(_prompt, text);
+            GUIUtility.keyboardControl = 0;
+            Close();
         }
     }
 
