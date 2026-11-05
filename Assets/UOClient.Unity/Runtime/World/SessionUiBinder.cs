@@ -7,7 +7,7 @@ using UOClient.Core;
 namespace UOClient.Unity
 {
     /// <summary>
-    /// Windows the server opens (paperdolls, containers, gumps, menus, shops, prompts), the journal and log lines,
+    /// Windows the server opens (paperdolls, containers, gumps, menus, shops, prompts, profiles), the journal and log lines,
     /// the target cursor, damage and speech overheads, effects and sound for one session, plus the commands the
     /// windows' buttons send. Every session event it subscribes to is unsubscribed again by <see cref="Dispose"/>.
     /// </summary>
@@ -78,6 +78,7 @@ namespace UOClient.Unity
             s.PromptRequested += OnPromptRequested;
             s.TextEntryRequested += OnTextEntryRequested;
             s.SpellbookContent += OnSpellbookContent;
+            s.ProfileReceived += OnProfileReceived;
             s.EffectStarted += _effects.Start;
 
             if (_ctx.Camera.GetComponent<AudioListener>() == null && UnityEngine.Object.FindAnyObjectByType<AudioListener>() == null)
@@ -115,6 +116,7 @@ namespace UOClient.Unity
             s.PromptRequested -= OnPromptRequested;
             s.TextEntryRequested -= OnTextEntryRequested;
             s.SpellbookContent -= OnSpellbookContent;
+            s.ProfileReceived -= OnProfileReceived;
             s.EffectStarted -= _effects.Start;
             s.SoundPlayed -= OnSoundPlayed;
             s.MusicRequested -= OnMusicRequested;
@@ -182,6 +184,8 @@ namespace UOClient.Unity
         private void OnTextEntryRequested(TextEntryRequest e) => Ui.Open(new UI.TextEntryWindow(e));
 
         private void OnSpellbookContent(uint book, int first, ulong bits) => Ui.Open(new UI.SpellbookWindow(book, first, bits));
+
+        private void OnProfileReceived(CharacterProfile p) => Ui.Open(new UI.ProfileWindow(p)).SetProfile(p);
 
         private void OnSoundPlayed(int id, int x, int y, int z)
         {

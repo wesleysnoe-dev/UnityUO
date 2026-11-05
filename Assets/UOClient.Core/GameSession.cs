@@ -105,6 +105,7 @@ namespace UOClient.Core
             RegisterTooltipHandlers();
             RegisterHousingHandlers();
             RegisterTrackingHandlers();
+            RegisterProfileHandlers();
         }
 
         public World World { get; }

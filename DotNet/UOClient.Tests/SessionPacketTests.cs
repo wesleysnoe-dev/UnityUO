@@ -104,6 +104,34 @@ public sealed class SessionPacketTests
     }
 
     [Fact]
+    public void ProfileIsReadAndRequested()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        CharacterProfile? shown = null;
+        session.ProfileReceived += p => shown = p;
+
+        // ModernUO's SendDisplayProfile: serial, header (Latin-1, zero-terminated), footer, body (BE UTF-16, zero-terminated).
+        string header = "Lord Wes", footer = "This account is 3 days old.", body = "Smith of Britain.\nCafé ♥";
+        byte[] packet = new PacketWriter(0xB8).UInt32(0x00000042).AsciiZ(header).UnicodeZ(footer).UnicodeZ(body).ToArray();
+        Assert.Equal(-1, PacketLengths.For(ClientVersion.Default)[0xB8]);
+        Assert.Equal(12 + header.Length + footer.Length * 2 + body.Length * 2, packet.Length); // ModernUO's length formula
+        session.Inject(packet, true);
+
+        Assert.NotNull(shown);
+        Assert.Equal(0x42u, shown!.Serial);
+        Assert.Equal(header, shown.Header);
+        Assert.Equal(footer, shown.Footer);
+        Assert.Equal(body, shown.Body);
+
+        // Empty strings (a locked own profile hides the serial as 0).
+        session.Inject(new PacketWriter(0xB8).UInt32(0).AsciiZ("").UnicodeZ("").UnicodeZ("").ToArray(), true);
+        Assert.Equal((0u, "", "", ""), (shown!.Serial, shown.Header, shown.Footer, shown.Body));
+
+        // The request, as ModernUO's ProfileReq reads it: length, mode 0 (display), serial.
+        Assert.Equal(new byte[] { 0xB8, 0, 8, 0, 0, 0, 0, 0x42 }, GameSession.ProfileRequest(0x00000042));
+    }
+
+    [Fact]
     public void QuestArrowShowsAndClearsOnHighSeasClients()
     {
         GameSession session = InWorldAs(0x00000042, 1495, 1629);

@@ -10,7 +10,7 @@ namespace UOClient.Unity.UI
     /// The paperdoll: background gump, body gump in the skin hue, and each worn item's paperdoll art
     /// (tiledata AnimId + 50000 for male, + 60000 for female), layered like the classic client.
     /// Double-click the backpack to open it, double-click other items to use them, drag items off to
-    /// take them off, drop items onto it to put them on.
+    /// take them off, drop items onto it to put them on. Click the scroll for the character's profile.
     /// </summary>
     public sealed class PaperdollWindow : UiWindow
     {
@@ -87,6 +87,10 @@ namespace UOClient.Unity.UI
                 _titleStyle.normal.textColor = new Color(0.12f, 0.1f, 0.06f);
             }
             GUI.Label(new Rect(39, 262, 185, 40), _title ?? m.Name ?? "", _titleStyle);
+
+            // The profile scroll (where ClassicUO puts it): asks the server for this character's profile (0xB8).
+            if (GumpButton(0x07D2, 0x07D2, 25, 196))
+                Session.RequestProfile(_serial);
 
             // Our own paperdoll carries the classic column of buttons on the right.
             if (_serial == Session.World.PlayerSerial)

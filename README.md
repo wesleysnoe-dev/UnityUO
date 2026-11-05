@@ -281,5 +281,6 @@ The output folder holds:
 - [x] House and boat placement cursor (`0x99`): the multi is previewed under the mouse where the server will center it, and the click answers with `0x6C`. Injected-packet test only.
 - [x] Gump text entry dialogs (`0xAB`, answered with `0xAC`). ModernUO doesn't use this packet; the layout follows RunUO/POL and ClassicUO. Injected-packet test only.
 - [x] Quest/tracking arrow (`0xBA`, 6 bytes or 10 with the tracked serial on 7.0.9+): a pulsing marker on the target tile, or an arrow at the screen edge pointing toward it; cleared when the server cancels it. Clicking the arrow (`0xBF 0x07`) is not sent yet. Injected-packet test only.
+- [x] Character profiles (`0xB8`): the paperdoll's scroll sends the display request (mode 0) and the reply opens a profile window (title, text, footer). Editing your profile is not supported yet. Injected-packet test only.
 
 Credits: parts of the format handling are ported from [ClassicUO](https://github.com/ClassicUO/ClassicUO) (BSD-2-Clause): the Mythic decompressor, the Huffman decoding tree, the packet length table and the MUL animation layout. Packet layouts were checked against the ModernUO source.
