@@ -157,4 +157,41 @@ public sealed class SpeechMulInstallTests
         Assert.Contains(0x0001, table.Match("balance"));
         Assert.Contains(0x0008, table.Match("stable"));
     }
+
+    [Theory]
+    [InlineData("bank", 0x0002)]
+    [InlineData("balance", 0x0001)]
+    [InlineData("stable", 0x0008)]
+    [InlineData("claim", 0x0009)]
+    public void InstallTableKeywordsSurviveModernUOsDecoding(string text, int keyword)
+    {
+        var table = new SpeechKeywords(Path.Combine(_data.Directory, "speech.mul"));
+        byte[] p = GameSession.UnicodeSpeechRequest(text, table.Match(text));
+
+        // IncomingMessagePackets.UnicodeSpeech: Encoded type bits, then the 12-bit count and ids, then UTF-8 text.
+        Assert.Equal(0xC0, p[3] & 0xC0);
+        int pos = 12, value = BinaryPrimitives.ReadInt16BigEndian(p.AsSpan(pos));
+        pos += 2;
+        int count = (value & 0xFFF0) >> 4, hold = value & 0xF;
+        Assert.InRange(count, 1, 50);
+        var ids = new List<int>();
+        for (int i = 0; i < count; i++)
+        {
+            if ((i & 1) == 0)
+            {
+                ids.Add((hold << 8) | p[pos++]);
+                hold = 0;
+            }
+            else
+            {
+                value = BinaryPrimitives.ReadInt16BigEndian(p.AsSpan(pos));
+                pos += 2;
+                ids.Add((value & 0xFFF0) >> 4);
+                hold = value & 0xF;
+            }
+        }
+        Assert.Contains(keyword, ids);
+        Assert.Equal(text, Encoding.UTF8.GetString(p, pos, p.Length - pos - 1));
+        Assert.Equal(0, p[^1]);
+    }
 }
