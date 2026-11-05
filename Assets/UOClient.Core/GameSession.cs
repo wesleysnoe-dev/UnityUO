@@ -139,6 +139,9 @@ namespace UOClient.Core
         /// <summary>Optional: resolves cliloc messages to text for the journal.</summary>
         public Cliloc Cliloc { get; set; }
 
+        /// <summary>speech.mul keyword table; without it speech goes out untagged and keyword NPCs ignore it.</summary>
+        public SpeechKeywords SpeechKeywords { get; set; }
+
         /// <summary>Optional packet hook (incoming = true). Called on network threads.</summary>
         public Action<bool, byte[]> PacketLogger { get; set; }
 
@@ -239,7 +242,37 @@ namespace UOClient.Core
         {
             if (State != SessionState.InWorld || string.IsNullOrWhiteSpace(text))
                 return;
-            _conn.Send(new PacketWriter(0xAD).Byte(0).UInt16(hue).UInt16(3).Ascii("ENU", 4).UnicodeZ(text).ToArray());
+            text = text.Trim();
+            _conn.Send(UnicodeSpeechRequest(text, SpeechKeywords?.Match(text), hue));
+        }
+
+        /// <summary>
+        /// 0xAD request: type, hue, font 3, "ENU". With keywords the type gains the 0xC0 "encoded" bits
+        /// and the text follows a packed list of 12-bit keyword ids as null-terminated UTF-8 — the only
+        /// form in which ModernUO hands keywords to NPCs. Otherwise the text is big-endian UTF-16.
+        /// </summary>
+        public static byte[] UnicodeSpeechRequest(string text, IReadOnlyList<int> keywords, ushort hue = 0x3B2, byte type = 0)
+        {
+            bool encoded = keywords != null && keywords.Count > 0;
+            var w = new PacketWriter(0xAD).Byte(encoded ? type | 0xC0 : type).UInt16(hue).UInt16(3).Ascii("ENU", 4);
+            if (!encoded)
+                return w.UnicodeZ(text).ToArray();
+
+            // 12-bit count then 12-bit ids, packed back to back and padded to a whole byte.
+            int count = Math.Min(keywords.Count, 50);
+            var nibbles = new List<int>(3 + count * 3);
+            void Push12(int v) { nibbles.Add((v >> 8) & 0xF); nibbles.Add((v >> 4) & 0xF); nibbles.Add(v & 0xF); }
+            Push12(count);
+            for (int i = 0; i < count; i++)
+                Push12(keywords[i]);
+            if ((nibbles.Count & 1) != 0)
+                nibbles.Add(0);
+            for (int i = 0; i < nibbles.Count; i += 2)
+                w.Byte((nibbles[i] << 4) | nibbles[i + 1]);
+
+            foreach (byte b in System.Text.Encoding.UTF8.GetBytes(text))
+                w.Byte(b);
+            return w.Byte(0).ToArray();
         }
 
         // ---- login ----

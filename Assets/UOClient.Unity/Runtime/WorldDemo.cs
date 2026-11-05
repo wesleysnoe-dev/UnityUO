@@ -314,6 +314,9 @@ namespace UOClient.Unity
             string cliloc = Path.Combine(_ctx.Data.Directory, "Cliloc.enu");
             if (File.Exists(cliloc))
                 _ctx.Session.Cliloc = new Cliloc(cliloc);
+            string speech = Path.Combine(_ctx.Data.Directory, "speech.mul");
+            if (File.Exists(speech))
+                _ctx.Session.SpeechKeywords = new SpeechKeywords(speech);
 
             _ctx.Session.StatusChanged += s => _ctx.Hud.ConnectionStatus = s;
             _ctx.Session.Entered += OnEnteredWorld;

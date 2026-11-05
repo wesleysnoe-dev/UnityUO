@@ -48,6 +48,9 @@ internal static class Online
         string cliloc = Path.Combine(uoPath, "Cliloc.enu");
         if (File.Exists(cliloc))
             session.Cliloc = new Cliloc(cliloc);
+        string speech = Path.Combine(uoPath, "speech.mul");
+        if (File.Exists(speech))
+            session.SpeechKeywords = new SpeechKeywords(speech);
 
         StreamWriter? log = logPath != null ? new StreamWriter(logPath) { AutoFlush = true } : null;
         var counts = new System.Collections.Concurrent.ConcurrentDictionary<byte, int>();
