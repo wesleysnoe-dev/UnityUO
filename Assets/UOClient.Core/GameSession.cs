@@ -108,6 +108,7 @@ namespace UOClient.Core
             RegisterProfileHandlers();
             RegisterMapItemHandlers();
             RegisterSeasonHandlers();
+            RegisterBuffHandlers();
         }
 
         public World World { get; }

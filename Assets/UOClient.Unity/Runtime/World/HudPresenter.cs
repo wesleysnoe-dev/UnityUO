@@ -7,7 +7,7 @@ namespace UOClient.Unity
 {
     /// <summary>
     /// Fills the HUD model each frame: the player's position and stats, the connection text, the name labels
-    /// over everyone in view, the health bars under their feet, and where the quest arrow points.
+    /// over everyone in view, the health bars under their feet, where the quest arrow points, and the buff bar.
     /// </summary>
     public sealed class HudPresenter
     {
@@ -25,8 +25,19 @@ namespace UOClient.Unity
             _ctx.Hud.UpdatePlayer(_ctx.Player.X, _ctx.Player.Y, _ctx.Player.IsMoving, Time.deltaTime);
             _ctx.Hud.Labels.Clear();
             _ctx.Hud.QuestArrow = null;
+            _ctx.Hud.Buffs.Clear();
             if (_ctx.Session == null)
                 return;
+
+            // Buff bar: the player's buffs with the time left as m:ss (counted down here; the server removes them).
+            foreach (Buff b in _ctx.Session.Buffs)
+            {
+                if (b.Serial != _ctx.Session.World.PlayerSerial)
+                    continue;
+                double left = _ctx.Session.BuffSecondsLeft(b);
+                string time = left < 0 ? "" : $"{(int)left / 60}:{(int)left % 60:00}";
+                _ctx.Hud.Buffs.Add((b.Title, time));
+            }
 
             // Quest arrow: the target tile's center at the player's height (the packet has no z), as Avatar anchors it.
             Core.QuestArrow arrow = _ctx.Session.QuestArrow;

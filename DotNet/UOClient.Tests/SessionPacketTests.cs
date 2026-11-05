@@ -248,4 +248,70 @@ public sealed class SessionPacketTests
         session.Inject(new PacketWriter(0xBA, 6).Byte(0).UInt16(unchecked((ushort)-1)).UInt16(unchecked((ushort)-1)).ToArray(), false);
         Assert.Null(session.QuestArrow);
     }
+
+    /// <summary>0xDF add as ModernUO's SendAddBuffPacket writes it (args, when given, go out as "\t" + args, little-endian).</summary>
+    private static byte[] AddBuffPacket(uint mob, int icon, int title, int secondary, string? args, int seconds)
+    {
+        var w = new PacketWriter(0xDF).UInt32(mob).UInt16(icon).UInt16(1).UInt32(0)
+            .UInt16(icon).UInt16(1).UInt32(0).UInt16(seconds).Zero(3).Int32(title).Int32(secondary);
+        if (args == null)
+            return w.Zero(10).ToArray();
+        w.UInt32(0).UInt16(1).UInt16(0);
+        foreach (char c in "\t" + args)
+            w.UInt16(((c & 0xFF) << 8) | (c >> 8));
+        return w.UInt16(0).UInt16(1).UInt16(0).ToArray();
+    }
+
+    [Fact]
+    public void BuffsAreAddedReplacedTimedAndRemoved()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        var added = new List<Buff>();
+        var removed = new List<Buff>();
+        session.BuffAdded += added.Add;
+        session.BuffRemoved += removed.Add;
+        Assert.Equal(-1, PacketLengths.For(ClientVersion.Default)[0xDF]);
+        session.Update(100);
+
+        // Bless (0x3F0) with three arguments for 90 seconds: ModernUO's length is args.Length * 2 + 52.
+        string args = "10\t10\t10";
+        byte[] bless = AddBuffPacket(0x42, 0x3F0, 1075847, 1075848, args, 90);
+        Assert.Equal(args.Length * 2 + 52, bless.Length);
+        session.Inject(bless, true);
+
+        Buff b = Assert.Single(session.Buffs);
+        Assert.Same(b, Assert.Single(added));
+        Assert.Equal((0x3F0, 0x42u, 1075847, 1075848, args, 90), (b.Icon, b.Serial, b.TitleCliloc, b.DescriptionCliloc, b.Args, b.Duration));
+        Assert.Equal("#1075847", b.Title);       // no cliloc file loaded
+        Assert.Equal("#1075848", b.Description);
+        Assert.Equal(90, session.BuffSecondsLeft(b));
+        session.Update(130);
+        Assert.Equal(60, session.BuffSecondsLeft(b));
+
+        // Night sight (0x3ED) without arguments or timer: 46 bytes.
+        byte[] nightSight = AddBuffPacket(0x42, 0x3ED, 1075643, 1075644, null, 0);
+        Assert.Equal(46, nightSight.Length);
+        session.Inject(nightSight, true);
+        Assert.Equal(2, session.Buffs.Count);
+        Buff n = session.Buffs[1];
+        Assert.Equal(("", 0, -1.0), (n.Args, n.Duration, session.BuffSecondsLeft(n)));
+
+        // Bless again (recast) replaces the first one in place.
+        session.Inject(AddBuffPacket(0x42, 0x3F0, 1075847, 1075848, "12\t12\t12", 120), true);
+        Assert.Equal(2, session.Buffs.Count);
+        Assert.Equal(("12\t12\t12", 120.0), (session.Buffs[0].Args, session.BuffSecondsLeft(session.Buffs[0])));
+        Assert.Equal(3, added.Count);
+
+        // SendRemoveBuffPacket: serial, icon, command 0, 4 zero (15 bytes).
+        byte[] remove = new PacketWriter(0xDF).UInt32(0x42).UInt16(0x3F0).UInt16(0).UInt32(0).ToArray();
+        Assert.Equal(15, remove.Length);
+        session.Inject(remove, true);
+        Assert.Same(n, Assert.Single(session.Buffs));
+        Assert.Equal(0x3F0, Assert.Single(removed).Icon);
+
+        // Removing what isn't there changes nothing.
+        session.Inject(remove, true);
+        Assert.Single(removed);
+        Assert.Single(session.Buffs);
+    }
 }

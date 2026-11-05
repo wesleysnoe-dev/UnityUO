@@ -284,5 +284,6 @@ The output folder holds:
 - [x] Character profiles (`0xB8`): the paperdoll's scroll sends the display request (mode 0) and the reply opens a profile window (title, text, footer). Editing your profile is not supported yet. Injected-packet test only.
 - [ ] Map items (`0x90`/`0xF5` details, `0x56` pins): details and pin lists are parsed and kept per map serial (`GameSession.Maps`), and `0x56` requests can be built and sent. No map gump draws them yet, so opening a treasure or city map shows nothing. Injected-packet test only.
 - [x] Seasons (`0xBC`): the season is kept (`GameSession.Season`, `SeasonChanged`) and tints the ambient light; the HUD's time line names it. Seasonal art (bare winter trees) and the season sound are not done. Injected-packet test only.
+- [x] Buffs and debuffs (`0xDF`): adds and removes are kept in `GameSession.Buffs` (`BuffAdded`, `BuffRemoved`) with icon, clilocs, arguments and timer; the HUD shows them as text chips with a countdown under the status bars. Icon art and hover descriptions are not done. Injected-packet test only.
 
 Credits: parts of the format handling are ported from [ClassicUO](https://github.com/ClassicUO/ClassicUO) (BSD-2-Clause): the Mythic decompressor, the Huffman decoding tree, the packet length table and the MUL animation layout. Packet layouts were checked against the ModernUO source.
