@@ -59,6 +59,19 @@ namespace UOClient.Unity.UI
             c.Arg(4) == 0 ? (true, PageShown(c.Arg(5))) : (false, c.Arg(6));
 
         /// <summary>
+        /// The command index of the text entry that takes the keyboard when the gump opens, or -1. TazUO's
+        /// GumpHelpers.CreateGump (Network/PacketHandlers/Helpers/GumpHelpers.cs:107, 412-418) calls SetKeyboardFocus
+        /// on the first textentry or textentrylimited in layout order, whatever page it is on, and on no other.
+        /// </summary>
+        public static int FirstTextEntry(IList<GumpCommand> commands)
+        {
+            for (int i = 0; i < commands.Count; i++)
+                if (commands[i].Name == "textentry" || commands[i].Name == "textentrylimited")
+                    return i;
+            return -1;
+        }
+
+        /// <summary>
         /// Whether right-click closes a server gump. TazUO's GumpHelpers.cs:90 starts every server gump with
         /// CanCloseWithRightClick, and only noclose clears it (:427-430); Gump.CloseWithRightClick (Gump.cs:304-309)
         /// then does nothing. nodispose leaves right-click alone.

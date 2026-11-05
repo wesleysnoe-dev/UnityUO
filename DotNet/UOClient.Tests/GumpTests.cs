@@ -323,6 +323,26 @@ public sealed class GumpTests
     }
 
     [Fact]
+    public void FirstTextEntryInLayoutOrderTakesTheKeyboard()
+    {
+        // GumpHelpers.CreateGump: SetKeyboardFocus on the first textentry/textentrylimited, and only that one.
+        // AuctionOrderGump: the page-0 amount entry comes before the page-1 price entry.
+        List<GumpCommand> order = ServerGump.ParseLayout(
+            "{ page 0 }{ resizepic 0 0 9270 420 260 }{ textentry 136 111 90 20 0 2 0 }" +
+            "{ page 1 }{ textentry 136 145 150 20 0 3 1 }{ button 300 220 4005 4007 0 2 0 }");
+        Assert.Equal(2, ServerGumpWindow.FirstTextEntry(order));
+
+        // Whatever page it is on: TazUO focuses it while building, before any page shows.
+        Assert.Equal(5, ServerGumpWindow.FirstTextEntry(ServerGump.ParseLayout(
+            "{ page 0 }{ resizepic 0 0 9270 420 260 }{ page 1 }{ button 0 0 4005 4007 0 2 0 }" +
+            "{ page 2 }{ textentrylimited 0 30 100 20 0 7 0 16 }{ textentry 0 60 100 20 0 8 1 }")));
+
+        // No entry (ChatSettingsGump's switches only): nothing takes the keyboard.
+        Assert.Equal(-1, ServerGumpWindow.FirstTextEntry(ServerGump.ParseLayout(
+            "{ page 0 }{ checkbox 24 72 210 211 1 100 }{ group 1 }{ radio 24 126 208 209 0 200 }")));
+    }
+
+    [Fact]
     public void PageButtonToPageZeroShowsPageOne()
     {
         // Gump.Update: ActivePage 0 becomes 1.

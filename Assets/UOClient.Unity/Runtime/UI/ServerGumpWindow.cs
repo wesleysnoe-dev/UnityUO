@@ -17,13 +17,15 @@ namespace UOClient.Unity.UI
         private readonly Dictionary<int, Vector2> _scroll = new Dictionary<int, Vector2>();
         private HashSet<int> _faded; // commands a later checkertrans covers, worked out on the first draw
         private int _page = 1;
-        private bool _answered;
+        private int _focusEntry; // the text entry still to be given the keyboard (FirstTextEntry), or -1 once done
+        private bool _answered, _ownsKeyboard;
         private GUIStyle _text, _html, _entry;
 
         public ServerGumpWindow(ServerGump gump)
         {
             _gump = gump;
             _controls = new GumpControls(gump);
+            _focusEntry = FirstTextEntry(gump.Commands);
             Rect = new Rect(gump.X, gump.Y, 1, 1);
         }
 
@@ -41,7 +43,12 @@ namespace UOClient.Unity.UI
         {
             if (!_answered && Session.World.Gumps.Contains(_gump))
                 Reply(0);
+            // Give the keyboard back to the world, as TazUO's focused StbTextBox goes with its gump.
+            if (_ownsKeyboard)
+                GUIUtility.keyboardControl = 0;
         }
+
+        private string EntryName(int index) => $"{Key}:entry:{index}";
 
         private void Reply(int button)
         {
@@ -75,6 +82,7 @@ namespace UOClient.Unity.UI
             {
                 Hovered = _hoverInGump;
                 HoveredText = _hoverTextInGump;
+                _ownsKeyboard = GUI.GetNameOfFocusedControl().StartsWith(Key + ":entry:", StringComparison.Ordinal);
                 _hoverInGump = 0;
                 _hoverTextInGump = null;
             }
@@ -209,8 +217,16 @@ namespace UOClient.Unity.UI
                 case "textentrylimited":
                 {
                     _entry.normal.textColor = _entry.focused.textColor = Art.HueColor(TextHue(c.Arg(4)), new Color(0.1f, 0.1f, 0.1f));
+                    GUI.SetNextControlName(EntryName(index));
                     _controls.SetText(index, GUI.TextField(new Rect(c.Arg(0), c.Arg(1), c.Arg(2), Math.Max(18, c.Arg(3))),
                         _controls.Text(index), c.TextLimit, _entry));
+                    // The first entry takes the keyboard as the gump opens (FirstTextEntry). IMGUI can only focus a
+                    // drawn field, so one on a page not shown yet takes it when its page first shows.
+                    if (index == _focusEntry)
+                    {
+                        GUI.FocusControl(EntryName(index));
+                        _focusEntry = -1;
+                    }
                     _lastArea = new Rect(c.Arg(0), c.Arg(1), c.Arg(2), c.Arg(3));
                     break;
                 }
