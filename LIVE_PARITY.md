@@ -123,6 +123,9 @@ Works:
   - Verified: 241 tests pass. The 9 new tests are built from the ChatSettingsGump, AuctionOrderGump and AuctionSellGump layouts, and one reads a reply back as `DisplayGumpResponse` does. Tests, Cli and EditorCheck build.
   - Not verified: clicking or typing in Unity, and anything live.
   - Left as is: TazUO doesn't decode entities at all, so `&#39;`/`&quot;` (from `EscapeHtml`) and even `&amp;` show raw there. We decode `&lt; &gt; &amp; &nbsp;` and, like TazUO, show `&#39;`/`&quot;` raw. TazUO focuses the first text entry when a gump opens; we don't. Fonts are still IMGUI's.
+- [x] **Shard gump layout harness** (`ShardGumpLayoutTests`): covers Auction Browse/Sell/Order, Group Finder and its dock, Animal Lore (a 5-page DynamicGump) and the faction Horse Breeder. Each is rebuilt from the shard source in ModernUO's compiled form (`0xB0` through UncompressedGump, or `0xDD`), injected offline, and answered through `GumpControls` + `ReplyGump`. Each reply is checked against a `DisplayGumpResponse` mirror: the button exists, switch and entry counts, the 239 cap.
+  - Verified: 250 tests pass (9 new); Tests, Cli and EditorCheck build. No client change was needed.
+  - Not verified: real server bytes (the fixtures are built by hand from the source), Unity, live.
 
 Still missing:
 - [ ] The directional run cursors (`0x206A`–`0x2079`, `0x2053`–`0x2062`); the pointer is always the up-left gauntlet.
