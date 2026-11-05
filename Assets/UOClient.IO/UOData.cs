@@ -91,6 +91,27 @@ namespace UOClient.IO
             return samples;
         }
 
+        private readonly UniFont[] _uniFonts = new UniFont[20];
+
+        /// <summary>
+        /// Unicode font 0..19 (unifont.mul, unifont1.mul ...), or null when its file is missing; font 1 falls back to
+        /// unifont.mul as TazUO's FontsLoader does (FontsLoader.cs:94-104, :178-182). Gumps' labels use font 1.
+        /// </summary>
+        public UniFont GetUniFont(int index)
+        {
+            if (index < 0 || index >= _uniFonts.Length)
+                return null;
+            lock (_uniFonts)
+            {
+                if (_uniFonts[index] != null)
+                    return _uniFonts[index];
+                string path = PathOf(index == 0 ? "unifont.mul" : $"unifont{index}.mul");
+                if (File.Exists(path))
+                    return _uniFonts[index] = new UniFont(path);
+            }
+            return index == 1 ? GetUniFont(0) : null;
+        }
+
         /// <summary>Minimap color per land tile (0..0x3FFF) followed by statics (0x4000 + graphic), 15-bit RGB.</summary>
         public ushort[] RadarColors => _radarColors.Value;
 
