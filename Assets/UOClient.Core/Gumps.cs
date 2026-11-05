@@ -41,6 +41,9 @@ namespace UOClient.Core
         /// <summary>
         /// Characters a text entry takes: textentrylimited's size (x y w h hue id text size) when set, else 239,
         /// ModernUO's cap on a reply text. ModernUO writes size 0 by default, which means no limit of its own.
+        /// TazUO's StbTextBox(parts) takes 255 for a plain textentry (byte.MaxValue, StbTextBox.cs:89) and any size
+        /// unclamped, but ModernUO's DisplayGumpResponse drops the whole reply for a text over 239 UTF-16 units
+        /// (GumpSystem.IncomingPackets.cs:136-146), so this never goes above what the server takes.
         /// </summary>
         public int TextLimit => Name == "textentrylimited" && Arg(7) > 0 ? Math.Min(Arg(7), MaxReplyText) : MaxReplyText;
 

@@ -413,6 +413,36 @@ public sealed class UniTextTests
     }
 
     [Fact]
+    public void AClickOnTheDrawnCaretGivesItsIndexBackOnWrappedWords()
+    {
+        // The overlay draws the caret at EntryCaret and a press goes through EntryIndexAt, both in the gump's own
+        // units: clicking where the caret of any index is drawn, on any wrapped line, puts it back at that index.
+        GumpCommand entry = RenameEntry(out _);
+        int width = entry.Arg(2);
+        string text = "the quick brown fox jumps over the lazy dog, then the quick brown fox naps beside the lazy dog";
+        var lines = _text.Lines(ServerGumpWindow.GumpFont, text, width, UniTextAlign.Left, ServerGumpWindow.EntryStyle);
+        Assert.True(lines.Count > 2);
+        // The wrap drops the space it breaks at: the next line starts one past the last one's chars.
+        Assert.Equal(lines[0].CharCount + 1, lines[1].CharStart);
+        for (int k = 0; k <= text.Length; k++)
+        {
+            (int x, int y) = ServerGumpWindow.EntryCaret(_text, text, k, width);
+            Assert.Equal(k, ServerGumpWindow.EntryIndexAt(_text, text, width, x, y + 1));
+        }
+
+        // A one-char selection on any line sits under that char: from its caret to the next one's.
+        for (int k = 0; k < text.Length; k++)
+        {
+            (int x, int y) = ServerGumpWindow.EntryCaret(_text, text, k, width);
+            (int nextX, int nextY) = ServerGumpWindow.EntryCaret(_text, text, k + 1, width);
+            if (nextY != y)
+                continue;
+            (int X, int Y, int W, int H) rect = Assert.Single(ServerGumpWindow.EntrySelection(_text, text, width, k, k + 1));
+            Assert.Equal((x, y + 1, nextX - x), (rect.X, rect.Y, rect.W));
+        }
+    }
+
+    [Fact]
     public void SelectionCoversItsCharsInFontOneWidths()
     {
         GumpCommand entry = RenameEntry(out string name);

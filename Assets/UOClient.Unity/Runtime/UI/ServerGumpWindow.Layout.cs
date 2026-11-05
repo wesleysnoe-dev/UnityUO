@@ -122,6 +122,9 @@ namespace UOClient.Unity.UI
         /// The char a click at (<paramref name="x"/>, <paramref name="y"/>) inside the entry puts the caret before: stb's
         /// LocateCoord (StbTextedit/TextEdit.cs:148-220) over RenderedText.GetLayoutRow (rows from 0 to the picture's
         /// width, as tall as their line) and GetCharWidthAtIndex: past the middle of a char is after it.
+        /// Each row starts at its line's own first char, where the caret is drawn (GetCaretPosUnicode). GetLayoutRow
+        /// instead adds up the rows' char counts (RenderedText.cs:319-334), which leaves out the space a word wrap drops,
+        /// so in TazUO a click on any line after such a wrap lands one char before the caret drawn there; not kept.
         /// </summary>
         public static int EntryIndexAt(UniText text, string value, int width, float x, float y)
         {
@@ -136,8 +139,9 @@ namespace UOClient.Unity.UI
             {
                 if (row >= lines.Count || lines[row].CharCount <= 0)
                     return n;
+                i = lines[row].CharStart;
                 count = lines[row].CharCount;
-                if (i == 0 && y < baseY)
+                if (row == 0 && y < baseY)
                     return 0;
                 if (y < baseY + lines[row].MaxHeight)
                     break;
@@ -167,6 +171,9 @@ namespace UOClient.Unity.UI
         /// <summary>
         /// StbTextBox.DrawSelection (StbTextBox.cs:920-1010): the selected span as one rectangle per line inside the
         /// entry, from 1 down, each its line's height plus 1; a span running to a line's end takes the rest of that line.
+        /// Lines start at their own first char, as the caret and <see cref="EntryIndexAt"/> do (TazUO's loop adds up
+        /// char counts, so after a wrap that drops a space its selection sits one char off the text; not kept). That
+        /// dropped space is drawn on no line.
         /// </summary>
         public static List<(int X, int Y, int W, int H)> EntrySelection(UniText text, string value, int width, int selectStart,
             int selectEnd)
@@ -175,9 +182,10 @@ namespace UOClient.Unity.UI
             int start = Math.Min(selectStart, selectEnd), end = Math.Max(selectStart, selectEnd);
             if (string.IsNullOrEmpty(value) || start >= end)
                 return rects;
-            int drawY = 1, lineStart = 0;
-            foreach ((_, int charCount, int lineWidth, int maxHeight) in text.Lines(GumpFont, value, width, UniTextAlign.Left, EntryStyle))
+            int drawY = 1;
+            foreach ((int lineStart, int charCount, int lineWidth, int maxHeight) in text.Lines(GumpFont, value, width, UniTextAlign.Left, EntryStyle))
             {
+                start = Math.Max(start, lineStart);
                 if (start >= end)
                     break;
                 if (start >= lineStart && start < lineStart + charCount)
@@ -191,7 +199,6 @@ namespace UOClient.Unity.UI
                     rects.Add((drawX, drawY, lineWidth - drawX, maxHeight + 1));
                     start = lineStart + charCount;
                 }
-                lineStart += charCount;
                 drawY += maxHeight;
             }
             return rects;
@@ -223,6 +230,104 @@ namespace UOClient.Unity.UI
                 return -1;
             char c = after[k];
             return text.CharWidth(GumpFont, c) > 0 || c == '\n' ? -1 : k;
+        }
+
+        /// <summary>The caret keys a server text entry handles as stb does, not as IMGUI's TextEditor.</summary>
+        public enum EntryKey
+        {
+            Left,
+            Right,
+            Up,
+            Down,
+            Home,
+            End,
+        }
+
+        /// <summary>
+        /// A caret key in a server text entry, as StbTextBox.OnKeyDown (StbTextBox.cs:577-711) hands it to TextEdit.Key.
+        /// StbTextBox(parts) is single-line (Stb.SingleLine, StbTextBox.cs:44, :99, :788), so even with its text wrapped:
+        /// Up and Down are Left and Right (TextEdit.cs:561-566, :623-628); Home and End, with or without Ctrl, go to the
+        /// text's start and end (LineStart/LineEnd :744-830, TextStart/TextEnd :717-742); Ctrl+Left/Right move by stb's
+        /// words (WordLeft/WordRight :495-543). Without Shift a selection collapses to its near end (MoveToFirst,
+        /// MoveToLast); with Shift the anchor (stb's SelectStart) stays and the caret (CursorIndex = SelectEnd) moves.
+        /// <paramref name="anchor"/> equal to <paramref name="cursor"/> is no selection, as TextEditor's selectIndex.
+        /// </summary>
+        public static (int Cursor, int Anchor) EntryKeyMove(string value, int cursor, int anchor, EntryKey key, bool shift,
+            bool ctrl)
+        {
+            value ??= "";
+            int n = value.Length;
+            cursor = Math.Max(0, Math.Min(n, cursor));
+            anchor = Math.Max(0, Math.Min(n, anchor));
+            int lo = Math.Min(cursor, anchor), hi = Math.Max(cursor, anchor);
+            bool selected = lo != hi;
+            int to;
+            switch (key)
+            {
+                case EntryKey.Left:
+                case EntryKey.Up:
+                    to = ctrl && key == EntryKey.Left ? EntryPreviousWord(value, cursor) : Math.Max(0, cursor - 1);
+                    if (shift)
+                        return (to, anchor);
+                    return selected ? (lo, lo) : (to, to);
+                case EntryKey.Right:
+                case EntryKey.Down:
+                    to = ctrl && key == EntryKey.Right ? EntryNextWord(value, cursor) : Math.Min(n, cursor + 1);
+                    if (shift)
+                        return (to, anchor);
+                    return selected ? (hi, hi) : (to, to);
+                case EntryKey.Home:
+                    return shift ? (0, anchor) : (0, 0);
+                case EntryKey.End:
+                    return shift ? (n, anchor) : (n, n);
+                default:
+                    return (cursor, anchor);
+            }
+        }
+
+        /// <summary>
+        /// The word a double-click in a server text entry selects: StbTextBox.OnMouseDoubleClick (StbTextBox.cs:1068-1091)
+        /// around the caret the first click left (GameController.cs:1124-1136 sends the second press only as the double
+        /// click). Nothing on whitespace or past the end; from the word's start (stepping in one when the caret sits on
+        /// it) to the next word's start, less one unless that is the text's end. Null: the selection is left alone.
+        /// </summary>
+        public static (int Start, int End)? EntryWordAt(string value, int caret)
+        {
+            if (value == null || caret < 0 || caret >= value.Length || char.IsWhiteSpace(value[caret]))
+                return null;
+            int idx = caret;
+            if (idx - 1 >= 0 && char.IsWhiteSpace(value[idx - 1]))
+                idx++;
+            int start = EntryPreviousWord(value, idx), end = EntryNextWord(value, idx);
+            if (end < value.Length)
+                end--;
+            return (start, end);
+        }
+
+        /// <summary>
+        /// Esc in a server text entry (StbTextBox.cs:521-528): with nothing selected it lets the keyboard go (true); with
+        /// a selection it only clears that.
+        /// </summary>
+        public static bool EntryEscapeDropsFocus(int cursor, int anchor) => cursor == anchor;
+
+        // stb's word edges (TextEdit.cs:324-361): a word starts after whitespace; the text's start is one too.
+        private static bool EntryWordBoundary(string value, int idx) =>
+            idx <= 0 || char.IsWhiteSpace(value[idx - 1]) && !char.IsWhiteSpace(value[idx]);
+
+        private static int EntryPreviousWord(string value, int c)
+        {
+            c--;
+            while (c >= 0 && !EntryWordBoundary(value, c))
+                c--;
+            return Math.Max(0, c);
+        }
+
+        private static int EntryNextWord(string value, int c)
+        {
+            c++;
+            while (c < value.Length && !EntryWordBoundary(value, c))
+                c++;
+            return Math.Min(value.Length, c);
         }
 
         /// <summary>xmfhtmlgumpcolor's and xmfhtmltok's colour part as GumpHelpers reads it (GumpHelpers.cs:319-322, :344-347): 0x7FFF is white.</summary>
@@ -646,12 +751,13 @@ namespace UOClient.Unity.UI
                     case "textentry":
                     case "textentrylimited":
                         // StbTextBox.SetText cuts the starting text to its limit, as typing is.
-                        string text = gump.Line(c.Arg(6));
-                        _texts[i] = text.Length > c.TextLimit ? text.Substring(0, c.TextLimit) : text;
+                        _texts[i] = Cut(gump.Line(c.Arg(6)), c.TextLimit);
                         break;
                 }
             }
         }
+
+        private static string Cut(string text, int limit) => text.Length > limit ? text.Substring(0, limit) : text;
 
         public bool IsChecked(int index) => _checked.TryGetValue(index, out bool on) && on;
 
@@ -673,10 +779,14 @@ namespace UOClient.Unity.UI
 
         public string Text(int index) => _texts.TryGetValue(index, out string t) ? t : "";
 
+        /// <summary>
+        /// An entry's edited text, held to its limit whatever the editor let through, as StbTextBox.OnTextInput and
+        /// SetText hold theirs (StbTextBox.cs:776-785, :834-851): never past ModernUO's 239 (<see cref="GumpCommand.TextLimit"/>).
+        /// </summary>
         public void SetText(int index, string text)
         {
             if (_texts.ContainsKey(index))
-                _texts[index] = text ?? "";
+                _texts[index] = Cut(text ?? "", _commands[index].TextLimit);
         }
 
         /// <summary>The switch ids of the checked checkboxes and radios, in layout order.</summary>

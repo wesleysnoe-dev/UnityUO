@@ -280,8 +280,8 @@ namespace UOClient.Core
                 foreach (var (id, text) in texts)
                 {
                     string t = text ?? "";
-                    if (t.Length > 239)
-                        t = t.Substring(0, 239);
+                    if (t.Length > GumpCommand.MaxReplyText)
+                        t = t.Substring(0, GumpCommand.MaxReplyText);
                     w.UInt16(id).UInt16(t.Length);
                     foreach (char c in t)
                         w.UInt16(c);

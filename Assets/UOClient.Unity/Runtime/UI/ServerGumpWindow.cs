@@ -20,6 +20,8 @@ namespace UOClient.Unity.UI
         private HashSet<int> _faded; // commands a later checkertrans covers, worked out on the first draw
         private int _page = 1;
         private int _focusEntry; // the text entry still to be given the keyboard (FirstTextEntry), or -1 once done
+        private int _editing = -1, _editingId; // the entry seen with the keyboard (command index, IMGUI control id), or -1
+        private int _dragAnchor; // where the last press in an entry put the caret: a drag's fixed end
         private bool _answered, _ownsKeyboard;
         private GUIStyle _entry;
 
@@ -114,6 +116,8 @@ namespace UOClient.Unity.UI
                 Hovered = _hoverInGump;
                 HoveredText = _hoverTextInGump;
                 _ownsKeyboard = GUI.GetNameOfFocusedControl().StartsWith(Key + ":entry:", StringComparison.Ordinal);
+                if (!_ownsKeyboard)
+                    _editing = -1; // the next entry to get the keyboard starts afresh (DrawEntry)
                 _hoverInGump = 0;
                 _hoverTextInGump = null;
             }
@@ -248,11 +252,14 @@ namespace UOClient.Unity.UI
 
         /// <summary>
         /// A text entry as TazUO's StbTextBox shows it: its text in unicode font 1 (EntryImage), wrapped in its width and
-        /// clipped to its width x height, the selection behind and the "_" caret on it while it has the keyboard. The
-        /// editing itself (keys, clipboard, undo, focus) stays IMGUI's TextField, laid over the entry with its own text,
-        /// cursor and selection made invisible; clicks and drags place the caret by font 1's widths (EntryIndexAt).
-        /// Still IMGUI's, not stb's: double-click word selection, Up/Down/Home/End over wrapped lines, and the char
-        /// limit (TextField's maxLength = TextLimit, where StbTextBox takes 255 for a plain textentry).
+        /// clipped to its width x height, the selection behind and the "_" caret on it while it has the keyboard. Typing,
+        /// Backspace/Delete, clipboard and focus stay IMGUI's TextField, laid over the entry with its own text, cursor
+        /// and selection made invisible. Everything that places the caret by position goes by font 1, never by the
+        /// TextField's own font: a press puts it at EntryIndexAt and a drag selects from there; a double-click selects
+        /// stb's word (EntryWordAt); arrows, Home/End and Esc are stb's single-line keys (EntryKeyMove); gaining the
+        /// keyboard leaves the caret at the end with nothing selected. Mouse positions are the gump's own units (IMGUI
+        /// maps them through UiManager's GUI.matrix), the same the TextField and the overlay are laid out in, so
+        /// ui.Scale moves neither. The text is held to TextLimit (ModernUO's 239 at most).
         /// </summary>
         private void DrawEntry(GumpCommand c, int index)
         {
@@ -262,8 +269,13 @@ namespace UOClient.Unity.UI
             Event e = Event.current;
             EventType type = e.type;
             Vector2 at = e.mousePosition - r.position;
-            bool click = type == EventType.MouseDown && e.button == 0 && e.clickCount == 1 && r.Contains(e.mousePosition);
+            bool press = type == EventType.MouseDown && e.button == 0 && r.Contains(e.mousePosition);
             string before = _controls.Text(index);
+
+            // The keys and double-click stb handles its own way reach the focused entry's editor before the TextField,
+            // which then sees them used and leaves them alone.
+            bool handled = _editing == index && _editingId != 0 && GUIUtility.keyboardControl == _editingId &&
+                           EntryInput((TextEditor)GUIUtility.GetStateObject(typeof(TextEditor), _editingId), e, before, press);
 
             GUISettings settings = GUI.skin.settings;
             Color cursorColor = settings.cursorColor, selectionColor = settings.selectionColor;
@@ -299,10 +311,25 @@ namespace UOClient.Unity.UI
 
             if (editor != null)
             {
-                if (click)
-                    editor.cursorIndex = editor.selectIndex = EntryIndexAt(Art.Text, text, width, at.x, at.y);
+                if (_editing != index)
+                {
+                    // StbTextBox.OnFocusEnter (StbTextBox.cs:481-486): the caret at the end, nothing selected. A single-line
+                    // TextEditor's OnFocus selects everything instead (and the first key would replace the server's text);
+                    // calling it here marks the editor focused so it doesn't do so on a later event.
+                    editor.OnFocus();
+                    editor.cursorIndex = editor.selectIndex = text.Length;
+                    _editing = index;
+                    _editingId = GUIUtility.keyboardControl;
+                }
+                // Stb.Click and Stb.Drag (TextEdit.cs:222-254): a press, Shift or not, a third one too, puts the caret
+                // there with nothing selected; a drag keeps that as the selection's other end.
+                if (press && !handled)
+                    _dragAnchor = editor.cursorIndex = editor.selectIndex = EntryIndexAt(Art.Text, text, width, at.x, at.y);
                 else if (type == EventType.MouseDrag && GUIUtility.hotControl == GUIUtility.keyboardControl)
+                {
+                    editor.selectIndex = Math.Min(_dragAnchor, text.Length);
                     editor.cursorIndex = EntryIndexAt(Art.Text, text, width, at.x, at.y);
+                }
             }
 
             if (type == EventType.Repaint)
@@ -326,6 +353,52 @@ namespace UOClient.Unity.UI
                 GUI.EndGroup();
             }
             _lastArea = r;
+        }
+
+        /// <summary>
+        /// What the focused entry takes before its TextField, as stb would; returns true if it used the event. The
+        /// second press of a double-click only selects the word round the caret the first one placed (no caret move,
+        /// and no drag after it, as TazUO sends it as the double click alone). TextEditor's caret is always one end of
+        /// its selection, so it goes to the word's end, where stb's next Shift+arrow would carry on from.
+        /// </summary>
+        private static bool EntryInput(TextEditor editor, Event e, string text, bool press)
+        {
+            if (press && e.clickCount == 2)
+            {
+                (int Start, int End)? word = EntryWordAt(text, editor.cursorIndex);
+                if (word != null)
+                {
+                    editor.selectIndex = word.Value.Start;
+                    editor.cursorIndex = word.Value.End;
+                }
+                e.Use();
+                return true;
+            }
+            if (e.type != EventType.KeyDown)
+                return false;
+            EntryKey key;
+            switch (e.keyCode)
+            {
+                case KeyCode.LeftArrow: key = EntryKey.Left; break;
+                case KeyCode.RightArrow: key = EntryKey.Right; break;
+                case KeyCode.UpArrow: key = EntryKey.Up; break;
+                case KeyCode.DownArrow: key = EntryKey.Down; break;
+                case KeyCode.Home: key = EntryKey.Home; break;
+                case KeyCode.End: key = EntryKey.End; break;
+                case KeyCode.Escape:
+                    if (EntryEscapeDropsFocus(editor.cursorIndex, editor.selectIndex))
+                        GUIUtility.keyboardControl = 0;
+                    else
+                        editor.selectIndex = editor.cursorIndex;
+                    e.Use();
+                    return true;
+                default:
+                    return false;
+            }
+            (editor.cursorIndex, editor.selectIndex) =
+                EntryKeyMove(text, editor.cursorIndex, editor.selectIndex, key, e.shift, e.control);
+            e.Use();
+            return true;
         }
 
         // StbTextBox's SELECTION_COLOR (packed 0x80a06020: r 0x20, g 0x60, b 0xa0, a 0x80) drawn at half alpha.
