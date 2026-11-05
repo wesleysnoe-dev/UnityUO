@@ -658,6 +658,17 @@ namespace UOClient.Unity
 
         private bool _cursorSet;
         private Texture2D _cursorTex;
+        private readonly MultiPlacementGhost _placement = new MultiPlacementGhost();
+
+        /// <summary>The map tile under the mouse with its surface z near the player, or null over a window.</summary>
+        private Vector3Int? MouseTile()
+        {
+            if (_ui != null && _ui.IsOverUi(Input.mousePosition))
+                return null;
+            Vector3 wp = _camera.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, 0));
+            Vector2Int tile = _world.TileAt(_world.FromUnity(new Vector2(wp.x, wp.y)), _avatar.Z);
+            return new Vector3Int(tile.x, tile.y, _walk.SurfaceZ(tile.x, tile.y, _avatar.Z));
+        }
 
         private static Texture2D Crosshair(Color color)
         {
@@ -874,15 +885,14 @@ namespace UOClient.Unity
             // Target cursor: whatever is under the mouse, or the ground there.
             if (_session.Target != null)
             {
-                if (picked != 0)
+                if (picked != 0 && !_session.Target.IsMulti) // placement goes where its preview stands
                 {
                     _session.TargetObject(picked);
                 }
                 else if (_session.Target.AllowGround)
                 {
-                    Vector3 wp = _camera.ScreenToWorldPoint(new Vector3(mouse.x, mouse.y, 0));
-                    Vector2Int tile = _world.TileAt(_world.FromUnity(new Vector2(wp.x, wp.y)), _avatar.Z);
-                    _session.TargetGround(tile.x, tile.y, _walk.SurfaceZ(tile.x, tile.y, _avatar.Z));
+                    Vector3Int tile = MouseTile().Value;
+                    _session.TargetGround(tile.x, tile.y, tile.z);
                 }
                 else
                 {
@@ -1246,6 +1256,7 @@ namespace UOClient.Unity
             foreach (ItemView v in _items.Values)
                 v.Render(_world);
             RenderMultis(_roofsForced ? !_manualRoofs : under);
+            _placement.Update(_session, _data, _world, p => new ItemView(_data, _mobileArt, transform, _shader, _artScale, p), MouseTile);
             UpdateEffects();
 
             _sections.Begin("camera+hud");

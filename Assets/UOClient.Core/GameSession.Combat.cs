@@ -13,6 +13,14 @@ namespace UOClient.Core
         /// <summary>0 neutral, 1 harmful, 2 beneficial.</summary>
         public byte Flags;
         public bool AllowGround => Type == 1;
+
+        /// <summary>
+        /// House or boat placement (0x99): preview <see cref="MultiGraphic"/> under the cursor. The server
+        /// centers the multi at the targeted tile minus <see cref="MultiOffsetX"/>/Y/Z.
+        /// </summary>
+        public bool IsMulti;
+        public ushort MultiGraphic;
+        public int MultiOffsetX, MultiOffsetY, MultiOffsetZ;
     }
 
     public struct SkillEntry
@@ -45,6 +53,7 @@ namespace UOClient.Core
         private void RegisterCombatHandlers()
         {
             _handlers[0x6C] = TargetCursor;
+            _handlers[0x99] = MultiTargetCursor;
             _handlers[0x72] = r => { WarMode = r.ReadBool(); WarModeChanged?.Invoke(WarMode); };
             _handlers[0xAA] = r => Combatant = r.ReadUInt32();
             _handlers[0x2F] = _ => { };   // swing animation
@@ -84,6 +93,24 @@ namespace UOClient.Core
             TargetRequested?.Invoke(Target);
         }
 
+        /// <summary>
+        /// 0x99 (30 bytes on 7.0.9+, 26 before): allow ground, cursor id, flags, 11 zero bytes, multi id,
+        /// x/y/z offset (int16 each), and on newer clients 4 more bytes (0 from ModernUO). Answered like any
+        /// cursor with 0x6C, normally a ground location.
+        /// </summary>
+        private void MultiTargetCursor(PacketReader r)
+        {
+            var t = new TargetRequest { Type = r.ReadByte(), CursorId = r.ReadUInt32(), Flags = r.ReadByte(), IsMulti = true };
+            r.Skip(11);
+            int multi = r.ReadUInt16();
+            t.MultiGraphic = (ushort)(multi >= 0x4000 ? multi - 0x4000 : multi); // some servers send the old 0x4000 form
+            t.MultiOffsetX = r.ReadInt16();
+            t.MultiOffsetY = r.ReadInt16();
+            t.MultiOffsetZ = r.ReadInt16();
+            Target = t;
+            TargetRequested?.Invoke(Target);
+        }
+
         /// <summary>Answers the target cursor with a mobile or item.</summary>
         public void TargetObject(uint serial)
         {
@@ -118,10 +145,14 @@ namespace UOClient.Core
             if (t == null || State != SessionState.InWorld)
                 return;
             Target = null;
-            _conn.Send(new PacketWriter(0x6C, 19).Byte(1).UInt32(t.CursorId).Byte(t.Flags).UInt32(0)
-                .UInt16(x).UInt16(y).Byte(0).Byte((byte)(sbyte)z).UInt16(graphic).ToArray());
+            _conn.Send(GroundTargetReply(t, x, y, z, graphic));
             TargetEnded?.Invoke();
         }
+
+        /// <summary>0x6C answering a cursor with a map location (also the answer to a 0x99 placement cursor).</summary>
+        public static byte[] GroundTargetReply(TargetRequest t, int x, int y, int z, int graphic = 0) =>
+            new PacketWriter(0x6C, 19).Byte(1).UInt32(t.CursorId).Byte(t.Flags).UInt32(0)
+                .UInt16(x).UInt16(y).Byte(0).Byte((byte)(sbyte)z).UInt16(graphic).ToArray();
 
         /// <summary>Escape: tells the server the cursor was cancelled (location -1, -1, no serial).</summary>
         public void CancelTarget()
