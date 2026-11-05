@@ -82,10 +82,7 @@ namespace UOClient.Unity
         private bool _showStats;
 
         // Online
-        private readonly Dictionary<uint, Avatar> _others = new Dictionary<uint, Avatar>();
-        private readonly Dictionary<uint, int> _otherLook = new Dictionary<uint, int>();
-        private readonly Dictionary<uint, ItemView> _items = new Dictionary<uint, ItemView>();
-        private int _playerLook = -1;
+        private EntityViews _entities;
         private bool _typing;
         private string _chat = "";
 
@@ -94,6 +91,7 @@ namespace UOClient.Unity
         private void Start()
         {
             _ctx.Root = transform;
+            _entities = new EntityViews(_ctx) { PlayerNamed = name => characterName = name };
             _effects = new EffectsLayer(MakeEffectView);
             _ctx.Camera = CameraRig.EnsureMainCamera();
             _cameraRig = new CameraRig(_ctx.Camera);
@@ -378,19 +376,7 @@ namespace UOClient.Unity
         private void StartEffect(GraphicEffect e) => _effects.Start(e);
 
         private EffectView MakeEffectView(GraphicEffect e) =>
-            _ctx.World == null ? null : new EffectView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, e, LocateSerial);
-
-        /// <summary>Tile position of a mobile we draw (the player included), or of a ground item.</summary>
-        private Vector3Int? LocateSerial(uint serial)
-        {
-            if (_ctx.Session != null && serial == _ctx.Session.World.PlayerSerial && _ctx.Player != null)
-                return new Vector3Int(_ctx.Player.X, _ctx.Player.Y, _ctx.Player.Z);
-            if (_others.TryGetValue(serial, out Avatar a))
-                return new Vector3Int(a.X, a.Y, a.Z);
-            if (_ctx.Session != null && _ctx.Session.World.Items.TryGetValue(serial, out WorldItem item))
-                return new Vector3Int(item.X, item.Y, item.Z);
-            return null;
-        }
+            _ctx.World == null ? null : new EffectView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, e, _entities.Locate);
 
         private bool _quitAfterLogout;
 
@@ -470,18 +456,6 @@ namespace UOClient.Unity
 
         private readonly OverheadText _overheads = new OverheadText();
 
-        /// <summary>The drawn rectangle (world units) overhead text for a serial goes over, or null if it's not drawn.</summary>
-        private Rect? DrawnRect(uint serial)
-        {
-            if (_ctx.Session != null && serial == _ctx.Session.World.PlayerSerial)
-                return _ctx.Player.LastRect;
-            if (_others.TryGetValue(serial, out Avatar a) && a.Visible)
-                return a.LastRect;
-            if (_items.TryGetValue(serial, out ItemView v))
-                return v.LastRect;
-            return null;
-        }
-
         // ---- tooltips ----
 
         private readonly UI.HoverTooltip _tooltip = new UI.HoverTooltip();
@@ -497,7 +471,7 @@ namespace UOClient.Unity
             if (_ui == null || _ctx.Session == null || _typing || _ui.HasKeyboardFocus)
                 return;
             Hotkeys?.Update(_ctx.Session);
-            _tooltip.UpdateHover(_ui, PickAt);
+            _tooltip.UpdateHover(_ui, _entities.PickAt);
             if (Input.GetKeyDown(KeyCode.P))
                 _ctx.Session.OpenPaperdoll();
             if (Input.GetKeyDown(KeyCode.B) && !_ctx.Session.OpenBackpack())
@@ -521,7 +495,7 @@ namespace UOClient.Unity
             if (!Input.GetMouseButtonDown(0) || _ui.IsOverUi(Input.mousePosition) || _ctx.Hud.JournalRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)))
                 return;
             Vector2 mouse = Input.mousePosition;
-            uint picked = PickAt(mouse);
+            uint picked = _entities.PickAt(mouse);
             UI.UiWindow popup = _ui.Find("context");
             if (popup != null)
                 _ui.Close(popup);
@@ -571,30 +545,6 @@ namespace UOClient.Unity
                 _ctx.Session.Use(picked);
         }
 
-        /// <summary>The nearest character or ground item under a screen point (by drawn rectangle), or 0.</summary>
-        private uint PickAt(Vector2 screen)
-        {
-            Vector3 p = _ctx.Camera.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0));
-            uint best = 0;
-            float bestDepth = float.MaxValue;
-            void Consider(uint serial, Rect r, float depth)
-            {
-                if (r.width > 0 && r.Contains(new Vector2(p.x, p.y)) && depth < bestDepth)
-                {
-                    best = serial;
-                    bestDepth = depth;
-                }
-            }
-            if (_ctx.Player.Visible)
-                Consider(_ctx.Session.World.PlayerSerial, _ctx.Player.LastRect, _ctx.Player.LastDepth);
-            foreach (KeyValuePair<uint, Avatar> kv in _others)
-                if (kv.Value.Visible)
-                    Consider(kv.Key, kv.Value.LastRect, kv.Value.LastDepth);
-            foreach (KeyValuePair<uint, ItemView> kv in _items)
-                Consider(kv.Key, kv.Value.LastRect, kv.Value.LastDepth);
-            return best;
-        }
-
         private void StartOnline(LoginSettings login)
         {
             characterName = login.CharacterName;
@@ -612,11 +562,8 @@ namespace UOClient.Unity
                 _ctx.Player?.Face(d);
             };
             _ctx.Session.World.JournalAdded += j => _ctx.Hud.Log(j.Speaker, j.Text);
-            _ctx.Session.World.MobileUpdated += OnMobileUpdated;
-            _ctx.Session.World.MobileMoved += OnMobileMoved;
-            _ctx.Session.World.EntityRemoved += OnEntityRemoved;
-            _ctx.Session.World.ItemUpdated += OnItemUpdated;
-            CustomHouses.Attach(_ctx.Session, h => { if (_ctx.World != null) ShowMulti(h); }, s => _ctx.Hud.Log(null, s));
+            _entities.Attach(_ctx.Session);
+            CustomHouses.Attach(_ctx.Session, h => { if (_ctx.World != null) _entities.ShowMulti(h); }, s => _ctx.Hud.Log(null, s));
 
             _ctx.Hud.ConnectionStatus = $"Connecting to {login.Host}:{login.Port}â€¦";
             try
@@ -642,90 +589,14 @@ namespace UOClient.Unity
         {
             Core.Mobile p = _ctx.Session.World.Player;
             CreateWorld(_ctx.Session.World.Map, p.X, p.Y);
-            _ctx.Player?.Dispose();
-            _ctx.Player = new Avatar(_ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, LookOf(p), p.X, p.Y, p.Z, p.Name ?? characterName);
-            _ctx.Player.Face(p.Direction);
-            _playerLook = p.AppearanceVersion;
+            _entities.SpawnPlayer(p, p.Name ?? characterName);
             if (!string.IsNullOrEmpty(p.Name))
                 characterName = p.Name;
 
-            foreach (Core.Mobile m in _ctx.Session.World.Mobiles.Values)
-                OnMobileUpdated(m);
-            foreach (WorldItem i in _ctx.Session.World.Items.Values)
-                OnItemUpdated(i);
+            _entities.SyncAll();
 
             _ctx.Hud.HasStats = true;
             _ctx.Hud.Log(null, $"Connected as {characterName}. Enter to talk, F3 for frame stats.");
-        }
-
-        private void OnMobileUpdated(Core.Mobile m)
-        {
-            if (_ctx.World == null)
-                return;
-            if (m.Serial == _ctx.Session.World.PlayerSerial)
-            {
-                if (_ctx.Player == null)
-                    return;
-                if (m.Name != null)
-                    characterName = m.Name;
-                if (m.AppearanceVersion != _playerLook)
-                {
-                    _playerLook = m.AppearanceVersion;
-                    _ctx.Player.SetLook(LookOf(m));
-                }
-                // A server-side position change (teleport, resync) overrides prediction.
-                if (!_ctx.Player.IsMoving && (m.X != _ctx.Player.X || m.Y != _ctx.Player.Y))
-                    _ctx.Player.Teleport(m.X, m.Y, m.Z);
-                return;
-            }
-
-            if (!_others.TryGetValue(m.Serial, out Avatar a))
-            {
-                a = new Avatar(_ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, LookOf(m), m.X, m.Y, m.Z, m.Name ?? $"Mobile 0x{m.Serial:X}");
-                a.Face(m.Direction);
-                _others[m.Serial] = a;
-                _otherLook[m.Serial] = m.AppearanceVersion;
-                return;
-            }
-            if (_otherLook[m.Serial] != m.AppearanceVersion)
-            {
-                _otherLook[m.Serial] = m.AppearanceVersion;
-                a.SetLook(LookOf(m));
-            }
-            a.MoveTo(m.X, m.Y, m.Z, m.Direction, m.Running);
-        }
-
-        private void OnMobileMoved(Core.Mobile m)
-        {
-            if (_others.TryGetValue(m.Serial, out Avatar a))
-            {
-                if (_otherLook[m.Serial] != m.AppearanceVersion)
-                {
-                    _otherLook[m.Serial] = m.AppearanceVersion;
-                    a.SetLook(LookOf(m));
-                }
-                a.MoveTo(m.X, m.Y, m.Z, m.Direction, m.Running);
-            }
-            else
-            {
-                OnMobileUpdated(m);
-            }
-        }
-
-        private void OnEntityRemoved(uint serial)
-        {
-            if (_others.TryGetValue(serial, out Avatar a))
-            {
-                a.Dispose();
-                _others.Remove(serial);
-                _otherLook.Remove(serial);
-            }
-            if (_items.TryGetValue(serial, out ItemView v))
-            {
-                v.Dispose();
-                _items.Remove(serial);
-            }
-            RemoveMulti(serial);
         }
 
         /// <summary>
@@ -735,7 +606,7 @@ namespace UOClient.Unity
         /// </summary>
         private void DropInWorld(UI.DraggedItem item, Vector2 screen)
         {
-            uint under = PickAt(screen);
+            uint under = _entities.PickAt(screen);
             if (under != 0 && under != item.Serial)
             {
                 _ctx.Session.DropInto(item.Serial, under, 0xFFFF, 0xFFFF); // a mobile or item serial; the server sorts out which
@@ -744,90 +615,6 @@ namespace UOClient.Unity
             Vector3 wp = _ctx.Camera.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0));
             Vector2Int tile = _ctx.World.TileAt(_ctx.World.FromUnity(new Vector2(wp.x, wp.y)), _ctx.Player.Z);
             _ctx.Session.DropOnGround(item.Serial, tile.x, tile.y, _ctx.Walk.SurfaceZ(tile.x, tile.y, _ctx.Player.Z));
-        }
-
-        /// <summary>Art the classic clients never draw for world items (ClassicUO's no-draw list).</summary>
-        private static bool IsNoDraw(ushort graphic) =>
-            graphic == 0x0001 || graphic == 0x21BC || graphic == 0x9E4C || graphic == 0x9E64 || graphic == 0x9E65 || graphic == 0x9E7D;
-
-        // Houses and boats: one view per fixed part, and the parts join the walkable statics.
-        private readonly Dictionary<uint, List<ItemView>> _multis = new Dictionary<uint, List<ItemView>>();
-
-        private void ShowMulti(WorldItem multi)
-        {
-            RemoveMulti(multi.Serial);
-            var views = new List<ItemView>();
-            foreach (MultiComponent part in CustomHouses.PartsOf(_ctx.Data, _ctx.Session?.World, multi))
-            {
-                if (!part.Fixed || part.Graphic <= 1) // placeholders and the invisible anchor
-                    continue;
-                var piece = new WorldItem
-                {
-                    Graphic = part.Graphic, X = multi.X + part.X, Y = multi.Y + part.Y,
-                    Z = (sbyte)Mathf.Clamp(multi.Z + part.Z, -128, 127), Hue = multi.Hue
-                };
-                views.Add(new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, piece));
-                _ctx.Walk?.AddMultiPart(multi.Serial, piece.X, piece.Y, piece.Z, piece.Graphic);
-            }
-            _multis[multi.Serial] = views;
-        }
-
-        private void RemoveMulti(uint serial)
-        {
-            if (!_multis.TryGetValue(serial, out List<ItemView> views))
-                return;
-            foreach (ItemView v in views)
-                v.Dispose();
-            _multis.Remove(serial);
-            _ctx.Walk?.RemoveMulti(serial);
-        }
-
-        /// <summary>Inside a house, its upper floors and roof step aside like the map's roofs do.</summary>
-        private void RenderMultis(bool hideAbove)
-        {
-            int cut = _ctx.Player.Z + 16;
-            foreach (List<ItemView> views in _multis.Values)
-                foreach (ItemView v in views)
-                {
-                    v.Hidden = hideAbove && v.Z >= cut;
-                    v.Render(_ctx.World);
-                }
-        }
-
-        private void OnItemUpdated(WorldItem item)
-        {
-            if (_ctx.World == null)
-                return;
-            if (item.IsMulti)
-            {
-                if (_items.TryGetValue(item.Serial, out ItemView was))
-                {
-                    was.Dispose();
-                    _items.Remove(item.Serial);
-                }
-                ShowMulti(item);
-                return;
-            }
-            RemoveMulti(item.Serial);
-            // Server-side markers nobody should see: the "no draw" tiles ModernUO uses for its EffectItems
-            // (every spell and potion target spot gets one) and for invisible blockers.
-            if (IsNoDraw(item.Graphic))
-            {
-                if (_items.TryGetValue(item.Serial, out ItemView hidden))
-                {
-                    hidden.Dispose();
-                    _items.Remove(item.Serial);
-                }
-                return;
-            }
-            if (_items.TryGetValue(item.Serial, out ItemView v))
-                v.Dispose();
-            _items[item.Serial] = new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, item);
-        }
-
-        private MobileLook LookOf(Core.Mobile m)
-        {
-            return MobileLook.From(_ctx.Data, m.Body, m.Hue, m.Equipment.Values.Select(e => (e.Layer, (int)e.Graphic, (int)e.Hue)));
         }
 
         // ---- frame loop ----
@@ -880,8 +667,7 @@ namespace UOClient.Unity
             HandleInput();
             HandleUiInput();
             _ctx.Player.Tick(Time.deltaTime);
-            foreach (Avatar a in _others.Values)
-                a.Tick(Time.deltaTime);
+            _entities.Tick(Time.deltaTime);
 
             bool under = _ctx.Walk.IsUnderRoof(_ctx.Player.X, _ctx.Player.Y, _ctx.Player.Z);
             _ctx.World.SetRoofsVisible(_roofsForced ? _manualRoofs : !under);
@@ -894,11 +680,7 @@ namespace UOClient.Unity
             _ctx.MobileArt.Flush();
             _sections.Begin("sprites");
             _ctx.Player.Render(_ctx.World);
-            foreach (Avatar a in _others.Values)
-                a.Render(_ctx.World);
-            foreach (ItemView v in _items.Values)
-                v.Render(_ctx.World);
-            RenderMultis(_roofsForced ? !_manualRoofs : under);
+            _entities.Render(_roofsForced ? !_manualRoofs : under);
             _placement.Update(_ctx.Session, _ctx.Data, _ctx.World, p => new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, p), MouseTile);
             _effects.Update(_ctx.World);
 
@@ -906,7 +688,7 @@ namespace UOClient.Unity
             _cameraRig.Follow(_ctx.Player.AnchorPixels, _ctx.World, _ctx.ArtScale, zoom);
             _lighting.Update(_ctx.Session, _ctx.World.ToUnity(_ctx.Player.AnchorPixels), _ctx.ArtScale, _ctx.Hud);
             UpdateHud();
-            _overheads.Update(_ctx.Hud, DrawnRect, _ctx.Camera);
+            _overheads.Update(_ctx.Hud, _entities.DrawnRect, _ctx.Camera);
             _cursor.Update(_ctx.Session, _ui);
             _sections.Begin(null);
         }
@@ -1029,7 +811,7 @@ namespace UOClient.Unity
                 _ctx.Hud.StaminaMax = Math.Max(p.StaminaMax, 1);
             }
 
-            foreach (KeyValuePair<uint, Avatar> kv in _others)
+            foreach (KeyValuePair<uint, Avatar> kv in _entities.Others)
             {
                 if (!_ctx.Session.World.Mobiles.TryGetValue(kv.Key, out Core.Mobile m) || string.IsNullOrEmpty(m.Name))
                     continue;
@@ -1053,7 +835,7 @@ namespace UOClient.Unity
                 _ctx.Hud.HealthBars.Add((new Vector2(s.x, Screen.height - s.y), m.Hits / (float)m.HitsMax, DemoHud.NotorietyColor(m.Notoriety)));
             }
             Bar(p, _ctx.Player);
-            foreach (KeyValuePair<uint, Avatar> kv in _others)
+            foreach (KeyValuePair<uint, Avatar> kv in _entities.Others)
                 if (_ctx.Session.World.Mobiles.TryGetValue(kv.Key, out Core.Mobile m))
                     Bar(m, kv.Value);
         }
@@ -1404,9 +1186,9 @@ namespace UOClient.Unity
                 yield return new WaitForSecondsRealtime(1.0f);
                 ScreenCapture.CaptureScreenshot(Path.Combine(dir, "ui_7_house.png"));
                 yield return WaitFrames(10);
-                int houseParts = _multis.TryGetValue(fakeHouse, out List<ItemView> hv) ? hv.Count : 0;
+                int houseParts = _entities.MultiParts(fakeHouse);
                 _ctx.Session.Inject(new PacketWriter(0x1D, 5).UInt32(fakeHouse).ToArray(), false);
-                uiReport += $"\nhouse: {houseParts} parts drawn, {(_multis.ContainsKey(fakeHouse) ? "not removed" : "removed")}";
+                uiReport += $"\nhouse: {houseParts} parts drawn, {(_entities.HasMulti(fakeHouse) ? "not removed" : "removed")}";
                 _ctx.Session.Inject(Effect(0, 0, 0, 0x36D4, ax - 6, ay - 4, az, ax + 4, ay + 3, az, 0, true), false);   // fireball
                 _ctx.Session.Inject(Effect(3, me, me, 0x376A, ax, ay, az, ax, ay, az, 40, false), false);              // sparkles
                 _ctx.Session.Inject(Effect(1, 0, 0, 0, ax + 2, ay - 2, az, ax + 2, ay - 2, az, 0, false), false);      // lightning
@@ -1486,9 +1268,9 @@ namespace UOClient.Unity
                     if (free.X == 0) free = (_ctx.Player.X + 1, _ctx.Player.Y);
                     _ctx.Session.DropOnGround(serial, free.X, free.Y, _ctx.Walk.SurfaceZ(free.X, free.Y, _ctx.Player.Z));
                     float d2 = Time.realtimeSinceStartup + 3f;
-                    while (!_items.ContainsKey(serial) && Time.realtimeSinceStartup < d2)
+                    while (!_entities.HasItem(serial) && Time.realtimeSinceStartup < d2)
                         yield return null;
-                    bool onGround = _items.ContainsKey(serial) && _ctx.Session.World.Items.ContainsKey(serial);
+                    bool onGround = _entities.HasItem(serial) && _ctx.Session.World.Items.ContainsKey(serial);
                     yield return new WaitForSecondsRealtime(0.3f);
                     yield return new WaitForSecondsRealtime(1.2f); // the server refuses lifts faster than its action delay
                     _ctx.Session.Lift(serial, moving.Amount);
@@ -1576,29 +1358,14 @@ namespace UOClient.Unity
                 $"hitches: {hitchReport}\n" +
                 $"chunks: {_ctx.World.LoadedChunks} loaded, {_ctx.World.PendingChunks} pending, {_ctx.World.ChunksBuilt} built, worker {_ctx.World.WorkerMs / Math.Max(1, _ctx.World.ChunksBuilt):F1} ms/chunk\n" +
                 $"character/item art: {_ctx.MobileArt.Built} built off-thread, {_ctx.MobileArt.WorkerMs / Math.Max(1, _ctx.MobileArt.Built):F1} ms each, {_ctx.MobileArt.PendingRequests} pending\n" +
-                $"{_others.Count} mobiles, {_items.Count} items drawn\n" +
+                $"{_entities.Others.Count} mobiles, {_entities.ItemCount} items drawn\n" +
                 $"slow packets: {(_ctx.Session == null || _ctx.Session.SlowPackets.Count == 0 ? "none" : string.Join(", ", _ctx.Session.SlowPackets))}\n" +
-                $"bodies: {BodyReport()}\n" +
-                $"multis: {_multis.Count} ({_multis.Values.Sum(v => v.Count)} parts; ids {string.Join(", ", _ctx.Session?.World.Items.Values.Where(i => i.IsMulti).Select(i => $"0x{i.Graphic:X}").Distinct() ?? Array.Empty<string>())})\n" +
+                $"bodies: {_entities.BodyReport()}\n" +
+                $"multis: {_entities.MultiCount} ({_entities.MultiPartCount} parts; ids {string.Join(", ", _ctx.Session?.World.Items.Values.Where(i => i.IsMulti).Select(i => $"0x{i.Graphic:X}").Distinct() ?? Array.Empty<string>())})\n" +
                 $"ui: {uiReport}");
 
             if (quitWhenDone)
                 Application.Quit();
-        }
-
-        /// <summary>Each distinct body near us, how many, and how many are drawn (have art), for the tour report.</summary>
-        private string BodyReport()
-        {
-            if (_ctx.Session == null)
-                return "offline";
-            var parts = new List<string>();
-            foreach (var g in _others.GroupBy(kv => _ctx.Session.World.Mobiles.TryGetValue(kv.Key, out Core.Mobile m) ? m.Body : 0).OrderBy(g => g.Key))
-            {
-                int drawn = g.Count(kv => kv.Value.Visible);
-                var mounted = g.Count(kv => _ctx.Session.World.Mobiles.TryGetValue(kv.Key, out Core.Mobile m) && m.Equipment.ContainsKey(25));
-                parts.Add($"0x{g.Key:X} x{g.Count()} ({drawn} drawn{(mounted > 0 ? $", {mounted} mounted" : "")})");
-            }
-            return string.Join(", ", parts);
         }
 
         public const string LoginCaptureRequestFile = "Library/UOClient/capture-login";
@@ -1648,10 +1415,7 @@ namespace UOClient.Unity
         {
             _ctx.Session?.Dispose();
             _ctx.Player?.Dispose();
-            foreach (Avatar a in _others.Values)
-                a.Dispose();
-            foreach (ItemView v in _items.Values)
-                v.Dispose();
+            _entities?.Dispose();
             _ctx.World?.Dispose();
             _gumpArt?.Dispose();
             _ctx.MobileArt?.Dispose();
