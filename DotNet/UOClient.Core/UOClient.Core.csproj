@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <RootNamespace>UOClient.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(AssetsDir)UOClient.Core\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UOClient.Net\UOClient.Net.csproj" />
+    <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />
+  </ItemGroup>
+</Project>

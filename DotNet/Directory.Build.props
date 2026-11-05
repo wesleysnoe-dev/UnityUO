@@ -1,0 +1,11 @@
+<Project>
+  <!-- Unity 6 compiles C# 9 against .NET Standard 2.1; the libraries here enforce the same limits. -->
+  <PropertyGroup>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssetsDir>$(MSBuildThisFileDirectory)..\Assets\</AssetsDir>
+  </PropertyGroup>
+</Project>

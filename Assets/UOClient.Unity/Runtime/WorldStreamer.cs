@@ -1,0 +1,522 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Threading;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UOClient.ArtPipeline;
+using UOClient.IO;
+using UOClient.IO.Formats;
+
+namespace UOClient.Unity
+{
+    /// <summary>
+    /// Streams the map around the player in 16x16-tile chunks. A worker thread composes each chunk
+    /// (draw list, sloped-land rasterizing, pixel conversion and packing); the main thread only
+    /// uploads finished textures and builds meshes, a bounded amount per frame, so walking never
+    /// stalls. Chunks far behind the player are unloaded with their textures.
+    /// Shared art (every copy of a graphic) lives in one growing atlas; art unique to a placement
+    /// (sloped land, baked placements) lives in the chunk's own texture and goes away with it.
+    /// </summary>
+    public sealed class WorldStreamer : IWorldSpace, IDisposable
+    {
+        public const int ChunkSize = 16;
+
+        private readonly UOData _data;
+        private readonly Transform _root;
+        private readonly Shader _shader;
+        private readonly int _scale;
+        private readonly Func<IsoCompositor> _compositorFactory;
+        private readonly Vector2Int _originPixels;
+
+        private readonly Dictionary<(int, int), Chunk> _chunks = new Dictionary<(int, int), Chunk>();
+        private readonly HashSet<(int, int)> _requested = new HashSet<(int, int)>();
+        private readonly List<(int, int)> _queue = new List<(int, int)>(); // guarded by itself
+        private readonly ConcurrentQueue<ChunkBuild> _results = new ConcurrentQueue<ChunkBuild>();
+        private readonly AutoResetEvent _wake = new AutoResetEvent(false);
+        private readonly Thread _worker;
+        private volatile bool _stopping;
+        private volatile int _focusX, _focusY;
+        private int _map;
+        private int _generation;
+
+        // Shared sprites: the worker claims each bitmap once and sends its pixels; the main thread places it.
+        private readonly DynamicAtlas _shared = new DynamicAtlas(1024);
+        private readonly HashSet<Bitmap32> _claimed = new HashSet<Bitmap32>(); // worker only
+        private readonly Dictionary<Bitmap32, AtlasSlot> _sharedSlots = new Dictionary<Bitmap32, AtlasSlot>();
+        private readonly Dictionary<int, Material> _sharedMaterials = new Dictionary<int, Material>();
+
+        private int _originDiagonal;
+        private bool _roofsVisible = true;
+
+        public WorldStreamer(UOData data, Transform parent, Shader shader, int scale, Func<IsoCompositor> compositorFactory, int map, int originX, int originY)
+        {
+            _data = data;
+            _shader = shader;
+            _scale = scale;
+            _compositorFactory = compositorFactory;
+            _map = map;
+            _originPixels = new Vector2Int((originX - originY) * 22 * scale, (originX + originY) * 22 * scale);
+            _originDiagonal = originX + originY;
+            _root = new GameObject("World").transform;
+            _root.SetParent(parent, false);
+            _focusX = originX;
+            _focusY = originY;
+
+            _worker = new Thread(WorkerLoop) { IsBackground = true, Name = "UO chunk builder" };
+            _worker.Start();
+        }
+
+        /// <summary>Tiles around the player kept loaded (rounded out to whole chunks).</summary>
+        public int LoadRadius { get; set; } = 40;
+
+        /// <summary>Main-thread milliseconds per frame spent integrating finished chunks.</summary>
+        public float IntegrateBudgetMs { get; set; } = 4f;
+
+        public int Map => _map;
+        public int LoadedChunks => _chunks.Count;
+        public int PendingChunks => _requested.Count;
+        public bool RoofsVisible => _roofsVisible;
+
+        /// <summary>Total time the worker spent building, and chunks built (for diagnostics).</summary>
+        public double WorkerMs { get; private set; }
+        public int ChunksBuilt { get; private set; }
+
+        /// <summary>Unity units are output pixels at the art scale, measured from the session origin; screen Y flipped up.</summary>
+        public Rect ToUnityRect(float left, float top, float width, float height)
+        {
+            float x = left - _originPixels.x;
+            float yTop = -(top - _originPixels.y);
+            return new Rect(x, yTop - height, width, height);
+        }
+
+        public Vector2 ToUnity(Vector2 worldPixels) => new Vector2(worldPixels.x - _originPixels.x, -(worldPixels.y - _originPixels.y));
+
+        public Vector2 FromUnity(Vector2 unity) => new Vector2(unity.x + _originPixels.x, _originPixels.y - unity.y);
+
+        /// <summary>The map tile under a world-screen pixel, assuming ground at height <paramref name="z"/>.</summary>
+        public Vector2Int TileAt(Vector2 worldPixels, int z)
+        {
+            float d = worldPixels.x / (22f * _scale);                       // x - y
+            float sum = (worldPixels.y / _scale - 22f + z * 4f) / 22f;       // x + y
+            return new Vector2Int(Mathf.RoundToInt((sum + d) / 2f), Mathf.RoundToInt((sum - d) / 2f));
+        }
+
+        public float DepthFor(DrawItem item) => DepthKey.Relative(item, _originDiagonal, 0);
+
+        /// <summary>True when the chunks around (x, y) are loaded, i.e. the player can be shown there.</summary>
+        public bool IsReadyAround(int x, int y)
+        {
+            int cx = Math.Max(0, x) / ChunkSize, cy = Math.Max(0, y) / ChunkSize;
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                    if (!_chunks.ContainsKey((cx + dx, cy + dy)) && cx + dx >= 0 && cy + dy >= 0)
+                        return false;
+            return true;
+        }
+
+        /// <summary>Switches facets: everything is unloaded and rebuilt for the new map.</summary>
+        public void SetMap(int map)
+        {
+            if (map == _map)
+                return;
+            _map = map;
+            _generation++;
+            foreach (Chunk c in _chunks.Values)
+                c.Dispose();
+            _chunks.Clear();
+            _requested.Clear();
+            lock (_queue)
+                _queue.Clear();
+        }
+
+        public void SetRoofsVisible(bool visible)
+        {
+            if (visible == _roofsVisible)
+                return;
+            _roofsVisible = visible;
+            foreach (Chunk c in _chunks.Values)
+                c.SetRoofsVisible(visible);
+        }
+
+        /// <summary>Call every frame with the player's tile: requests, integrates and unloads chunks.</summary>
+        public void Update(int playerX, int playerY)
+        {
+            _focusX = playerX;
+            _focusY = playerY;
+
+            // Keep depth values small: re-base the depth origin as the player travels.
+            if (Math.Abs(playerX + playerY - _originDiagonal) > 64)
+            {
+                _originDiagonal = playerX + playerY;
+                foreach (Chunk c in _chunks.Values)
+                    c.SetDepthOrigin(_originDiagonal);
+            }
+
+            int r = (LoadRadius + ChunkSize - 1) / ChunkSize;
+            int pcx = playerX / ChunkSize, pcy = playerY / ChunkSize;
+
+            // Request missing chunks (the worker always takes the one nearest the player).
+            bool added = false;
+            for (int cy = pcy - r; cy <= pcy + r; cy++)
+                for (int cx = pcx - r; cx <= pcx + r; cx++)
+                {
+                    if (cx < 0 || cy < 0 || _chunks.ContainsKey((cx, cy)) || !_requested.Add((cx, cy)))
+                        continue;
+                    lock (_queue)
+                        _queue.Add((cx, cy));
+                    added = true;
+                }
+            if (added)
+                _wake.Set();
+
+            // Integrate finished chunks within the frame budget (always at least one).
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            int integrated = 0;
+            while ((integrated == 0 || watch.Elapsed.TotalMilliseconds < IntegrateBudgetMs) && _results.TryDequeue(out ChunkBuild build))
+            {
+                Integrate(build, pcx, pcy, r);
+                integrated++;
+            }
+            _shared.Apply();
+
+            // Unload chunks well outside the radius (a margin avoids load/unload churn at the edge).
+            List<(int, int)> unload = null;
+            foreach (KeyValuePair<(int, int), Chunk> kv in _chunks)
+                if (Math.Max(Math.Abs(kv.Key.Item1 - pcx), Math.Abs(kv.Key.Item2 - pcy)) > r + 1)
+                    (unload ??= new List<(int, int)>()).Add(kv.Key);
+            if (unload != null)
+                foreach ((int, int) key in unload)
+                {
+                    _chunks[key].Dispose();
+                    _chunks.Remove(key);
+                }
+        }
+
+        private void Integrate(ChunkBuild build, int pcx, int pcy, int r)
+        {
+            // Shared sprites are always placed, even for a discarded chunk: later chunks may reuse them.
+            foreach (SharedSprite s in build.NewShared)
+                _sharedSlots[s.Bitmap] = _shared.Add(s.Width, s.Height, s.Colors);
+
+            _requested.Remove((build.ChunkX, build.ChunkY));
+            WorkerMs += build.BuildMs;
+            ChunksBuilt++;
+            bool stale = build.Generation != _generation
+                         || Math.Max(Math.Abs(build.ChunkX - pcx), Math.Abs(build.ChunkY - pcy)) > r + 1
+                         || _chunks.ContainsKey((build.ChunkX, build.ChunkY));
+            if (stale)
+                return;
+
+            var chunk = new Chunk(_root, build.ChunkX, build.ChunkY, build.BaseDiagonal);
+            Texture2D unique = null;
+            if (build.UniqueColors != null)
+            {
+                unique = new Texture2D(build.UniqueWidth, build.UniqueHeight, TextureFormat.RGBA32, false)
+                {
+                    name = $"UO chunk {build.ChunkX},{build.ChunkY}",
+                    filterMode = FilterMode.Point,
+                    wrapMode = TextureWrapMode.Clamp
+                };
+                unique.SetPixels32(build.UniqueColors);
+                unique.Apply(false, true);
+                chunk.UniqueTexture = unique;
+            }
+
+            // Group quads by texture (shared page or the chunk's own) and roof.
+            var groups = new Dictionary<(int, bool), MeshBuilder>();
+            foreach (ChunkQuad q in build.Quads)
+            {
+                int texture;
+                Vector4 uv;
+                if (q.Unique)
+                {
+                    texture = -1;
+                    float w = build.UniqueWidth, h = build.UniqueHeight;
+                    uv = new Vector4(q.U / w, 1f - (q.V + q.Height) / h, (q.U + q.Width) / w, 1f - q.V / h);
+                }
+                else
+                {
+                    if (!_sharedSlots.TryGetValue(q.Bitmap, out AtlasSlot slot))
+                        continue;
+                    texture = slot.Page;
+                    uv = _shared.Uv(slot);
+                }
+
+                var key = (texture, q.Roof);
+                if (!groups.TryGetValue(key, out MeshBuilder mb))
+                    groups[key] = mb = new MeshBuilder();
+                mb.AddQuad(ToUnityRect(q.Left, q.Top, q.Width, q.Height), uv, q.Depth, false, q.CutHeight);
+            }
+
+            foreach (KeyValuePair<(int, bool), MeshBuilder> g in groups)
+            {
+                Material material;
+                if (g.Key.Item1 < 0)
+                {
+                    material = new Material(_shader) { mainTexture = unique, name = $"UO chunk {build.ChunkX},{build.ChunkY}" };
+                    chunk.OwnedMaterials.Add(material);
+                }
+                else if (!_sharedMaterials.TryGetValue(g.Key.Item1, out material))
+                {
+                    material = new Material(_shader) { mainTexture = _shared.Page(g.Key.Item1), name = $"UO shared page {g.Key.Item1}" };
+                    _sharedMaterials[g.Key.Item1] = material;
+                }
+                chunk.AddMesh(g.Value.Build($"Chunk {build.ChunkX},{build.ChunkY}"), material, g.Key.Item2);
+            }
+
+            chunk.SetDepthOrigin(_originDiagonal);
+            chunk.SetRoofsVisible(_roofsVisible);
+            _chunks[(build.ChunkX, build.ChunkY)] = chunk;
+        }
+
+        // ---- worker ----
+
+        private void WorkerLoop()
+        {
+            IsoCompositor compositor = null;
+            TileData tileData = null;
+            while (!_stopping)
+            {
+                (int, int) next;
+                int generation, map;
+                lock (_queue)
+                {
+                    if (_queue.Count == 0)
+                        next = (-1, -1);
+                    else
+                    {
+                        // Nearest to the player first.
+                        int best = 0, bestDistance = int.MaxValue, fx = _focusX / ChunkSize, fy = _focusY / ChunkSize;
+                        for (int i = 0; i < _queue.Count; i++)
+                        {
+                            int d = Math.Max(Math.Abs(_queue[i].Item1 - fx), Math.Abs(_queue[i].Item2 - fy));
+                            if (d < bestDistance)
+                            {
+                                best = i;
+                                bestDistance = d;
+                            }
+                        }
+                        next = _queue[best];
+                        _queue.RemoveAt(best);
+                    }
+                    generation = _generation;
+                    map = _map;
+                }
+
+                if (next.Item1 < 0)
+                {
+                    _wake.WaitOne(250);
+                    continue;
+                }
+
+                try
+                {
+                    compositor ??= _compositorFactory();
+                    tileData ??= _data.TileData;
+                    _results.Enqueue(BuildChunk(compositor, tileData, map, next.Item1, next.Item2, generation));
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                    _results.Enqueue(new ChunkBuild { ChunkX = next.Item1, ChunkY = next.Item2, Generation = -1 });
+                }
+            }
+        }
+
+        private ChunkBuild BuildChunk(IsoCompositor compositor, TileData tileData, int map, int cx, int cy, int generation)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            int x0 = cx * ChunkSize, y0 = cy * ChunkSize;
+            List<IsoCompositor.DrawEntry> entries = compositor.BuildDrawList(map, x0, y0, ChunkSize, ChunkSize);
+            var build = new ChunkBuild { ChunkX = cx, ChunkY = cy, Generation = generation, BaseDiagonal = x0 + y0 };
+
+            // Unique art (sloped land, baked placements) is packed into the chunk's own texture.
+            var uniques = new List<(Bitmap32 Bitmap, int Quad)>();
+            int tie = 0, lastDiagonal = int.MinValue, lastPriority = int.MinValue;
+            DrawKind lastKind = DrawKind.Land;
+            foreach (IsoCompositor.DrawEntry e in entries)
+            {
+                if (e.Sprite == null)
+                    continue;
+                DrawItem it = e.Item;
+                bool unique = e.Baked || it.Stretched;
+                Bitmap32 bmp = it.Stretched && !e.Baked ? compositor.RenderPlacementAlone(it) : e.Sprite;
+                if (bmp == null)
+                    continue;
+
+                int diagonal = it.X + it.Y;
+                tie = diagonal == lastDiagonal && it.PriorityZ == lastPriority && it.Kind == lastKind ? tie + 1 : 0;
+                lastDiagonal = diagonal;
+                lastPriority = it.PriorityZ;
+                lastKind = it.Kind;
+
+                var quad = new ChunkQuad
+                {
+                    Left = it.Left,
+                    Top = it.Top,
+                    Width = it.Width,
+                    Height = it.Height,
+                    Depth = DepthKey.Relative(it, build.BaseDiagonal, tie),
+                    Roof = it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).IsRoof,
+                    // Statics are cut away above the floor overhead when indoors; land always draws.
+                    CutHeight = it.Kind == DrawKind.Static ? MeshBuilder.CutHeight(it.Z) : MeshBuilder.NeverCut,
+                    Unique = unique,
+                    Bitmap = unique ? null : bmp
+                };
+                if (unique)
+                    uniques.Add((bmp, build.Quads.Count));
+                else if (_claimed.Add(bmp))
+                    build.NewShared.Add(new SharedSprite { Bitmap = bmp, Width = bmp.Width, Height = bmp.Height, Colors = DynamicAtlas.ToColors(bmp) });
+                build.Quads.Add(quad);
+            }
+
+            if (uniques.Count > 0)
+                PackUniques(build, uniques);
+
+            build.BuildMs = watch.Elapsed.TotalMilliseconds;
+            return build;
+        }
+
+        /// <summary>Shelf-packs the chunk's unique sprites into one texture (1024 wide) and converts it to Unity colors.</summary>
+        private static void PackUniques(ChunkBuild build, List<(Bitmap32 Bitmap, int Quad)> uniques)
+        {
+            const int width = 1024, pad = 1;
+            int x = 0, y = 0, shelf = 0;
+            var placed = new (int X, int Y)[uniques.Count];
+            for (int i = 0; i < uniques.Count; i++)
+            {
+                Bitmap32 b = uniques[i].Bitmap;
+                if (x + b.Width + pad > width)
+                {
+                    x = 0;
+                    y += shelf;
+                    shelf = 0;
+                }
+                placed[i] = (x, y);
+                x += b.Width + pad;
+                shelf = Math.Max(shelf, b.Height + pad);
+            }
+            int height = Math.Max(1, y + shelf);
+            height = (height + 63) / 64 * 64;
+
+            var colors = new Color32[width * height];
+            for (int i = 0; i < uniques.Count; i++)
+            {
+                Bitmap32 b = uniques[i].Bitmap;
+                (int px, int py) = placed[i];
+                for (int row = 0; row < b.Height; row++)
+                {
+                    int dst = (height - 1 - (py + row)) * width + px;
+                    int src = row * b.Width;
+                    for (int col = 0; col < b.Width; col++)
+                    {
+                        uint p = b.Pixels[src + col];
+                        colors[dst + col] = new Color32((byte)(p >> 16), (byte)(p >> 8), (byte)p, (byte)(p >> 24));
+                    }
+                }
+                ChunkQuad q = build.Quads[uniques[i].Quad];
+                q.U = px;
+                q.V = py;
+                build.Quads[uniques[i].Quad] = q;
+            }
+            build.UniqueColors = colors;
+            build.UniqueWidth = width;
+            build.UniqueHeight = height;
+        }
+
+        public void Dispose()
+        {
+            _stopping = true;
+            _wake.Set();
+            _worker.Join(1000);
+            foreach (Chunk c in _chunks.Values)
+                c.Dispose();
+            _chunks.Clear();
+            foreach (Material m in _sharedMaterials.Values)
+                UnityEngine.Object.Destroy(m);
+            _shared.Dispose();
+            if (_root != null)
+                UnityEngine.Object.Destroy(_root.gameObject);
+        }
+
+        private struct ChunkQuad
+        {
+            public float Left, Top, Width, Height, Depth, CutHeight;
+            public bool Roof, Unique;
+            public Bitmap32 Bitmap; // shared art (key into the shared atlas)
+            public int U, V;        // unique art position in the chunk texture
+        }
+
+        private struct SharedSprite
+        {
+            public Bitmap32 Bitmap;
+            public int Width, Height;
+            public Color32[] Colors;
+        }
+
+        private sealed class ChunkBuild
+        {
+            public int ChunkX, ChunkY, Generation, BaseDiagonal;
+            public readonly List<ChunkQuad> Quads = new List<ChunkQuad>();
+            public readonly List<SharedSprite> NewShared = new List<SharedSprite>();
+            public Color32[] UniqueColors;
+            public int UniqueWidth, UniqueHeight;
+            public double BuildMs;
+        }
+
+        private sealed class Chunk : IDisposable
+        {
+            private readonly GameObject _go;
+            private readonly List<GameObject> _roofs = new List<GameObject>();
+            private readonly List<Mesh> _meshes = new List<Mesh>();
+            private readonly int _baseDiagonal;
+
+            public readonly List<Material> OwnedMaterials = new List<Material>();
+            public Texture2D UniqueTexture;
+
+            public Chunk(Transform parent, int cx, int cy, int baseDiagonal)
+            {
+                _go = new GameObject($"Chunk {cx},{cy}");
+                _go.transform.SetParent(parent, false);
+                _baseDiagonal = baseDiagonal;
+            }
+
+            public void AddMesh(Mesh mesh, Material material, bool roof)
+            {
+                var go = new GameObject(roof ? "Roofs" : "Ground");
+                go.transform.SetParent(_go.transform, false);
+                go.AddComponent<MeshFilter>().sharedMesh = mesh;
+                var r = go.AddComponent<MeshRenderer>();
+                r.sharedMaterial = material;
+                r.shadowCastingMode = ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                _meshes.Add(mesh);
+                if (roof)
+                    _roofs.Add(go);
+            }
+
+            public void SetDepthOrigin(int originDiagonal)
+            {
+                _go.transform.localPosition = new Vector3(0, 0, DepthKey.ChunkOffset(_baseDiagonal, originDiagonal));
+            }
+
+            public void SetRoofsVisible(bool visible)
+            {
+                foreach (GameObject r in _roofs)
+                    r.SetActive(visible);
+            }
+
+            public void Dispose()
+            {
+                foreach (Mesh m in _meshes)
+                    UnityEngine.Object.Destroy(m);
+                foreach (Material m in OwnedMaterials)
+                    UnityEngine.Object.Destroy(m);
+                if (UniqueTexture != null)
+                    UnityEngine.Object.Destroy(UniqueTexture);
+                UnityEngine.Object.Destroy(_go);
+            }
+        }
+    }
+}

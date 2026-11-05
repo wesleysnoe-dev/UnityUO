@@ -1,0 +1,19 @@
+{
+    "name": "UOClient.Unity",
+    "rootNamespace": "UOClient.Unity",
+    "references": [
+        "UOClient.IO",
+        "UOClient.ArtPipeline",
+        "UOClient.Net",
+        "UOClient.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

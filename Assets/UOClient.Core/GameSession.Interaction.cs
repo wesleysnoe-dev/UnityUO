@@ -1,0 +1,334 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Text;
+using UOClient.Net;
+
+namespace UOClient.Core
+{
+    /// <summary>Using things, containers, the paperdoll, drag and drop, and server gumps.</summary>
+    public sealed partial class GameSession
+    {
+        /// <summary>The server refused to let us pick something up (reason code: 0 can't lift, 1 out of range, 2 out of sight, 3 belongs to another, 4 already holding, 5 inspect).</summary>
+        public event Action<int> LiftRejected;
+
+        /// <summary>Serial of the item currently held on the cursor (lifted, not yet dropped), or 0.</summary>
+        public uint Holding { get; private set; }
+
+        private void RegisterInteractionHandlers()
+        {
+            _handlers[0x88] = DisplayPaperdoll;
+            _handlers[0x24] = DisplayContainer;
+            _handlers[0x3C] = ContainerContent;
+            _handlers[0x25] = ContainerContentUpdate;
+            _handlers[0x27] = r => { Holding = 0; LiftRejected?.Invoke(r.ReadByte()); };
+            _handlers[0x29] = _ => Holding = 0; // drop acknowledged
+            _handlers[0x23] = _ => { };         // drag animation for others
+            _handlers[0xDD] = CompressedGump;
+            _handlers[0xB0] = PlainGump;
+        }
+
+        // ---- requests ----
+
+        /// <summary>
+        /// Minimum time between uses. ModernUO's Mobile.ActionDelay is 1000 ms with AOS rules (500 ms before),
+        /// configurable server-side as "actionDelay"; faster uses get "You must wait to perform another action".
+        /// </summary>
+        public double UseDelay { get; set; } = 1.05;
+
+        private readonly Queue<uint> _uses = new Queue<uint>();
+        private double _nextUseAt;
+
+        /// <summary>
+        /// Double-click (use): opens doors, containers, paperdolls (for mobiles), etc. Queued and sent at the
+        /// server's pace, as the classic client does, so quick successive uses all go through.
+        /// </summary>
+        public void Use(uint serial)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            if (!_uses.Contains(serial))
+                _uses.Enqueue(serial);
+            SendQueuedUse();
+        }
+
+        private void SendQueuedUse()
+        {
+            if (_uses.Count == 0 || _now < _nextUseAt || State != SessionState.InWorld)
+                return;
+            _conn.Send(new PacketWriter(0x06, 5).UInt32(_uses.Dequeue()).ToArray());
+            _nextUseAt = _now + UseDelay;
+        }
+
+        /// <summary>Opens our own paperdoll (double-click on self with the paperdoll flag).</summary>
+        public void OpenPaperdoll() => Use(World.PlayerSerial | 0x80000000);
+
+        /// <summary>Opens our backpack, if we wear one.</summary>
+        public bool OpenBackpack()
+        {
+            uint pack = World.Worn(World.Player, 21);
+            if (pack == 0)
+                return false;
+            Use(pack);
+            return true;
+        }
+
+        /// <summary>Single-click: the server answers with the thing's name over it.</summary>
+        public void Look(uint serial)
+        {
+            if (State == SessionState.InWorld)
+                _conn.Send(new PacketWriter(0x09, 5).UInt32(serial).ToArray());
+        }
+
+        /// <summary>Asks for a mobile's status (hits etc.).</summary>
+        public void RequestStatus(uint serial)
+        {
+            if (State == SessionState.InWorld)
+                _conn.Send(new PacketWriter(0x34, 10).UInt32(0xEDEDEDED).Byte(4).UInt32(serial).ToArray());
+        }
+
+        /// <summary>The Help button: the server answers with its help gump.</summary>
+        public void RequestHelp()
+        {
+            if (State == SessionState.InWorld)
+                _conn.Send(new PacketWriter(0x9B, 258).Zero(257).ToArray());
+        }
+
+        /// <summary>Picks an item up onto the cursor. The server answers with a lift reject if it can't be.</summary>
+        public void Lift(uint serial, int amount)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            Holding = serial;
+            _conn.Send(new PacketWriter(0x07, 7).UInt32(serial).UInt16(Math.Max(1, Math.Min(amount, 60000))).ToArray());
+        }
+
+        /// <summary>Drops the held item into a container at (x, y) in the container gump.</summary>
+        public void DropInto(uint serial, uint container, int x, int y)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            _conn.Send(new PacketWriter(0x08, 15).UInt32(serial).UInt16(x).UInt16(y).Byte(0).Byte(0).UInt32(container).ToArray());
+        }
+
+        /// <summary>Drops the held item on the ground.</summary>
+        public void DropOnGround(uint serial, int x, int y, int z)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            _conn.Send(new PacketWriter(0x08, 15).UInt32(serial).UInt16(x).UInt16(y).Byte((byte)(sbyte)z).Byte(0).UInt32(0xFFFFFFFF).ToArray());
+        }
+
+        /// <summary>Equips the held item on a mobile (usually ourselves); the server picks the layer.</summary>
+        public void Equip(uint serial, byte layer, uint mobile)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            _conn.Send(new PacketWriter(0x13, 10).UInt32(serial).Byte(layer).UInt32(mobile).ToArray());
+        }
+
+        /// <summary>
+        /// Answers a server gump. Button 0 means "closed". Switches are the ids of checked checkboxes and
+        /// radios; text entries are (id, text). The gump is removed locally.
+        /// </summary>
+        public void ReplyGump(ServerGump gump, int buttonId, IList<int> switches, IList<(int Id, string Text)> texts)
+        {
+            World.RemoveGump(gump);
+            if (State != SessionState.InWorld)
+                return;
+            var w = new PacketWriter(0xB1).UInt32(gump.Serial).UInt32(gump.TypeId).Int32(buttonId);
+            w.Int32(switches?.Count ?? 0);
+            if (switches != null)
+                foreach (int s in switches)
+                    w.Int32(s);
+            w.Int32(texts?.Count ?? 0);
+            if (texts != null)
+            {
+                foreach (var (id, text) in texts)
+                {
+                    string t = text.Length > 239 ? text.Substring(0, 239) : text;
+                    w.UInt16(id).UInt16(t.Length);
+                    foreach (char c in t)
+                        w.UInt16(c);
+                }
+            }
+            _conn.Send(w.ToArray());
+        }
+
+        // ---- handlers ----
+
+        private void DisplayPaperdoll(PacketReader r)
+        {
+            uint serial = r.ReadUInt32();
+            string title = r.ReadAscii(60);
+            World.RaisePaperdollOpened(serial, title);
+        }
+
+        private void DisplayContainer(PacketReader r)
+        {
+            uint serial = r.ReadUInt32();
+            ushort gump = r.ReadUInt16();
+            if (gump == 0xFFFF)
+                return; // spellbooks: their contents follow as 0xBF 0x1B
+            if (gump == 0x30)
+            {
+                NoteBuyVendor(serial); // the vendor's buy list (0x74) follows
+                return;
+            }
+            var c = new OpenContainer { Serial = serial, Gump = gump };
+            World.OpenContainers[serial] = c;
+            World.RaiseContainerOpened(c);
+        }
+
+        private void ContainerContent(PacketReader r)
+        {
+            int count = r.ReadUInt16();
+            var changed = new HashSet<uint>();
+            for (int i = 0; i < count; i++)
+            {
+                ContainedItem item = ReadContained(ref r);
+                changed.Add(item.Container);
+            }
+            foreach (uint c in changed)
+                World.RaiseContainerChanged(c);
+        }
+
+        private void ContainerContentUpdate(PacketReader r)
+        {
+            ContainedItem item = ReadContained(ref r);
+            World.RaiseContainerChanged(item.Container);
+        }
+
+        /// <summary>One container entry (7.0+ layout with the grid byte): serial, graphic, offset, amount, x, y, grid, container, hue.</summary>
+        private ContainedItem ReadContained(ref PacketReader r)
+        {
+            uint serial = r.ReadUInt32();
+            var item = new ContainedItem
+            {
+                Serial = serial,
+                Graphic = r.ReadUInt16()
+            };
+            r.ReadByte();
+            item.Amount = r.ReadUInt16();
+            item.X = r.ReadInt16();
+            item.Y = r.ReadInt16();
+            r.ReadByte(); // grid index
+            item.Container = r.ReadUInt32();
+            item.Hue = r.ReadUInt16();
+
+            // An item moved into a container is no longer on the ground or worn (or in another container).
+            World.Detach(serial, contained: World.Contained.TryGetValue(serial, out ContainedItem previous) && previous.Container != item.Container);
+            World.Contained[serial] = item;
+            return item;
+        }
+
+        private void CompressedGump(PacketReader r)
+        {
+            var g = new ServerGump
+            {
+                Serial = r.ReadUInt32(),
+                TypeId = r.ReadUInt32(),
+                X = r.ReadInt32(),
+                Y = r.ReadInt32()
+            };
+            byte[] layout = ReadPacked(ref r);
+            string layoutText = Encoding.ASCII.GetString(layout).TrimEnd('\0');
+            int lineCount = r.ReadInt32();
+            byte[] lines = ReadPacked(ref r);
+
+            g.Commands = ServerGump.ParseLayout(layoutText);
+            g.Lines = ParseLines(lines, lineCount);
+            g.ApplyFlags();
+            World.AddGump(g);
+        }
+
+        private void PlainGump(PacketReader r)
+        {
+            var g = new ServerGump
+            {
+                Serial = r.ReadUInt32(),
+                TypeId = r.ReadUInt32(),
+                X = r.ReadInt32(),
+                Y = r.ReadInt32()
+            };
+            int layoutLength = r.ReadUInt16();
+            string layoutText = r.ReadAscii(layoutLength);
+            int lineCount = r.ReadUInt16();
+            var lines = new string[lineCount];
+            for (int i = 0; i < lineCount; i++)
+            {
+                int len = r.ReadUInt16();
+                var sb = new StringBuilder(len);
+                for (int c = 0; c < len; c++)
+                    sb.Append((char)r.ReadUInt16());
+                lines[i] = sb.ToString();
+            }
+            g.Commands = ServerGump.ParseLayout(layoutText);
+            g.Lines = lines;
+            g.ApplyFlags();
+            World.AddGump(g);
+        }
+
+        private void CloseGumpFromServer(uint typeId, int buttonId)
+        {
+            foreach (ServerGump g in World.Gumps.ToArray())
+                if (g.TypeId == typeId)
+                    World.RemoveGump(g);
+        }
+
+        /// <summary>Gump payload: int32 (packed length + 4) or 0, int32 unpacked length, zlib data.</summary>
+        private static byte[] ReadPacked(ref PacketReader r)
+        {
+            int packed = r.ReadInt32();
+            if (packed <= 4)
+            {
+                if (packed == 4)
+                    r.ReadInt32();
+                return Array.Empty<byte>();
+            }
+            int unpacked = r.ReadInt32();
+            byte[] data = new byte[packed - 4];
+            for (int i = 0; i < data.Length; i++)
+                data[i] = r.ReadByte();
+            return Inflate(data, unpacked);
+        }
+
+        internal static byte[] Inflate(byte[] zlib, int expected)
+        {
+            var output = new byte[expected];
+            using (var input = new MemoryStream(zlib, 2, zlib.Length - 2)) // skip the zlib header
+            using (var deflate = new DeflateStream(input, CompressionMode.Decompress))
+            {
+                int total = 0;
+                while (total < expected)
+                {
+                    int n = deflate.Read(output, total, expected - total);
+                    if (n == 0)
+                        break;
+                    total += n;
+                }
+            }
+            return output;
+        }
+
+        /// <summary>Gump text lines: uint16 length, then big-endian UTF-16 characters.</summary>
+        internal static string[] ParseLines(byte[] data, int count)
+        {
+            var lines = new string[Math.Max(0, count)];
+            int pos = 0;
+            for (int i = 0; i < lines.Length && pos + 2 <= data.Length; i++)
+            {
+                int len = (data[pos] << 8) | data[pos + 1];
+                pos += 2;
+                var sb = new StringBuilder(len);
+                for (int c = 0; c < len && pos + 2 <= data.Length; c++, pos += 2)
+                    sb.Append((char)((data[pos] << 8) | data[pos + 1]));
+                lines[i] = sb.ToString();
+            }
+            for (int i = 0; i < lines.Length; i++)
+                lines[i] ??= "";
+            return lines;
+        }
+    }
+}

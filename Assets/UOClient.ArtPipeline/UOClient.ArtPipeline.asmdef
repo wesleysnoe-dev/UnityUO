@@ -1,0 +1,16 @@
+{
+    "name": "UOClient.ArtPipeline",
+    "rootNamespace": "UOClient.ArtPipeline",
+    "references": [
+        "UOClient.IO"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

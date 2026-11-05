@@ -1,0 +1,47 @@
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+*.csproj
+*.sln
+*.slnx
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+.vs/
+.idea/
+
+# Hand-written .NET projects live under DotNet/ and are kept
+!/DotNet/**/*.csproj
+DotNet/**/bin/
+DotNet/**/obj/
+
+# Generated art exports and ComfyUI round-trips (derived from EA data; never commit)
+/Exports/
+
+# Claude Code session logs
+/_cc_logs/
+
+# Credentials / per-user settings (never commit; may hold account passwords)
+uoclient-account.json
+uoclient-account-*.json
+unity-uo-settings.json
+unity-uo-hotkeys.json
+*account*.json
+*password*
+*credential*
+*.pfx
+*.key
+.env
+
+# Logs, user files, build outputs
+*.log
+*.user
+/[Ee]xports/
+DotNet/**/[Bb]in/
+DotNet/**/[Oo]bj/

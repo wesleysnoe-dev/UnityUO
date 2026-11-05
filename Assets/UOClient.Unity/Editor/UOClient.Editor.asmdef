@@ -1,0 +1,20 @@
+{
+    "name": "UOClient.Editor",
+    "rootNamespace": "UOClient.Editor",
+    "references": [
+        "UOClient.IO",
+        "UOClient.ArtPipeline",
+        "UOClient.Unity"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

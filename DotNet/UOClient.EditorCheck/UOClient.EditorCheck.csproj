@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Compiles Assets/UOClient.Unity/Editor and Runtime against the installed Unity editor's assemblies, so editor
+    code can be checked while the project is open in Unity (batch mode can't open it then).
+    It only type-checks; Unity itself still does the real build.
+      dotnet build DotNet/UOClient.EditorCheck
+    Override the editor path with -p:UnityManaged=...
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <UnityManaged Condition="'$(UnityManaged)' == ''">C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Data\Managed</UnityManaged>
+    <NoWarn>$(NoWarn);CS1701;CS1702</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(AssetsDir)UOClient.Unity\Editor\**\*.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="$(UnityManaged)\UnityEngine\*.dll" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />
+    <ProjectReference Include="..\UOClient.ArtPipeline\UOClient.ArtPipeline.csproj" />
+    <ProjectReference Include="..\UOClient.Core\UOClient.Core.csproj" />
+  </ItemGroup>
+</Project>

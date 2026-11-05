@@ -1,0 +1,17 @@
+{
+    "name": "UOClient.Core",
+    "rootNamespace": "UOClient.Core",
+    "references": [
+        "UOClient.Net",
+        "UOClient.IO"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}
