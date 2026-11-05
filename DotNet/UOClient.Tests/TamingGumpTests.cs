@@ -1,5 +1,6 @@
 using UOClient.Core;
 using UOClient.IO.Formats;
+using UOClient.Net;
 using UOClient.Unity.UI;
 using static UOClient.Tests.ShardGumpLayoutTests;
 
@@ -109,11 +110,11 @@ public sealed class TamingGumpTests
     /// grey), Portrait (:153-195, a controlled pet with no record art: StableRules.FallbackItemID, the offline 44 x 44
     /// tile of ItemIconCell.cs:79 centred in the cell), the content panel, and the Stats tab's attribute rows (:354-369).
     /// </summary>
-    private static Castle PetLoreStats()
+    private static Castle PetLoreStats(uint serial = 0x40000301)
     {
         const int Width = 660, Height = 570, BTab = 10, LX = 28, LW = 214, RX = 252, RW = 380, TY = 56, CY = 100, CH = 410;
         const int X0 = RX + 16;
-        var k = new Castle(0x40000301, 0x5E7A1022, 170, 24);
+        var k = new Castle(serial, 0x5E7A1022, 170, 24);
         k.Frame(Width, Height, "Animal Lore", "Shadowmere");
 
         string[] labels = { "Overview", "Stats", "Skills", "Training", "Abilities", "Care" };
@@ -340,5 +341,112 @@ public sealed class TamingGumpTests
         Assert.Equal(new[] { (86, BarGreen), (70, BarGold), (87, BarGreen), (87, BarGreen), (87, BarGreen) }, fills);
         Assert.Equal(6, g.Commands.Count(c => c.Name == "gumppic" && c.Arg(2) == BarBack));
         Assert.Contains(g.Commands, c => c.Name == "tilepichue" && c.Arg(2) == FallbackItemID && c.Arg(3) == 1109);
+    }
+
+    [Fact]
+    public void LoreTabClickReopensWhereThePlayerLeftIt()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        var positions = new GumpPositions();
+        Castle first = PetLoreStats();
+        ServerGump g = Open(session, first.G.Uncompressed());
+        Assert.True(ServerGumpWindow.CanMove(g));
+        Assert.Equal((170, 24), positions.Open(g.TypeId, g.X, g.Y));
+
+        // Dragged to (400, 90), then the Skills tab (B_Tab + LorePage.Skills = 13): a reply DisplayGumpResponse takes.
+        session.ReplyGump(g, 13, new GumpControls(g).Switches(), new GumpControls(g).Entries());
+        positions.Closed(g.TypeId, ServerGumpWindow.CanMove(g), 400, 90);
+        Assert.Equal(13, first.G.Accept(Assert.Single(sent)).Button);
+        Assert.Empty(session.World.Gumps);
+
+        // OnResponse: GumpSystem already dropped the old gump, so CloseGump<PetLoreGump> sends nothing; SendGump's new
+        // PetLoreGump (a new serial, the same type and x, y) opens where the old one was left (GumpHelpers.cs:76-80).
+        ServerGump next = Open(session, PetLoreStats(0x40000311).G.Uncompressed());
+        Assert.Equal((170, 24), (next.X, next.Y));
+        Assert.Equal((400, 90), positions.Open(next.TypeId, next.X, next.Y));
+
+        // Another type keeps its own spot.
+        Assert.Equal((60, 24), positions.Open(0x3C51A0F4, 60, 24));
+    }
+
+    [Fact]
+    public void NomoveGumpStaysPutAndForgetsItsSpot()
+    {
+        var shard = new ShardGump(0x40000320, 0x0BADF00D, 200, 150) { Draggable = false };
+        shard.AddPage(0);
+        shard.AddBackground(0, 0, 200, 100, Frame);
+        shard.AddButton(10, 10, GemUp, GemDown, 1);
+        ServerGump g = Open(InWorld(new List<byte[]>()), shard.Uncompressed());
+        Assert.False(ServerGumpWindow.CanMove(g));
+
+        var positions = new GumpPositions();
+        positions.Closed(g.TypeId, true, 30, 40); // an earlier movable copy left at (30, 40)
+        Assert.Equal((30, 40), positions.Open(g.TypeId, g.X, g.Y));
+        positions.Closed(g.TypeId, ServerGumpWindow.CanMove(g), 30, 40); // RemovePosition (Gump.cs:297)
+        Assert.Equal((200, 150), positions.Open(g.TypeId, g.X, g.Y));
+    }
+
+    [Fact]
+    public void LoreFromTheStableClosesOnlyTheOldLoreWindow()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        ServerGump lore = Open(session, PetLoreStats().G.Uncompressed());
+        Castle stable = StableBreedingTab();
+        ServerGump stableGump = Open(session, stable.G.Uncompressed());
+
+        // B_Lore (StableGump.cs:754-764): Show re-sends the stable, then PetLoreGump.DisplayTo closes the open Lore
+        // window (NetStateGumps.Close: 0xBF 0x04 with its type id, button 0) and sends the new one.
+        session.Inject(new PacketWriter(0xBF).UInt16(0x04).UInt32(lore.TypeId).UInt32(0).ToArray(), true);
+        Assert.Equal(new[] { stableGump }, session.World.Gumps);
+        Assert.Empty(sent); // no reply: TazUO's close with button 0 only disposes (ExtendedCommand.cs:59-69)
+    }
+
+    /// <summary>
+    /// PlayerPromptGump (GumpStyle.cs:150-171) as StableGump's Rename sends it (StableGump.cs:783): title, hint, the
+    /// one textentrylimited (EntryId 1, size 16) over its 0xBBC strip, Cancel 1 and Ok 2.
+    /// </summary>
+    private static ShardGump RenamePrompt(string petName)
+    {
+        const int Width = 360, Height = 150;
+        var g = new ShardGump(0x40000330, 0x2F0C11A7, 200, 160);
+        g.AddPage(0);
+        g.AddBackground(0, 0, Width, Height, 9270);
+        g.AddHtml(16, 14, Width - 32, 22, $"<BASEFONT COLOR=#F4F4F4 SIZE=4><B>Rename {petName}</B></BASEFONT>");
+        g.AddLabelCropped(16, 40, Width - 32, 20, 0x3B2, "Up to 16 letters.");
+        g.AddImageTiled(16, 70, Width - 32, 20, 0xBBC);
+        g.AddTextEntry(18, 70, Width - 36, 20, 0x480, 1, petName, 16);
+        g.AddButton(14, 110, 4005, 4007, 1);
+        g.AddLabel(48, 112, 1153, "Cancel");
+        g.AddButton(230, 110, 4005, 4007, 2);
+        g.AddLabel(264, 112, 0x35, "Rename");
+        return g;
+    }
+
+    [Fact]
+    public void RenamePromptAnswersWithItsEntryWhateverTheButton()
+    {
+        ShardGump shard = RenamePrompt("Shadowmere");
+        foreach (int button in new[] { 2, 1, ServerGumpWindow.RightClickReplyButton })
+        {
+            var sent = new List<byte[]>();
+            GameSession session = InWorld(sent);
+            ServerGump g = Open(session, shard.Uncompressed());
+            int entry = ServerGumpWindow.FirstTextEntry(g.Commands);
+            Assert.Equal("textentrylimited", g.Commands[entry].Name);
+            Assert.Equal(16, g.Commands[entry].TextLimit);
+
+            var controls = new GumpControls(g);
+            Assert.Equal("Shadowmere", controls.Text(entry));
+            controls.SetText(entry, "  Ember  ");
+            Assert.Empty(controls.Switches());
+
+            // Gump.OnButtonClick sends every text box with any button; OnResponse trims (GumpStyle.cs:182).
+            session.ReplyGump(g, button, controls.Switches(), controls.Entries());
+            Relay relay = shard.Accept(Assert.Single(sent));
+            Assert.Equal(button, relay.Button);
+            Assert.Equal("Ember", relay.GetTextEntry(1)?.Trim());
+        }
     }
 }

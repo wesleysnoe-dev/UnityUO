@@ -29,12 +29,21 @@ namespace UOClient.Unity.UI
             Rect = new Rect(gump.X, gump.Y, 1, 1);
         }
 
-        public override void OnOpened() => Rect.size = MeasureSize();
+        public override void OnOpened()
+        {
+            // Where the last gump of this type was left (GumpPositions), else the packet's x, y.
+            (int x, int y) = Ui.ServerGumpPositions.Open(_gump.TypeId, _gump.X, _gump.Y);
+            Rect = new Rect(x, y, 1, 1) { size = MeasureSize() };
+        }
 
         public ServerGump Gump => _gump;
         public override string Key => $"gump:{_gump.TypeId}:{_gump.Serial}";
         public override bool CanClose => ClosesOnRightClick(_gump);
         public override bool ClosesOnEsc => EscCloses(_gump);
+        public override bool Movable => CanMove(_gump);
+
+        // TazUO puts a server gump exactly where it opens, even over another window.
+        public override bool StepsAsideOnOpen => false;
 
         // The server can close or replace it; then this window goes too.
         public override bool StillValid => Session.World.Gumps.Contains(_gump);
@@ -43,6 +52,8 @@ namespace UOClient.Unity.UI
         {
             if (!_answered && Session.World.Gumps.Contains(_gump))
                 Reply(0);
+            // Replied to or closed by the server: either way TazUO remembers (or, nomove, forgets) where it was.
+            Ui.ServerGumpPositions.Closed(_gump.TypeId, Movable, (int)Math.Round(Rect.x), (int)Math.Round(Rect.y));
             // Give the keyboard back to the world, as TazUO's focused StbTextBox goes with its gump.
             if (_ownsKeyboard)
                 GUIUtility.keyboardControl = 0;

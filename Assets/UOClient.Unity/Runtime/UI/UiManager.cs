@@ -29,6 +29,9 @@ namespace UOClient.Unity.UI
         /// <summary>False for fixed parts of the screen (the top bar): dragging the background does nothing.</summary>
         public virtual bool Movable => true;
 
+        /// <summary>Whether a new window steps down-right off one already open at its spot (UiManager.PlaceNew).</summary>
+        public virtual bool StepsAsideOnOpen => true;
+
         /// <summary>Draws the window's contents in window-local UO pixels.</summary>
         public abstract void Draw();
 
@@ -181,18 +184,21 @@ namespace UOClient.Unity.UI
 
         public IReadOnlyList<UiWindow> Windows => _windows;
 
+        /// <summary>Where server gumps were left, by type id, for this session (TazUO's position cache).</summary>
+        public GumpPositions ServerGumpPositions { get; } = new GumpPositions();
+
         public T Open<T>(T window) where T : UiWindow
         {
+            // Windows already gone (a server gump closed just before this one is sent again) close first, so the
+            // new one sees where they were left and does not step aside from them.
+            for (int i = _windows.Count - 1; i >= 0; i--)
+                if (!_windows[i].StillValid)
+                    Close(_windows[i]);
+
             for (int i = 0; i < _windows.Count; i++)
             {
                 if (_windows[i].Key == window.Key)
                 {
-                    // A stale one (a server gump closed and re-sent in the same frame) gives way to the new window.
-                    if (!_windows[i].StillValid)
-                    {
-                        Close(_windows[i]);
-                        break;
-                    }
                     // Already open: keep its position, bring it forward.
                     UiWindow existing = _windows[i];
                     _windows.RemoveAt(i);
@@ -213,7 +219,7 @@ namespace UOClient.Unity.UI
         {
             Rect r = window.Rect;
             float maxX = Screen.width / Scale, maxY = Screen.height / Scale;
-            for (int tries = 0; tries < 12; tries++)
+            for (int tries = 0; window.StepsAsideOnOpen && tries < 12; tries++)
             {
                 bool clash = false;
                 foreach (UiWindow w in _windows)

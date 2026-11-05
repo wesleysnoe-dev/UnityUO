@@ -129,6 +129,44 @@ namespace UOClient.Unity.UI
         /// (StbTextBox.cs:521-528) only drops focus and selection, and CanCloseWithEsc is never read.
         /// </summary>
         public static bool EscCloses(ServerGump g) => false;
+
+        /// <summary>Whether a server gump can be dragged: GumpHelpers.cs:89 starts every one CanMove, nomove clears it (:435-438).</summary>
+        public static bool CanMove(ServerGump g) => !g.NoMove;
+    }
+
+    /// <summary>
+    /// TazUO's server gump positions (UIManager._gumpPositionCache), kept by gump type id for the session. A window the
+    /// server closes and sends again (a CastleGump tab, pager or Rename: CloseGump&lt;T&gt; + SendGump at the same fixed x, y)
+    /// so comes back where the player left it, not at the server's spot.
+    /// </summary>
+    public sealed class GumpPositions
+    {
+        private readonly Dictionary<uint, (int X, int Y)> _at = new Dictionary<uint, (int, int)>();
+
+        /// <summary>
+        /// Where a gump opens. GumpHelpers.CreateGump (GumpHelpers.cs:76-82): a remembered spot for its type id wins over
+        /// the packet's x, y; with none, the packet's x, y is remembered.
+        /// </summary>
+        public (int X, int Y) Open(uint typeId, int x, int y)
+        {
+            if (_at.TryGetValue(typeId, out (int X, int Y) at))
+                return at;
+            _at[typeId] = (x, y);
+            return (x, y);
+        }
+
+        /// <summary>
+        /// A gump going, by a reply (Gump.OnButtonClick, Gump.cs:291-298: any button, right-click's 0 too) or the
+        /// server's close (ExtendedCommand.cs:59-66, button 0): a movable one leaves its spot remembered, a nomove one
+        /// forgets it, so its next copy opens at the server's x, y.
+        /// </summary>
+        public void Closed(uint typeId, bool canMove, int x, int y)
+        {
+            if (canMove)
+                _at[typeId] = (x, y);
+            else
+                _at.Remove(typeId);
+        }
     }
 
     /// <summary>
