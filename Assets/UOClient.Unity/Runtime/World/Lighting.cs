@@ -3,7 +3,7 @@ using UOClient.Core;
 
 namespace UOClient.Unity
 {
-    /// <summary>Time-of-day lighting: the server's light level, or a fixed time chosen with T.</summary>
+    /// <summary>Time-of-day lighting: the server's light level, or a fixed time chosen with T, tinted by the server's season.</summary>
     public sealed class Lighting
     {
         // Time of day: index into Times; -1 follows the server's light level.
@@ -47,9 +47,15 @@ namespace UOClient.Unity
                 target = Times[0];
             }
 
+            // The server's season (0xBC) tints the ambient light; summer leaves it as it is. We have no seasonal art
+            // sets (bare winter trees and the like), so the tint is all a season changes.
+            if (session != null && session.Season != Season.Summer)
+                target = new TimeOfDay(target.Name, target.Ambient * SeasonTint(session.Season), target.Light, target.Vignette);
+
             _timeCurrent = TimeOfDay.Lerp(_timeCurrent, target, 1f - Mathf.Exp(-Time.deltaTime * 2f));
             ApplyLighting(_timeCurrent);
-            hud.TimeName = target.Name + (_timeOverride < 0 && session != null ? $" (server light {session.World.GlobalLight})" : "");
+            hud.TimeName = target.Name + (_timeOverride < 0 && session != null ? $" (server light {session.World.GlobalLight})" : "")
+                           + (session != null && session.Season != Season.Summer ? $", {session.Season.ToString().ToLowerInvariant()}" : "");
             hud.Vignette = _timeCurrent.Vignette;
 
             Vector2 light = playerUnity + new Vector2(0, 30 * artScale);
@@ -58,6 +64,16 @@ namespace UOClient.Unity
 
         /// <summary>Daylight, before there is a world to light.</summary>
         public static void ApplyDefault() => ApplyLighting(Times[0]);
+
+        /// <summary>Multiplied into the ambient light: fresh green in spring, warm in fall, cold in winter, grey and dim in desolation.</summary>
+        private static Color SeasonTint(Season season) => season switch
+        {
+            Season.Spring => new Color(0.97f, 1.03f, 0.95f),
+            Season.Fall => new Color(1.04f, 0.95f, 0.84f),
+            Season.Winter => new Color(0.90f, 0.95f, 1.08f),
+            Season.Desolation => new Color(0.78f, 0.74f, 0.74f),
+            _ => Color.white
+        };
 
         private static void ApplyLighting(TimeOfDay t)
         {

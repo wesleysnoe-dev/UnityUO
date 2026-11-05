@@ -186,6 +186,30 @@ public sealed class SessionPacketTests
     }
 
     [Fact]
+    public void SeasonIsStoredAndRaised()
+    {
+        GameSession session = InWorldAs(0x00000042, 1495, 1629);
+        var changes = new List<(Season, bool)>();
+        session.SeasonChanged += (s, sound) => changes.Add((s, sound));
+        Assert.Equal(Season.Summer, session.Season);
+
+        // ModernUO's SendSeasonChange: 0xBC, season, play-sound flag (3 bytes).
+        byte[] winter = { 0xBC, 3, 1 };
+        Assert.Equal(PacketLengths.For(ClientVersion.Default)[0xBC], winter.Length);
+        session.Inject(winter, false);
+        Assert.Equal(Season.Winter, session.Season);
+
+        session.Inject(new byte[] { 0xBC, 4, 0 }, false);
+        Assert.Equal(Season.Desolation, session.Season);
+
+        // Out of range reads as spring, like the classic client.
+        session.Inject(new byte[] { 0xBC, 9, 0 }, false);
+        Assert.Equal(Season.Spring, session.Season);
+
+        Assert.Equal(new[] { (Season.Winter, true), (Season.Desolation, false), (Season.Spring, false) }, changes);
+    }
+
+    [Fact]
     public void QuestArrowShowsAndClearsOnHighSeasClients()
     {
         GameSession session = InWorldAs(0x00000042, 1495, 1629);

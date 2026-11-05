@@ -58,6 +58,7 @@ Not read yet: the HD animation packs (`HDArt/anim/*.uoanim`, about 5 GB), a form
 - **`0xBA` quest arrow (added later the same night, same caveat):** use Tracking on a nearby creature. The arrow should point toward it, follow it as it moves (ModernUO resends it), and disappear when tracking ends. The target has no z, so the on-screen marker sits at the player's height.
 - **`0xB8` profile (same caveat):** click the scroll on your own and on another player's paperdoll. ModernUO only answers for players within 12 tiles that you can see (nothing for NPCs). Your own should show the account age as the footer. Editing the profile (request mode 1) is not sent yet; ModernUO has no profile context-menu entry, so the paperdoll scroll is the only way in.
 - **`0x90`/`0xF5`/`0x56` map items (same caveat):** data only, nothing is drawn yet. Our default client (7.0.23.1) gets `0xF5` (21 bytes, with the facet), not `0x90`. Double-click a treasure or city map and check `GameSession.Maps` for the bounds and pins. ModernUO's `SendMapSetEditable` always sends editable = 1 (it ignores its argument), so the editable flag is not reliable.
+- **`0xBC` season (same caveat):** ModernUO sends it at login and on every facet change (each facet's season comes from the shard's map definitions). Change facets and check that the HUD's time line names the season (nothing is shown for summer) and the light takes a slight tint. The art does not change (no bare winter trees), and the play-sound flag is ignored.
 
 ## Unity UO's own settings
 
