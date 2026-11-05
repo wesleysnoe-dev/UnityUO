@@ -23,6 +23,9 @@ namespace UOClient.Unity.UI
 
         public virtual bool CanClose => true;
 
+        /// <summary>Whether Esc closes it (the topmost such window goes); server gumps never do, as in TazUO.</summary>
+        public virtual bool ClosesOnEsc => CanClose;
+
         /// <summary>False for fixed parts of the screen (the top bar): dragging the background does nothing.</summary>
         public virtual bool Movable => true;
 

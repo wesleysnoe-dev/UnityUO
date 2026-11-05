@@ -108,8 +108,8 @@ namespace UOClient.Unity
             {
                 if (_ctx.Session.Target != null)
                     _ctx.Session.CancelTarget();
-                else if (ui.Windows.LastOrDefault(w => w.CanClose) is UI.UiWindow top)
-                    ui.Close(top); // the topmost window that can close (not the top bar)
+                else if (ui.Windows.LastOrDefault(w => w.ClosesOnEsc) is UI.UiWindow top)
+                    ui.Close(top); // the topmost window Esc closes (not the top bar, not a server gump)
             }
 
             // Pressing on a movable ground item and moving the mouse picks it up (0x07), as in ClassicUO; the

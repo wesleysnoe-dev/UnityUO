@@ -566,6 +566,45 @@ public sealed class ShardGumpLayoutTests
         Assert.Equal(1, g.Accept(Assert.Single(sent)).Button);
     }
 
+    [Theory]
+    [InlineData(true, true, true, true)]    // plain gump: right-click closes, CanCloseWithEsc stays set
+    [InlineData(false, true, false, true)]  // noclose only: right-click blocked (GumpHelpers.cs:427-430)
+    [InlineData(true, false, true, false)]  // nodispose only: right-click still closes, CanCloseWithEsc cleared (:431-434)
+    [InlineData(false, false, false, false)] // GroupDockGump: both
+    public void NoCloseBlocksRightClickAndNoDisposeOnlyClearsEscFlag(bool closable, bool disposable, bool rightClick, bool escFlag)
+    {
+        var g = new ShardGump(0x40000105, 0x0BADD0C5, 50, 50) { Closable = closable, Disposable = disposable };
+        g.AddPage(0);
+        g.AddBackground(0, 0, 112, 27, 9200);
+        g.AddButton(5, 4, 4005, 4007, 1);
+
+        var sent = new List<byte[]>();
+        ServerGump gump = Open(InWorld(sent), g.Uncompressed());
+        Assert.Equal(!closable, gump.NoClose);
+        Assert.Equal(!disposable, gump.NoDispose);
+        Assert.Equal(rightClick, ServerGumpWindow.ClosesOnRightClick(gump));
+        Assert.Equal(escFlag, ServerGumpWindow.CanCloseWithEsc(gump));
+        // TazUO never reads CanCloseWithEsc and its Esc closes no gump (GameSceneInputHandler.cs:1370-1419).
+        Assert.False(ServerGumpWindow.EscCloses(gump));
+    }
+
+    [Fact]
+    public void RightClickCloseAnswersButtonZero()
+    {
+        // Gump.cs:311-314: a server gump closed by right-click sends OnButtonClick(0); DisplayGumpResponse takes 0 as "closed".
+        var g = new ShardGump(0x40000105, 0x0BADD0C5, 50, 50) { Disposable = false };
+        g.AddPage(0);
+        g.AddBackground(0, 0, 112, 27, 9200);
+        g.AddButton(5, 4, 4005, 4007, 1);
+
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        ServerGump gump = Open(session, g.Uncompressed());
+        Assert.True(ServerGumpWindow.ClosesOnRightClick(gump));
+        session.ReplyGump(gump, ServerGumpWindow.RightClickReplyButton, new GumpControls(gump).Switches(), new GumpControls(gump).Entries());
+        Assert.Equal(0, g.Accept(Assert.Single(sent)).Button);
+    }
+
     // ---- harness ----
 
     private static GameSession InWorld(List<byte[]> sent)

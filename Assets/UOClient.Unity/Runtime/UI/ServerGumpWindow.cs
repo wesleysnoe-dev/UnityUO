@@ -8,7 +8,7 @@ namespace UOClient.Unity.UI
     /// <summary>
     /// A gump the server sent (menus, dialogs, help, vendors' extras...), drawn from its layout commands.
     /// Pages switch locally; reply buttons answer the server with the switches and text entries.
-    /// Right-click closes it (answering button 0) unless the server marked it noclose.
+    /// Right-click closes it (answering button 0) unless the server marked it noclose; Esc never does, as in TazUO.
     /// </summary>
     public sealed partial class ServerGumpWindow : UiWindow
     {
@@ -31,7 +31,8 @@ namespace UOClient.Unity.UI
 
         public ServerGump Gump => _gump;
         public override string Key => $"gump:{_gump.TypeId}:{_gump.Serial}";
-        public override bool CanClose => !_gump.NoClose;
+        public override bool CanClose => ClosesOnRightClick(_gump);
+        public override bool ClosesOnEsc => EscCloses(_gump);
 
         // The server can close or replace it; then this window goes too.
         public override bool StillValid => Session.World.Gumps.Contains(_gump);

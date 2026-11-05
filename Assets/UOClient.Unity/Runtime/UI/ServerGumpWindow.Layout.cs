@@ -57,6 +57,29 @@ namespace UOClient.Unity.UI
         /// </summary>
         public static (bool IsPage, int Value) ButtonPress(GumpCommand c) =>
             c.Arg(4) == 0 ? (true, PageShown(c.Arg(5))) : (false, c.Arg(6));
+
+        /// <summary>
+        /// Whether right-click closes a server gump. TazUO's GumpHelpers.cs:90 starts every server gump with
+        /// CanCloseWithRightClick, and only noclose clears it (:427-430); Gump.CloseWithRightClick (Gump.cs:304-309)
+        /// then does nothing. nodispose leaves right-click alone.
+        /// </summary>
+        public static bool ClosesOnRightClick(ServerGump g) => !g.NoClose;
+
+        /// <summary>The button a right-click close answers with: Gump.cs:311-314 sends OnButtonClick(0) for a server gump.</summary>
+        public const int RightClickReplyButton = 0;
+
+        /// <summary>
+        /// TazUO's CanCloseWithEsc for a server gump: set at GumpHelpers.cs:91, cleared by nodispose (:431-434).
+        /// Kept for fidelity only: nothing in TazUO reads it (Control.cs:93 declares it; see EscCloses).
+        /// </summary>
+        public static bool CanCloseWithEsc(ServerGump g) => !g.NoDispose;
+
+        /// <summary>
+        /// Whether Esc closes a server gump: never, nodispose or not. TazUO's Esc (GameSceneInputHandler.cs:1370-1419)
+        /// only cancels a target, releases the chat box and stops auto-walk; Gump has no key handler, a text box's Esc
+        /// (StbTextBox.cs:521-528) only drops focus and selection, and CanCloseWithEsc is never read.
+        /// </summary>
+        public static bool EscCloses(ServerGump g) => false;
     }
 
     /// <summary>
