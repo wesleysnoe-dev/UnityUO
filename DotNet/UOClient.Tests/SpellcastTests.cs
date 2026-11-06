@@ -210,6 +210,34 @@ public sealed class SpellcastTests
         Assert.Empty(NoPings(sent)); // opening and paging the book sends nothing
     }
 
+    [Theory]
+    [InlineData(1, 3, 4, 3002014)]      // Heal
+    [InlineData(1, 0, 1, 3002011)]      // Clumsy
+    [InlineData(101, 0, 101, 1060509)]  // Animate Dead
+    [InlineData(201, 1, 202, 1060586)]  // Close Wounds
+    public void AFloatingSpellIconCastsWithoutTheBook(int first, int index, int spell, int tooltip)
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, ClientVersion.Default);
+
+        // OnIconDragBegin: the icon's spell is the book's first id + index; UseSpellButtonGump double-click: CastSpell.
+        SpellbookWindow.CastIcon(session, first + index);
+
+        Assert.Equal(Extended(spell), Assert.Single(NoPings(sent)));
+        Assert.Equal(tooltip, SpellbookWindow.SpellIconTooltip(spell));
+    }
+
+    [Fact]
+    public void IconDragStartsAtTazUOsMoveDistance()
+    {
+        Assert.False(SpellbookWindow.StartsDrag(4, -4));
+        Assert.True(SpellbookWindow.StartsDrag(5, 0));
+        Assert.True(SpellbookWindow.StartsDrag(0, -5));
+        Assert.Equal(22, SpellbookWindow.FloatingIconGrab);
+        Assert.Equal(0, SpellbookWindow.SpellIconTooltip(401)); // not an AoS book here
+        SpellbookWindow.CastIcon(null, 4); // no session: nothing to send, no throw
+    }
+
     [Fact]
     public void OtherSchoolsKeepTheListModel()
     {

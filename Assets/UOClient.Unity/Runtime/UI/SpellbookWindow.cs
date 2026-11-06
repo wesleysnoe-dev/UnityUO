@@ -22,6 +22,8 @@ namespace UOClient.Unity.UI
         private Vector2 _scroll;
         private float _lastCornerClick;
         private int _lastCorner;
+        private int _pressSpell = -1; // the detail icon a left press began on, until it drags out or is released
+        private Vector2 _pressAt;
 
         public SpellbookWindow(uint book, int first, ulong bits)
         {
@@ -156,6 +158,7 @@ namespace UOClient.Unity.UI
                 UiImage icon = Art.Gump(IconOf(_s.Info, entry.Spell));
                 var iconRect = new Rect(entry.IconX, IconY, icon?.Width ?? 44, icon?.Height ?? 44);
                 DrawImage(icon, iconRect.x, iconRect.y);
+                DragIconOut(iconRect, entry.Spell, name); // before the button, which takes the press and its drags
                 if (GUI.Button(iconRect, GUIContent.none, GUIStyle.none) || GUI.Button(nameRect, GUIContent.none, GUIStyle.none))
                     CastFromBook(Session, _s.Book, _s.Info.First, entry.Spell);
 
@@ -167,6 +170,35 @@ namespace UOClient.Unity.UI
                 }
                 if (_s.Info.Kind != SpellbookKind.Magery)
                     Label(SpellbookSpells.Requires(spell.Mana, spell.MinSkill), entry.IconX, RequiresY);
+            }
+        }
+
+        /// <summary>
+        /// TazUO's OnIconDragBegin (:806-830): a press on a spell's icon that moves 5 px puts a floating spell icon under
+        /// the mouse (replacing one already out for that spell) and carries it until the button is let go. The press no
+        /// longer casts from the book. The icon lives in this session's UiManager only: nothing is saved.
+        /// </summary>
+        private void DragIconOut(Rect iconRect, int index, string name)
+        {
+            Event e = Event.current;
+            if (e.button != 0)
+                return;
+            if (e.type == EventType.MouseDown && iconRect.Contains(e.mousePosition))
+            {
+                _pressSpell = index;
+                _pressAt = e.mousePosition;
+            }
+            else if (e.type == EventType.MouseUp)
+                _pressSpell = -1;
+            else if (e.type == EventType.MouseDrag && _pressSpell == index && StartsDrag(e.mousePosition.x - _pressAt.x, e.mousePosition.y - _pressAt.y))
+            {
+                _pressSpell = -1;
+                GUIUtility.hotControl = 0; // the icon's button lets go, so the release casts nothing
+                var grab = new Vector2(FloatingIconGrab, FloatingIconGrab);
+                SpellIconWindow floating = Ui.Open(new SpellIconWindow(_s.Info.First + index, IconOf(_s.Info, index), name));
+                floating.Rect.position = Rect.position + e.mousePosition - grab;
+                Ui.BeginWindowDrag(floating, grab);
+                e.Use();
             }
         }
 
@@ -239,6 +271,54 @@ namespace UOClient.Unity.UI
                     CastFromBook(Session, _s.Book, _s.First, i);
             }
             GUI.EndScrollView();
+        }
+    }
+
+    /// <summary>
+    /// A spell icon dragged out of a classic book: TazUO's UseSpellButtonGump without its saving, hotkey label or macro
+    /// edit. Double-click casts the spell (0xBF 0x1C, SpellbookWindow.CastIcon); drag moves it; right-click closes it;
+    /// Esc leaves it. Session-only: it belongs to this session's UiManager and goes with it, and nothing is written.
+    /// </summary>
+    public sealed class SpellIconWindow : UiWindow
+    {
+        private readonly int _spell, _gump;
+        private readonly string _name;
+
+        public SpellIconWindow(int spell, int gump, string name)
+        {
+            _spell = spell;
+            _gump = gump;
+            _name = name;
+            Rect = new Rect(0, 0, 44, 44);
+        }
+
+        public override string Key => "spellicon:" + _spell;
+
+        public override bool ClosesOnEsc => false;
+
+        public override bool StepsAsideOnOpen => false;
+
+        public override void Draw()
+        {
+            UiImage icon = Art.Gump(_gump);
+            Rect.width = icon?.Width ?? 44;
+            Rect.height = icon?.Height ?? 44;
+            DrawImage(icon, 0, 0);
+
+            Event e = Event.current;
+            bool inside = new Rect(0, 0, Rect.width, Rect.height).Contains(e.mousePosition);
+            HoveredText = inside ? Tooltip() : null;
+            if (inside && e.type == EventType.MouseDown && e.button == 0 && e.clickCount == 2)
+            {
+                SpellbookWindow.CastIcon(Session, _spell);
+                e.Use();
+            }
+        }
+
+        private string Tooltip()
+        {
+            int cliloc = SpellbookWindow.SpellIconTooltip(_spell);
+            return cliloc != 0 && Ui.Cliloc?.Get(cliloc) is string s && s.Length > 0 ? s : _name;
         }
     }
 }
