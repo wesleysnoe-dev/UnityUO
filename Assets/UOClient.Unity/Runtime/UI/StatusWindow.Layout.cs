@@ -31,6 +31,9 @@ namespace UOClient.Unity.UI
 
         public static (int X, int Y) NamePos => (86, 42);
 
+        /// <summary>The buff button (StatusGump.cs:304-315, from CV_5020): 0x7538, pressed / over 0x7539, at (20, 42).</summary>
+        public const int BuffButton = 0x7538, BuffButtonPressed = 0x7539, BuffButtonX = 20, BuffButtonY = 42;
+
         /// <summary>One label: where it goes and what it says.</summary>
         public readonly struct Label
         {

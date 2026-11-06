@@ -73,9 +73,6 @@ namespace UOClient.Unity
         /// <summary>The quest arrow's marker in screen pixels (top-left origin) for clicks, valid after a draw; empty when none.</summary>
         public Rect QuestArrowRect { get; private set; }
 
-        /// <summary>The buff bar under the status bars: each buff's name and time left ("" when untimed), redrawn every frame.</summary>
-        public readonly List<(string Name, string Time)> Buffs = new List<(string, string)>();
-
         /// <summary>Falling rain or snow drawn over the world: how many particles (0 for none, at most 70), snow or rain, and storm speed.</summary>
         public int WeatherCount { get; set; }
         public bool WeatherSnow { get; set; }
@@ -282,7 +279,6 @@ namespace UOClient.Unity
             if (Visible)
             {
                 DrawStatus(new Rect(14, 14 + TopInset, 290, 112));
-                DrawBuffs(14, 132 + TopInset, 290);
                 if (MinimapVisible)
                     DrawMinimap(new Rect(w - MinimapSize - 22, 14 + TopInset, MinimapSize + 8, MinimapSize + 8));
                 if (JournalVisible)
@@ -356,30 +352,6 @@ namespace UOClient.Unity
             DrawBar(new Rect(r.x + 10, r.y + 10, r.width - 20, 26), _hits, Ratio(Hits, HitsMax), $"Hits  {Hits}/{HitsMax}");
             DrawBar(new Rect(r.x + 10, r.y + 43, r.width - 20, 26), _mana, Ratio(Mana, ManaMax), $"Mana  {Mana}/{ManaMax}");
             DrawBar(new Rect(r.x + 10, r.y + 76, r.width - 20, 26), _stamina, Ratio(stamina, staminaMax), $"Stamina  {stamina}/{staminaMax}");
-        }
-
-        /// <summary>Buffs as small text chips (name, then time left), wrapping into rows <paramref name="width"/> wide.</summary>
-        private void DrawBuffs(float x, float y, float width)
-        {
-            float cx = x, cy = y;
-            foreach (var (buffName, time) in Buffs)
-            {
-                string text = string.IsNullOrEmpty(time) ? buffName : $"{buffName}  {time}";
-                float cw = Mathf.Min(width, _small.CalcSize(new GUIContent(text)).x + 12);
-                if (cx > x && cx + cw > x + width)
-                {
-                    cx = x;
-                    cy += 22;
-                }
-                var r = new Rect(cx, cy, cw, 20);
-                GUI.color = new Color(0.55f, 0.45f, 0.28f, 0.9f);
-                GUI.DrawTexture(r, _white);
-                GUI.color = new Color(0.06f, 0.05f, 0.05f, 0.85f);
-                GUI.DrawTexture(new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2), _white);
-                GUI.color = Color.white;
-                DrawOutlined(new Rect(r.x + 6, r.y + 1, r.width - 8, 18), text, _small, new Color(0.96f, 0.9f, 0.7f));
-                cx += cw + 4;
-            }
         }
 
         private static float Ratio(int value, int max) => max <= 0 ? 0f : Mathf.Clamp01(value / (float)max);

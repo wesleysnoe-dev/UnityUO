@@ -251,3 +251,28 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
     - **Change:** `Pointer`'s decision is now `SpellbookClicks.Route` (Unity-free). The window only maps IMGUI events to it and applies `hotControl` / `e.Use()`. A held icon whose `MouseUp` never arrives is dropped on the next non-mouse event with the button up; `OnClosed` does the same.
     - **Verified by tests:** 687 pass (4 new, on the Use/hold flags `Pointer` applies). Tests, Cli, EditorCheck (forced rebuild) and GumpPreview build with 0 warnings.
     - **Editor status (read only):** `UOClient.Unity.dll` still 09:53:29; Editor.log not used. **Not verified:** Unity compile, play mode (IMGUI delivery of the held icon's drags / release, the guard, the floating icon), live.
+37. **Buff bar and active spell icons as TazUO** (backup tag `fidelity-pre-buffs` = `7515fe2`). Details in LIVE_PARITY, "Buff bar and active spell icons".
+    - **Buff bar:** `UI.BuffBarWindow` replaces the HUD's text chips.
+      - TazUO's classic `BuffGump`: the 189-row default `BuffTable` art (checked against TazUO's file), the `0x7580` bar, and the `0x7585` direction button cycling four shapes.
+      - A timer over each timed icon (`BuffBarTime` style), the last-10-seconds pulse, and a `<left>` title / description / "Time left" tooltip.
+      - Right-click closes it; the status window's `0x7538` button reopens it.
+      - It opens with each session at (100, 100), because we save no layout.
+      - No local removal: a run-out icon waits for the server's remove, as in TazUO.
+      - `UiWindow.HoveredTextId` keeps the countdown from restarting the tooltip delay.
+    - **Active spells:** session handles `0xBF 0x25` (`ActiveSpellExtended`), cleared on `0x1B` and on disconnect.
+      - Classic book detail icons and floating icons draw in hue 38 only while it is set.
+      - **ModernUO never sends `0x25` for Magery, Necromancy or Chivalry** (only `SpecialMove` / `SamuraiSpell`), so on this shard it is wired but can't trigger on these books.
+    - **Tooltips:**
+      - Book detail icons now use TazUO's `SpellbookGump.GetSpellToolTip` description clilocs: 1061290 / 1061390 / 1061490 + index. These are not the name clilocs the brief listed; TazUO's book uses the descriptions.
+      - Floating icons keep the 3002011 / 1060509 / 1060585 names.
+    - **Docs:**
+      - README spellbook line: double-click casts with `0xBF 0x1C`; a single click never casts.
+      - README buff line updated.
+      - LIVE_PARITY "Still missing" spell line: `0x12 0x27` is the other schools' list only.
+      - LIVE_PARITY `0xDF` re-test line updated, plus two checklist items.
+    - **Verified by tests:** 711 pass (24 new, offline sessions with ModernUO-layout bytes, plus install `Cliloc.enu` / gump checks). Tests, Cli, EditorCheck (forced rebuild) and GumpPreview build with 0 warnings.
+    - **Editor status (read only):** `UOClient.Unity.dll` still 09:53:29; Editor.log not used.
+    - **Not verified:**
+      - Unity compile.
+      - Play mode: bar look and drag, tooltip placement and steadiness, the hue 38 art, the status button.
+      - Live `0xDF`.

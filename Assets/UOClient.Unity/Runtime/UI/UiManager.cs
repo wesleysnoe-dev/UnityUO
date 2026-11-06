@@ -53,6 +53,12 @@ namespace UOClient.Unity.UI
         /// <summary>A plain text tooltip under the mouse (a server gump's cliloc tooltip), or null.</summary>
         public string HoveredText { get; protected set; }
 
+        /// <summary>
+        /// What HoveredText belongs to, when its text changes while hovered (a buff's time left): the tooltip keeps
+        /// showing while this stays the same. Null compares the text itself.
+        /// </summary>
+        public string HoveredTextId { get; protected set; }
+
         protected GameSession Session => Ui.Session;
         protected GumpArt Art => Ui.Art;
 

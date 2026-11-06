@@ -507,6 +507,7 @@ namespace UOClient.Core
             World.MapHeight = r.ReadUInt16();
             _moveSeq = 0;
             _pendingSteps.Clear();
+            ClearActiveSpells();
             SetStatus($"Entering the world at {p.X},{p.Y},{p.Z}");
             World.RaiseMobileUpdated(p);
         }
@@ -940,7 +941,8 @@ namespace UOClient.Core
         private void Extended(PacketReader r)
         {
             int sub = r.ReadUInt16();
-            if (TradeExtended(sub, r) || HousingExtended(sub, r) || PartyExtended(sub, r) || ExtendedStats(sub, r))
+            if (TradeExtended(sub, r) || HousingExtended(sub, r) || PartyExtended(sub, r) || ExtendedStats(sub, r)
+                || ActiveSpellExtended(sub, r))
                 return;
             if (sub == 0x08) // set map
                 World.Map = r.ReadByte();
@@ -970,6 +972,8 @@ namespace UOClient.Core
         private void SetState(SessionState state, string status)
         {
             State = state;
+            if (state == SessionState.Disconnected)
+                ClearActiveSpells();
             SetStatus(status);
         }
 

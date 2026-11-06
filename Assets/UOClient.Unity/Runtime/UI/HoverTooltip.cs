@@ -11,7 +11,7 @@ namespace UOClient.Unity.UI
         public const int TooltipWindowId = 0x7EEF;
 
         private uint _hoverSerial, _forcedHover;
-        private string _hoverText;
+        private string _hoverText, _hoverId;
         private Vector2 _forcedHoverAt;
         private float _hoverSince;
         private GUIStyle _tooltipStyle;
@@ -30,7 +30,7 @@ namespace UOClient.Unity.UI
         public void UpdateHover(UiManager ui, Func<Vector2, uint> pick)
         {
             uint serial = 0;
-            string text = null;
+            string text = null, id = null;
             Vector2 mouse = Input.mousePosition;
             if (ui.IsOverUi(mouse))
             {
@@ -40,6 +40,7 @@ namespace UOClient.Unity.UI
                     {
                         serial = ui.Windows[i].Hovered;
                         text = serial == 0 ? ui.Windows[i].HoveredText : null;
+                        id = text != null ? ui.Windows[i].HoveredTextId ?? text : null;
                         break;
                     }
             }
@@ -50,14 +51,15 @@ namespace UOClient.Unity.UI
             if (_forcedHover != 0)
             {
                 serial = _forcedHover; // the capture tour (no real mouse)
-                text = null;
+                text = id = null;
             }
-            if (serial != _hoverSerial || text != _hoverText)
+            if (serial != _hoverSerial || id != _hoverId)
             {
                 _hoverSerial = serial;
-                _hoverText = text;
+                _hoverId = id;
                 _hoverSince = Time.realtimeSinceStartup;
             }
+            _hoverText = text; // the same element's text may change (a countdown) without restarting the delay
         }
 
         public void OnGUI(GameSession session, UiManager ui)
@@ -76,6 +78,9 @@ namespace UOClient.Unity.UI
                 _tooltipBack.SetPixel(0, 0, new Color(0.05f, 0.04f, 0.03f, 0.88f));
                 _tooltipBack.Apply();
             }
+            // TazUO's buff text is wrapped in <left> (BuffDebuff.Receive); everything else is centered.
+            _tooltipStyle.alignment = props == null && _hoverText.StartsWith("<left>", StringComparison.OrdinalIgnoreCase)
+                ? TextAnchor.UpperLeft : TextAnchor.UpperCenter;
             var sb = new StringBuilder();
             if (props == null)
                 sb.Append(GumpHtml.ToRichText(_hoverText, out _)); // a gump element's cliloc tooltip

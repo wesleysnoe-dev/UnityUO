@@ -53,6 +53,7 @@ namespace UOClient.Unity.UI
         public override void Draw()
         {
             _pressId = GUIUtility.GetControlID(FocusType.Passive); // every event, so the id holds while an icon is pressed
+            HoveredText = null; // a detail icon's tooltip, set again while the mouse is on one
             UiImage bg =_s.Classic ? Art.Gump(_minimized ? _s.Info.MinimizedGraphic : _s.Info.BookGraphic) : null;
             if (bg == null)
             {
@@ -238,7 +239,11 @@ namespace UOClient.Unity.UI
                 }
 
                 // The icon's double-click and drag are Pointer's; the name label takes no clicks (TazUO's plain Label).
-                DrawImage(Art.Gump(IconOf(_s.Info, entry.Spell)), entry.IconX, IconY);
+                // Hue 38 while the server has the spell on (HueGumpPic); its tooltip is the book's own cliloc.
+                DrawImage(Art.Gump(IconOf(_s.Info, entry.Spell), IconHue(Session, _s.Info.First + entry.Spell)), entry.IconX, IconY);
+                if (IconRect(entry).Contains(Event.current.mousePosition)
+                    && Ui.Cliloc?.Get(BookIconTooltip(_s.Info.Kind, entry.Spell)) is string tip && tip.Length > 0)
+                    HoveredText = tip;
 
                 if (spell.Reagents.Length > 0)
                 {
@@ -363,7 +368,9 @@ namespace UOClient.Unity.UI
 
         public override void Draw()
         {
-            UiImage icon = Art.Gump(_gump);
+            // Hue 38 while the server has the spell on. TazUO hues an open UseSpellButtonGump when 0xBF 0x25 arrives
+            // (ExtendedCommand :520-531); this reads the same ActiveSpellIcons each frame, so one dragged out later matches.
+            UiImage icon = Art.Gump(_gump, SpellbookWindow.IconHue(Session, _spell));
             Rect.width = icon?.Width ?? 44;
             Rect.height = icon?.Height ?? 44;
             DrawImage(icon, 0, 0);
@@ -380,6 +387,7 @@ namespace UOClient.Unity.UI
             }
         }
 
+        /// <summary>UseSpellButtonGump.GetSpellTooltip's cliloc (Magery 3002011+, Necromancy 1060509+, Chivalry 1060585+); the name without it.</summary>
         private string Tooltip()
         {
             int cliloc = SpellbookWindow.SpellIconTooltip(_spell);

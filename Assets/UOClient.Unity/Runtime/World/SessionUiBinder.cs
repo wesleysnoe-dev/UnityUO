@@ -64,6 +64,9 @@ namespace UOClient.Unity
             s.World.JournalAdded += ChatLog.Add;
             Ui.Open(new UI.TopBarWindow());
             _ctx.Hud.TopInset = UI.TopBarWindow.Height + 4;
+            // TazUO brings its buff gump back from the saved layout; we save none, so it opens with each session
+            // (closed, the status window's buff button opens it again).
+            Ui.Open(new UI.BuffBarWindow());
             Hotkeys = new Hotkeys(GameContext.ProjectRoot) { Log = m => _ctx.Hud.Log(null, m), Command = RunCommand };
             s.TargetRequested += OnTargetRequested;
             s.TargetEnded += OnTargetEnded;

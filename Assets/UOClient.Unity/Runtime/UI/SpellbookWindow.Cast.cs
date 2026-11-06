@@ -49,6 +49,29 @@ namespace UOClient.Unity.UI
                 return 1060585 + (spellId - 201);
             return 0;
         }
+
+        /// <summary>
+        /// A classic book's detail icon tooltip (SpellbookGump.GetSpellToolTip :1056-1073, set at :728-732): the school's
+        /// offset plus the spell's 0-based index, not the floating icon's numbers. 0 past the school's spells.
+        /// </summary>
+        public static int BookIconTooltip(SpellbookKind kind, int index)
+        {
+            if (index < 0 || !(SpellbookSpells.Get(kind, index) is SpellbookSpells.Spell))
+                return 0;
+            return kind switch
+            {
+                SpellbookKind.Magery => 1061290 + index,
+                SpellbookKind.Necromancy => 1061390 + index,
+                _ => 1061490 + index,
+            };
+        }
+
+        /// <summary>
+        /// A spell icon's hue (book detail icon or floating icon): 38 while the server's 0xBF 0x25 has the spell on
+        /// (SpellbookGump.HueGumpPic.Update :1544-1556, UseSpellButtonGump.Hue), else 0. Nothing else turns it on.
+        /// </summary>
+        public static int IconHue(GameSession session, int spellId) =>
+            session != null && session.IsSpellActive(spellId) ? GameSession.ActiveSpellHue : 0;
     }
 
     /// <summary>What a press in a classic book is on: a detail page's spell icon, an index name, or anything else.</summary>

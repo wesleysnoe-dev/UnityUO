@@ -417,6 +417,10 @@ namespace UOClient.Unity.UI
             (int nx, int ny) = NamePos;
             DrawImage(_name.Get(Art, m.Name ?? "", LabelHue), nx, ny);
 
+            // StatusGumpOld's buff button (CV_5020 and later): opens the buff bar, or brings it forward.
+            if (GumpButton(BuffButton, BuffButtonPressed, BuffButtonX, BuffButtonY, BuffButtonPressed))
+                Ui.Open(new BuffBarWindow());
+
             bool uop = Art.Data.GumpFile is UOClient.IO.Files.UopFile;
             for (int stat = 0; stat < 3; stat++)
             {
