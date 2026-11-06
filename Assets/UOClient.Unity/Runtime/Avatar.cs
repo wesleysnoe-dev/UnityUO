@@ -228,13 +228,15 @@ namespace UOClient.Unity
 
         public void Render(IWorldSpace view)
         {
-            int fileDir = AnimationFile.FileDirection(Direction, out bool mirror);
+            // Worn layers stack by the facing itself (TazUO's layerDir, taken before GetAnimDirection; MobileView.cs:151-154).
+            int layerDir = Direction & 7;
+            int fileDir = AnimationFile.FileDirection(layerDir, out bool mirror);
             bool war = WarMode && !Dead;
-            if (fileDir != _prefetchedDir || !ReferenceEquals(_look, _prefetchedLook) || war != _prefetchedWar)
+            if (layerDir != _prefetchedDir || !ReferenceEquals(_look, _prefetchedLook) || war != _prefetchedWar)
             {
                 // A new direction, look or mode: ask for all its actions at once, so turning and starting to walk don't wait.
-                _art.Prefetch(_look, _lookKey, fileDir, WarMode, Dead);
-                _prefetchedDir = fileDir;
+                _art.Prefetch(_look, _lookKey, fileDir, layerDir, WarMode, Dead);
+                _prefetchedDir = layerDir;
                 _prefetchedLook = _look;
                 _prefetchedWar = war;
             }
@@ -245,7 +247,7 @@ namespace UOClient.Unity
             int shown = -1; // the action whose frames were found this time
             if (Dying)
             {
-                MobileFrame[] fall = _art.Get(_look, _lookKey, DeathAction, fileDir);
+                MobileFrame[] fall = _art.Get(_look, _lookKey, DeathAction, fileDir, layerDir);
                 if (fall != null && fall.Length > 0)
                 {
                     frames = fall;
@@ -263,7 +265,7 @@ namespace UOClient.Unity
                 var peace = MobileArt.Actions(_look);
                 int action = MobileActions.Pick(MobileArt.Actions(_look, WarMode, Dead), moving, _running);
                 frames = MobileActions.WithFallback(action, MobileActions.Pick(peace, moving, _running), peace.Stand,
-                    a => _art.Get(_look, _lookKey, a, fileDir), out int chosen);
+                    a => _art.Get(_look, _lookKey, a, fileDir, layerDir), out int chosen);
                 if (frames != null)
                     shown = chosen;
             }
@@ -292,7 +294,7 @@ namespace UOClient.Unity
                     _lit = _look.Rehued(ObjectHighlight.Hue);
                     _litKey = _lit.Key;
                 }
-                MobileFrame[] lit = _art.Get(_lit, _litKey, shown, fileDir);
+                MobileFrame[] lit = _art.Get(_lit, _litKey, shown, fileDir, layerDir);
                 if (lit != null && lit.Length == frames.Length)
                     frames = lit;
             }

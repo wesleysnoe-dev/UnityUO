@@ -297,3 +297,13 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
    - On the way, EditorCheck's meta check caught `ShopWindow.Icon.cs.meta` missing. I had written it before the `.cs`, and the Editor's auto-refresh deleted it as an orphan. Rewritten, with a new guid.
 4. **Editor (read only, no refresh requested):** `UOClient.Unity.dll` is 18:21:15. That is 11 s after `ObjectHighlight.cs` was created and before every other edit (18:21:30-18:25:23), so the open Editor auto-refreshed once on the new file. That compile has only an unused static class added; this batch is not in it. Re-read after the commit: see the commit report.
 5. **Not verified:** play mode (0x0035 on HD art, the world pick on mirrored mobiles, the horse picture), and live.
+## Session: capes per facing (2026-11-05)
+
+1. **Capes drawn in the wrong order** (Wes 18:16; backup tag `fidelity-pre-cloak` = `06302cb`; details in LIVE_PARITY "Capes and cloaks stack per facing").
+   - **Cause:** `MobileLook` used one layer order for all facings, cloak first after the body. TazUO's `LayerOrder.UsedLayers` does that only facing the viewer (3). Every other facing draws the cloak near the end, over robe and hair. So from the back and sides our clothes and hair covered the cape.
+   - **Fix:** TazUO's 8 x 23 table in `MobileLook.UsedLayers`; worn layers keep their slot; `DrawOrder(direction)` stacks mount, body, then the table. `MobileArt` caches frames per order class too (0 and 6 share a file direction, not an order). `Avatar` passes its facing; corpses pass the file direction, as TazUO's `DrawCorpse`. No graphic ids.
+   - **Also changed by the table:** robe now under hair/beard; face layer (15) drawn. Partial hue, AnimId and `Equipconv` unchanged (already as TazUO). `IsCovered` not done (separate).
+2. **hv1 check:** the 0x0035 hover and vendor-body commit (`06302cb`) was already in; nothing re-done.
+3. **Verified by tests:** 743 pass (13 new: per-facing order on foot and mounted, 0 vs 6, order classes, highlight copy; install: a tiledata-found cloak over/under a robe). Tests, Cli, EditorCheck (forced, 156 script metas OK) and GumpPreview build with 0 warnings.
+4. **Editor (read only):** `UOClient.Unity.dll` is 18:29:28, before every edit here (18:30:38-18:31:33). Unity has not compiled this change.
+5. **Not verified:** the look. Needs front / back / diagonal / mounted re-test (LIVE_PARITY checklist), play mode and live.

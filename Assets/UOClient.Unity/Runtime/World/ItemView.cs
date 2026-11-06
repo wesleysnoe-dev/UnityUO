@@ -116,12 +116,13 @@ namespace UOClient.Unity
                 _litCorpse = _corpseLook.Rehued(ObjectHighlight.Hue);
                 _litCorpseKey = _litCorpse.Key;
             }
+            // DrawCorpse indexes LayerOrder.UsedLayers by the file direction (ItemView.cs:191-228), so that is the layer order.
             MobileFrame[] Frames(int action, int fileDir)
             {
-                MobileFrame[] own = _art.Get(_corpseLook, _corpseKey, action, fileDir);
+                MobileFrame[] own = _art.Get(_corpseLook, _corpseKey, action, fileDir, fileDir);
                 if (!lit || own == null)
                     return own;
-                MobileFrame[] hued = _art.Get(_litCorpse, _litCorpseKey, action, fileDir);
+                MobileFrame[] hued = _art.Get(_litCorpse, _litCorpseKey, action, fileDir, fileDir);
                 return hued != null && hued.Length == own.Length ? hued : own;
             }
             CorpseDraw.Pick pick = CorpseDraw.Select(_corpse, _corpseAction, Hidden, Frames, out MobileFrame[] frames);

@@ -14,6 +14,7 @@ namespace UOClient.Unity
             public int Hue;    // hues.mul index (entry + 1); 0 = unhued
             public bool Partial;
             public bool IsMount; // the creature being ridden: plays its own walk/run/stand under the rider
+            public byte Slot;    // the worn item's layer (20 = cloak); 0 for the body and the mount
         }
 
         public readonly List<Layer> Layers = new List<Layer>();
@@ -50,7 +51,8 @@ namespace UOClient.Unity
             {
                 var sb = new StringBuilder();
                 foreach (Layer l in Layers)
-                    sb.Append(l.IsMount ? "m" : "").Append(l.Body).Append(':').Append(l.Hue).Append(l.Partial ? "p" : "").Append(';');
+                    sb.Append(l.IsMount ? "m" : "").Append(l.Body).Append(':').Append(l.Hue).Append(l.Partial ? "p" : "")
+                        .Append('@').Append(l.Slot).Append(';');
                 return sb.ToString();
             }
         }
@@ -67,7 +69,7 @@ namespace UOClient.Unity
                 MountActions = MountActions, WarActions = WarActions, DeathActions = DeathActions
             };
             foreach (Layer l in Layers)
-                look.Layers.Add(new Layer { Body = l.Body, Hue = hue, Partial = false, IsMount = l.IsMount });
+                look.Layers.Add(new Layer { Body = l.Body, Hue = hue, Partial = false, IsMount = l.IsMount, Slot = l.Slot });
             return look;
         }
 
@@ -82,12 +84,61 @@ namespace UOClient.Unity
             }
         }
 
-        // Paperdoll-style order for front-facing views: what is listed later is drawn on top.
-        private static readonly byte[] LayerOrder =
+        /// <summary>
+        /// The order worn layers are drawn in over the body, per facing (0 north … 7 northwest); later is on top. TazUO's
+        /// <c>LayerOrder.UsedLayers</c> (LayerOrder.cs:7-64): facing the viewer (3) the cloak goes first, under every other
+        /// piece; every other way it goes near the end, over robe and hair (last of all facing north).
+        /// </summary>
+        public static readonly byte[][] UsedLayers =
         {
-            20, // cloak (behind the body when seen from the front)
-            5, 4, 3, 24, 13, 8, 9, 14, 19, 7, 23, 17, 10, 11, 22, 12, 16, 18, 6, 1, 2
+            new byte[] { 5, 4, 3, 24, 13, 8, 9, 14, 15, 19, 7, 23, 17, 22, 10, 11, 12, 16, 18, 1, 6, 2, 20 },
+            new byte[] { 5, 4, 3, 24, 13, 8, 9, 14, 15, 19, 7, 23, 17, 22, 10, 11, 12, 16, 18, 1, 20, 6, 2 },
+            new byte[] { 5, 4, 3, 24, 13, 8, 9, 14, 15, 19, 7, 23, 17, 22, 10, 11, 12, 16, 18, 1, 20, 6, 2 },
+            new byte[] { 20, 5, 4, 3, 24, 13, 8, 9, 14, 15, 19, 7, 23, 17, 22, 12, 10, 11, 16, 18, 6, 1, 2 },
+            new byte[] { 5, 4, 3, 24, 13, 8, 9, 14, 15, 19, 7, 23, 17, 22, 10, 11, 12, 16, 18, 1, 20, 6, 2 },
+            new byte[] { 5, 4, 3, 24, 13, 8, 9, 14, 15, 19, 7, 23, 17, 22, 10, 11, 12, 16, 18, 1, 20, 6, 2 },
+            new byte[] { 5, 4, 3, 24, 13, 8, 9, 14, 15, 19, 7, 23, 17, 22, 10, 11, 12, 16, 18, 1, 20, 6, 2 },
+            new byte[] { 5, 4, 3, 24, 13, 8, 9, 14, 15, 19, 7, 23, 17, 22, 10, 11, 12, 16, 18, 1, 20, 6, 2 }
         };
+
+        /// <summary>
+        /// The lowest facing drawing its layers in the same order as <paramref name="direction"/>: frames built for one
+        /// serve every facing of the same class (and file direction).
+        /// </summary>
+        public static int OrderClass(int direction)
+        {
+            direction &= 7;
+            for (int d = 0; d < direction; d++)
+                if (SameOrder(UsedLayers[d], UsedLayers[direction]))
+                    return d;
+            return direction;
+        }
+
+        private static bool SameOrder(byte[] a, byte[] b)
+        {
+            for (int i = 0; i < a.Length; i++)
+                if (a[i] != b[i])
+                    return false;
+            return true;
+        }
+
+        /// <summary>
+        /// The layers as drawn facing <paramref name="direction"/>: the mount, the body, then what is worn in
+        /// <see cref="UsedLayers"/> order (MobileView.cs:335-441). Corpses pass their file direction, as ItemView.DrawCorpse
+        /// indexes the table after GetAnimDirection (ItemView.cs:191-228).
+        /// </summary>
+        public List<Layer> DrawOrder(int direction)
+        {
+            var ordered = new List<Layer>(Layers.Count);
+            foreach (Layer l in Layers)
+                if (l.Slot == 0)
+                    ordered.Add(l);
+            foreach (byte slot in UsedLayers[direction & 7])
+                foreach (Layer l in Layers)
+                    if (l.Slot == slot)
+                        ordered.Add(l);
+            return ordered;
+        }
 
         /// <summary>Builds a look from a body and worn items (graphic, hue per layer), resolving each item's animation.</summary>
         public static MobileLook From(UOData data, int body, int hue, IEnumerable<(byte Layer, int Graphic, int Hue)> equipment)
@@ -135,7 +186,8 @@ namespace UOClient.Unity
             if (look.Group != AnimGroup.Human)
                 return look; // creatures wear nothing visible
 
-            foreach (byte layer in LayerOrder)
+            // Stored in one order; DrawOrder puts them in the facing's.
+            foreach (byte layer in UsedLayers[0])
             {
                 if (!byLayer.TryGetValue(layer, out var item))
                     continue;
@@ -154,7 +206,8 @@ namespace UOClient.Unity
                 {
                     Body = anim,
                     Hue = itemHue,
-                    Partial = (td.Flags & TileFlags.PartialHue) != 0 || (item.Hue & 0x8000) != 0
+                    Partial = (td.Flags & TileFlags.PartialHue) != 0 || (item.Hue & 0x8000) != 0,
+                    Slot = layer
                 });
             }
             return look;

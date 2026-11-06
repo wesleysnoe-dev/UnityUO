@@ -37,8 +37,8 @@ namespace UOClient.Unity
         private readonly DynamicAtlas _atlas = new DynamicAtlas(1024);
 
         // Main thread only.
-        private readonly Dictionary<(string, int, int), MobileFrame[]> _frames = new Dictionary<(string, int, int), MobileFrame[]>();
-        private readonly HashSet<(string, int, int)> _pendingFrames = new HashSet<(string, int, int)>();
+        private readonly Dictionary<(string, int, int, int), MobileFrame[]> _frames = new Dictionary<(string, int, int, int), MobileFrame[]>();
+        private readonly HashSet<(string, int, int, int)> _pendingFrames = new HashSet<(string, int, int, int)>();
         private readonly Dictionary<(int, int), ItemSprite> _items = new Dictionary<(int, int), ItemSprite>();
         private readonly HashSet<(int, int)> _pendingItems = new HashSet<(int, int)>();
 
@@ -86,31 +86,34 @@ namespace UOClient.Unity
 
         /// <summary>
         /// Frames for a look/action/direction: null while being built (requested on first call),
-        /// an empty array if the body has no animation in anim.mul.
+        /// an empty array if the body has no animation in anim.mul. <paramref name="layerDir"/> is the facing whose
+        /// <see cref="MobileLook.UsedLayers"/> order stacks the worn layers (facings 0 and 6 share a file direction but
+        /// not an order).
         /// </summary>
-        public MobileFrame[] Get(MobileLook look, string key, int action, int fileDir)
+        public MobileFrame[] Get(MobileLook look, string key, int action, int fileDir, int layerDir)
         {
-            if (_frames.TryGetValue((key, action, fileDir), out MobileFrame[] frames))
+            int order = MobileLook.OrderClass(layerDir);
+            if (_frames.TryGetValue((key, action, fileDir, order), out MobileFrame[] frames))
                 return frames;
-            if (_pendingFrames.Add((key, action, fileDir)))
-                Enqueue(new Job { Look = look, Key = key, Action = action, FileDir = fileDir });
+            if (_pendingFrames.Add((key, action, fileDir, order)))
+                Enqueue(new Job { Look = look, Key = key, Action = action, FileDir = fileDir, Order = order });
             return null;
         }
 
         /// <summary>Asks for a direction's stand, walk and run frames ahead of need (the war set too when in war mode).</summary>
-        public void Prefetch(MobileLook look, string key, int fileDir, bool warMode = false, bool dead = false)
+        public void Prefetch(MobileLook look, string key, int fileDir, int layerDir, bool warMode = false, bool dead = false)
         {
             var (walk, run, stand) = Actions(look, warMode, dead);
-            Get(look, key, stand, fileDir);
-            Get(look, key, walk, fileDir);
-            Get(look, key, run, fileDir);
+            Get(look, key, stand, fileDir, layerDir);
+            Get(look, key, walk, fileDir, layerDir);
+            Get(look, key, run, fileDir, layerDir);
             var peace = Actions(look);
             if (peace != (walk, run, stand))
             {
                 // The fallbacks for war actions a body lacks.
-                Get(look, key, peace.Stand, fileDir);
-                Get(look, key, peace.Walk, fileDir);
-                Get(look, key, peace.Run, fileDir);
+                Get(look, key, peace.Stand, fileDir, layerDir);
+                Get(look, key, peace.Walk, fileDir, layerDir);
+                Get(look, key, peace.Run, fileDir, layerDir);
             }
         }
 
@@ -164,8 +167,8 @@ namespace UOClient.Unity
                     BuiltFrame f = r.Frames[i];
                     frames[i] = new MobileFrame { Slot = _atlas.Add(f.Width, f.Height, f.Pixels), AnchorX = f.AnchorX, AnchorY = f.AnchorY };
                 }
-                _pendingFrames.Remove((r.Key, r.Action, r.FileDir));
-                _frames[(r.Key, r.Action, r.FileDir)] = frames;
+                _pendingFrames.Remove((r.Key, r.Action, r.FileDir, r.Order));
+                _frames[(r.Key, r.Action, r.FileDir, r.Order)] = frames;
             }
             _atlas.Apply();
         }
@@ -198,7 +201,7 @@ namespace UOClient.Unity
                     Debug.LogException(e);
                     result = job.IsItem
                         ? new Result { IsItem = true, Graphic = job.Graphic, Hue = job.Hue }
-                        : new Result { Key = job.Key, Action = job.Action, FileDir = job.FileDir, Frames = Array.Empty<BuiltFrame>() };
+                        : new Result { Key = job.Key, Action = job.Action, FileDir = job.FileDir, Order = job.Order, Frames = Array.Empty<BuiltFrame>() };
                 }
                 result.BuildMs = watch.Elapsed.TotalMilliseconds;
                 _results.Enqueue(result);
@@ -229,10 +232,10 @@ namespace UOClient.Unity
 
         private Result BuildFrames(Job job)
         {
-            var result = new Result { Key = job.Key, Action = job.Action, FileDir = job.FileDir, Frames = Array.Empty<BuiltFrame>() };
+            var result = new Result { Key = job.Key, Action = job.Action, FileDir = job.FileDir, Order = job.Order, Frames = Array.Empty<BuiltFrame>() };
             var layerFrames = new List<(AnimationFrame[] Frames, MobileLook.Layer Layer)>();
             bool sawBody = false;
-            foreach (MobileLook.Layer layer in job.Look.Layers)
+            foreach (MobileLook.Layer layer in job.Look.DrawOrder(job.Order))
             {
                 int action = layer.IsMount ? MountAction(job.Look, job.Action) : job.Action;
                 AnimationFrame[] f = Raw(layer.Body, action, job.FileDir);
@@ -313,7 +316,7 @@ namespace UOClient.Unity
             public bool IsItem;
             public MobileLook Look;
             public string Key;
-            public int Action, FileDir;
+            public int Action, FileDir, Order;
             public int Graphic, Hue;
         }
 
@@ -327,7 +330,7 @@ namespace UOClient.Unity
         {
             public bool IsItem;
             public string Key;
-            public int Action, FileDir;
+            public int Action, FileDir, Order;
             public BuiltFrame[] Frames;
             public int Graphic, Hue, Width, Height;
             public Color32[] Pixels;

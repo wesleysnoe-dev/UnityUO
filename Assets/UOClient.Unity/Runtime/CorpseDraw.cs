@@ -37,8 +37,9 @@ namespace UOClient.Unity
         private const byte MountLayer = 25;
 
         /// <summary>
-        /// The corpse as a look: its body and hue, and the 0x89 pieces still inside it. MobileLook draws them in its own
-        /// fixed order (the one living characters use), not TazUO's per-direction <c>LayerOrder.UsedLayers</c>.
+        /// The corpse as a look: its body and hue, and the 0x89 pieces still inside it, stacked by
+        /// <see cref="MobileLook.DrawOrder"/> for the file direction, as DrawCorpse indexes <c>LayerOrder.UsedLayers</c> after
+        /// GetAnimDirection (ItemView.cs:191-228).
         /// </summary>
         public static MobileLook Look(UOData data, World world, WorldItem corpse) =>
             MobileLook.From(data, corpse.Amount, corpse.Hue, world.CorpseWears(corpse).Where(e => e.Layer != MountLayer));
