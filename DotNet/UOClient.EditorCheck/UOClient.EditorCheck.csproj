@@ -23,4 +23,59 @@
     <ProjectReference Include="..\UOClient.ArtPipeline\UOClient.ArtPipeline.csproj" />
     <ProjectReference Include="..\UOClient.Core\UOClient.Core.csproj" />
   </ItemGroup>
+
+  <!--
+    Unity silently drops a script whose .meta it can't parse ("does not have a valid GUID ... will be ignored"), so
+    its types vanish from the Unity build while this project still compiles the .cs and stays green. That's how
+    ServerGumpWindow.Layout.cs went missing (meta ended without a newline) and Unity hit CS0246. Fail here instead:
+    every Assets/**/*.cs needs a .meta with a 32-hex guid, a MonoImporter block, unique guid, and a trailing newline.
+  -->
+  <ItemGroup>
+    <UnityScript Include="$(AssetsDir)**\*.cs" />
+  </ItemGroup>
+  <Target Name="CheckUnityScriptMetas" BeforeTargets="CoreCompile">
+    <CheckScriptMetas Scripts="@(UnityScript)" />
+  </Target>
+  <UsingTask TaskName="CheckScriptMetas" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Scripts ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var guids = new Dictionary<string, string>();
+        var guidLine = new Regex(@"^guid: ([0-9a-f]{32})\r?$", RegexOptions.Multiline);
+        foreach (var item in Scripts)
+        {
+            string meta = item.GetMetadata("FullPath") + ".meta";
+            string problem = null;
+            if (!File.Exists(meta))
+                problem = "missing .meta";
+            else
+            {
+                string text = File.ReadAllText(meta);
+                Match m = guidLine.Match(text);
+                if (!text.StartsWith("fileFormatVersion: 2"))
+                    problem = "does not start with 'fileFormatVersion: 2'";
+                else if (!m.Success)
+                    problem = "no 'guid: <32 lowercase hex>' line";
+                else if (!Regex.IsMatch(text, @"^MonoImporter:\r?$", RegexOptions.Multiline))
+                    problem = "no 'MonoImporter:' block";
+                else if (!text.EndsWith("\n"))
+                    problem = "does not end with a newline (Unity rejects it and ignores the script)";
+                else if (guids.ContainsKey(m.Groups[1].Value))
+                    problem = "guid " + m.Groups[1].Value + " also used by " + guids[m.Groups[1].Value];
+                else
+                    guids[m.Groups[1].Value] = meta;
+            }
+            if (problem != null)
+                Log.LogError("Unity would ignore this script: " + meta + ": " + problem);
+        }
+        if (!Log.HasLoggedErrors)
+            Log.LogMessage(MessageImportance.High,"CheckUnityScriptMetas: " + Scripts.Length + " script metas OK");
+      ]]></Code>
+    </Task>
+  </UsingTask>
 </Project>

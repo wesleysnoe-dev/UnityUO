@@ -276,3 +276,7 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
       - Unity compile.
       - Play mode: bar look and drag, tooltip placement and steadiness, the hue 38 art, the status button.
       - Live `0xDF`.
+
+## Session: compile fix (2026-11-05)
+
+1. **Unity ignored `ServerGumpWindow.Layout.cs`, causing the 17:50 CS0246s** (`GumpPositions`, `HtmlScrollbarKind`, `HtmlScrollParts`, `HtmlScroll`, `GumpControls`): its `.meta` ended without a newline, so Unity reported it had no valid GUID, left it out of `UOClient.Unity.rsp`, and still compiled `ServerGumpWindow.cs`/`UiManager.cs`. EditorCheck reported success because it globs `Runtime/**/*.cs` and never reads metas. Fix: the meta now ends with a newline (same guid, 240 bytes); 80 other stub or no-newline `.cs.meta` files were upgraded to the full MonoImporter shape with guids unchanged. EditorCheck now runs `CheckUnityScriptMetas` before compiling. It fails on any `Assets/**/*.cs` whose meta is missing, has no 32-hex guid, has no `MonoImporter:`, has a duplicate guid, or does not end with a newline. Verified: the check fails on the old meta and passes on all 154 fixed metas; Tests (711), Cli and EditorCheck pass. Not verified: Unity recompile (`UOClient.Unity.dll` still 09:53:29).
