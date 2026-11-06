@@ -448,6 +448,170 @@ public sealed class CriminalQueryTests
         Assert.Equal(ObjectReply(Harmful, Guard), Assert.Single(sent));
     }
 
+    /// <summary>
+    /// SessionUiBinder and QuestionWindow without Unity: the "target" question opens on TargetQueryRequested (closing one
+    /// already up), and on TargetRequested / TargetEnded it closes when PendingTargetQuery has lapsed (CloseLapsedTargetQuery).
+    /// Closing answers no, once (QuestionWindow.OnClosed); Okay answers yes.
+    /// </summary>
+    private sealed class TargetQuestion
+    {
+        private readonly GameSession _session;
+        private Action<bool> _answer;
+        public int Opened, Closed;
+
+        public TargetQuestion(GameSession session)
+        {
+            _session = session;
+            session.TargetQueryRequested += q =>
+            {
+                Close();
+                _answer = yes => session.AnswerTargetQuery(q, yes);
+                Opened++;
+            };
+            session.TargetRequested += _ => CloseLapsed();
+            session.TargetEnded += CloseLapsed;
+        }
+
+        public bool IsOpen => _answer != null;
+
+        private void CloseLapsed()
+        {
+            if (_session.PendingTargetQuery == null)
+                Close();
+        }
+
+        public void Close() => Answer(false, closing: true);
+
+        public void Okay() => Answer(true, closing: false);
+
+        private void Answer(bool yes, bool closing)
+        {
+            Action<bool> a = _answer;
+            _answer = null;
+            if (a == null)
+                return;
+            if (closing)
+                Closed++;
+            a(yes);
+        }
+    }
+
+    // ModernUO's MultiTargetReq (0x99, 30 bytes on 7.0.9+): allow ground, cursor id, flags, 11 zeros, multi id, offsets, 4 zeros.
+    private static void Cursor99(GameSession session, uint id) =>
+        session.Inject(new PacketWriter(0x99, 30).Byte(1).UInt32(id).Byte(0).Zero(11).UInt16(0x0064).Zero(6).Zero(4).ToArray(), false);
+
+    [Fact]
+    public void ReplacingTheCursorWhileTheQuestionIsUpClosesItAndItsYesSendsNothing()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, Innocent);
+        Moving(session, Orc, Innocent);
+        var question = new TargetQuestion(session);
+        GameSession.TargetQuery seen = null;
+        session.TargetQueryRequested += q => seen = q;
+        Cursor6C(session, Harmful);
+        session.TargetObject(Orc);
+        Assert.True(question.IsOpen);
+
+        Cursor6C(session, Harmful, 0x0000BEEF);
+
+        Assert.False(question.IsOpen);
+        Assert.Equal(1, question.Closed);
+        Assert.Null(session.PendingTargetQuery);
+        Assert.Equal(0xBEEFu, session.Target.CursorId); // the new cursor stays up
+        question.Okay();                                // the closed question has no answer left
+        session.AnswerTargetQuery(seen, true);          // nor does a stray yes for the old query
+        Assert.Empty(sent);
+
+        // A placement cursor (0x99) replaces it the same way.
+        session.TargetObject(Orc);
+        Assert.True(question.IsOpen);
+        GameSession.TargetQuery second = seen;
+        Cursor99(session, 0x0000CAFE);
+        Assert.False(question.IsOpen);
+        Assert.True(session.Target.IsMulti);
+        session.AnswerTargetQuery(second, true);
+        Assert.Empty(sent);
+    }
+
+    [Fact]
+    public void ServerCancelWhileTheQuestionIsUpClosesItAndItsYesSendsNothing()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, Innocent);
+        Moving(session, Orc, Innocent);
+        var question = new TargetQuestion(session);
+        GameSession.TargetQuery seen = null;
+        session.TargetQueryRequested += q => seen = q;
+        Cursor6C(session, Harmful);
+        session.TargetObject(Orc);
+
+        Cursor6C(session, 3);
+
+        Assert.False(question.IsOpen);
+        Assert.Null(session.Target);
+        session.AnswerTargetQuery(seen, true);
+        Assert.Empty(sent);
+    }
+
+    [Fact]
+    public void EscWhileTheQuestionIsUpCancelsTheCursorAndClosesIt()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, Innocent);
+        Moving(session, Orc, Innocent);
+        var question = new TargetQuestion(session);
+        GameSession.TargetQuery seen = null;
+        session.TargetQueryRequested += q => seen = q;
+        Cursor6C(session, Harmful);
+        session.TargetObject(Orc);
+
+        session.CancelTarget(); // WorldInput's Esc with a cursor up
+
+        Assert.Null(session.Target);
+        Assert.Null(session.PendingTargetQuery);
+        Assert.False(question.IsOpen);
+        Assert.Equal(CancelReply(Harmful), Assert.Single(sent));
+        session.AnswerTargetQuery(seen, true);
+        session.CancelTarget(); // no cursor left: nothing more goes out
+        Assert.Single(sent);
+    }
+
+    [Fact]
+    public void AnsweringTheCursorElsewhereClosesTheQuestion()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, Innocent);
+        Moving(session, Orc, Innocent);
+        var question = new TargetQuestion(session);
+        Cursor6C(session, Harmful);
+        session.TargetObject(Orc);
+
+        session.TargetGround(1500, 1630, 0); // the player clicked the ground instead
+
+        Assert.False(question.IsOpen);
+        Assert.Single(sent);
+        Assert.Equal(1, sent[0][1]); // ground reply
+    }
+
+    [Fact]
+    public void YesOnTheOpenQuestionSendsOnceAndLeavesNoQuestion()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, Innocent);
+        Moving(session, Orc, Innocent);
+        var question = new TargetQuestion(session);
+        Cursor6C(session, Harmful);
+        session.TargetObject(Orc);
+
+        question.Okay();
+
+        Assert.Equal(ObjectReply(Harmful, Orc), Assert.Single(sent));
+        Assert.False(question.IsOpen);
+        Assert.Equal(0, question.Closed); // TargetEnded found nothing left to close
+        Assert.Null(session.Target);
+    }
+
     [Fact]
     public void TargetQueryTestFollowsTazUO()
     {
