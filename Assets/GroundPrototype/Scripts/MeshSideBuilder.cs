@@ -11,11 +11,18 @@ namespace UOClient.GroundPrototype
     /// match Unity Terrain in general (see HeightParityCheck). Vertices are duplicated per tile so
     /// each tile owns one material (one submesh per palette entry); normals are taken from shared
     /// corner central differences so lighting stays smooth across tile seams.
+    ///
+    /// P2: when a blend material (MeshGroundBlend) is given, every tile goes into one submesh and the
+    /// shader blends the four layers from the shared control mask; UV0 holds local map coordinates
+    /// (world units from the side origin), and the shader derives the same coordinates from
+    /// worldPos - _MapOrigin.
     /// </summary>
     public static class MeshSideBuilder
     {
-        public static GameObject Build(SampleElevationGrid grid, Material[] palette, Vector3 origin, Transform parent)
+        public static GameObject Build(SampleElevationGrid grid, Material[] palette, Vector3 origin, Transform parent,
+            Material blendMaterial = null, GroundVisualFactory visuals = null)
         {
+            if (blendMaterial != null) palette = new[] { blendMaterial };
             var cornerNormals = CornerNormals(grid);
             var verts = new List<Vector3>(grid.TilesX * grid.TilesY * 4);
             var normals = new List<Vector3>(verts.Capacity);
@@ -39,6 +46,7 @@ namespace UOClient.GroundPrototype
             }
 
             var mesh = new Mesh { name = "GroundPrototype_SampleMesh (in-memory)" };
+            visuals?.Track(mesh);
             mesh.SetVertices(verts);
             mesh.SetNormals(normals);
             mesh.SetUVs(0, uvs);
@@ -56,6 +64,7 @@ namespace UOClient.GroundPrototype
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             mr.receiveShadows = true;
             go.AddComponent<MeshCollider>().sharedMesh = mesh;
+            if (blendMaterial != null) GroundVisualFactory.SetMapOrigin(mr, origin);
             return go;
         }
 
@@ -64,7 +73,7 @@ namespace UOClient.GroundPrototype
         {
             verts.Add(new Vector3(cx * grid.tileSize, (float)grid.CornerWorldY(cx, cy), cy * grid.tileSize));
             normals.Add(cornerNormals[cx, cy]);
-            uvs.Add(new Vector2(cx, cy));
+            uvs.Add(new Vector2(cx * grid.tileSize, cy * grid.tileSize));
         }
 
         private static Vector3[,] CornerNormals(SampleElevationGrid grid)

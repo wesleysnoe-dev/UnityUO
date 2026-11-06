@@ -1,5 +1,5 @@
 {
-  "note": "SAMPLE NOT LIVE MAP. Hand-authored 32x32-tile test patch for GroundPrototype P1. Not derived from any UO map file. See README_SAMPLE_NOT_MAP.txt.",
+  "note": "SAMPLE NOT LIVE MAP. Hand-authored 32x32-tile test patch for GroundPrototype P1 (P2 adds fluid rect metadata only; heights unchanged). Not derived from any UO map file. See README_SAMPLE_NOT_MAP.txt.",
   "cornersX": 33,
   "cornersY": 33,
   "tileSize": 1.0,
@@ -73,5 +73,9 @@
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+  ],
+  "fluids": [
+    { "type": "water", "tx": 14, "ty": 22, "w": 6, "h": 6, "surfaceZ": 1 },
+    { "type": "lava",  "tx": 19, "ty": 1,  "w": 2, "h": 9, "surfaceZ": 1 }
   ]
 }

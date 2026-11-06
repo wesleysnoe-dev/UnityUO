@@ -1,6 +1,8 @@
 ==========================================================================
- SAMPLE NOT LIVE MAP  -  GroundPrototype P1 (isolated terrain prototype)
+ SAMPLE NOT LIVE MAP  -  SAMPLE TEXTURES NOT MAP ART
+ GroundPrototype P1 + P2 (isolated terrain prototype)
 ==========================================================================
+ P2 notes are in the section "P2: blended textures, water, lava" below.
 
 What this is
 ------------
@@ -16,8 +18,9 @@ palette (Materials/Mat_Grass, Mat_Dirt, Mat_Sand, Mat_Stone).
 
 It is NOT derived from any UO map file, makes NO claim of UO map fidelity,
 and is NOT finished art. Nothing here is used by the client (WorldDemo,
-session, renderer, standalone build). The assembly UOClient.GroundPrototype
-is Editor-platform only and references no UOClient.* assembly.
+session, renderer). The assembly UOClient.GroundPrototype references no
+UOClient.* assembly (see the Assembly note at the end: it is no longer
+Editor-platform only).
 
 Conventions
 -----------
@@ -90,21 +93,34 @@ All values in world units.
   sensitivity: if Unity's sampler were planar triangles on the OPPOSITE
   (SE-NW) diagonal, interior max would be 1.4500.
 
-Play-mode numbers (NOT yet observed)
-------------------------------------
+Play-mode numbers (OBSERVED - authoritative)
+--------------------------------------------
 On Play, GroundCompareBootstrap calls HeightParityCheck.Measure(grid,
 terrain), which reads back the live TerrainData (GetHeight at corners,
 GetInterpolatedHeight and Terrain.SampleHeight at the same interior points),
 logs "[GroundPrototype] ..." to the Console and shows it in the overlay.
 Public API:  GroundCompareBootstrap.LastParityReport / OfflineParityReport,
              HeightParityCheck.Measure / ComputeOffline.
-Those readback numbers are authoritative; the offline model above is a
-prediction until someone presses Play.
+
+Observed in Editor Play (reported after the P1 assembly fix, 2026-11-06):
+  GetInterpolatedHeight vs mesh planar tris, interior max ~0.000049 world u
+  (same order as the 16-bit corner quantisation).
+So the live TerrainData sampler agrees with the mesh's SW-NE planar
+triangles on this sample; it does NOT behave like the bilinear offline
+model. The offline 0.725 figure above is a model prediction that Play did
+not confirm - it is kept only as a record of the (wrong) assumption and
+must not be treated as observed truth. Heights were NOT changed to match
+either number. The checks still run on every Play; trust the overlay /
+Console readback over this file. Note that GetInterpolatedHeight agreeing
+does not prove Unity's RENDERED terrain triangulation (LOD patches) matches
+the mesh at every pixel.
 
 Opening it
 ----------
 File > Open Scene > Assets/GroundPrototype/Scenes/GroundCompare.unity, then
 Play. Keys/buttons: 1 = Terrain, 2 = Mesh, 3 = Side by side (default).
+P2 keys/buttons: T = textures on/off, F = fluids on/off,
+                 L = lava point light on/off, N = night on/off.
 
 Assembly / Play Mode note (2026-11-06)
 --------------------------------------
@@ -115,8 +131,108 @@ Game view stayed black; HeightParityCheck.Measure never ran.
 
 Fix: includePlatforms is empty (any platform) so Editor Play can load the types.
 Still: autoReferenced=false, no UOClient.* references, GroundCompare is NOT in
-EditorBuildSettings / PlayerBuilder scenes — so the standalone Unity UO player
-does not open this scene. Tradeoff: the assembly *could* be pulled into a player
-build only if someone later adds GroundCompare (or refs this asmdef) to a build;
-it does not auto-enter production scenes today.
+EditorBuildSettings / PlayerBuilder scenes - so the standalone Unity UO player
+does not open this scene and nothing in it starts automatically (no
+RuntimeInitializeOnLoad; everything is driven from the scene bootstrap).
+Correction: scene exclusion does NOT keep the DLL out of a player build. With
+includePlatforms empty, UOClient.GroundPrototype.dll IS compiled into the
+standalone build output (it was already present there before P2). It is inert
+there because no shipped scene references its types, but it is not absent.
+P2 leaves this as is (no asmdef / build changes).
+
+==========================================================================
+ P2: blended textures, water, lava  (SAMPLE TEXTURES NOT MAP ART)
+==========================================================================
+Everything below is created at runtime from GroundCompareBootstrap.Start
+(AddComponent; the scene YAML is unchanged). No textures, materials,
+prefabs, TerrainData or TerrainLayer assets are written to disk; all of
+them are owned by GroundVisualFactory and destroyed in
+GroundCompareBootstrap.OnDestroy. No QualitySettings, GraphicsSettings,
+pipeline, post-processing or bloom changes. Built-in render pipeline,
+gamma colour space (project setting, untouched).
+
+Textures and blend (shared by both sides)
+  - 4 procedural 128x128 stylized albedo textures (grass, dirt, sand,
+    stone), tinted from the Mat_* palette colours, seamless, mipmapped.
+    Placeholder look only - not map art, not final art.
+  - One soft blend mask: box filter (half-width 0.35 tile) of the per-tile
+    material map with 0.18-tile deterministic jitter, slightly sharpened.
+    Stored once as 256x256 weights, corner-aligned (texel 0 on the map's
+    near edge, texel 255 on the far edge = Unity Terrain's alphamap
+    convention). Terrain gets it via SetAlphamaps; the mesh gets the same
+    data as a Control texture and samples it with Unity's own formula
+    splatUV = (tc * (res - 1) + 0.5) / res.
+  - metallic 0 and smoothness 0.08 on both sides (TerrainLayer smoothness
+    source forced to Constant; albedo alpha = 1).
+
+UV convention (local map coordinates)
+  uv = (worldXZ - sideOrigin.xz) / 4.0   (one texture repeat = 4 tiles)
+  Terrain: TerrainLayer.tileSize = (4,4), offset 0, terrain origin = side
+  origin (0,0,0). Mesh: MeshGroundBlend uses worldPos - _MapOrigin with
+  _MapOrigin = (200,0,0) set per renderer. So both sides show the same
+  texel at the same map position. Water/lava animation uses the same
+  local coordinates, so patterns match between sides too.
+
+Backends (NOT one universal shader)
+  - Terrain: built-in Nature/Terrain/Standard (Unity's terrain adapter).
+  - Mesh: Assets/GroundPrototype/Shaders/MeshGroundBlend.shader - Standard
+    lighting surface shader, 4-layer blend, casts/receives shadows,
+    forward-add point lights.
+  Known blend/shading mismatches (expected, visible on close inspection):
+  - normals: Terrain computes its own from the heightmap; mesh uses
+    corner central differences -> slopes/cliffs shade differently;
+  - Unity Terrain LOD/patch triangulation vs fixed SW-NE mesh diagonals
+    (heightmapPixelError = 1 keeps this small);
+  - terrain splat path also scales the final colour by the summed weight
+    (~1 here) and may use instancing/basemap paths we disabled;
+  - 8-bit weights on both, but Terrain's internal alphamap texture is
+    Unity-managed - identical data, not a shared GPU texture.
+  T toggles textures off: flat palette colours with the SAME soft mask
+  (not the P1 hard per-tile look).
+
+Fluids (bounded rect metadata, heights unchanged)
+  JSON "fluids": {type, tx, ty, w, h, surfaceZ} in tiles / Z units.
+    water  tx 14, ty 22, w 6, h 6, surfaceZ 1  (world Y 0.1)
+           low valley between the ramp's east cliff and the hill
+           (floor Z -2..2); ground above Z 1 pokes through as islands.
+    lava   tx 19, ty 1,  w 2, h 9, surfaceZ 1  (world Y 0.1)
+           trench at the foot of the plateau cliff (corner column x=20,
+           Z -2..2), between the twisted 0/6 field and the plateau.
+  The overlay prints, per rect, how many rect corners are actually below
+  the surface. Surfaces are flat meshes (2 subdivisions per tile) at
+  surfaceZ * zScale, built identically on both sides; corner heights and
+  the P1 parity numbers are not affected. Where the ground under a rect's
+  border is lower than the surface, the bounded rect edge is visible as a
+  thin lip (water fades it over the outer 2% of the rect; lava does not).
+  Lava uses a small polygon offset to win depth ties where a corner sits
+  exactly at surfaceZ.
+
+Water limits (StylizedWater.shader)
+  Transparent, sun + flat ambient only (ForwardBase) - it ignores the lava
+  point light. Animated analytic ripples (normals only, no vertex motion),
+  colour/alpha by depth and a shore-foam band. Depth comes from
+  _CameraDepthTexture, enabled per camera on the two prototype compare
+  cameras only; orthographic depth is linearised as near + d * (far -
+  near) (reversed-Z handled) and converted to vertical depth along the
+  camera forward axis (exact for ortho; perspective is approximate). NO
+  reflection, refraction, SSR, caustics or fluid simulation.
+
+Lava (StylizedLava.shader) - emission vs real lighting
+  Matte crust (smoothness 0) + scrolling domain-warped emission. Emission
+  only makes the lava pixels bright; it lights NOTHING (no GI, no bloom).
+  The orange light on nearby ground and on the 3 matte grey probe cubes
+  west of the trench is one real Point light per side (range 6, intensity
+  2.6, no shadows, ForcePixel per light). L toggles those lights; the
+  emission stays on, which shows the difference.
+
+Night (N)
+  SharedLightRig dims the same directional sun (0.16, cool tint) and the
+  flat ambient (0.07,0.08,0.12). Same rig for both sides; sun direction,
+  camera, exposure (none/no post) and palette unchanged.
+
+Play status for P2
+  Shaders compile in the open Editor (cached DX12 variants for all three)
+  and UOClient.GroundPrototype compiles with 0 errors/warnings. P2 visuals
+  had NOT been looked at in Play when this was written - see the commit
+  log / PLAY_HANDOFF steps for screenshots.
 

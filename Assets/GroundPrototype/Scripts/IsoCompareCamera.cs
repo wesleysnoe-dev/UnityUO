@@ -14,6 +14,7 @@ namespace UOClient.GroundPrototype
     /// Both sides are viewed with the identical camera pose relative to each side's origin, so
     /// switching Terrain/Mesh (or the split view) shows the same framing of the same sample.
     /// Side-by-side uses a second runtime camera on the right half with the same settings.
+    /// P2: both cameras render a depth texture (water depth fade), same exposure (no post stack).
     /// </summary>
     [RequireComponent(typeof(Camera))]
     public sealed class IsoCompareCamera : MonoBehaviour
@@ -81,6 +82,9 @@ namespace UOClient.GroundPrototype
             cam.farClipPlane = distance * 4f;
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = new Color(0.06f, 0.06f, 0.07f, 1f);
+            // P2 water depth fade/shore reads _CameraDepthTexture. Per-camera flag on these prototype
+            // cameras only; no project/quality/pipeline setting is touched.
+            cam.depthTextureMode |= DepthTextureMode.Depth;
         }
 
         private void Place(Camera cam, Bounds target, Rect viewport)

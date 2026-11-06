@@ -5,14 +5,17 @@ namespace UOClient.GroundPrototype
     /// <summary>
     /// Builds the Unity Terrain side entirely in memory (no TerrainData / TerrainLayer assets are saved).
     /// Heightmap resolution = corner count (33), so every heightmap sample sits exactly on a grid corner.
-    /// Splat: one solid-colour TerrainLayer per palette material, colour taken from Mat_* _Color.
+    /// P1 splat (visuals == null): one solid-colour TerrainLayer per palette material, hard per-tile alphamap.
+    /// P2 splat (visuals != null): shared procedural layers + the shared soft mask from GroundVisualFactory,
+    /// rendered by the built-in Nature/Terrain/Standard shader (not the mesh side's shader).
     /// Built-in render pipeline.
     /// </summary>
     public static class TerrainSideBuilder
     {
-        public const int AlphamapResolution = 128; // 4 texels per tile; Unity blends between texels at tile borders.
+        public const int AlphamapResolution = 128; // P1: 4 texels per tile; Unity blends between texels at tile borders.
 
-        public static Terrain Build(SampleElevationGrid grid, Material[] palette, Vector3 origin, Transform parent)
+        public static Terrain Build(SampleElevationGrid grid, Material[] palette, Vector3 origin, Transform parent,
+            GroundVisualFactory visuals = null)
         {
             int minZ = grid.MinZ(), maxZ = grid.MaxZ();
             float baseY = minZ * grid.zScale;
@@ -28,6 +31,15 @@ namespace UOClient.GroundPrototype
             for (int cx = 0; cx < grid.cornersX; cx++)
                 heights[cy, cx] = (float)((grid.CornerWorldY(cx, cy) - baseY) / rangeY);
             data.SetHeights(0, 0, heights);
+
+            if (visuals != null)
+            {
+                visuals.RegisterTerrain(data);
+                data.terrainLayers = visuals.CreateTerrainLayers(grid.materialNames);
+                data.alphamapResolution = GroundVisualFactory.ControlResolution;
+                data.SetAlphamaps(0, 0, visuals.Alphamap);
+                return CreateTerrain(data, origin, baseY, parent, visuals);
+            }
 
             var layers = new TerrainLayer[palette.Length];
             for (int i = 0; i < palette.Length; i++)
@@ -55,7 +67,11 @@ namespace UOClient.GroundPrototype
                 alpha[ay, ax, m] = 1f;
             }
             data.SetAlphamaps(0, 0, alpha);
+            return CreateTerrain(data, origin, baseY, parent, null);
+        }
 
+        private static Terrain CreateTerrain(TerrainData data, Vector3 origin, float baseY, Transform parent, GroundVisualFactory visuals)
+        {
             var go = Terrain.CreateTerrainGameObject(data);
             go.name = "Side_UnityTerrain";
             go.transform.SetParent(parent, false);
@@ -66,7 +82,11 @@ namespace UOClient.GroundPrototype
             terrain.basemapDistance = 1000f;   // avoid the low-res basemap at our camera distance
             terrain.drawInstanced = false;
             var shader = Shader.Find("Nature/Terrain/Standard");
-            if (shader != null) terrain.materialTemplate = new Material(shader) { name = "GroundPrototype_TerrainMat (runtime)" };
+            if (shader != null)
+            {
+                var mat = new Material(shader) { name = "GroundPrototype_TerrainMat (runtime)" };
+                terrain.materialTemplate = visuals != null ? visuals.Track(mat) : mat;
+            }
             terrain.Flush();
             return terrain;
         }

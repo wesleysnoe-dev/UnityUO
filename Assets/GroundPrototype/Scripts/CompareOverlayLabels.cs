@@ -5,12 +5,17 @@ namespace UOClient.GroundPrototype
     /// <summary>
     /// IMGUI overlay: "SAMPLE NOT LIVE MAP" banner, side names, tile/Z convention, view-mode buttons
     /// (keys 1 = Terrain, 2 = Mesh, 3 = Side by side) and the Play-mode parity numbers.
+    /// P2 adds "SAMPLE TEXTURES NOT MAP ART", the toggle state and honest notes (blend mismatches,
+    /// emission vs real light, water limits).
     /// </summary>
     public sealed class CompareOverlayLabels : MonoBehaviour
     {
         public IsoCompareCamera compareCamera;
+        public VisualCompareToggles toggles;
         public string conventionLine = "";
         public string parityLine = "";
+        /// <summary>P2 honesty notes, drawn bottom-up above the convention line.</summary>
+        public string[] noteLines = new string[0];
 
         private GUIStyle _banner, _label, _small;
 
@@ -20,7 +25,7 @@ namespace UOClient.GroundPrototype
             HandleKeys();
 
             float w = Screen.width, h = Screen.height;
-            GUI.Label(new Rect(0, 8, w, 30), "SAMPLE NOT LIVE MAP  —  GroundPrototype P1 baseline, not finished art", _banner);
+            GUI.Label(new Rect(0, 8, w, 30), "SAMPLE NOT LIVE MAP  —  SAMPLE TEXTURES NOT MAP ART  —  GroundPrototype P2", _banner);
 
             var mode = compareCamera != null ? compareCamera.Mode : CompareMode.SideBySide;
             switch (mode)
@@ -37,6 +42,11 @@ namespace UOClient.GroundPrototype
                     break;
             }
 
+            if (toggles != null)
+                GUI.Label(new Rect(12, 72, Mathf.Max(200f, w - 4 * 138f - 30f), 22), toggles.StateLine + "   (keys T/F/L/N)", _small);
+
+            for (int i = 0; i < noteLines.Length; i++)
+                GUI.Label(new Rect(12, h - 48 - 20 * (noteLines.Length - i), w - 24, 20), noteLines[i], _small);
             GUI.Label(new Rect(12, h - 48, w - 24, 20), conventionLine, _small);
             GUI.Label(new Rect(12, h - 28, w - 24, 20), parityLine, _small);
 
