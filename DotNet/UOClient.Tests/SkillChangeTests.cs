@@ -150,3 +150,105 @@ public sealed class SkillGroupFileTests
         }
     }
 }
+
+/// <summary>
+/// StandardSkillsGump's group edits (OnButtonClick 0, OnKeyboardReturn, OnKeyUp Delete with SkillsGroupManager.Remove,
+/// OnMouseOver with a dragged skill), in memory only.
+/// </summary>
+public sealed class SkillGroupEditTests
+{
+    private static List<SkillGroup> Three()
+    {
+        var a = new SkillGroup { Name = "Miscellaneous" };
+        a.Skills.AddRange(new[] { 4, 6 });
+        var b = new SkillGroup { Name = "Combat" };
+        b.Skills.AddRange(new[] { 1, 5 });
+        var c = new SkillGroup { Name = "Magic" };
+        c.Skills.AddRange(new[] { 25, 46 });
+        return new List<SkillGroup> { a, b, c };
+    }
+
+    [Fact]
+    public void NewGroupIsEmptyClosedAndLast()
+    {
+        List<SkillGroup> groups = Three();
+        SkillGroup g = SkillGroups.AddGroup(groups);
+        Assert.Same(g, groups[^1]);
+        Assert.Equal("New Group", g.Name);
+        Assert.Empty(g.Skills);
+        Assert.False(g.Open);
+    }
+
+    [Theory]
+    [InlineData("Crafting", "Crafting")]
+    [InlineData("", "No Name")]
+    [InlineData("   ", "No Name")]
+    [InlineData(null, "No Name")]
+    public void RenameKeepsTheTextAndBlankBecomesNoName(string? text, string expected)
+    {
+        List<SkillGroup> groups = Three();
+        SkillGroups.Rename(groups[1], text!);
+        Assert.Equal(expected, groups[1].Name);
+    }
+
+    [Fact]
+    public void DeletingAGroupMovesItsSkillsToTheFirst()
+    {
+        List<SkillGroup> groups = Three();
+        groups[0].Skills.Add(25); // already in the first: not added twice
+        Assert.True(SkillGroups.Delete(groups, groups[2]));
+        Assert.Equal(new[] { "Miscellaneous", "Combat" }, groups.Select(g => g.Name));
+        Assert.Equal(new[] { 4, 6, 25, 46 }, groups[0].Skills);
+    }
+
+    [Fact]
+    public void TheFirstGroupCannotBeDeleted()
+    {
+        List<SkillGroup> groups = Three();
+        Assert.False(SkillGroups.Delete(groups, groups[0]));
+        Assert.False(SkillGroups.Delete(groups, new SkillGroup { Name = "stranger" }));
+        Assert.Equal(3, groups.Count);
+        Assert.Equal("Cannot delete this group.", SkillGroups.CannotDeleteFirst);
+    }
+
+    [Fact]
+    public void MovingASkillTakesItOutOfEveryOtherGroup()
+    {
+        List<SkillGroup> groups = Three();
+        groups[2].Skills.Add(5); // a malformed set holding 5 twice
+        Assert.True(SkillGroups.MoveSkill(groups, 5, groups[0]));
+        Assert.Equal(new[] { 4, 6, 5 }, groups[0].Skills);
+        Assert.Equal(new[] { 1 }, groups[1].Skills);
+        Assert.Equal(new[] { 25, 46 }, groups[2].Skills);
+
+        // Into a new, empty group; then onto a group that already has it, which does nothing.
+        SkillGroup mine = SkillGroups.AddGroup(groups);
+        Assert.True(SkillGroups.MoveSkill(groups, 25, mine));
+        Assert.Equal(new[] { 25 }, mine.Skills);
+        Assert.False(SkillGroups.MoveSkill(groups, 25, mine));
+        Assert.False(SkillGroups.MoveSkill(groups, 46, new SkillGroup()));
+        Assert.Equal(new[] { 46 }, groups[2].Skills);
+    }
+
+    [Fact]
+    public void ASkillInNoGroupCanBeMovedIn()
+    {
+        List<SkillGroup> groups = Three();
+        Assert.True(SkillGroups.MoveSkill(groups, 57, groups[1]));
+        Assert.Equal(new[] { 1, 5, 57 }, groups[1].Skills);
+    }
+
+    [Fact]
+    public void EditsNeverReachTheNextDefaultSet()
+    {
+        // Reset reloads the defaults: each load is a new set, so earlier edits are gone.
+        List<SkillGroup> edited = SkillGroups.BuiltIn(58);
+        SkillGroups.Rename(edited[1], "Mine");
+        SkillGroups.MoveSkill(edited, 25, edited[1]);
+        SkillGroups.Delete(edited, edited[6]);
+        List<SkillGroup> fresh = SkillGroups.BuiltIn(58);
+        Assert.Equal("Combat", fresh[1].Name);
+        Assert.Contains(25, fresh[3].Skills);
+        Assert.Equal(7, fresh.Count);
+    }
+}

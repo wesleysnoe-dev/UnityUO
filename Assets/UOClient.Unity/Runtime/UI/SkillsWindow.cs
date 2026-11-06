@@ -11,26 +11,43 @@ namespace UOClient.Unity.UI
     /// and the gain lock (up / down / locked; click to cycle). Shows real or base values.
     /// Skills sit in TazUO's default groups (StandardSkillsGump over SkillsGroupManager.MakeDefault: the client's
     /// skillgrp.mul, else the built-in seven), each starting collapsed; click a group's arrow or name to open it.
-    /// The groups are not editable or saved (TazUO keeps them in the profile's skillsgroups.xml).
+    /// The groups can be edited as StandardSkillsGump does: New Group adds one, a double-click on a name renames it (Enter
+    /// keeps, Esc or clicking away drops the edit), x deletes one (not the first; its skills join the first), a skill
+    /// dragged by its name onto another group moves there, and Reset brings back the defaults. The edits last only while
+    /// the client runs: nothing is written (TazUO saves them to the profile's skillsgroups.xml), skillgrp.mul is only read.
     /// </summary>
     public sealed class SkillsWindow : UiWindow
     {
+        /// <summary>
+        /// The edited groups, kept for the whole run so closing the window keeps them; never saved. A future save would go
+        /// to its own file (e.g. UserSettings/skill-groups.json) written only on an explicit Save, never into
+        /// unity-uo-settings.json or the hotkeys.
+        /// </summary>
+        private static List<SkillGroup> _sessionGroups;
+
         private Vector2 _scroll;
         private bool _showBase;
         private List<SkillGroup> _groups;
-        private readonly HashSet<int> _open = new HashSet<int>();
 
         public SkillsWindow()
         {
-            Rect = new Rect(360, 80, 330, 460);
+            Rect = new Rect(360, 80, 330, 486);
         }
 
         public override string Key => "skills";
 
         public override void OnOpened()
         {
-            _groups = Art?.Data?.GetSkillGroups(GameSession.SkillNames.Length);
+            _sessionGroups ??= Art?.Data?.GetSkillGroups(GameSession.SkillNames.Length);
+            _groups = _sessionGroups;
             Session.RequestSkills();
+        }
+
+        public override void OnClosed()
+        {
+            StopRename();
+            _press = null;
+            _dragging = false;
         }
 
         private static string NameOf(int id) => id < GameSession.SkillNames.Length ? GameSession.SkillNames[id] : $"Skill {id}";
@@ -39,9 +56,9 @@ namespace UOClient.Unity.UI
         /// The groups' skills the server listed, each group in name order (SkillsGroup.Sort); a listed skill no group
         /// holds goes in the first, where TazUO moves the skills of a deleted group.
         /// </summary>
-        private List<(string Name, List<SkillEntry> Skills)> Arrange()
+        private List<(SkillGroup Group, List<SkillEntry> Skills)> Arrange()
         {
-            var result = new List<(string, List<SkillEntry>)>();
+            var result = new List<(SkillGroup, List<SkillEntry>)>();
             var placed = new HashSet<int>();
             foreach (SkillGroup g in _groups)
             {
@@ -49,13 +66,81 @@ namespace UOClient.Unity.UI
                 foreach (int id in g.Skills)
                     if (Session.Skills.TryGetValue(id, out SkillEntry s) && placed.Add(id))
                         skills.Add(s);
-                result.Add((g.Name, skills));
+                result.Add((g, skills));
             }
             if (result.Count > 0)
                 result[0].Item2.AddRange(Session.Skills.Values.Where(s => !placed.Contains(s.Id)));
             foreach (var (_, skills) in result)
                 skills.Sort((a, b) => string.Compare(NameOf(a.Id), NameOf(b.Id), System.StringComparison.InvariantCulture));
             return result;
+        }
+
+        private const float Row = 20;
+        private const float DragStart = 5; // pixels the mouse moves before a press on a skill name becomes a drag
+
+        // Last layout, in scroll-content coordinates: each group's rows from its header to its last shown skill, and each
+        // shown skill's name box.
+        private readonly List<(SkillGroup Group, float Top, float Bottom)> _groupRows = new List<(SkillGroup, float, float)>();
+        private readonly List<(int Skill, Rect Name)> _skillRows = new List<(int, Rect)>();
+        private Rect _view;
+
+        private (int Skill, Vector2 At)? _press; // a left press on a skill name, window coordinates
+        private bool _dragging, _dropped;
+
+        private Vector2 ToContent(Vector2 window) => window - _view.position + _scroll;
+
+        /// <summary>
+        /// A press on a skill's name, carried 5 pixels, drags it; the release over another group's rows moves it there
+        /// (SkillsGroupControl.OnMouseOver). Read before the controls draw, so the use button under the name does not take
+        /// the release, and a press on a plain name is used so it does not move the window.
+        /// </summary>
+        private void TrackSkillDrag(Event e)
+        {
+            _dropped = false;
+            if (e.type == EventType.MouseDown && e.button == 0 && _view.Contains(e.mousePosition))
+            {
+                Vector2 c = ToContent(e.mousePosition);
+                foreach (var (id, name) in _skillRows)
+                    if (name.Contains(c))
+                    {
+                        _press = (id, e.mousePosition);
+                        _dragging = false;
+                        if (!GameSession.UsableSkills.Contains(id))
+                            e.Use();
+                        return;
+                    }
+                return;
+            }
+            if (_press == null)
+                return;
+            var (skill, at) = _press.Value;
+            // Released: this window's mouse-up, or a repaint with the button up (the release went to another window).
+            // Layout passes are skipped, as the mouse-up that follows them must still see the drop.
+            bool released = (e.type == EventType.MouseUp && e.button == 0) || (e.type == EventType.Repaint && !Input.GetMouseButton(0));
+            if (!released)
+            {
+                if ((e.type == EventType.MouseDrag || e.type == EventType.Repaint) && !_dragging
+                    && (e.mousePosition - at).sqrMagnitude > DragStart * DragStart)
+                    _dragging = true;
+                return;
+            }
+            _press = null;
+            if (!_dragging)
+                return;
+            // The mouse-up is left to the use button, so it lets go of the mouse; _dropped keeps it from using the skill.
+            _dragging = false;
+            _dropped = true;
+            if (_view.Contains(e.mousePosition))
+            {
+                float y = ToContent(e.mousePosition).y;
+                foreach (var (group, top, bottom) in _groupRows)
+                    if (y >= top && y < bottom)
+                    {
+                        if (SkillGroups.MoveSkill(_groups, skill, group))
+                            group.Open = true;
+                        break;
+                    }
+            }
         }
 
         public override void Draw()
@@ -69,43 +154,61 @@ namespace UOClient.Unity.UI
                 return;
             }
 
-            List<(string Name, List<SkillEntry> Skills)> groups = _groups != null && _groups.Count > 0
+            Event e = Event.current;
+            bool grouped = _groups != null && _groups.Count > 0;
+            _view = new Rect(14, 40, Rect.width - 28, Rect.height - 116);
+            if (grouped)
+                TrackSkillDrag(e);
+
+            List<(SkillGroup Group, List<SkillEntry> Skills)> groups = grouped
                 ? Arrange()
-                : new List<(string, List<SkillEntry>)> { (null, Session.Skills.Values.OrderBy(s => NameOf(s.Id)).ToList()) };
-            var view = new Rect(14, 40, Rect.width - 28, Rect.height - 90);
-            const float row = 20;
+                : new List<(SkillGroup, List<SkillEntry>)> { (null, Session.Skills.Values.OrderBy(s => NameOf(s.Id)).ToList()) };
             float height = 0;
-            for (int g = 0; g < groups.Count; g++)
-                height += (groups[g].Name != null ? row : 0) + (groups[g].Name == null || _open.Contains(g) ? groups[g].Skills.Count * row : 0);
-            _scroll = GUI.BeginScrollView(view, _scroll, new Rect(0, 0, view.width - 18, height));
+            foreach (var (group, skills) in groups)
+                height += (group != null ? Row : 0) + (group == null || group.Open ? skills.Count * Row : 0);
+            _scroll = GUI.BeginScrollView(_view, _scroll, new Rect(0, 0, _view.width - 18, height));
+            _groupRows.Clear();
+            _skillRows.Clear();
             float y = 0;
-            for (int g = 0; g < groups.Count; g++)
+            SkillGroup delete = null;
+            foreach (var (group, skills) in groups)
             {
-                var (groupName, skills) = groups[g];
-                if (groupName != null)
+                float top = y;
+                if (group != null)
                 {
-                    // StandardSkillsGump.SkillsGroupControl: arrow 0x0827 closed / 0x0826 open (only with skills in it),
-                    // the name, and the 0x0835 rule out to the edge.
-                    bool open = _open.Contains(g);
-                    bool toggle = skills.Count > 0 && GumpButton(open ? 0x0826 : 0x0827, open ? 0x0826 : 0x0827, 0, y + 4);
-                    Text(new Rect(16, y + 1, 200, row), groupName, new Color(1f, 0.9f, 0.6f), 13, TextAnchor.UpperLeft, true);
-                    float ruleX = 16 + GroupNameWidth(groupName) + 11; // TazUO: name width + 11 past the name's x
-                    UiImage rule = Art.Gump(0x0835);
-                    DrawTiled(rule, ruleX, y + 9, view.width - 18 - ruleX, rule?.Height ?? 0);
-                    toggle |= skills.Count > 0 && GUI.Button(new Rect(16, y, 200, row), GUIContent.none, GUIStyle.none);
-                    if (toggle && !_open.Remove(g))
-                        _open.Add(g);
-                    y += row;
-                    if (!open)
-                        continue;
+                    if (DrawGroupHeader(group, skills.Count, y, group == _groups[0]))
+                        delete = group;
+                    y += Row;
                 }
-                foreach (SkillEntry entry in skills)
-                {
-                    DrawSkill(entry, y, row);
-                    y += row;
-                }
+                if (group == null || group.Open)
+                    foreach (SkillEntry entry in skills)
+                    {
+                        _skillRows.Add((entry.Id, new Rect(18, y, 190, Row)));
+                        DrawSkill(entry, y, Row);
+                        y += Row;
+                    }
+                if (group != null)
+                    _groupRows.Add((group, top, y));
             }
             GUI.EndScrollView();
+            if (delete != null)
+            {
+                if (_renaming == delete)
+                    StopRename();
+                SkillGroups.Delete(_groups, delete); // the first group never offers x (SkillsGroupManager.Remove refuses it)
+            }
+
+            if (_dragging && _press.HasValue)
+                Text(new Rect(e.mousePosition.x + 12, e.mousePosition.y, 200, Row), NameOf(_press.Value.Skill), new Color(1f, 0.9f, 0.6f));
+
+            if (grouped)
+            {
+                // StandardSkillsGump's new group button and reset (OnButtonClick 0 and 1).
+                if (GUI.Button(new Rect(20, Rect.height - 70, 100, 22), "New Group"))
+                    SkillGroups.AddGroup(_groups);
+                if (GUI.Button(new Rect(130, Rect.height - 70, 100, 22), "Reset groups"))
+                    AskReset();
+            }
 
             double total = Session.Skills.Values.Sum(s => s.Base);
             Text(new Rect(20, Rect.height - 42, 200, 20), $"Total: {total:F1}");
@@ -113,13 +216,128 @@ namespace UOClient.Unity.UI
                 _showBase = !_showBase;
         }
 
+        /// <summary>
+        /// StandardSkillsGump.SkillsGroupControl: arrow 0x0827 closed / 0x0826 open (only with skills in it), the name, and
+        /// the 0x0835 rule out to the edge; here also x to delete it (not the first group). True when x was pressed.
+        /// </summary>
+        private bool DrawGroupHeader(SkillGroup group, int count, float y, bool first)
+        {
+            float right = _view.width - 18 - (first ? 0 : 18);
+            if (_renaming == group)
+            {
+                DrawRenameBox(new Rect(16, y, right - 16, Row));
+                return false;
+            }
+
+            Event e = Event.current;
+            var nameBox = new Rect(16, y, 200, Row);
+            if (e.type == EventType.MouseDown && e.button == 0 && e.clickCount == 2 && nameBox.Contains(e.mousePosition))
+            {
+                // The first click of the pair already opened or closed the group; undo that, then edit the name.
+                if (count > 0)
+                    group.Open = !group.Open;
+                StartRename(group);
+                e.Use();
+                return false;
+            }
+
+            bool open = group.Open;
+            bool toggle = count > 0 && GumpButton(open ? 0x0826 : 0x0827, open ? 0x0826 : 0x0827, 0, y + 4);
+            Text(new Rect(16, y + 1, 200, Row), group.Name, new Color(1f, 0.9f, 0.6f), 13, TextAnchor.UpperLeft, true);
+            float ruleX = 16 + GroupNameWidth(group.Name) + 11; // TazUO: name width + 11 past the name's x
+            UiImage rule = Art.Gump(0x0835);
+            DrawTiled(rule, ruleX, y + 9, right - ruleX, rule?.Height ?? 0);
+            toggle |= count > 0 && GUI.Button(nameBox, GUIContent.none, GUIStyle.none);
+            if (toggle)
+                group.Open = !open;
+            return !first && GUI.Button(new Rect(right + 2, y + 2, 16, 16), "x");
+        }
+
+        private SkillGroup _renaming;
+        private bool _renameFocused;
+        private int _renameKeyboard; // the text field's keyboard control id once it has the keys
+        private string _renameText;
+        private const string RenameControl = "skillgroup-rename";
+
+        private void StartRename(SkillGroup group)
+        {
+            _renaming = group;
+            _renameFocused = false;
+            _renameKeyboard = 0;
+            _renameText = group.Name ?? "";
+        }
+
+        /// <summary>Ends an edit and gives the keys back if the box still has them (no GUI call: OnClosed runs outside OnGUI).</summary>
+        private void StopRename()
+        {
+            if (_renaming == null)
+                return;
+            _renaming = null;
+            if (_renameKeyboard != 0 && GUIUtility.keyboardControl == _renameKeyboard)
+                GUIUtility.keyboardControl = 0;
+            _renameKeyboard = 0;
+        }
+
+        /// <summary>
+        /// SkillsGroupControl's name box: Enter keeps the name (OnKeyboardReturn; blank becomes "No Name"); Escape or the
+        /// keys going elsewhere ends the edit with the old name (FocusLost).
+        /// </summary>
+        private void DrawRenameBox(Rect box)
+        {
+            Event e = Event.current;
+            if (e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter))
+            {
+                e.Use();
+                SkillGroups.Rename(_renaming, _renameText);
+                StopRename();
+                return;
+            }
+            if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Escape)
+            {
+                e.Use();
+                StopRename();
+                return;
+            }
+            GUI.SetNextControlName(RenameControl);
+            _renameText = GUI.TextField(box, _renameText, 40);
+            if (!_renameFocused)
+            {
+                GUI.FocusControl(RenameControl);
+                _renameFocused = true;
+            }
+            else if (e.type == EventType.Repaint)
+            {
+                if (_renameKeyboard == 0 && GUI.GetNameOfFocusedControl() == RenameControl)
+                    _renameKeyboard = GUIUtility.keyboardControl;
+                else if (_renameKeyboard != 0 && GUIUtility.keyboardControl != _renameKeyboard)
+                    StopRename(); // the keys went elsewhere (a press on the world, another field)
+            }
+        }
+
+        /// <summary>StandardSkillsGump's reset (OnButtonClick 1): asks first, then the defaults come back (skillgrp.mul or the built-in seven).</summary>
+        private void AskReset()
+        {
+            if (Ui.Find(QuestionWindow.KeyFor("skillgroups")) is UiWindow old)
+                Ui.Close(old);
+            Ui.Open(new QuestionWindow("skillgroups", "Put every skill back\nin the default groups?", yes =>
+            {
+                if (!yes)
+                    return;
+                StopRename();
+                _sessionGroups = Art?.Data?.GetSkillGroups(GameSession.SkillNames.Length);
+                _groups = _sessionGroups;
+            }));
+        }
+
         private void DrawSkill(SkillEntry s, float y, float row)
         {
             string name = NameOf(s.Id);
             bool usable = GameSession.UsableSkills.Contains(s.Id);
 
-            // Usable skills have the classic blue gem button; click it (or the name) to use the skill.
-            if (usable && (GumpButton(0x0837, 0x0838, 0, y + 3) || GUI.Button(new Rect(18, y, 190, row), GUIContent.none, GUIStyle.none)))
+            // Usable skills have the classic blue gem button; click it (or the name) to use the skill. A release that ends
+            // a drag is not a click.
+            if (usable && (GumpButton(0x0837, 0x0838, 0, y + 3) || GUI.Button(new Rect(18, y, 190, row), GUIContent.none, GUIStyle.none))
+                && !_dropped)
                 Session.UseSkill(s.Id);
             Text(new Rect(18, y + 2, 200, row), name, usable ? new Color(0.75f, 0.85f, 1f) : new Color(0.9f, 0.88f, 0.8f));
 

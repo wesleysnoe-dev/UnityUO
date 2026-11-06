@@ -10,17 +10,66 @@ namespace UOClient.IO.Formats
     {
         public string Name;
         public readonly List<int> Skills = new List<int>();
+
+        /// <summary>Shown open in the skills window (TazUO's SkillsGroup.IsMaximized); every group starts closed.</summary>
+        public bool Open;
     }
 
     /// <summary>
     /// The skills window's default groups, as TazUO's SkillsGroupManager.MakeDefault builds them: from the client's
-    /// skillgrp.mul (LoadMULFile), else its built-in seven groups. Read only: TazUO then saves the groups to the profile's
-    /// skillsgroups.xml, and edits them from the gump; neither is done here.
+    /// skillgrp.mul (LoadMULFile), else its built-in seven groups, and the edits StandardSkillsGump makes to them (add,
+    /// rename, delete, move a skill). The file is only read. TazUO saves the edited groups to the profile's
+    /// skillsgroups.xml; nothing here writes anything.
     /// </summary>
     public static class SkillGroups
     {
         /// <summary>The first group, which skillgrp.mul does not name (TazUO's language.ini "miscellaneous").</summary>
         public const string FirstGroupName = "Miscellaneous";
+
+        /// <summary>TazUO's language.ini new_group, no_name and cannot_delete_this_group.</summary>
+        public const string NewGroupName = "New Group", NoName = "No Name", CannotDeleteFirst = "Cannot delete this group.";
+
+        /// <summary>StandardSkillsGump.OnButtonClick(0): an empty group named "New Group" at the end.</summary>
+        public static SkillGroup AddGroup(List<SkillGroup> groups)
+        {
+            var g = new SkillGroup { Name = NewGroupName };
+            groups.Add(g);
+            return g;
+        }
+
+        /// <summary>SkillsGroupControl.OnKeyboardReturn: a blank name becomes "No Name".</summary>
+        public static void Rename(SkillGroup group, string name) =>
+            group.Name = string.IsNullOrWhiteSpace(name) ? NoName : name;
+
+        /// <summary>
+        /// SkillsGroupManager.Remove: the first group cannot go (false; TazUO says <see cref="CannotDeleteFirst"/>); any
+        /// other is removed and its skills join the first.
+        /// </summary>
+        public static bool Delete(List<SkillGroup> groups, SkillGroup group)
+        {
+            int i = groups.IndexOf(group);
+            if (i <= 0)
+                return false;
+            groups.RemoveAt(i);
+            foreach (int id in group.Skills)
+                if (!groups[0].Skills.Contains(id))
+                    groups[0].Skills.Add(id);
+            return true;
+        }
+
+        /// <summary>
+        /// SkillsGroupControl.OnMouseOver with a skill dragged in: a group that already holds the skill is left alone
+        /// (false); otherwise the skill leaves every group and joins <paramref name="to"/>.
+        /// </summary>
+        public static bool MoveSkill(List<SkillGroup> groups, int skill, SkillGroup to)
+        {
+            if (to == null || !groups.Contains(to) || to.Skills.Contains(skill))
+                return false;
+            foreach (SkillGroup g in groups)
+                g.Skills.Remove(skill);
+            to.Skills.Add(skill);
+            return true;
+        }
 
         /// <summary>
         /// skillgrp.mul: int32 group count (-1 first means unicode names and the count follows), count - 1 names of 17
