@@ -12,14 +12,18 @@ namespace UOClient.LiveGroundCompare
         /// <summary>Experimental: a GPU mesh with the compositor's exact corners and triangulation.</summary>
         Mesh = 1,
 
-        /// <summary>Experimental: a real UnityEngine.Terrain. Not wired yet; requesting it falls back to Original.</summary>
+        /// <summary>
+        /// Experimental: a real UnityEngine.Terrain per chunk (heightmap from the map's corner heights), shown by its own
+        /// camera under the sprites. If it cannot be built the switch falls back to Original and says why.
+        /// </summary>
         Terrain = 2
     }
 
     public static class GroundBackend
     {
-        /// <summary>Backends that can actually be shown in this build (Terrain is parsed but not wired yet).</summary>
-        public static bool IsAvailable(GroundBackendKind kind) => kind == GroundBackendKind.Original || kind == GroundBackendKind.Mesh;
+        /// <summary>Backends that can be shown in this build. All three are wired; the guard still decides per host.</summary>
+        public static bool IsAvailable(GroundBackendKind kind) =>
+            kind == GroundBackendKind.Original || kind == GroundBackendKind.Mesh || kind == GroundBackendKind.Terrain;
 
         public static bool IsExperimental(GroundBackendKind kind) => kind != GroundBackendKind.Original;
 
@@ -52,7 +56,7 @@ namespace UOClient.LiveGroundCompare
         public static bool Diverts(GroundBackendKind kind, in ArtPipeline.DrawItem item, bool baked) =>
             IsExperimental(kind) && IsAvailable(kind) && item.Kind == ArtPipeline.DrawKind.Land && !baked;
 
-        /// <summary>The toggle order: Original, Mesh, back to Original (unavailable backends are skipped).</summary>
+        /// <summary>The toggle order: Original, Mesh, Terrain, back to Original (unavailable backends are skipped).</summary>
         public static GroundBackendKind Next(GroundBackendKind current)
         {
             var values = (GroundBackendKind[])Enum.GetValues(typeof(GroundBackendKind));

@@ -58,21 +58,34 @@ namespace UOClient.LiveGroundCompare
 
     /// <summary>
     /// The compare toggle's state, Unity-free: every change goes through <see cref="LiveGroundHostGuard"/> and is
-    /// handed to <c>apply</c> (which only swaps land emission). Disposing puts the original land back once and
-    /// ignores everything after.
+    /// handed to <c>apply</c> (which only swaps land emission). A backend that fails to apply, or reports a failure
+    /// later (<see cref="Fail"/>), is replaced by Original with the reason kept in <see cref="Reason"/>, never silently.
+    /// Disposing puts the original land back once and ignores everything after.
     /// </summary>
     public sealed class LiveGroundSwitch : System.IDisposable
     {
         private readonly bool _optIn;
-        private readonly System.Action<GroundBackendKind> _apply;
-        private string _host;
+        private readonly System.Func<GroundBackendKind, string> _apply;
         private bool _attached, _disposed;
 
         public LiveGroundSwitch(bool optIn, GroundBackendKind requested, System.Action<GroundBackendKind> apply)
+            : this(optIn, requested, Infallible(apply))
+        {
+        }
+
+        /// <param name="apply">Applies a backend; returns null on success, else why it could not (Original never fails).</param>
+        public LiveGroundSwitch(bool optIn, GroundBackendKind requested, System.Func<GroundBackendKind, string> apply)
         {
             _optIn = optIn;
             Requested = requested;
             _apply = apply ?? throw new System.ArgumentNullException(nameof(apply));
+        }
+
+        private static System.Func<GroundBackendKind, string> Infallible(System.Action<GroundBackendKind> apply)
+        {
+            if (apply == null)
+                throw new System.ArgumentNullException(nameof(apply));
+            return k => { apply(k); return null; };
         }
 
         /// <summary>What the user asked for (launch argument or last toggle).</summary>
@@ -81,6 +94,13 @@ namespace UOClient.LiveGroundCompare
         /// <summary>What the land is drawn with now.</summary>
         public GroundBackendKind Active { get; private set; } = GroundBackendKind.Original;
 
+        /// <summary>Why Active is not Requested (guard refusal or backend failure); null when granted as asked.</summary>
+        public string Reason { get; private set; }
+
+        /// <summary>The host the guard last checked (null before the first world).</summary>
+        public string Host { get; private set; }
+
+        public bool IsAttached => _attached;
         public bool IsDisposed => _disposed;
 
         /// <summary>A world was created for <paramref name="host"/>: re-checks the guard and applies. Returns a status line.</summary>
@@ -88,7 +108,7 @@ namespace UOClient.LiveGroundCompare
         {
             if (_disposed)
                 return null;
-            _host = host;
+            Host = host;
             _attached = true;
             return Apply();
         }
@@ -100,7 +120,7 @@ namespace UOClient.LiveGroundCompare
             Active = GroundBackendKind.Original;
         }
 
-        /// <summary>Next backend (Original ⇄ Mesh). Returns a status line, or null when there is nothing to switch.</summary>
+        /// <summary>Next backend (Original → Mesh → Terrain → Original). Returns a status line, or null when there is nothing to switch.</summary>
         public string Toggle()
         {
             if (_disposed || !_attached)
@@ -109,12 +129,34 @@ namespace UOClient.LiveGroundCompare
             return Apply();
         }
 
+        /// <summary>
+        /// The active experimental backend broke after it was applied (e.g. a chunk could not be built): back to
+        /// Original with <paramref name="why"/> as the reason. Returns a status line, or null when nothing changed.
+        /// </summary>
+        public string Fail(string why)
+        {
+            if (_disposed || !_attached || Active == GroundBackendKind.Original)
+                return null;
+            GroundBackendKind broken = Active;
+            _apply(GroundBackendKind.Original);
+            Active = GroundBackendKind.Original;
+            Reason = LiveGroundStatus.FailureReason(broken, why);
+            return LiveGroundStatus.Line(Active, Reason);
+        }
+
         private string Apply()
         {
-            GroundBackendKind effective = LiveGroundHostGuard.Resolve(_optIn, _host, Requested, out string reason);
-            _apply(effective); // also when unchanged: a freshly attached world starts without an emitter
+            GroundBackendKind effective = LiveGroundHostGuard.Resolve(_optIn, Host, Requested, out string reason);
+            string error = _apply(effective); // also when unchanged: a freshly attached world starts without an emitter
+            if (error != null && effective != GroundBackendKind.Original)
+            {
+                reason = LiveGroundStatus.FailureReason(effective, error);
+                _apply(GroundBackendKind.Original);
+                effective = GroundBackendKind.Original;
+            }
             Active = effective;
-            return reason == null ? $"Ground: {effective}" : $"Ground: {effective} ({reason})";
+            Reason = reason;
+            return LiveGroundStatus.Line(effective, reason);
         }
 
         public void Dispose()
@@ -126,6 +168,32 @@ namespace UOClient.LiveGroundCompare
                 _apply(GroundBackendKind.Original);
             Active = GroundBackendKind.Original;
             _attached = false;
+        }
+    }
+
+    /// <summary>The strings the TEST indicator, journal and Player.log show (Unity-free so they are tested).</summary>
+    public static class LiveGroundStatus
+    {
+        public static string FailureReason(GroundBackendKind failed, string why) =>
+            $"{failed} failed: {(string.IsNullOrWhiteSpace(why) ? "unknown error" : why)}; using Original";
+
+        /// <summary>Journal line: "Ground: Mesh", or "Ground: Original (reason)".</summary>
+        public static string Line(GroundBackendKind active, string reason) =>
+            reason == null ? $"Ground: {active}" : $"Ground: {active} ({reason})";
+
+        /// <summary>True when the land is not what was asked for (refused or failed), i.e. the indicator should warn.</summary>
+        public static bool IsFallback(GroundBackendKind requested, GroundBackendKind active, string reason) =>
+            requested != active || reason != null;
+
+        /// <summary>
+        /// The persistent on-screen indicator / Player.log line: requested, active, fallback cause (or "ok"), host and
+        /// how many land objects the active backend has built (0 for Original, which draws sprites).
+        /// </summary>
+        public static string Indicator(GroundBackendKind requested, GroundBackendKind active, string reason, string host, bool attached, int landObjects)
+        {
+            string state = !attached ? "no world" : IsFallback(requested, active, reason) ? $"FALLBACK: {reason ?? "refused"}" : "ok";
+            string objects = active == GroundBackendKind.Original ? "" : $" | {active.ToString().ToLowerInvariant()} chunks {landObjects}";
+            return $"LiveGround TEST | requested {requested} | active {active} | {state} | host {host ?? "-"}{objects} | Ctrl+Shift+G cycles";
         }
     }
 }

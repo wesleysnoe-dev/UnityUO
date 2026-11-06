@@ -295,8 +295,10 @@ public class LiveGroundCompareTests
     public void Toggle_CyclesAvailableBackendsOnly()
     {
         Assert.Equal(GroundBackendKind.Mesh, GroundBackend.Next(GroundBackendKind.Original));
-        Assert.Equal(GroundBackendKind.Original, GroundBackend.Next(GroundBackendKind.Mesh));
+        Assert.Equal(GroundBackendKind.Terrain, GroundBackend.Next(GroundBackendKind.Mesh));
         Assert.Equal(GroundBackendKind.Original, GroundBackend.Next(GroundBackendKind.Terrain));
+        foreach (GroundBackendKind k in Enum.GetValues<GroundBackendKind>())
+            Assert.True(GroundBackend.IsAvailable(k));
     }
 
     [Fact]
@@ -315,7 +317,7 @@ public class LiveGroundCompareTests
         }
         Assert.False(GroundBackend.Diverts(GroundBackendKind.Original, land, false));
         Assert.True(GroundBackend.Diverts(GroundBackendKind.Mesh, land, false));
-        Assert.False(GroundBackend.Diverts(GroundBackendKind.Terrain, land, false)); // not wired: stays original
+        Assert.True(GroundBackend.Diverts(GroundBackendKind.Terrain, land, false));
 
         // Cycling the backend never touches entity placements (Diverts takes them by readonly reference).
         GroundBackendKind cur = GroundBackendKind.Original;
@@ -363,8 +365,10 @@ public class LiveGroundCompareTests
         Assert.Contains("non-local", live);
         Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(false, "127.0.0.1", GroundBackendKind.Mesh, out string noFlag));
         Assert.Contains("-liveground", noFlag);
-        Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(true, "127.0.0.1", GroundBackendKind.Terrain, out string terrain));
-        Assert.Contains("not wired", terrain);
+        Assert.Equal(GroundBackendKind.Terrain, LiveGroundHostGuard.Resolve(true, "127.0.0.1", GroundBackendKind.Terrain, out string terrain));
+        Assert.Null(terrain);
+        Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(true, "uosmallz.duckdns.org", GroundBackendKind.Terrain, out string liveTerrain));
+        Assert.Contains("non-local", liveTerrain);
         Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(false, "uosmallz.duckdns.org", GroundBackendKind.Original, out string orig));
         Assert.Null(orig);
     }
@@ -382,10 +386,10 @@ public class LiveGroundCompareTests
         Assert.Equal("Ground: Mesh", sw.Attach("127.0.0.1"));
         Assert.Equal(GroundBackendKind.Mesh, sw.Active);
         sw.Toggle();
-        Assert.Equal(GroundBackendKind.Original, sw.Active);
+        Assert.Equal(GroundBackendKind.Terrain, sw.Active);
         sw.Toggle();
-        Assert.Equal(GroundBackendKind.Mesh, sw.Active);
-        Assert.Equal(new[] { GroundBackendKind.Mesh, GroundBackendKind.Original, GroundBackendKind.Mesh }, applied);
+        Assert.Equal(GroundBackendKind.Original, sw.Active);
+        Assert.Equal(new[] { GroundBackendKind.Mesh, GroundBackendKind.Terrain, GroundBackendKind.Original }, applied);
     }
 
     [Fact]
@@ -469,5 +473,305 @@ public class LiveGroundCompareTests
         Assert.False(o.LiveGround);
         GroundBackend.TryParse(o.GroundBackend, out GroundBackendKind k);
         Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(o.LiveGround, "127.0.0.1", k, out _));
+    }
+
+    // ---- 3-way switch, fallback, cleanup ----
+
+    [Fact]
+    public void Switch_CyclesThreeWay()
+    {
+        var applied = new List<GroundBackendKind>();
+        var sw = new LiveGroundSwitch(true, GroundBackendKind.Mesh, applied.Add);
+        sw.Attach("127.0.0.1");
+        Assert.Equal("Ground: Terrain", sw.Toggle());
+        Assert.Equal(GroundBackendKind.Terrain, sw.Active);
+        sw.Toggle();
+        Assert.Equal(GroundBackendKind.Original, sw.Active);
+        sw.Toggle();
+        Assert.Equal(new[] { GroundBackendKind.Mesh, GroundBackendKind.Terrain, GroundBackendKind.Original, GroundBackendKind.Mesh }, applied);
+        Assert.Null(sw.Reason);
+    }
+
+    [Fact]
+    public void Switch_TerrainApplyFailureFallsBackToOriginalVisibly()
+    {
+        var applied = new List<GroundBackendKind>();
+        var sw = new LiveGroundSwitch(true, GroundBackendKind.Terrain, k =>
+        {
+            applied.Add(k);
+            return k == GroundBackendKind.Terrain ? "shader 'Legacy Shaders/Diffuse' is not in this build" : null;
+        });
+        string status = sw.Attach("127.0.0.1");
+
+        Assert.Equal(GroundBackendKind.Original, sw.Active);
+        Assert.Equal(GroundBackendKind.Terrain, sw.Requested);
+        Assert.Equal(new[] { GroundBackendKind.Terrain, GroundBackendKind.Original }, applied);
+        Assert.StartsWith("Ground: Original (Terrain failed: shader", status);
+        Assert.Contains("using Original", sw.Reason);
+        Assert.True(LiveGroundStatus.IsFallback(sw.Requested, sw.Active, sw.Reason));
+        string indicator = LiveGroundStatus.Indicator(sw.Requested, sw.Active, sw.Reason, sw.Host, sw.IsAttached, 0);
+        Assert.Contains("requested Terrain", indicator);
+        Assert.Contains("active Original", indicator);
+        Assert.Contains("FALLBACK: Terrain failed", indicator);
+        Assert.Contains("host 127.0.0.1", indicator);
+
+        // The next toggle goes on from what is active (Original → Mesh), and a success clears the reason.
+        sw.Toggle();
+        Assert.Equal(GroundBackendKind.Mesh, sw.Active);
+        Assert.Null(sw.Reason);
+    }
+
+    [Fact]
+    public void Switch_LateFailureFallsBackOnce()
+    {
+        var applied = new List<GroundBackendKind>();
+        var sw = new LiveGroundSwitch(true, GroundBackendKind.Terrain, applied.Add);
+        Assert.Null(sw.Fail("not attached yet"));
+        sw.Attach("localhost");
+        Assert.Equal(GroundBackendKind.Terrain, sw.Active);
+
+        string status = sw.Fail("terrain chunk 3,4: ArgumentException: bad");
+        Assert.Equal(GroundBackendKind.Original, sw.Active);
+        Assert.Contains("Terrain failed: terrain chunk 3,4", status);
+        Assert.Null(sw.Fail("again")); // already on Original: nothing more to undo
+        Assert.Equal(new[] { GroundBackendKind.Terrain, GroundBackendKind.Original }, applied);
+    }
+
+    [Fact]
+    public void Switch_DisposeFromTerrainRestoresOriginal()
+    {
+        var applied = new List<GroundBackendKind>();
+        var sw = new LiveGroundSwitch(true, GroundBackendKind.Terrain, applied.Add);
+        sw.Attach("127.0.0.1");
+        sw.Dispose();
+        Assert.Equal(new[] { GroundBackendKind.Terrain, GroundBackendKind.Original }, applied);
+        Assert.Null(sw.Fail("after dispose"));
+        Assert.Equal(2, applied.Count);
+    }
+
+    [Fact]
+    public void Switch_TerrainOnLiveHostIsRefusedBeforeApplying()
+    {
+        var applied = new List<GroundBackendKind>();
+        var sw = new LiveGroundSwitch(true, GroundBackendKind.Terrain, applied.Add);
+        string status = sw.Attach("uosmallz.duckdns.org");
+        Assert.Equal(new[] { GroundBackendKind.Original }, applied);
+        Assert.Contains("non-local", status);
+        Assert.Contains("FALLBACK", LiveGroundStatus.Indicator(sw.Requested, sw.Active, sw.Reason, sw.Host, true, 0));
+    }
+
+    [Fact]
+    public void Status_IndicatorStates()
+    {
+        string ok = LiveGroundStatus.Indicator(GroundBackendKind.Mesh, GroundBackendKind.Mesh, null, "127.0.0.1", true, 24);
+        Assert.Equal("LiveGround TEST | requested Mesh | active Mesh | ok | host 127.0.0.1 | mesh chunks 24 | Ctrl+Shift+G cycles", ok);
+        Assert.False(LiveGroundStatus.IsFallback(GroundBackendKind.Mesh, GroundBackendKind.Mesh, null));
+
+        string original = LiveGroundStatus.Indicator(GroundBackendKind.Original, GroundBackendKind.Original, null, "127.0.0.1", true, 0);
+        Assert.Contains("| ok |", original);
+        Assert.DoesNotContain("chunks", original);
+
+        Assert.Contains("no world", LiveGroundStatus.Indicator(GroundBackendKind.Mesh, GroundBackendKind.Original, null, null, false, 0));
+        Assert.Contains("host -", LiveGroundStatus.Indicator(GroundBackendKind.Mesh, GroundBackendKind.Original, null, null, false, 0));
+        Assert.Equal("Ground: Mesh", LiveGroundStatus.Line(GroundBackendKind.Mesh, null));
+        Assert.Equal("Terrain failed: unknown error; using Original", LiveGroundStatus.FailureReason(GroundBackendKind.Terrain, " "));
+    }
+
+    // ---- terrain land ----
+
+    private const int Chunk = TerrainLandBuilder.Tiles, S = TerrainLandBuilder.SamplesPerTile;
+
+    /// <summary>A bumpy map height for corner (x, y), within sbyte.</summary>
+    private static int MapZ(int x, int y) => (x * 7 - y * 5 + (x * y) % 11) % 60 - 10;
+
+    private static TerrainLandBuilder FilledChunk(int x0, int y0, Func<int, int, bool>? present = null, int texels = 8)
+    {
+        var tb = new TerrainLandBuilder(x0, y0, texels);
+        for (int j = 0; j < Chunk; j++)
+            for (int i = 0; i < Chunk; i++)
+            {
+                if (present != null && !present(i, j))
+                    continue;
+                int x = x0 + i, y = y0 + j;
+                DrawItem it = LiveGroundProjection.LandItem(x, y, 3, MapZ(x, y), MapZ(x + 1, y), MapZ(x + 1, y + 1), MapZ(x, y + 1), hasTexmap: (i + j) % 2 == 0);
+                tb.AddTile(it, Solid(it.Stretched ? 64 : 44, 0xFF000000u | (uint)(i * 16 << 16) | (uint)(j * 16 << 8)), it.Stretched);
+            }
+        return tb;
+    }
+
+    [Fact]
+    public void Terrain_ResolutionIsUnityValid()
+    {
+        Assert.Equal(33, TerrainLandBuilder.HeightmapResolution); // 2^n + 1, Unity's minimum
+        Assert.Equal(32, TerrainLandBuilder.HolesResolution);
+        Assert.Equal(16, TerrainLandBuilder.Tiles); // WorldStreamer.ChunkSize (Unity-side, not compiled here)
+    }
+
+    [Fact]
+    public void Terrain_HeightmapCornersAreTheMapHeights()
+    {
+        TerrainLandData d = FilledChunk(1600, 1504).Finish();
+        Assert.Equal(256, d.TileCount);
+        for (int j = 0; j <= Chunk; j++)
+            for (int i = 0; i <= Chunk; i++)
+            {
+                int z = MapZ(1600 + i, 1504 + j);
+                Assert.Equal(z, d.CornerZ[i, j]);
+                // Row runs along terrain +Z = tile y descending.
+                Assert.Equal(TerrainLandBuilder.Normalize(z), d.Heights[(Chunk - j) * S, i * S], 6);
+            }
+    }
+
+    [Fact]
+    public void Terrain_InteriorSamplesLieOnTheRightLeftSplit()
+    {
+        TerrainLandData d = FilledChunk(0, 0).Finish();
+        for (int row = 0; row < TerrainLandBuilder.HeightmapResolution; row++)
+            for (int col = 0; col < TerrainLandBuilder.HeightmapResolution; col++)
+            {
+                float tx = (float)col / S, ty = Chunk - (float)row / S;
+                int i = Math.Min(Chunk - 1, (int)tx), j = Math.Min(Chunk - 1, (int)ty);
+                float z = LiveGroundProjection.HeightAt(MapZ(i, j), MapZ(i + 1, j), MapZ(i + 1, j + 1), MapZ(i, j + 1), tx - i, ty - j);
+                Assert.Equal(TerrainLandBuilder.Normalize(z), d.Heights[row, col], 5);
+            }
+
+        // The tile center sits on the RIGHT–LEFT diagonal: the mean of right and left, not of top and bottom.
+        int ci = 3, cj = 5;
+        float center = d.Heights[(Chunk - cj) * S - 1, ci * S + 1];
+        Assert.Equal(TerrainLandBuilder.Normalize((MapZ(ci + 1, cj) + MapZ(ci, cj + 1)) / 2f), center, 5);
+    }
+
+    [Fact]
+    public void Terrain_SeamsMatchBetweenNeighborChunks()
+    {
+        TerrainLandData a = FilledChunk(0, 0).Finish(), right = FilledChunk(Chunk, 0).Finish(), below = FilledChunk(0, Chunk).Finish();
+        int last = TerrainLandBuilder.HeightmapResolution - 1;
+        for (int k = 0; k <= last; k++)
+        {
+            Assert.Equal(a.Heights[k, last], right.Heights[k, 0], 6); // tile x seam
+            Assert.Equal(a.Heights[0, k], below.Heights[last, k], 6); // tile y seam (row 0 = tile y max)
+        }
+    }
+
+    [Fact]
+    public void Terrain_PositionAndSizePutSamplesAtTheirProjectedCorners()
+    {
+        TerrainLandData d = FilledChunk(320, 480).Finish();
+        (float px, float py, float pz) = d.Position;
+        (float sx, float sy, float sz) = d.Size;
+        Assert.Equal((16f, 16f), (sx, sz));
+        for (int j = 0; j <= Chunk; j += 4)
+            for (int i = 0; i <= Chunk; i += 4)
+            {
+                int row = (Chunk - j) * S, col = i * S;
+                // Where Unity puts the sample: position + (col, height, row) in terrain units.
+                float wx = px + (float)col / S, wy = py + d.Heights[row, col] * sy, wz = pz + (float)row / S;
+                (float x, float y) = TerrainLandBuilder.ToWorldScreen(wx, wy, wz, 2);
+                (float ex, float ey) = LiveGroundProjection.Corner(320 + i, 480 + j, LiveGroundProjection.Top, MapZ(320 + i, 480 + j), 2);
+                Assert.Equal(ex, x, 2);
+                Assert.Equal(ey, y, 1); // 16-bit-free here; Unity's own storage adds ~0.01 Z
+            }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Terrain_ProjectionMatchesLandCornersAndSortsByNearness(int scale)
+    {
+        DrawItem it = LiveGroundProjection.LandItem(1000, 1200, 3, 10, -5, 20, 7, hasTexmap: true);
+        int[] z = { 10, -5, 20, 7 };
+        (int dx, int dy)[] offset = { (0, 0), (1, 0), (1, 1), (0, 1) };
+        for (int c = 0; c < 4; c++)
+        {
+            (float X, float Y, float Z) p = TerrainLandBuilder.TerrainPoint(it.X + offset[c].dx, it.Y + offset[c].dy, z[c]);
+            (float x, float y) = TerrainLandBuilder.ToWorldScreen(p.X, p.Y, p.Z, scale);
+            (float ex, float ey) = LiveGroundProjection.Corner(it.X, it.Y, c, z[c], scale);
+            Assert.Equal(ex, x, 2);
+            Assert.Equal(ey, y, 2);
+        }
+
+        // One tile right, one down and 11 Z up is the same pixel (the line of sight) and strictly nearer.
+        var a = TerrainLandBuilder.TerrainPoint(50, 60, 0);
+        var b = TerrainLandBuilder.TerrainPoint(51, 61, 11);
+        Assert.Equal(TerrainLandBuilder.ToWorldScreen(a.X, a.Y, a.Z, scale).X, TerrainLandBuilder.ToWorldScreen(b.X, b.Y, b.Z, scale).X, 3);
+        Assert.Equal(TerrainLandBuilder.ToWorldScreen(a.X, a.Y, a.Z, scale).Y, TerrainLandBuilder.ToWorldScreen(b.X, b.Y, b.Z, scale).Y, 2);
+        Assert.True(TerrainLandBuilder.Nearness(b.X, b.Y, b.Z) > TerrainLandBuilder.Nearness(a.X, a.Y, a.Z));
+    }
+
+    [Fact]
+    public void Terrain_MissingTilesAreHoles()
+    {
+        TerrainLandData d = FilledChunk(0, 0, (i, j) => !(i == 2 && j == 5) && j != 15).Finish();
+        Assert.Equal(256 - 16 - 1, d.TileCount);
+        for (int row = 0; row < TerrainLandBuilder.HolesResolution; row++)
+            for (int col = 0; col < TerrainLandBuilder.HolesResolution; col++)
+            {
+                int i = col / S, j = Chunk - 1 - row / S;
+                bool expected = !(i == 2 && j == 5) && j != 15;
+                Assert.Equal(expected, d.Solid[row, col]);
+            }
+        // Tile y 15 is the first holes row (terrain +Z starts at the chunk's tile-y-max edge).
+        Assert.False(d.Solid[0, 0]);
+        Assert.True(d.Solid[TerrainLandBuilder.HolesResolution - 1, 0]);
+    }
+
+    [Fact]
+    public void Terrain_EmptyChunkBuildsNothing()
+    {
+        TerrainLandData d = new TerrainLandBuilder(0, 0, 8).Finish();
+        Assert.Equal(0, d.TileCount);
+        Assert.Null(d.Rgba);
+    }
+
+    [Fact]
+    public void Terrain_RejectsForeignAndNonLandTiles()
+    {
+        var tb = new TerrainLandBuilder(16, 16, 8);
+        DrawItem outside = LiveGroundProjection.LandItem(15, 20, 3, 0, 0, 0, 0, hasTexmap: false);
+        Assert.Throws<ArgumentOutOfRangeException>(() => tb.AddTile(outside, Solid(44, 0xFF00FF00), false));
+        var stat = new DrawItem { Kind = DrawKind.Static, X = 20, Y = 20 };
+        Assert.Throws<ArgumentException>(() => tb.AddTile(stat, Solid(44, 0xFF00FF00), false));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new TerrainLandBuilder(0, 0, 0));
+    }
+
+    [Fact]
+    public void Terrain_TextureMapsEachTileWhereTerrainUvPutsIt()
+    {
+        const int texels = 8;
+        TerrainLandData d = FilledChunk(0, 0, texels: texels).Finish();
+        int size = d.TextureSize;
+        Assert.Equal(Chunk * texels, size);
+        Assert.Equal(size * size * 4, d.Rgba.Length);
+        foreach ((int i, int j) in new[] { (0, 0), (15, 0), (0, 15), (7, 9) })
+        {
+            // Terrain UV (u, v) = (local x, local z) / 16, local z = 16 - tile y; texture rows are bottom-up.
+            float u = (i + 0.5f) / Chunk, v = (Chunk - (j + 0.5f)) / Chunk;
+            int px = (int)(u * size), row = (int)(v * size);
+            int o = (row * size + px) * 4;
+            Assert.Equal((byte)(i * 16), d.Rgba[o]);
+            Assert.Equal((byte)(j * 16), d.Rgba[o + 1]);
+            Assert.Equal(255, d.Rgba[o + 3]);
+        }
+    }
+
+    [Fact]
+    public void Terrain_SpriteArtIsUnrotatedLikeTheMesh()
+    {
+        // A 44x44 sprite whose pixel value encodes its position.
+        var b = new Bitmap32(44, 44);
+        for (int y = 0; y < 44; y++)
+            for (int x = 0; x < 44; x++)
+                b.Pixels[y * 44 + x] = (uint)(y * 44 + x);
+        for (int c = 0; c < 4; c++)
+        {
+            // Tile corner c (texmap UV) lands on the sprite's diamond corner c (SpriteU/V), as in the mesh.
+            float u = Math.Clamp(LiveGroundProjection.TexmapU[c], 0.01f, 0.99f), v = Math.Clamp(LiveGroundProjection.TexmapV[c], 0.01f, 0.99f);
+            uint p = TerrainLandBuilder.SampleArt(b, false, u, v);
+            int sx = (int)(p % 44), sy = (int)(p / 44);
+            Assert.InRange(sx, LiveGroundProjection.SpriteU[c] * 44 - 2, LiveGroundProjection.SpriteU[c] * 44 + 1);
+            Assert.InRange(sy, LiveGroundProjection.SpriteV[c] * 44 - 2, LiveGroundProjection.SpriteV[c] * 44 + 1);
+        }
+        Assert.Equal(b.Pixels[0], TerrainLandBuilder.SampleArt(b, true, 0f, 0f)); // texmaps map directly
+        Assert.Equal(b.Pixels[44 * 44 - 1], TerrainLandBuilder.SampleArt(b, true, 0.999f, 0.999f));
     }
 }

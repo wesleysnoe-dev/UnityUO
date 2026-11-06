@@ -59,6 +59,7 @@
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\RealMapPatch.cs" Link="LiveGroundCompare\RealMapPatch.cs" />
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\MeshLandBuilder.cs" Link="LiveGroundCompare\MeshLandBuilder.cs" />
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\LiveGroundHostGuard.cs" Link="LiveGroundCompare\LiveGroundHostGuard.cs" />
+    <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\TerrainLandBuilder.cs" Link="LiveGroundCompare\TerrainLandBuilder.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />
