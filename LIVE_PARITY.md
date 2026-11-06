@@ -330,17 +330,21 @@ Still missing:
    - [ ] Buy a vendor's last one of something, then open Buy again → that line is gone and every other line shows its own name and price; buying one of them takes that item and the gold. Sell an item → the gold comes and the window closes.
    - [ ] Skills window (K) → a use button (e.g. Hiding) uses the skill; a lock arrow cycles up/down/locked, and after a re-log the server still has it.
    - [ ] Hover an item or mobile → the tooltip sits 24 px under the cursor, stays inside the view, and is the right size at your UI scale.
+   - [ ] Train on a trainer NPC (context menu → Train) → the NPC's train line comes, and paying (drop gold on them) raises the skill; the `0x3A` update shows in the skills window and the "Your skill in … has increased" line.
 2. **Gumps**
    - [ ] Open a server gump (stable, auction, Group Finder) → a button reply does what it should; right-click closes it, and Esc leaves it open.
    - [ ] HTML gump with a scrollbar → wheel, arrows and drag scroll it; links work.
    - [ ] Text entry (rename in the stable, auction price) → typing, cursor keys, the length limit, and the reply carries the text.
    - [ ] Status window is `0x0802` classic; a stat-lock click cycles up/down/locked and the server keeps it.
    - [ ] Drag from a mobile → its health bar comes out under the mouse; attacking opens or retargets the last-attack bar.
+   - [ ] Skills window groups: New Group adds one at the bottom; double-click its name, type, Enter → renamed (Esc keeps the old name); drag a skill by its name onto it → it moves and the group opens; a drag released on a usable skill's own name does not use it; x on the group → its skills go to Miscellaneous (the first has no x); close and reopen K → edits still there; Reset groups → Okay restores the defaults. Afterwards, `UserSettings/unity-uo-settings.json` and the hotkeys file are unchanged (nothing is saved).
 3. **Combat**
    - [ ] War mode → red gauntlet points toward the mouse in 8 directions; peace → gold.
    - [ ] Attack an Innocent while blue → "This may flag you criminal!"; Cancel sends nothing. A harmful spell cursor on an Innocent → the same question.
    - [ ] Party bar heal/cure button → the spell's cursor goes to that member on its own. Also let a quick heal fizzle (or press Esc first): the next unrelated cursor may go to that member (TazUO does the same; note it if it bites).
    - [ ] Open a spellbook (Magery, then Necromancy) → click a spell → it casts (words, cursor, mana) from that book. A spell hotkey casts too. Both now send `0xBF 0x1C` / `0x12 0x27`, not `0x12 0x56`.
+   - [ ] Target question cancel: while blue, cast a harmful spell (e.g. Magic Arrow) and click an Innocent → the question shows. Then, each on a fresh cast: (a) press Esc → the question and the crosshair both go, and nothing hits; (b) leave the question up 30 s until ModernUO times the spell cursor out (`Spell.cs:977` `BeginTimeout(30000)`, `Target.Timeout` sends the `0x6C` cancel, `Target.cs:60-62`) → the question goes on its own and nothing hits; (c) cast again while the question is up → the old question goes, the new crosshair stays, nothing hits until you target again; (d) Cancel → the crosshair stays up for another target.
+   - [ ] Party heal + Esc (TazUO-identical risk): quick-heal a member, press Esc on its cursor; then cast anything that brings a cursor → note whether it went straight to that member.
    - [ ] Kill something → it falls once, then lies as its body in the last fall frame (not the `0x2006` item art), with no blink.
    - [ ] A UOP-only creature (e.g. gargoyle slave 753) is visible; in war it stands and walks in its war actions.
    - [ ] War mode with no weapon, a katana, then a halberd or bow → the stance changes (stand 7, 7, 8; walk 15). Peace with a shield or two-hander → armed walk.
