@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using UnityEditor;
@@ -10,8 +11,8 @@ using UOClient.GroundPrototype;
 namespace UOClient.GroundPrototype.Editor
 {
     /// <summary>
-    /// EXCEPTION for P2 acceptance screenshots. File-flag driven; phase persisted to disk
-    /// so domain reload on Play does not lose state. Aborts if any open scene is dirty.
+    /// EXCEPTION for P2 acceptance screenshots. File-flag driven; phase on disk.
+    /// Uses synchronous Camera.Render -> PNG (not async ScreenCapture) so toggles are visible.
     /// </summary>
     public static class P2PlayCapture
     {
@@ -38,7 +39,7 @@ namespace UOClient.GroundPrototype.Editor
         private static void Tick()
         {
             if (EditorApplication.timeSinceStartup < _nextPoll) return;
-            _nextPoll = EditorApplication.timeSinceStartup + 0.35;
+            _nextPoll = EditorApplication.timeSinceStartup + 0.25;
             if (EditorApplication.isCompiling) return;
 
             string stop = Path.Combine(Root, StopFile);
@@ -48,9 +49,7 @@ namespace UOClient.GroundPrototype.Editor
                 if (EditorApplication.isPlaying)
                 {
                     EditorApplication.isPlaying = false;
-                    WriteResult("STOP requested; leaving Play. Restore on next idle tick.");
-                    // leave a restore marker
-                    File.WriteAllText(Path.Combine(Root, StateFile), "phase=restore\nphaseAt=" + Now());
+                    File.WriteAllText(Path.Combine(Root, StateFile), "phase=restore\nphaseAt=" + NowInv());
                     return;
                 }
                 RestorePriorOrWorldDemo();
@@ -80,7 +79,6 @@ namespace UOClient.GroundPrototype.Editor
 
                 Directory.CreateDirectory(ShotDir);
                 Directory.CreateDirectory(Path.Combine(Root, "Library/UOClient"));
-                // Persist prior setup as scene path list (simple)
                 File.WriteAllText(Path.Combine(Root, SetupFile), ActiveScenePaths());
                 File.Delete(request);
 
@@ -90,7 +88,7 @@ namespace UOClient.GroundPrototype.Editor
                 string lavaOff = Path.Combine(ShotDir, "GroundCompare-P2-DAY-lavaLightOff-" + stamp + ".png").Replace('\\', '/');
 
                 File.WriteAllText(statePath,
-                    "phase=enter\nphaseAt=" + Now() +
+                    "phase=enter\nphaseAt=" + NowInv() +
                     "\nday=" + day + "\nnight=" + night + "\nlavaOff=" + lavaOff + "\n");
 
                 EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
@@ -99,19 +97,15 @@ namespace UOClient.GroundPrototype.Editor
                 return;
             }
 
-            // Resume from persisted state (survives domain reload)
             var st = ReadState(statePath);
             if (!st.ContainsKey("phase")) { ClearState(); return; }
             string phase = st["phase"];
-            double phaseAt = st.ContainsKey("phaseAt") ? double.Parse(st["phaseAt"], CultureInfo.InvariantCulture) : 0;
+            double phaseAt = ParseAt(st);
             double age = EditorApplication.timeSinceStartup - phaseAt;
-            // timeSinceStartup resets on domain reload — use wall clock fallback via file mtime bump
-            // Re-base phaseAt on first tick after reload if age negative or huge
             if (age < 0 || age > 600)
             {
-                st["phaseAt"] = Now().ToString(CultureInfo.InvariantCulture);
+                st["phaseAt"] = NowInv();
                 WriteState(statePath, st);
-                phaseAt = double.Parse(st["phaseAt"], CultureInfo.InvariantCulture);
                 age = 0;
             }
 
@@ -119,61 +113,40 @@ namespace UOClient.GroundPrototype.Editor
             {
                 case "enter":
                     if (!EditorApplication.isPlaying) break;
-                    if (age < 2.0) break;
-                    var cam = FindCam();
-                    if (cam != null) cam.SetMode(CompareMode.SideBySide);
-                    var tog = FindTog();
-                    if (tog != null)
-                    {
-                        tog.SetTextures(true);
-                        tog.SetFluids(true);
-                        tog.SetLavaLight(true);
-                        tog.SetNight(false);
-                    }
+                    if (age < 2.5) break;
+                    ForceSideBySide();
+                    ApplyVisuals(textures: true, fluids: true, lavaLight: true, night: false);
                     st["phase"] = "day";
-                    st["phaseAt"] = Now().ToString(CultureInfo.InvariantCulture);
+                    st["phaseAt"] = NowInv();
                     WriteState(statePath, st);
                     break;
 
                 case "day":
                     if (!EditorApplication.isPlaying) break;
-                    if (age < 0.8) break;
-                    ScreenCapture.CaptureScreenshot(st["day"]);
-                    Debug.Log("[GroundPrototype] P2PlayCapture DAY " + st["day"]);
-                    st["phase"] = "tonight";
-                    st["phaseAt"] = Now().ToString(CultureInfo.InvariantCulture);
-                    WriteState(statePath, st);
-                    break;
-
-                case "tonight":
-                    if (!EditorApplication.isPlaying) break;
-                    if (age < 0.4) break;
-                    var t2 = FindTog();
-                    if (t2 != null) t2.SetNight(true);
+                    if (age < 1.0) break;
+                    SyncCapture(st["day"], "DAY");
+                    ApplyVisuals(textures: true, fluids: true, lavaLight: true, night: true);
                     st["phase"] = "night";
-                    st["phaseAt"] = Now().ToString(CultureInfo.InvariantCulture);
+                    st["phaseAt"] = NowInv();
                     WriteState(statePath, st);
                     break;
 
                 case "night":
                     if (!EditorApplication.isPlaying) break;
-                    if (age < 0.8) break;
-                    ScreenCapture.CaptureScreenshot(st["night"]);
-                    Debug.Log("[GroundPrototype] P2PlayCapture NIGHT " + st["night"]);
-                    var t3 = FindTog();
-                    if (t3 != null) { t3.SetNight(false); t3.SetLavaLight(false); }
+                    if (age < 1.2) break;
+                    SyncCapture(st["night"], "NIGHT");
+                    ApplyVisuals(textures: true, fluids: true, lavaLight: false, night: false);
                     st["phase"] = "lavaoff";
-                    st["phaseAt"] = Now().ToString(CultureInfo.InvariantCulture);
+                    st["phaseAt"] = NowInv();
                     WriteState(statePath, st);
                     break;
 
                 case "lavaoff":
                     if (!EditorApplication.isPlaying) break;
-                    if (age < 0.8) break;
-                    ScreenCapture.CaptureScreenshot(st["lavaOff"]);
-                    Debug.Log("[GroundPrototype] P2PlayCapture LAVAOFF " + st["lavaOff"]);
+                    if (age < 1.0) break;
+                    SyncCapture(st["lavaOff"], "LAVAOFF");
                     st["phase"] = "stop";
-                    st["phaseAt"] = Now().ToString(CultureInfo.InvariantCulture);
+                    st["phaseAt"] = NowInv();
                     WriteState(statePath, st);
                     EditorApplication.isPlaying = false;
                     break;
@@ -182,7 +155,7 @@ namespace UOClient.GroundPrototype.Editor
                     if (EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode) break;
                     if (age < 0.6) break;
                     st["phase"] = "restore";
-                    st["phaseAt"] = Now().ToString(CultureInfo.InvariantCulture);
+                    st["phaseAt"] = NowInv();
                     WriteState(statePath, st);
                     break;
 
@@ -196,13 +169,100 @@ namespace UOClient.GroundPrototype.Editor
             }
         }
 
-        private static IsoCompareCamera FindCam() =>
-            UnityEngine.Object.FindAnyObjectByType<IsoCompareCamera>();
+        private static void ForceSideBySide()
+        {
+            foreach (var cam in UnityEngine.Object.FindObjectsByType<IsoCompareCamera>(FindObjectsSortMode.None))
+                cam.SetMode(CompareMode.SideBySide);
+        }
 
-        private static VisualCompareToggles FindTog() =>
-            UnityEngine.Object.FindAnyObjectByType<VisualCompareToggles>();
+        private static void ApplyVisuals(bool textures, bool fluids, bool lavaLight, bool night)
+        {
+            var togs = UnityEngine.Object.FindObjectsByType<VisualCompareToggles>(FindObjectsSortMode.None);
+            Debug.Log($"[GroundPrototype] P2PlayCapture ApplyVisuals togCount={togs.Length} tex={textures} fluids={fluids} lava={lavaLight} night={night}");
+            foreach (var t in togs)
+            {
+                t.SetTextures(textures);
+                t.SetFluids(fluids);
+                t.SetLavaLight(lavaLight);
+                t.SetNight(night);
+            }
+            // Belt-and-suspenders: drive SharedLightRig directly
+            foreach (var rig in UnityEngine.Object.FindObjectsByType<SharedLightRig>(FindObjectsSortMode.None))
+                rig.SetNight(night);
+        }
 
-        private static double Now() => EditorApplication.timeSinceStartup;
+        private static void SyncCapture(string path, string tag)
+        {
+            // Composite left+right prototype cameras into one PNG (side-by-side).
+            var cams = new List<Camera>();
+            foreach (var c in UnityEngine.Object.FindObjectsByType<Camera>(FindObjectsSortMode.None))
+            {
+                if (!c.enabled) continue;
+                // Prototype compare cams only (skip unrelated)
+                if (c.GetComponent<IsoCompareCamera>() != null || (c.name != null && c.name.Contains("Iso Compare")))
+                    cams.Add(c);
+            }
+            cams.Sort((a, b) => a.rect.x.CompareTo(b.rect.x));
+
+            int w = Mathf.Max(8, Screen.width);
+            int h = Mathf.Max(8, Screen.height);
+            var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32);
+            var prev = RenderTexture.active;
+            var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+
+            // Clear
+            RenderTexture.active = rt;
+            GL.Clear(true, true, new Color(0.06f, 0.06f, 0.07f, 1f));
+
+            if (cams.Count == 0)
+            {
+                // Fallback: main camera full frame
+                var main = Camera.main;
+                if (main != null)
+                {
+                    var old = main.targetTexture;
+                    var oldRect = main.rect;
+                    main.rect = new Rect(0, 0, 1, 1);
+                    main.targetTexture = rt;
+                    main.Render();
+                    main.targetTexture = old;
+                    main.rect = oldRect;
+                }
+            }
+            else
+            {
+                foreach (var cam in cams)
+                {
+                    var old = cam.targetTexture;
+                    // Render each camera into its viewport region via full RT then... simpler: temporary full render with scissor via rect
+                    // Unity Camera.rect with targetTexture uses normalized viewport of the RT.
+                    cam.targetTexture = rt;
+                    cam.Render();
+                    cam.targetTexture = old;
+                }
+            }
+
+            RenderTexture.active = rt;
+            tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+            tex.Apply(false);
+            RenderTexture.active = prev;
+            rt.Release();
+            UnityEngine.Object.DestroyImmediate(rt);
+
+            byte[] png = tex.EncodeToPNG();
+            UnityEngine.Object.DestroyImmediate(tex);
+            File.WriteAllBytes(path, png);
+            Debug.Log($"[GroundPrototype] P2PlayCapture {tag} sync {path} bytes={png.Length} cams={cams.Count}");
+        }
+
+        private static string NowInv() => EditorApplication.timeSinceStartup.ToString(CultureInfo.InvariantCulture);
+
+        private static double ParseAt(Dictionary<string, string> st)
+        {
+            if (!st.ContainsKey("phaseAt")) return 0;
+            double.TryParse(st["phaseAt"], NumberStyles.Float, CultureInfo.InvariantCulture, out var v);
+            return v;
+        }
 
         private static void ClearState()
         {
@@ -210,14 +270,12 @@ namespace UOClient.GroundPrototype.Editor
             if (File.Exists(p)) File.Delete(p);
         }
 
-        private static void WriteResult(string text)
-        {
+        private static void WriteResult(string text) =>
             File.WriteAllText(Path.Combine(Root, ResultFile), text);
-        }
 
         private static string ActiveScenePaths()
         {
-            var parts = new System.Collections.Generic.List<string>();
+            var parts = new List<string>();
             for (int i = 0; i < SceneManager.sceneCount; i++)
             {
                 var s = SceneManager.GetSceneAt(i);
@@ -232,19 +290,16 @@ namespace UOClient.GroundPrototype.Editor
             string path = WorldDemoPath;
             if (File.Exists(setup))
             {
-                var lines = File.ReadAllLines(setup);
-                foreach (var line in lines)
+                foreach (var line in File.ReadAllLines(setup))
                     if (!string.IsNullOrWhiteSpace(line)) { path = line.Trim(); break; }
             }
-            if (File.Exists(Path.Combine(Root, path.Replace('/', Path.DirectorySeparatorChar))))
-                EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
-            else
-                EditorSceneManager.OpenScene(WorldDemoPath, OpenSceneMode.Single);
+            string full = Path.Combine(Root, path.Replace('/', Path.DirectorySeparatorChar));
+            EditorSceneManager.OpenScene(File.Exists(full) ? path : WorldDemoPath, OpenSceneMode.Single);
         }
 
-        private static System.Collections.Generic.Dictionary<string, string> ReadState(string path)
+        private static Dictionary<string, string> ReadState(string path)
         {
-            var d = new System.Collections.Generic.Dictionary<string, string>();
+            var d = new Dictionary<string, string>();
             foreach (var line in File.ReadAllLines(path))
             {
                 int eq = line.IndexOf('=');
@@ -254,7 +309,7 @@ namespace UOClient.GroundPrototype.Editor
             return d;
         }
 
-        private static void WriteState(string path, System.Collections.Generic.Dictionary<string, string> d)
+        private static void WriteState(string path, Dictionary<string, string> d)
         {
             var sb = new System.Text.StringBuilder();
             foreach (var kv in d) sb.Append(kv.Key).Append('=').Append(kv.Value).Append('\n');
