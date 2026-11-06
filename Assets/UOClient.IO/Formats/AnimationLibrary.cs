@@ -57,6 +57,127 @@ namespace UOClient.IO.Formats
             ReadBodyConv(Path.Combine(directory, "Bodyconv.def"));
             ReadBodyDef(Path.Combine(directory, "Body.def"));
             ReadMobTypes(Path.Combine(directory, "mobtypes.txt"));
+            ReadGroupReplaces(Path.Combine(directory, "Anim1.def"), _lowReplaces);
+            ReadGroupReplaces(Path.Combine(directory, "Anim2.def"), _peopleReplaces);
+        }
+
+        // Anim1.def (animals) and Anim2.def (people): server action -> drawn action, 0xFF for the walk (TazUO GroupReplaces).
+        private readonly List<(int Group, int Replace)> _lowReplaces = new List<(int, int)>();
+        private readonly List<(int Group, int Replace)> _peopleReplaces = new List<(int, int)>();
+
+        public IReadOnlyList<(int Group, int Replace)> LowReplaces => _lowReplaces;
+        public IReadOnlyList<(int Group, int Replace)> PeopleReplaces => _peopleReplaces;
+
+        /// <summary>
+        /// A body's TazUO <c>AnimationGroupsType</c>: mobtypes.txt's, or its action layout's when not listed
+        /// (<c>CalculateTypeByGraphic</c>).
+        /// </summary>
+        public MobType AnimType(int body)
+        {
+            if (_mobTypes.TryGetValue(body, out var m))
+                return m.Type;
+            AnimGroup g = GroupOf(body);
+            return g == AnimGroup.Animal ? MobType.Animal : g == AnimGroup.Human ? MobType.Human : MobType.Monster;
+        }
+
+        /// <summary>mobtypes.txt flags with <see cref="ServerAnimationGroups.Found"/> for a listed body (TazUO sets 0x80000000 there), else 0.</summary>
+        public uint AnimFlags(int body) =>
+            _mobTypes.TryGetValue(body, out var m) ? m.Flags | ServerAnimationGroups.Found : 0;
+
+        /// <summary>Whether a body has frames for an action (facing south), as TazUO's <c>AnimationExists</c> asks.</summary>
+        public bool AnimationExists(int body, int action)
+        {
+            if (action < 0)
+                return false;
+            lock (_exists)
+                if (_exists.TryGetValue((body, action), out bool known))
+                    return known;
+            bool has = Read(body, action, 0).Length > 0;
+            lock (_exists)
+                _exists[(body, action)] = has;
+            return has;
+        }
+
+        // Answers of AnimationExists: the frames are decoded once per (body, action), not on every server animation.
+        private readonly Dictionary<(int, int), bool> _exists = new Dictionary<(int, int), bool>();
+
+        /// <summary>The body Body.def draws a MUL body without art as (TazUO's <c>ConvertBodyIfNeeded</c>), or the body itself.</summary>
+        public int ConvertedBody(int body)
+        {
+            if (UsesUop(body))
+                return body;
+            (int file, int real) = _conv.TryGetValue(body, out var c) && File(c.File) != null ? c : (0, body);
+            return HasAny(file, real) || !_replace.TryGetValue(body, out var rep) ? body : rep.Body;
+        }
+
+        /// <summary>A body as <see cref="ServerAnimationGroups"/> reads it.</summary>
+        public ServerAnimationGroups.Body ServerBody(int body, bool mounted, bool warMode)
+        {
+            int converted = ConvertedBody(body);
+            return new ServerAnimationGroups.Body
+            {
+                OriginalType = AnimType(body),
+                Type = AnimType(converted),
+                Flags = AnimFlags(converted),
+                Exists = a => AnimationExists(body, a),
+                Mounted = mounted,
+                WarMode = warMode,
+                Gargoyle = IsGargoyle(body)
+                // Flying (SA gargoyle flight) is not tracked: TazUO's flying groups are never chosen.
+            };
+        }
+
+        /// <summary>TazUO's Mobile.IsGargoyle bodies on 7.0+ clients (GargoyleGraphicCheck, Mobile.cs:1142-1144).</summary>
+        public static bool IsGargoyle(int body) => body == 666 || body == 667 || body == 0x02B6 || body == 0x02B7;
+
+        /// <summary>
+        /// The action 0x6E's <paramref name="action"/> draws on <paramref name="body"/>: TazUO's CharacterAnimation passes it
+        /// through <c>GetReplacedObjectAnimation</c>, then draws it through <c>GetGroupForAnimation</c>'s server branch.
+        /// </summary>
+        public int ServerAction(int body, int action, bool mounted, bool warMode, int coin = 0)
+        {
+            ServerAnimationGroups.Body b = ServerBody(body, mounted, warMode);
+            int group = ServerAnimationGroups.Replaced(AnimType(body), action, _lowReplaces, _peopleReplaces);
+            return ServerAnimationGroups.Group(group, b, _lowReplaces, _peopleReplaces, coin);
+        }
+
+        /// <summary>
+        /// The action 0xE2's type/action/mode draws on <paramref name="body"/> (TazUO's NewCharacterAnimation and
+        /// <c>GetObjectNewAnimation</c>), or <see cref="ServerAnimationGroups.None"/> where it keeps the normal action.
+        /// </summary>
+        public int NewServerAction(int body, int type, int action, int mode, bool mounted, bool warMode, int coin = 0)
+        {
+            var asSent = new ServerAnimationGroups.Body
+            {
+                Type = AnimType(body),
+                Flags = AnimFlags(body),
+                Exists = a => AnimationExists(body, a),
+                Mounted = mounted,
+                WarMode = warMode,
+                Gargoyle = IsGargoyle(body)
+            };
+            int group = ServerAnimationGroups.New(type, action, mode, asSent);
+            if (group == ServerAnimationGroups.None)
+                return group;
+            return ServerAnimationGroups.Group(group, ServerBody(body, mounted, warMode), _lowReplaces, _peopleReplaces, coin);
+        }
+
+        /// <summary>Anim1.def / Anim2.def: "group {replace}", as TazUO's DefReader reads them (the first value of the group).</summary>
+        private static void ReadGroupReplaces(string path, List<(int, int)> into)
+        {
+            if (!System.IO.File.Exists(path))
+                return;
+            foreach (string raw in System.IO.File.ReadAllLines(path))
+            {
+                string line = StripComment(raw);
+                int open = line.IndexOf('{'), close = line.IndexOf('}');
+                if (open < 0 || close < open || !TryInt(line.Substring(0, open).Trim(), out int group) || group == 0xFFFF)
+                    continue;
+                string[] values = line.Substring(open + 1, close - open - 1).Split(new[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (values.Length == 0 || !TryInt(values[0], out int replace))
+                    continue;
+                into.Add((group, replace & 0xFF));
+            }
         }
 
         /// <summary>mobtypes.txt's type and flags for a body, if it lists it.</summary>

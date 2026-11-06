@@ -54,6 +54,7 @@ namespace UOClient.Unity
             s.World.ItemUpdated += OnItemUpdated;
             s.World.ContainerChanged += OnContainerChanged;
             s.MobileDying += OnMobileDying;
+            s.MobileAnimated += OnMobileAnimated;
         }
 
         public void Detach()
@@ -66,6 +67,7 @@ namespace UOClient.Unity
             _attached.World.ItemUpdated -= OnItemUpdated;
             _attached.World.ContainerChanged -= OnContainerChanged;
             _attached.MobileDying -= OnMobileDying;
+            _attached.MobileAnimated -= OnMobileAnimated;
             _attached = null;
         }
 
@@ -170,6 +172,32 @@ namespace UOClient.Unity
             _otherLook.Remove(serial);
             a.BeginDeath(second);
             _dying.Add((a, serial));
+        }
+
+        /// <summary>
+        /// The server played an action on a mobile we draw (the player or another; a dying one keeps its fall): the action
+        /// the body draws for it (<see cref="AnimationLibrary.ServerAction"/> / <see cref="AnimationLibrary.NewServerAction"/>)
+        /// plays on the avatar, then it goes back to walking, running or standing.
+        /// </summary>
+        private void OnMobileAnimated(ServerAnimation anim)
+        {
+            Avatar a = _ctx.Session != null && anim.Serial == _ctx.Session.World.PlayerSerial ? _ctx.Player
+                : _others.TryGetValue(anim.Serial, out Avatar other) ? other : null;
+            if (a == null || a.Look == null || _ctx.Data == null)
+                return;
+            MobileLook look = a.Look;
+            AnimationLibrary anims = _ctx.Data.AnimationLibrary;
+            int coin = UnityEngine.Random.Range(0, 2);
+            if (anim.IsNew)
+            {
+                int action = anims.NewServerAction(look.Body, anim.Type, anim.Action, anim.Mode, look.Mounted, a.WarMode, coin);
+                a.PlayServerAnimation(action, 0, 0, anim.RepeatCount, anim.Repeat, true);
+            }
+            else
+            {
+                int action = anims.ServerAction(look.Body, anim.Action, look.Mounted, a.WarMode, coin);
+                a.PlayServerAnimation(action, anim.Delay, anim.FrameCount, anim.RepeatCount, anim.Repeat, anim.Forward);
+            }
         }
 
         /// <summary>A fall that has played through is dropped (TazUO removes the dying mobile then, Mobile.cs:706-714).</summary>

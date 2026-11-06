@@ -104,6 +104,7 @@ namespace UOClient.Core
             _handlers[0x76] = ServerChange;
             RegisterInteractionHandlers();
             RegisterCombatHandlers();
+            RegisterAnimationHandlers();
             RegisterTradeHandlers();
             RegisterSecureTradeHandlers();
             RegisterTooltipHandlers();

@@ -70,7 +70,6 @@ namespace UOClient.Core
             _handlers[0x72] = r => { WarMode = r.ReadBool(); WarModeChanged?.Invoke(WarMode); };
             _handlers[0xAA] = r => { Combatant = r.ReadUInt32(); SetLastAttack(Combatant); };
             _handlers[0x17] = HealthBarState;
-            _handlers[0x2F] = _ => { };   // swing animation
             _handlers[0xA1] = r => Stat(r, (m, max, cur) => { m.HitsMax = max; m.Hits = cur; });
             _handlers[0xA2] = r => Stat(r, (m, max, cur) => { m.ManaMax = max; m.Mana = cur; });
             _handlers[0xA3] = r => Stat(r, (m, max, cur) => { m.StaminaMax = max; m.Stamina = cur; });

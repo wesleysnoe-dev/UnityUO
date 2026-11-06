@@ -121,6 +121,29 @@ namespace UOClient.Unity
             DeathFinished = false;
             _deathTime = 0;
             _stepDuration = 0;
+            _server = null; // the fall replaces whatever the server was playing
+        }
+
+        public MobileLook Look => _look;
+
+        private ServerPlayback _server;
+        private float _serverPending;
+
+        /// <summary>The server animation being played (0x6E / 0xE2), or null.</summary>
+        public ServerPlayback ServerPlaying => _server;
+
+        /// <summary>
+        /// Plays a server animation, replacing any before it (TazUO's SetAnimation); <see cref="ServerAnimationGroups.None"/>
+        /// ends it instead. A dying avatar keeps its fall.
+        /// </summary>
+        public void PlayServerAnimation(int action, int delay, int frameCount, int repeatCount, bool repeat, bool forward)
+        {
+            if (Dying)
+                return;
+            _server = action < 0 || action == ServerAnimationGroups.None
+                ? null
+                : new ServerPlayback(action, delay, frameCount, repeatCount, repeat, forward);
+            _serverPending = 0;
         }
 
         public static Vector2Int Delta(int direction)
@@ -184,6 +207,7 @@ namespace UOClient.Unity
             _running = run;
             _stepTime = 0;
             _stepDuration = StepTime(run);
+            _server = null; // a step ends a server animation (Mobile.ProcessSteps, Mobile.cs:747-750)
         }
 
         private Vector2 _fromPixels;
@@ -196,6 +220,8 @@ namespace UOClient.Unity
         public void Tick(float dt)
         {
             _animTime += dt;
+            if (_server != null)
+                _serverPending += dt; // stepped in Render, where the action's frame count is known
             if (Dying)
                 _deathTime += dt;
             if (_stepDuration <= 0)
@@ -263,7 +289,26 @@ namespace UOClient.Unity
                 else
                     _deathTime = 0;       // still being built: the fall starts when it can be seen
             }
-            if (!falling)
+            bool serverAnim = false;
+            if (!falling && _server != null)
+            {
+                MobileFrame[] act = _art.Get(_look, _lookKey, _server.Action, fileDir, layerDir);
+                if (act != null && act.Length == 0)
+                    _server = null;               // the body has no such action: carry on as normal, never blank
+                else if (act != null)
+                {
+                    _server.Advance(_serverPending, act.Length);
+                    if (_server.Done)
+                        _server = null;           // played out: back to walk / run / stand
+                    else
+                    {
+                        frames = act;
+                        serverAnim = true;
+                    }
+                }
+                _serverPending = 0;               // still being built: the clock waits, the normal action shows meanwhile
+            }
+            if (!falling && !serverAnim)
             {
                 // War actions a body lacks fall back to the peace ones, then to standing.
                 var peace = MobileArt.Actions(_look);
@@ -295,6 +340,8 @@ namespace UOClient.Unity
                 f = frames[MobileActions.DeathFrame(_deathTime, frames.Length)];
                 DeathFinished = MobileActions.DeathDone(_deathTime, frames.Length);
             }
+            else if (serverAnim)
+                f = frames[_server.Frame(frames.Length)];
             else
             {
                 // Walk/run cycles span two tiles; standing idles slowly.

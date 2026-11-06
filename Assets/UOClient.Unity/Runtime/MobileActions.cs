@@ -66,5 +66,101 @@ namespace UOClient.Unity
 
         /// <summary>Whether a death of <paramref name="frameCount"/> frames has played through (none at all counts as done).</summary>
         public static bool DeathDone(float time, int frameCount) => frameCount <= 0 || time >= frameCount * DeathFrameSeconds;
+
+        /// <summary>
+        /// Seconds per frame of a server animation: <c>CHARACTER_ANIMATION_DELAY</c> plus that times (delay + 1)
+        /// (Mobile.ProcessAnimation, Mobile.cs:649).
+        /// </summary>
+        public static float ServerFrameSeconds(int delay) => DeathFrameSeconds * (delay + 2);
+    }
+
+    /// <summary>
+    /// A server animation (0x6E / 0xE2) being played, stepped as TazUO's <c>Mobile.ProcessAnimation</c> steps one with
+    /// <c>AnimationFromServer</c> (Mobile.cs:610-728): one frame per <see cref="MobileActions.ServerFrameSeconds"/>, forwards
+    /// over all the body's frames, or backwards from the frame count asked for (SetAnimation keeps the count only for a
+    /// backwards animation, Mobile.cs:392-412); each pass through counts down the repeats, and when
+    /// they run out it ends (<c>SetAnimation(0xFF)</c>), unless the repeat flag was set, which keeps it going. A repeat count
+    /// of 0 plays for ever. A step (Mobile.ProcessSteps, Mobile.cs:747-750), a death or the next server animation ends it early.
+    /// </summary>
+    public sealed class ServerPlayback
+    {
+        public readonly int Action;
+        public readonly float FrameSeconds;
+
+        /// <summary>The frame shown (TazUO's AnimIndex), before wrapping to the body's frame count.</summary>
+        public int Index { get; private set; }
+
+        /// <summary>The repeats ran out: back to walking, running or standing.</summary>
+        public bool Done { get; private set; }
+
+        private int _frameCount;   // AnimationFrameCount: 0 until the first step takes the body's own
+        private int _repeatsLeft;  // _animationRepeateMode: 0 = for ever
+        private bool _repeat;
+        private readonly bool _forward;
+        private float _untilStep;  // the first step comes on the first tick, as LastAnimationChangeTime is "now"
+
+        public ServerPlayback(int action, int delay, int frameCount, int repeatCount, bool repeat, bool forward)
+        {
+            Action = action;
+            FrameSeconds = MobileActions.ServerFrameSeconds(delay);
+            frameCount &= 0xFF;
+            Index = forward ? 0 : frameCount;
+            _frameCount = forward ? 0 : frameCount;
+            _repeatsLeft = repeatCount & 0xFFFF;
+            _repeat = repeat;
+            _forward = forward;
+        }
+
+        /// <summary>The frame to draw out of a body's <paramref name="frames"/>.</summary>
+        public int Frame(int frames) => frames <= 0 ? 0 : ((Index % frames) + frames) % frames;
+
+        /// <summary>Lets <paramref name="dt"/> seconds pass over a body with <paramref name="frames"/> frames for the action.</summary>
+        public void Advance(float dt, int frames)
+        {
+            if (Done || frames <= 0)
+                return;
+            _untilStep -= dt;
+            for (int guard = 0; _untilStep <= 0 && !Done && guard < 256; guard++)
+            {
+                Step(frames);
+                _untilStep += FrameSeconds;
+            }
+            if (_untilStep < 0)
+                _untilStep = 0; // a long stall does not leave a backlog of steps
+        }
+
+        /// <summary>One step of ProcessAnimation's server branch.</summary>
+        public void Step(int frames)
+        {
+            if (Done || frames <= 0)
+                return;
+            int fc = frames;
+            int index = Index + (_forward ? 1 : -1);
+            if (_frameCount == 0)
+                _frameCount = fc;
+            else
+                fc = _frameCount;
+
+            bool wrapped = false;
+            if (_forward && index >= fc)
+            {
+                index = 0;
+                wrapped = true;
+            }
+            else if (!_forward && index < 0)
+            {
+                index = fc == 0 ? 0 : frames - 1;
+                wrapped = true;
+            }
+
+            if (wrapped && _repeatsLeft != 0 && --_repeatsLeft == 0)
+            {
+                if (_repeat)
+                    _repeat = false; // the count is spent and now reads 0: it plays on for ever
+                else
+                    Done = true;
+            }
+            Index = index % frames;
+        }
     }
 }
