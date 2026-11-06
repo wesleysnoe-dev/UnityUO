@@ -48,6 +48,19 @@ namespace UOClient.Unity
             // A coin pile's art and a stack's second copy (ItemStack); the view is remade when the amount changes.
             _shown = item.IsMulti || item.IsCorpse ? item.Graphic : ItemStack.DisplayedGraphic(item.Graphic, item.Amount);
             _twice = !item.IsMulti && !item.IsCorpse && ItemStack.DrawsTwice(item.Graphic, item.Amount, td.Flags);
+            // Animated art (ArtAnimation, TazUO's ItemData.IsAnimated + AnimOffset): every frame's sprite is asked for now,
+            // so a frame change only swaps to art already built.
+            if (!item.IsCorpse && !item.IsMulti)
+            {
+                AnimDataEntry entry = data.AnimData.Get(_shown);
+                if (ArtAnimation.Animates(td.Flags, entry))
+                {
+                    _animation = entry;
+                    _animates = true;
+                    foreach (sbyte offset in entry.Offsets)
+                        art.GetItem((_shown + offset) & 0xFFFF, _hue);
+                }
+            }
             _locked = ObjectHighlight.IsLocked(item.Flags, td.Weight);
             int priorityZ = item.Z + (td.IsBackground ? -1 : 0) + (td.Height > 0 ? 1 : 0);
             _item = new DrawItem { Kind = DrawKind.Static, Graphic = item.Graphic, X = item.X, Y = item.Y, Z = item.Z, PriorityZ = priorityZ };
@@ -73,6 +86,15 @@ namespace UOClient.Unity
         }
 
         private readonly int _shown;          // the art drawn: ItemStack.DisplayedGraphic of the graphic as sent
+        private readonly bool _animates;      // animdata frames (ArtAnimation)
+        private readonly AnimDataEntry _animation;
+        private int _spriteGraphic = -1;      // the frame graphic _sprite holds
+
+        /// <summary>The clock every animated art runs on (ms; one per graphic, shared with the map's statics).</summary>
+        public static double AnimationClockMs => Time.unscaledTimeAsDouble * 1000.0;
+
+        /// <summary>The art graphic last drawn (the frame's, for animated art).</summary>
+        public int DrawnGraphic => _spriteGraphic;
         private readonly bool _twice;         // a stack: a second copy up-left, under it
         private readonly Mesh _backMesh;
         private readonly MeshRenderer _backRenderer;
@@ -230,13 +252,19 @@ namespace UOClient.Unity
 
         private void RenderArt(IWorldSpace world)
         {
-            if (_sprite == null)
+            int want = _animates ? ArtAnimation.Graphic(_shown, _animation, AnimationClockMs) : _shown;
+            if (_sprite == null || want != _spriteGraphic)
             {
-                _sprite = _art.GetItem(_shown, _hue);
-                if (_sprite == null)
-                    return; // building, or no art
-                (_item.Left, _item.Top, _item.Width, _item.Height) = IsoCompositor.PlacementRect(_item, _scale, _sprite.OriginalWidth, _sprite.OriginalHeight);
-                _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(_sprite.Slot.Page));
+                ItemSprite next = _art.GetItem(want, _hue);
+                if (next != null)
+                {
+                    // Each frame is placed by its own art, as DrawStaticAnimated re-anchors on the frame's size.
+                    _sprite = next;
+                    _spriteGraphic = want;
+                    (_item.Left, _item.Top, _item.Width, _item.Height) = IsoCompositor.PlacementRect(_item, _scale, _sprite.OriginalWidth, _sprite.OriginalHeight);
+                }
+                else if (_sprite == null)
+                    return; // building, or no art (a frame still building keeps the last one shown)
             }
             _renderer.enabled = !Hidden;
             if (_backRenderer != null)

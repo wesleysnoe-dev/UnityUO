@@ -654,6 +654,9 @@ namespace UOClient.ArtPipeline
             return bmp;
         }
 
+        /// <summary>A static graphic's sprite at <see cref="Scale"/>, as placements get it (cached; null if there is no art).</summary>
+        public Bitmap32 StaticSprite(int graphic) => GetStatic(graphic);
+
         // Baked art first, then the client's HD art at exactly this scale, then the 1x art upscaled.
         private Bitmap32 GetStatic(int g)
         {

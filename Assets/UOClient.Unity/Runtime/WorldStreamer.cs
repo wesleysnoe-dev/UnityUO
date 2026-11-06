@@ -248,6 +248,7 @@ namespace UOClient.Unity
                 integrated++;
             }
             _shared.Apply();
+            Animate();
 
             // Unload chunks well outside the radius (a margin avoids load/unload churn at the edge).
             List<(int, int)> unload = null;
@@ -342,6 +343,12 @@ namespace UOClient.Unity
                     _sharedMaterials[g.Key.Item1] = material;
                 }
                 chunk.AddMesh(g.Value.Build($"Chunk {build.ChunkX},{build.ChunkY}"), material, g.Key.Item2);
+            }
+            double now = ItemView.AnimationClockMs;
+            foreach (AnimatedBuild a in build.Animated)
+            {
+                AnimatedQuad q = chunk.AddAnimated(a, _shader);
+                ShowFrame(q, ArtAnimation.Frame(a.Entry, now));
             }
             if (build.Land != null)
             {
@@ -446,6 +453,19 @@ namespace UOClient.Unity
                     continue;
                 }
 
+                // Animated art (ArtAnimation): out of the baked mesh into its own quad, every frame's sprite sent now, so
+                // the main thread only swaps one quad's rect and UV when its frame changes. Baked (HD placement) art stays.
+                if (it.Kind == DrawKind.Static && !unique && !divert)
+                {
+                    StaticTileData std = tileData.GetStatic(it.Graphic);
+                    AnimDataEntry ae = (std.Flags & TileFlags.Animation) != 0 ? _data.AnimData.Get(it.Graphic) : default;
+                    if (ArtAnimation.Animates(std.Flags, ae))
+                    {
+                        build.Animated.Add(AnimatedStatic(compositor, build, it, bmp, ae, DepthKey.Relative(it, build.BaseDiagonal, tie), std.IsRoof));
+                        continue;
+                    }
+                }
+
                 var quad = new ChunkQuad
                 {
                     Left = it.Left,
@@ -478,6 +498,78 @@ namespace UOClient.Unity
 
             build.BuildMs = watch.Elapsed.TotalMilliseconds;
             return build;
+        }
+
+        // Worker: one animated static, each animdata frame's art (claimed into the shared atlas) and rect.
+        private AnimatedBuild AnimatedStatic(IsoCompositor compositor, ChunkBuild build, DrawItem it, Bitmap32 baseArt, AnimDataEntry entry, float depth, bool roof)
+        {
+            var frames = new AnimatedFrame[entry.Offsets.Length];
+            for (int i = 0; i < frames.Length; i++)
+            {
+                DrawItem f = it;
+                f.Graphic = (ushort)((it.Graphic + entry.Offsets[i]) & 0xFFFF);
+                Bitmap32 art = compositor.StaticSprite(f.Graphic) ?? baseArt;
+                if (_claimed.Add(art))
+                    build.NewShared.Add(new SharedSprite { Bitmap = art, Width = art.Width, Height = art.Height, Colors = DynamicAtlas.ToColors(art) });
+                (f.Left, f.Top, f.Width, f.Height) = IsoCompositor.PlacementRect(f, _scale, art.Width / _scale, art.Height / _scale);
+                frames[i] = new AnimatedFrame { Bitmap = art, Graphic = f.Graphic, Left = f.Left, Top = f.Top, Width = f.Width, Height = f.Height };
+            }
+            return new AnimatedBuild
+            {
+                Entry = entry, Frames = frames, Depth = depth, Roof = roof, CutHeight = MeshBuilder.CutHeight(it.Z),
+                Foot = new Vector4((it.X - it.Y) * 22f * _scale, ((it.X + it.Y) * 22f + 22f - it.Z * 4f) * _scale, it.Z,
+                    _data.TileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2)
+            };
+        }
+
+        /// <summary>Animated statics in loaded chunks, frame swaps in the last <see cref="Update"/>, and its cost (ms).</summary>
+        public int AnimatedStatics { get; private set; }
+        public int AnimatedSwaps { get; private set; }
+        public double AnimateMs { get; private set; }
+
+        // Main thread, every frame: each animated static whose frame changed takes that frame's rect and UV. O(animated
+        // statics loaded), a few integer compares each; mesh writes only on a change (a frame lasts 100 ms or more).
+        private void Animate()
+        {
+            long start = System.Diagnostics.Stopwatch.GetTimestamp();
+            double now = ItemView.AnimationClockMs;
+            int count = 0, swaps = 0;
+            foreach (Chunk c in _chunks.Values)
+                foreach (AnimatedQuad a in c.Animated)
+                {
+                    count++;
+                    int frame = ArtAnimation.Frame(a.Entry, now);
+                    if (frame == a.Shown)
+                        continue;
+                    ShowFrame(a, frame);
+                    swaps++;
+                }
+            AnimatedStatics = count;
+            AnimatedSwaps = swaps;
+            AnimateMs = (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        }
+
+        private void ShowFrame(AnimatedQuad a, int frame)
+        {
+            AnimatedFrame f = a.Frames[frame];
+            if (!_sharedSlots.TryGetValue(f.Bitmap, out AtlasSlot slot))
+                return; // its art is not placed yet (another chunk's build claimed it): keep what is shown, try again next frame
+            a.Shown = frame;
+            Rect rect = ToUnityRect(f.Left, f.Top, f.Width, f.Height);
+            Vector2 foot = ToUnity(new Vector2(a.Foot.x, a.Foot.y));
+            MeshBuilder.SetQuad(a.Mesh, rect, _shared.Uv(slot), a.Depth, false, a.CutHeight, new Vector4(foot.x, foot.y, a.Foot.z, a.Foot.w));
+            a.Renderer.sharedMaterial = SharedMaterial(slot.Page);
+            a.Renderer.enabled = true;
+        }
+
+        private Material SharedMaterial(int page)
+        {
+            if (!_sharedMaterials.TryGetValue(page, out Material material))
+            {
+                material = new Material(_shader) { mainTexture = _shared.Page(page), name = $"UO shared page {page}" };
+                _sharedMaterials[page] = material;
+            }
+            return material;
         }
 
         /// <summary>Shelf-packs the chunk's unique sprites into one texture (1024 wide) and converts it to Unity colors.</summary>
@@ -558,10 +650,39 @@ namespace UOClient.Unity
             public Color32[] Colors;
         }
 
+        private struct AnimatedFrame
+        {
+            public Bitmap32 Bitmap; // shared art (key into the shared atlas)
+            public int Graphic, Left, Top, Width, Height;
+        }
+
+        /// <summary>Worker output: an animated static's frames and placement.</summary>
+        private sealed class AnimatedBuild
+        {
+            public AnimDataEntry Entry;
+            public AnimatedFrame[] Frames;
+            public float Depth, CutHeight;
+            public bool Roof;
+            public Vector4 Foot; // world-screen x, y; UO Z; kind (TEST sprite shadow only)
+        }
+
+        /// <summary>A loaded animated static: its own quad, and the frame it shows (-1 before the first).</summary>
+        private sealed class AnimatedQuad
+        {
+            public AnimDataEntry Entry;
+            public AnimatedFrame[] Frames;
+            public float Depth, CutHeight;
+            public Vector4 Foot;
+            public Mesh Mesh;
+            public MeshRenderer Renderer;
+            public int Shown = -1;
+        }
+
         private sealed class ChunkBuild
         {
             public int ChunkX, ChunkY, Generation, BaseDiagonal;
             public readonly List<ChunkQuad> Quads = new List<ChunkQuad>();
+            public readonly List<AnimatedBuild> Animated = new List<AnimatedBuild>();
             public readonly List<SharedSprite> NewShared = new List<SharedSprite>();
             public Color32[] UniqueColors;
             public int UniqueWidth, UniqueHeight;
@@ -579,6 +700,26 @@ namespace UOClient.Unity
             public readonly List<Material> OwnedMaterials = new List<Material>();
             public Texture2D UniqueTexture;
             public ILandChunk Land;
+            public readonly List<AnimatedQuad> Animated = new List<AnimatedQuad>();
+
+            /// <summary>An animated static's quad under the chunk (so it takes the chunk's depth origin), hidden until a frame shows.</summary>
+            public AnimatedQuad AddAnimated(AnimatedBuild a, Shader shader)
+            {
+                var go = new GameObject($"Animated 0x{a.Frames[0].Graphic:X4}");
+                go.transform.SetParent(_go.transform, false);
+                var mesh = new Mesh();
+                go.AddComponent<MeshFilter>().sharedMesh = mesh;
+                var r = go.AddComponent<MeshRenderer>();
+                r.shadowCastingMode = ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                r.enabled = false;
+                _meshes.Add(mesh);
+                if (a.Roof)
+                    _roofs.Add(go);
+                var q = new AnimatedQuad { Entry = a.Entry, Frames = a.Frames, Depth = a.Depth, CutHeight = a.CutHeight, Foot = a.Foot, Mesh = mesh, Renderer = r };
+                Animated.Add(q);
+                return q;
+            }
 
             public Transform Transform => _go.transform;
 
