@@ -34,8 +34,10 @@ public sealed class SpellcastTests
 
     [Theory]
     [InlineData(1)]   // Clumsy
+    [InlineData(4)]   // Heal
     [InlineData(29)]  // Greater Heal
     [InlineData(101)] // Animate Dead, the first necromancy spell
+    [InlineData(202)] // Close Wounds
     public void CastSpellSendsTheExtendedCastAtOurVersion(int spell)
     {
         var sent = new List<byte[]>();
@@ -111,6 +113,112 @@ public sealed class SpellcastTests
         SpellbookWindow.CastFromBook(session, book, info.First, right.Spell);
 
         Assert.Equal(GameSession.CastSpellFromBookRequest(204, Book), Assert.Single(NoPings(sent)));
+    }
+
+    // ModernUO's SendNewSpellbookContent (OutgoingContainerPackets.cs:46-69) byte for byte: 0xBF, length 23, sub 0x1B,
+    // command 1, book serial, graphic, offset (Spellbook.BookOffset + 1), the 64 content bits low byte first.
+    private static byte[] NewSpellbookContent(uint book, ushort graphic, ushort offset, ulong content)
+    {
+        var p = new byte[23];
+        p[0] = 0xBF;
+        p[2] = 23;
+        p[4] = 0x1B;
+        p[6] = 0x01;
+        p[7] = (byte)(book >> 24);
+        p[8] = (byte)(book >> 16);
+        p[9] = (byte)(book >> 8);
+        p[10] = (byte)book;
+        p[11] = (byte)(graphic >> 8);
+        p[12] = (byte)graphic;
+        p[13] = (byte)(offset >> 8);
+        p[14] = (byte)offset;
+        for (int i = 0; i < 8; i++)
+            p[15 + i] = (byte)(content >> (i * 8));
+        return p;
+    }
+
+    // "spell serial" in decimal after 0x12 len 0x27, null-terminated (IncomingPlayerPackets.cs:162, TextCommand 0x27).
+    private static byte[] FromBook(string text)
+    {
+        var p = new List<byte> { 0x12, 0x00, (byte)(4 + text.Length + 1), 0x27 };
+        p.AddRange(System.Text.Encoding.ASCII.GetBytes(text));
+        p.Add(0);
+        return p.ToArray();
+    }
+
+    [Theory]
+    [InlineData(1, 3, "4 1073746484")]     // Heal
+    [InlineData(1, 0, "1 1073746484")]     // Clumsy
+    [InlineData(101, 0, "101 1073746484")] // Animate Dead
+    [InlineData(201, 1, "202 1073746484")] // Close Wounds
+    public void CastFromBookBytes(int first, int index, string text)
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, ClientVersion.Default);
+
+        SpellbookWindow.CastFromBook(session, Book, first, index);
+
+        Assert.Equal(FromBook(text), Assert.Single(NoPings(sent)));
+    }
+
+    [Theory]
+    // A full magery book (0x0EFA); a necro book (0x2253) with Animate Dead, Corpse Skin, Wither and Exorcism; a paladin
+    // book (0x2252) with Cleanse by Fire, Close Wounds and Sacred Journey, plus a stray bit past its ten spells.
+    [InlineData(0x0EFA, 1, ulong.MaxValue, SpellbookKind.Magery, 64, 36)]
+    [InlineData(0x2253, 101, 0x1_4005UL, SpellbookKind.Necromancy, 4, 4)]
+    [InlineData(0x2252, 201, 0x1_0000_0203UL, SpellbookKind.Chivalry, 3, 3)]
+    public void SpellbookContentFillsTheWindowModel(int graphic, int first, ulong bits, SpellbookKind kind, int held, int maxPage)
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, ClientVersion.Default);
+        SpellbookState state = null;
+        session.SpellbookContent += (b, f, c) =>
+        {
+            if (state == null)
+                state = new SpellbookState(b, f, c);
+            else
+                state.SetContent(f, c); // SessionUiBinder: the open window takes new content in place
+        };
+
+        session.Inject(NewSpellbookContent(Book, (ushort)graphic, (ushort)first, bits), true);
+
+        Assert.NotNull(state);
+        Assert.Equal((Book, first, bits, true, kind), (state.Book, state.First, state.Bits, state.Classic, state.Info.Kind));
+        Assert.Equal(held, state.Known.Count);
+        Assert.All(state.Known, i => Assert.True((bits & (1UL << i)) != 0));
+        Assert.Equal((maxPage, 1, true), (state.MaxPage, state.Page, state.OnIndex));
+
+        // An index name opens the spread describing it, and that spread's detail entry is the same spell.
+        SpellbookWindow.IndexEntry last = state.Index[^1];
+        state.GoTo(last.ToPage);
+        Assert.False(state.OnIndex);
+        Assert.Contains(state.Detail, d => d.Page == state.Page && d.Spell == last.Spell);
+
+        // The page corners stop at the book's ends.
+        state.GoTo(state.Page + 100);
+        Assert.Equal(maxPage, state.Page);
+        state.GoTo(-3);
+        Assert.Equal(1, state.Page);
+
+        // Content sent again with only the first held spell: the book shrinks and the open spread stays inside it.
+        state.GoTo(maxPage);
+        ulong one = 1UL << state.Known[0];
+        session.Inject(NewSpellbookContent(Book, (ushort)graphic, (ushort)first, one), true);
+        Assert.Equal(new[] { state.Known[0] }, state.Known);
+        Assert.Equal(state.Info.IndexPages + 1, state.MaxPage);
+        Assert.Equal(state.MaxPage, state.Page);
+        Assert.Empty(NoPings(sent)); // opening and paging the book sends nothing
+    }
+
+    [Fact]
+    public void OtherSchoolsKeepTheListModel()
+    {
+        var state = new SpellbookState(Book, 401, 0x3FUL); // Bushido
+        Assert.False(state.Classic);
+        Assert.Equal((401, 0x3FUL), (state.First, state.Bits));
+        state.SetContent(1, 0x8UL); // the same serial now sends a magery book
+        Assert.True(state.Classic);
+        Assert.Equal(new[] { 3 }, state.Known);
     }
 
     [Fact]

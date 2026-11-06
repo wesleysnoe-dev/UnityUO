@@ -20,13 +20,19 @@ using static UOClient.Unity.UI.ServerGumpWindow;
 //
 // usage: gumppreview <uoDataDir> --ux <outDir>
 // Synthetic health bars and the classic status window (UxPreview.cs), renderer-only.
+//
+// usage: gumppreview <uoDataDir> --spellbook <outDir>
+// The classic Magery / Necromancy / Chivalry books from synthetic content bits (SpellbookPreview.cs), renderer-only.
 if (args.Length < 3)
 {
-    Console.Error.WriteLine("usage: gumppreview <uoDataDir> <fixture.json> <outDir> [page]\n       gumppreview <uoDataDir> --ux <outDir>");
+    Console.Error.WriteLine("usage: gumppreview <uoDataDir> <fixture.json> <outDir> [page]\n       gumppreview <uoDataDir> --ux <outDir>\n"
+        + "       gumppreview <uoDataDir> --spellbook <outDir>");
     return 2;
 }
 if (args[1] == "--ux")
     return UxPreview.Run(args[0], args[2]);
+if (args[1] == "--spellbook")
+    return SpellbookPreview.Run(args[0], args[2]);
 string dataDir = args[0], fixturePath = args[1], outDir = args[2];
 int shownPage = args.Length > 3 ? int.Parse(args[3]) : 1;
 

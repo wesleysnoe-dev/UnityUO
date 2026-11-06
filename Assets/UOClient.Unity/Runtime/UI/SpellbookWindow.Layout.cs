@@ -41,6 +41,54 @@ namespace UOClient.Unity.UI
         public int IndexPages => DictionaryPages >> 1;
     }
 
+    /// <summary>
+    /// What an open SpellbookWindow shows, from the book's 0xBF 0x1B content: its serial, school and held spells, the
+    /// classic index and detail spreads, and the spread open. New content for the same book replaces it in place.
+    /// </summary>
+    public sealed class SpellbookState
+    {
+        public readonly uint Book;
+        public int First { get; private set; }
+        public ulong Bits { get; private set; }
+
+        /// <summary>A Magery, Necromancy or Chivalry book, drawn as TazUO's SpellbookGump; false for the plain list.</summary>
+        public bool Classic { get; private set; }
+
+        public SpellbookInfo Info { get; private set; }
+        public List<int> Known { get; private set; } = new List<int>();
+        public List<SpellbookWindow.IndexEntry> Index { get; private set; } = new List<SpellbookWindow.IndexEntry>();
+        public List<SpellbookWindow.DetailEntry> Detail { get; private set; } = new List<SpellbookWindow.DetailEntry>();
+        public int MaxPage { get; private set; } = 1;
+        public int Page { get; private set; } = 1;
+
+        public SpellbookState(uint book, int first, ulong bits)
+        {
+            Book = book;
+            SetContent(first, bits);
+        }
+
+        /// <summary>The server sent the book's content (again): take its spells, staying on the spread if it still exists.</summary>
+        public void SetContent(int first, ulong bits)
+        {
+            First = first;
+            Bits = bits;
+            Classic = SpellbookWindow.TryGetBookInfo(first, out SpellbookInfo info);
+            Info = info;
+            if (!Classic)
+                return;
+            Known = SpellbookWindow.KnownSpells(info, bits);
+            Index = SpellbookWindow.IndexEntries(info, bits);
+            Detail = SpellbookWindow.DetailEntries(info, bits);
+            MaxPage = SpellbookWindow.MaxPage(info, bits);
+            Page = SpellbookWindow.ClampPage(Page, MaxPage);
+        }
+
+        /// <summary>Opens a spread (a circle button, an index name's topage, a page corner), clamped to the book.</summary>
+        public void GoTo(int page) => Page = SpellbookWindow.ClampPage(page, MaxPage);
+
+        public bool OnIndex => Page <= Info.IndexPages;
+    }
+
     public sealed partial class SpellbookWindow
     {
         /// <summary>The ink of every label in the book (SpellbookGump's 0x0288), and an index name under the mouse (HoveredLabel 0x33).</summary>

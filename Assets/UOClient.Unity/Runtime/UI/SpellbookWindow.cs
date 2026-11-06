@@ -16,15 +16,8 @@ namespace UOClient.Unity.UI
     {
         private const float DoubleClickTime = 0.4f;
 
-        private readonly uint _book;
+        private readonly SpellbookState _s;
         private readonly Dictionary<(string, int, int), UiImage> _labels = new Dictionary<(string, int, int), UiImage>();
-        private int _first;
-        private ulong _bits;
-        private bool _classic;
-        private SpellbookInfo _info;
-        private List<IndexEntry> _index;
-        private List<DetailEntry> _detail;
-        private int _maxPage, _page = 1;
         private bool _minimized;
         private Vector2 _scroll;
         private float _lastCornerClick;
@@ -32,26 +25,17 @@ namespace UOClient.Unity.UI
 
         public SpellbookWindow(uint book, int first, ulong bits)
         {
-            _book = book;
+            _s = new SpellbookState(book, first, bits);
             Rect = new Rect(420, 90, 360, 480);
-            SetContent(first, bits);
         }
 
-        public override string Key => "spellbook:" + _book;
+        public override string Key => "spellbook:" + _s.Book;
+
+        /// <summary>The book, its spells and the spread open (SpellbookState).</summary>
+        public SpellbookState State => _s;
 
         /// <summary>The server sent the book's content (again): take its spells, staying on the page if it still exists.</summary>
-        public void SetContent(int first, ulong bits)
-        {
-            _first = first;
-            _bits = bits;
-            _classic = TryGetBookInfo(first, out _info);
-            if (!_classic)
-                return;
-            _index = IndexEntries(_info, bits);
-            _detail = DetailEntries(_info, bits);
-            _maxPage = MaxPage(_info, bits);
-            _page = ClampPage(_page, _maxPage);
-        }
+        public void SetContent(int first, ulong bits) => _s.SetContent(first, bits);
 
         public override void OnClosed()
         {
@@ -62,7 +46,7 @@ namespace UOClient.Unity.UI
 
         public override void Draw()
         {
-            UiImage bg = _classic ? Art.Gump(_minimized ? _info.MinimizedGraphic : _info.BookGraphic) : null;
+            UiImage bg = _s.Classic ? Art.Gump(_minimized ? _s.Info.MinimizedGraphic : _s.Info.BookGraphic) : null;
             if (bg == null)
             {
                 DrawList();
@@ -83,29 +67,29 @@ namespace UOClient.Unity.UI
                 return;
             }
 
-            if (_info.Kind == SpellbookKind.Magery)
+            if (_s.Info.Kind == SpellbookKind.Magery)
                 foreach ((int gump, int x, int y, int page) in CircleButtons)
                     if (GumpButton(gump, gump, x, y))
-                        _page = ClampPage(page, _maxPage);
+                        _s.GoTo(page);
 
-            if (_page <= _info.IndexPages)
+            if (_s.OnIndex)
                 DrawIndex();
             else
                 DrawDetails();
 
             if (GUI.Button(new Rect(MinimizeX, MinimizeY, MinimizeW, MinimizeH), GUIContent.none, GUIStyle.none))
                 _minimized = true;
-            if (_page != 1 && GumpButton(PrevCorner, PrevCorner, PrevCornerX, CornerY))
+            if (_s.Page != 1 && GumpButton(PrevCorner, PrevCorner, PrevCornerX, CornerY))
                 Turn(-1, PrevCorner, 1);
-            if (_page != _maxPage && GumpButton(NextCorner, NextCorner, NextCornerX, CornerY))
-                Turn(1, NextCorner, _maxPage);
+            if (_s.Page != _s.MaxPage && GumpButton(NextCorner, NextCorner, NextCornerX, CornerY))
+                Turn(1, NextCorner, _s.MaxPage);
         }
 
         /// <summary>A click turns one page; a second click on the same corner (TazUO's double-click) goes to the end.</summary>
         private void Turn(int by, int corner, int end)
         {
             bool twice = _lastCorner == corner && Time.realtimeSinceStartup - _lastCornerClick < DoubleClickTime;
-            _page = ClampPage(twice ? end : _page + by, _maxPage);
+            _s.GoTo(twice ? end : _s.Page + by);
             _lastCorner = twice ? 0 : corner;
             _lastCornerClick = Time.realtimeSinceStartup;
         }
@@ -115,13 +99,13 @@ namespace UOClient.Unity.UI
             for (int half = 0; half < 2; half++)
             {
                 Label(SpellbookSpells.IndexText, IndexTitleX(half), IndexTitleY);
-                if (_info.Kind == SpellbookKind.Magery)
+                if (_s.Info.Kind == SpellbookKind.Magery)
                 {
-                    int circle = CircleOfHalf(_page, half);
+                    int circle = CircleOfHalf(_s.Page, half);
                     Label(Localized(SpellbookSpells.CircleCliloc + circle, SpellbookSpells.CircleNames[circle]), IndexDataX(half), IndexSubtitleY);
                 }
             }
-            if (_page == 1 && _info.Kind == SpellbookKind.Chivalry)
+            if (_s.Page == 1 && _s.Info.Kind == SpellbookKind.Chivalry)
             {
                 string tithing = Localized(SpellbookSpells.TithingCliloc, null) is string t && Localized(SpellbookSpells.AvailableCliloc, null) is string a
                     ? t + "\n" + a
@@ -130,9 +114,9 @@ namespace UOClient.Unity.UI
             }
 
             Event e = Event.current;
-            foreach (IndexEntry entry in _index)
+            foreach (IndexEntry entry in _s.Index)
             {
-                if (entry.Page != _page)
+                if (entry.Page != _s.Page)
                     continue;
                 string name = SpellName(entry.Spell);
                 UiImage img = LabelImage(name, InkHue, IndexNameWidth);
@@ -142,7 +126,7 @@ namespace UOClient.Unity.UI
                 // TazUO's index label: a double-click opens the spell's page; a press still drags the book.
                 if (hover && e.type == EventType.MouseDown && e.button == 0 && e.clickCount == 2)
                 {
-                    _page = ClampPage(entry.ToPage, _maxPage);
+                    _s.GoTo(entry.ToPage);
                     e.Use();
                 }
             }
@@ -150,13 +134,13 @@ namespace UOClient.Unity.UI
 
         private void DrawDetails()
         {
-            foreach (DetailEntry entry in _detail)
+            foreach (DetailEntry entry in _s.Detail)
             {
-                if (entry.Page != _page || !(SpellbookSpells.Get(_info.Kind, entry.Spell) is SpellbookSpells.Spell spell))
+                if (entry.Page != _s.Page || !(SpellbookSpells.Get(_s.Info.Kind, entry.Spell) is SpellbookSpells.Spell spell))
                     continue;
                 string name = Localized(spell.Cliloc, spell.Name);
                 Rect nameRect;
-                if (_info.Kind == SpellbookKind.Magery)
+                if (_s.Info.Kind == SpellbookKind.Magery)
                 {
                     int circle = entry.Spell >> 3;
                     Label(Localized(SpellbookSpells.CircleCliloc + circle, SpellbookSpells.CircleNames[circle]), entry.TopTextX, TopTextY + 4);
@@ -169,11 +153,11 @@ namespace UOClient.Unity.UI
                     Label(spell.Words, entry.IconTextX, NameY, InkHue, WordsWidth);
                 }
 
-                UiImage icon = Art.Gump(IconOf(_info, entry.Spell));
+                UiImage icon = Art.Gump(IconOf(_s.Info, entry.Spell));
                 var iconRect = new Rect(entry.IconX, IconY, icon?.Width ?? 44, icon?.Height ?? 44);
                 DrawImage(icon, iconRect.x, iconRect.y);
                 if (GUI.Button(iconRect, GUIContent.none, GUIStyle.none) || GUI.Button(nameRect, GUIContent.none, GUIStyle.none))
-                    CastFromBook(Session, _book, _info.First, entry.Spell);
+                    CastFromBook(Session, _s.Book, _s.Info.First, entry.Spell);
 
                 if (spell.Reagents.Length > 0)
                 {
@@ -181,13 +165,13 @@ namespace UOClient.Unity.UI
                     Label(Localized(SpellbookSpells.ReagentsCliloc, SpellbookSpells.ReagentsText), entry.IconX, ReagentsTitleY);
                     Label(string.Join("\n", spell.Reagents.Select(r => Localized(r.Cliloc, r.Name))), entry.IconX, ReagentListY);
                 }
-                if (_info.Kind != SpellbookKind.Magery)
+                if (_s.Info.Kind != SpellbookKind.Magery)
                     Label(SpellbookSpells.Requires(spell.Mana, spell.MinSkill), entry.IconX, RequiresY);
             }
         }
 
         private string SpellName(int index) =>
-            SpellbookSpells.Get(_info.Kind, index) is SpellbookSpells.Spell s ? Localized(s.Cliloc, s.Name) : "";
+            SpellbookSpells.Get(_s.Info.Kind, index) is SpellbookSpells.Spell s ? Localized(s.Cliloc, s.Name) : "";
 
         private string Localized(int number, string fallback) =>
             Ui.Cliloc?.Get(number) is string s && s.Length > 0 ? s : fallback;
@@ -229,10 +213,10 @@ namespace UOClient.Unity.UI
             Rect.width = 360;
             Rect.height = 480;
             DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
-            string[] names = SpellNames.School(_first, out string school, out int iconBase);
+            string[] names = SpellNames.School(_s.First, out string school, out int iconBase);
             Text(new Rect(0, 10, Rect.width, 22), school, new Color(1f, 0.9f, 0.6f), 16, TextAnchor.UpperCenter, true);
 
-            var known = Enumerable.Range(0, 64).Where(i => (_bits & (1UL << i)) != 0 && i < names.Length).ToList();
+            var known = Enumerable.Range(0, 64).Where(i => (_s.Bits & (1UL << i)) != 0 && i < names.Length).ToList();
             if (known.Count == 0)
             {
                 Text(new Rect(20, 50, 300, 20), "This book holds no spells.");
@@ -248,11 +232,11 @@ namespace UOClient.Unity.UI
                 UiImage icon = iconBase > 0 ? Art.Gump(iconBase + i) : null;
                 if (icon != null)
                     GUI.DrawTexture(new Rect(4, y + 2, 44, 44), icon.Texture);
-                string circle = _first == 1 ? $"Circle {i / 8 + 1}" : "";
+                string circle = _s.First == 1 ? $"Circle {i / 8 + 1}" : "";
                 Text(new Rect(56, y + 6, 240, 20), names[i], new Color(0.95f, 0.92f, 0.82f), 14);
                 Text(new Rect(56, y + 24, 240, 20), circle, new Color(0.7f, 0.66f, 0.55f), 12);
                 if (GUI.Button(new Rect(0, y, view.width - 18, row), GUIContent.none, GUIStyle.none))
-                    CastFromBook(Session, _book, _first, i);
+                    CastFromBook(Session, _s.Book, _s.First, i);
             }
             GUI.EndScrollView();
         }
