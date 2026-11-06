@@ -74,6 +74,9 @@ namespace UOClient.Unity.UI
                 GUI.DrawTexture(new Rect(x, y, img.Width, img.Height), img.Texture);
         }
 
+        /// <summary>The mouse-over outline of art drawn at (x, y): drawn before the art, so only its edge shows around it.</summary>
+        protected void DrawOutline(UiImage img, float x, float y) => DrawImage(Art.Outline(img), x - 1, y - 1);
+
         /// <summary>A resizable background: nine gumps from <paramref name="id"/> (corners, edges, center).</summary>
         protected void DrawResizePic(int id, float x, float y, float w, float h)
         {

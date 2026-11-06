@@ -8,6 +8,7 @@ Shader "UOClient/WorldSprite"
     {
         _MainTex ("Atlas", 2D) = "white" {}
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0.5
+        _Unlit ("Unlit (hover outline)", Float) = 0
     }
 
     SubShader
@@ -27,6 +28,7 @@ Shader "UOClient/WorldSprite"
 
             sampler2D _MainTex;
             float _Cutoff;
+            float _Unlit;          // 1: drawn as is, neither lit nor greyed (the mouse-over outline)
 
             float4 _UOAmbient;     // rgb: ambient light for the time of day
             float4 _UOLightColor;  // rgb: point light color * intensity
@@ -69,6 +71,8 @@ Shader "UOClient/WorldSprite"
                     discard;
                 fixed4 c = tex2D(_MainTex, i.uv);
                 clip(c.a - _Cutoff);
+                if (_Unlit > 0.5)
+                    return c * i.color;
 
                 float d = distance(i.world, _UOLightPos.xy) / max(_UOLightPos.z, 1.0);
                 float falloff = saturate(1.0 - d);

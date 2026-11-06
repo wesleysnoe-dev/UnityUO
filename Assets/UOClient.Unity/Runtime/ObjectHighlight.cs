@@ -1,13 +1,16 @@
 using System;
+using UOClient.IO.Formats;
 
 namespace UOClient.Unity
 {
     // No UnityEngine here: the test project compiles this file on its own to check the rules.
     /// <summary>
-    /// TazUO's mouse-over highlight: the thing the mouse can act on is drawn in hue 0x0035, nothing is outlined. Window
+    /// The mouse-over highlight. TazUO's own cue is a hue: the thing the mouse can act on is drawn in 0x0035. Window
     /// items (ItemGump.cs:119-123, HighlightOnMouseOver, on in containers and trades) and ground items (ItemView.cs:118-145)
     /// take it always; mobiles, corpses and statics only with the profile's HighlightGameObjects (MobileView.cs:92,
-    /// ItemView.cs:398-404, StaticView.cs:84). The world selects only what no window covers, and only on opaque pixels.
+    /// ItemView.cs:398-404, StaticView.cs:84). On top of that hue we draw a sprite-edge outline (<see cref="Outline"/>,
+    /// TazUO's OUTLINE shader rule, which TazUO itself only uses for OutlineColor, not for the mouse-over) as the clear
+    /// cue Wes asked for. The world selects only what no window covers, and only on opaque pixels.
     /// </summary>
     public static class ObjectHighlight
     {
@@ -21,10 +24,55 @@ namespace UOClient.Unity
         public const int WholeArt = 0x10000;
 
         /// <summary>
-        /// TazUO's Profile.HighlightGameObjects: off in a new profile and in this PC's TazUO profiles
-        /// ("highlight_game_objects": false). We have no profile setting for it, so it is TazUO's default, in code.
+        /// TazUO's Profile.HighlightGameObjects, on here: characters, creatures, corpses and fixtures (locked furniture,
+        /// doors) highlight under the mouse too. TazUO ships it off ("highlight_game_objects": false); Wes wants hover
+        /// feedback on everything interactable, so our code default is on. No profile or UserSettings is written.
         /// </summary>
-        public static bool HighlightGameObjects = false;
+        public static bool HighlightGameObjects = true;
+
+        /// <summary>The outline's colour (0xAARRGGBB): white, which reads against the 0x0035 yellow and against the world.</summary>
+        public const uint OutlineArgb = 0xFFFFFFFF;
+
+        /// <summary>What a world pick can be; only what <see cref="Hovers"/> accepts is picked, and so highlighted.</summary>
+        public enum PickKind { Mobile, Corpse, GroundItem, LockedItem, MultiPart, MapStatic, Land, NoDraw }
+
+        /// <summary>
+        /// Whether the world pick (EntityViews.PickAt), and so the highlight, takes a kind of thing: characters, corpses
+        /// and server items (locked fixtures too). Never land, the fixed parts of houses and boats, the map's own statics
+        /// (nothing to use: a double-click on one sends nothing) or the no-draw markers.
+        /// </summary>
+        public static bool Hovers(PickKind kind) =>
+            kind == PickKind.Mobile || kind == PickKind.Corpse || kind == PickKind.GroundItem || kind == PickKind.LockedItem;
+
+        /// <summary>
+        /// A sprite's outline, TazUO's OUTLINE shader rule (IsometricWorld.fx:149-173) at <paramref name="thickness"/>
+        /// pixels: every transparent pixel with an opaque one within that many pixels (the square around it) is drawn in
+        /// <paramref name="argb"/>, every other pixel is left clear. The picture grows by the thickness on each side, so
+        /// art that touches its own edge is outlined there too; draw it offset by -thickness under or over the sprite.
+        /// </summary>
+        public static Bitmap32 Outline(Bitmap32 src, int thickness, uint argb)
+        {
+            int t = Math.Max(1, thickness), w = src.Width + 2 * t, h = src.Height + 2 * t;
+            var o = new Bitmap32(w, h);
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int sx = x - t, sy = y - t;
+                    if (OpaqueAt(src, sx, sy))
+                        continue;
+                    for (int dy = -t; dy <= t && o.Pixels[y * w + x] == 0; dy++)
+                        for (int dx = -t; dx <= t; dx++)
+                            if (OpaqueAt(src, sx + dx, sy + dy))
+                            {
+                                o.Pixels[y * w + x] = argb;
+                                break;
+                            }
+                }
+            return o;
+        }
+
+        private static bool OpaqueAt(Bitmap32 b, int x, int y) =>
+            x >= 0 && y >= 0 && x < b.Width && y < b.Height && (b.Pixels[y * b.Width + x] >> 24) != 0;
 
         /// <summary>Whether <paramref name="hue"/> carries <see cref="WholeArt"/>.</summary>
         public static bool IsWholeArt(int hue) => (hue & WholeArt) != 0;
@@ -55,6 +103,14 @@ namespace UOClient.Unity
 
         /// <summary>A mobile or a corpse is drawn in the highlight hue only when selected with HighlightGameObjects on.</summary>
         public static bool HighlightsBody(bool selected, bool highlightGameObjects) => selected && highlightGameObjects;
+
+        /// <summary>
+        /// Whether the selected world sprite gets the outline: a body (mobile, corpse) with HighlightGameObjects, as its hue;
+        /// a ground item whenever it is hued (<see cref="GroundItemHue"/> changed it), so a fixture without
+        /// HighlightGameObjects stays plain as TazUO's does.
+        /// </summary>
+        public static bool OutlinesInWorld(bool selected, bool body, bool locked, bool highlightGameObjects) =>
+            selected && (highlightGameObjects || (!body && !locked));
 
         /// <summary>What the world selects under the mouse: nothing while a window (or the journal) is over it.</summary>
         public static uint WorldSelection(bool overUi, uint picked) => overUi ? 0 : picked;

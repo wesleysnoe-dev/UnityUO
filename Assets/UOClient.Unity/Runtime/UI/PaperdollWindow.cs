@@ -91,10 +91,17 @@ namespace UOClient.Unity.UI
                     continue;
                 _drawn.Add((layer, e, img, gump));
             }
-            // Laid out first, so the worn item under the mouse is drawn wholly in 0x0035, as window items are (ItemGump).
+            // Laid out first, so the worn item under the mouse is drawn wholly in 0x0035, as window items are (ItemGump),
+            // and outlined.
             uint over = MouseIsOver ? ItemAt(Event.current.mousePosition)?.Item.Serial ?? 0 : 0;
             foreach (var (_, e, own, gump) in _drawn)
-                DrawImage(over != 0 && e.Serial == over ? Art.Gump(gump, ObjectHighlight.Hue) ?? own : own, BodyX, BodyY);
+            {
+                bool lit = over != 0 && e.Serial == over;
+                UiImage img = lit ? Art.Gump(gump, ObjectHighlight.Hue) ?? own : own;
+                if (lit)
+                    DrawOutline(img, BodyX, BodyY);
+                DrawImage(img, BodyX, BodyY);
+            }
 
             if (_titleStyle == null)
             {

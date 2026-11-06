@@ -66,8 +66,15 @@ namespace UOClient.Unity.UI
             ContainedItem over = MouseIsOver ? ItemAt(Event.current.mousePosition)?.Item : null;
             foreach (var (item, own, rect) in _drawn)
             {
-                // ItemGump with HighlightOnMouseOver: the item the mouse is on is drawn wholly in 0x0035.
+                // ItemGump with HighlightOnMouseOver: the item the mouse is on is drawn wholly in 0x0035, and outlined
+                // (both copies of a stack, under them, so the pair shows one edge).
                 UiImage img = item == over ? Art.Item(item.Graphic, ObjectHighlight.WindowItemHue(item.Hue, true)) ?? own : own;
+                if (item == over)
+                {
+                    DrawOutline(img, item.X, item.Y);
+                    if (rect.width > img.Width)
+                        DrawOutline(img, item.X + 5, item.Y + 5);
+                }
                 DrawImage(img, item.X, item.Y);
                 if (rect.width > img.Width)
                     DrawImage(img, item.X + 5, item.Y + 5); // the classic two-copies look of a stack

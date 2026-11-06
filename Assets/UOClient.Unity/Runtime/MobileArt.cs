@@ -129,6 +129,28 @@ namespace UOClient.Unity
             return px.HasValue && _atlas.Opaque(slot, px.Value.X, px.Value.Y);
         }
 
+        // Outlines of sprites already in the atlas, by the sprite's place there (main thread only).
+        private readonly Dictionary<(int, int, int), AtlasSlot> _outlines = new Dictionary<(int, int, int), AtlasSlot>();
+
+        /// <summary>The outline thickness in atlas pixels: one pixel of the original art.</summary>
+        public int OutlineThickness => _scale;
+
+        /// <summary>
+        /// The outline (<see cref="ObjectHighlight.Outline"/>) of a sprite in the atlas, built from its pixels on first
+        /// use: a character's frame is all its worn layers composited, so this is the whole equipped silhouette. It is
+        /// <see cref="OutlineThickness"/> larger on each side than <paramref name="slot"/>.
+        /// </summary>
+        public AtlasSlot Outline(AtlasSlot slot)
+        {
+            if (_outlines.TryGetValue((slot.Page, slot.X, slot.Y), out AtlasSlot o))
+                return o;
+            Bitmap32 mask = _atlas.Read(slot);
+            o = _atlas.Add(ObjectHighlight.Outline(mask, OutlineThickness, ObjectHighlight.OutlineArgb));
+            _atlas.Apply();
+            _outlines[(slot.Page, slot.X, slot.Y)] = o;
+            return o;
+        }
+
         /// <summary>A ground item's sprite: null while being built (requested on first call).</summary>
         public ItemSprite GetItem(int graphic, int hue)
         {
@@ -400,6 +422,23 @@ namespace UOClient.Unity
 
         /// <summary>Whether a slot's pixel (x, y) from its top-left is opaque, read from the page's CPU copy (rows are stored bottom-up).</summary>
         public bool Opaque(AtlasSlot s, int x, int y) => _pages[s.Page].GetPixel(s.X + x, _pageSize - 1 - s.Y - y).a > 0;
+
+        /// <summary>A slot's pixels back as a top-left-origin bitmap, from the page's CPU copy.</summary>
+        public Bitmap32 Read(AtlasSlot s)
+        {
+            var bmp = new Bitmap32(s.Width, s.Height);
+            Color[] c = _pages[s.Page].GetPixels(s.X, _pageSize - s.Y - s.Height, s.Width, s.Height); // rows bottom-up
+            for (int y = 0; y < s.Height; y++)
+            {
+                int row = (s.Height - 1 - y) * s.Width;
+                for (int x = 0; x < s.Width; x++)
+                {
+                    Color32 p = c[row + x];
+                    bmp.Pixels[y * s.Width + x] = (uint)p.a << 24 | (uint)p.r << 16 | (uint)p.g << 8 | p.b;
+                }
+            }
+            return bmp;
+        }
 
         public Vector4 Uv(AtlasSlot s)
         {

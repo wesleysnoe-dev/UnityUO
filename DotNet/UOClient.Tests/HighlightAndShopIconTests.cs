@@ -21,7 +21,79 @@ public sealed class ObjectHighlightTests
     }
 
     [Fact]
-    public void HighlightGameObjects_DefaultsOff_AsTazUOProfile() => Assert.False(ObjectHighlight.HighlightGameObjects);
+    public void HighlightGameObjects_DefaultsOn_SoCharactersAndCorpsesHover()
+    {
+        // Wes: hover feedback on everything interactable; a code default, no profile written.
+        Assert.True(ObjectHighlight.HighlightGameObjects);
+        Assert.True(ObjectHighlight.HighlightsBody(selected: true, ObjectHighlight.HighlightGameObjects));
+        Assert.True(ObjectHighlight.OutlinesInWorld(selected: true, body: true, locked: false, ObjectHighlight.HighlightGameObjects));
+        // A fixture (locked furniture, a door) is hued and outlined too.
+        Assert.Equal(0x0035 | ObjectHighlight.WholeArt,
+            ObjectHighlight.GroundItemHue(0x0021, selected: true, locked: true, multi: false, ObjectHighlight.HighlightGameObjects));
+    }
+
+    [Fact]
+    public void Outline_InTheWorld_FollowsTheHue()
+    {
+        Assert.False(ObjectHighlight.OutlinesInWorld(selected: false, body: true, locked: false, highlightGameObjects: true));
+        Assert.True(ObjectHighlight.OutlinesInWorld(true, body: false, locked: true, highlightGameObjects: true));
+        // Without HighlightGameObjects, as TazUO's hue: movable items only, never bodies or fixtures.
+        Assert.True(ObjectHighlight.OutlinesInWorld(true, body: false, locked: false, highlightGameObjects: false));
+        Assert.False(ObjectHighlight.OutlinesInWorld(true, body: false, locked: true, highlightGameObjects: false));
+        Assert.False(ObjectHighlight.OutlinesInWorld(true, body: true, locked: false, highlightGameObjects: false));
+    }
+
+    [Theory]
+    [InlineData(ObjectHighlight.PickKind.Mobile, true)]
+    [InlineData(ObjectHighlight.PickKind.Corpse, true)]
+    [InlineData(ObjectHighlight.PickKind.GroundItem, true)]
+    [InlineData(ObjectHighlight.PickKind.LockedItem, true)] // furniture, doors, chests: used and opened
+    [InlineData(ObjectHighlight.PickKind.MultiPart, false)] // house and boat parts
+    [InlineData(ObjectHighlight.PickKind.MapStatic, false)] // the map's own statics: nothing to use
+    [InlineData(ObjectHighlight.PickKind.Land, false)]
+    [InlineData(ObjectHighlight.PickKind.NoDraw, false)]
+    public void Hovers_IsWhatThePickTakes(ObjectHighlight.PickKind kind, bool hovers) =>
+        Assert.Equal(hovers, ObjectHighlight.Hovers(kind));
+
+    private static bool Lit(Bitmap32 b, int x, int y) => b.Pixels[y * b.Width + x] != 0;
+
+    [Fact]
+    public void Outline_IsTheRingAroundOpaquePixels_NotTheBox()
+    {
+        // A 4x4 picture opaque only in its 2x2 middle: its outline is the 4x4 ring around that, inside a 6x6 picture.
+        Bitmap32 o = ObjectHighlight.Outline(Ring(), 1, 0xFFFFFFFF);
+        Assert.Equal((6, 6), (o.Width, o.Height));
+        for (int y = 0; y < 6; y++)
+            for (int x = 0; x < 6; x++)
+            {
+                bool middle = x is 2 or 3 && y is 2 or 3;          // the art's own opaque pixels (offset by 1)
+                bool ring = x is >= 1 and <= 4 && y is >= 1 and <= 4 && !middle;
+                Assert.True(ring == Lit(o, x, y), $"({x},{y})");
+            }
+        Assert.Equal(0xFFFFFFFFu, o.Pixels[1 * 6 + 1]); // diagonal neighbours count, as TazUO's 3x3 test
+    }
+
+    [Fact]
+    public void Outline_GrowsPastTheArtsEdge_AndTakesTheThickness()
+    {
+        // Fully opaque art: nothing inside is outlined, the extra border all is.
+        Bitmap32 o = ObjectHighlight.Outline(Solid(), 2, 0xFF00FF00);
+        Assert.Equal((8, 8), (o.Width, o.Height));
+        Assert.True(Lit(o, 0, 0) && Lit(o, 7, 7) && Lit(o, 1, 4));
+        Assert.False(Lit(o, 2, 2) || Lit(o, 5, 5));
+        Assert.Equal(0xFF00FF00u, o.Pixels[0]);
+
+        // A single pixel at thickness 2: a 5x5 square around it, minus the pixel.
+        var dot = new Bitmap32(1, 1);
+        dot.Pixels[0] = 0xFF123456;
+        Bitmap32 d = ObjectHighlight.Outline(dot, 2, 0xFFFFFFFF);
+        Assert.Equal(24, d.Pixels.Count(p => p != 0));
+        Assert.False(Lit(d, 2, 2));
+    }
+
+    [Fact]
+    public void Outline_OfAnEmptyPicture_IsEmpty() =>
+        Assert.All(ObjectHighlight.Outline(new Bitmap32(3, 3), 1, 0xFFFFFFFF).Pixels, p => Assert.Equal(0u, p));
 
     [Fact]
     public void GroundItem_WithoutHighlightGameObjects_OnlyMovableOrLightItemsHighlight()
@@ -146,6 +218,41 @@ public sealed class ShopIconTests
         Assert.Equal((10, 10, 30, 30), ShopWindow.IconRect(body: true, 30, 30, 50));
         Assert.Equal((15, 15, 20, 20), ShopWindow.IconRect(body: false, 20, 20, 50));
         Assert.Equal((0, 0, 50, 50), ShopWindow.IconRect(body: false, 70, 90, 50));
+    }
+
+    [Fact]
+    public void IconPixel_MapsTheMouseOntoTheDrawnPart_OnlyInsideIt()
+    {
+        // The part (3, 2, 4, 4) of a picture drawn stretched to 8 x 8 at (10, 20).
+        var dest = (10f, 20f, 8f, 8f);
+        var src = (3, 2, 4, 4);
+        Assert.Equal((3, 2), ShopWindow.IconPixel(10.5f, 20.5f, dest, src));
+        Assert.Equal((6, 5), ShopWindow.IconPixel(17.9f, 27.9f, dest, src));
+        Assert.Equal((4, 3), ShopWindow.IconPixel(12f, 22f, dest, src));
+        Assert.Null(ShopWindow.IconPixel(9.9f, 22f, dest, src));
+        Assert.Null(ShopWindow.IconPixel(12f, 28f, dest, src));
+    }
+
+    [Fact]
+    public void ShopIcon_HoversOnlyOnOpaquePixels()
+    {
+        // A 4x4 picture opaque only in its middle, drawn at 1:1: its corner is not on it, its middle is.
+        var b = new Bitmap32(4, 4);
+        b.Pixels[1 * 4 + 1] = b.Pixels[2 * 4 + 2] = 0xFF808080;
+        bool Hover(float x, float y) => ShopWindow.IconPixel(x, y, (0f, 0f, 4f, 4f), (0, 0, 4, 4)) is { } p
+                                        && (b.Pixels[p.Y * 4 + p.X] >> 24) != 0;
+        Assert.True(Hover(1.5f, 1.5f));
+        Assert.False(Hover(0.5f, 0.5f));
+        Assert.False(Hover(5f, 1f));
+    }
+
+    [Fact]
+    public void OutlineRect_IsThePartGrownByOnePixel_AtTheDrawnScale()
+    {
+        // Part (3, 2, 4, 4) drawn at twice its size: one outline pixel is 2 drawn pixels.
+        var (dest, src) = ShopWindow.OutlineRect((10f, 20f, 8f, 8f), (3, 2, 4, 4));
+        Assert.Equal((8f, 18f, 12f, 12f), dest);
+        Assert.Equal((3, 2, 6, 6), src); // in the outline's coordinates, which start one pixel up and left
     }
 
     [Fact]

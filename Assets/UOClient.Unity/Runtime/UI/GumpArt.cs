@@ -158,6 +158,24 @@ namespace UOClient.Unity.UI
             return img;
         }
 
+        private readonly Dictionary<UiImage, UiImage> _outlines = new Dictionary<UiImage, UiImage>();
+
+        /// <summary>
+        /// The mouse-over outline of a picture (<see cref="ObjectHighlight.Outline"/>, one stock pixel thick): one pixel
+        /// larger on each side, so it is drawn at (x - 1, y - 1) for art drawn at (x, y). Cached with the picture.
+        /// </summary>
+        public UiImage Outline(UiImage img)
+        {
+            if (img == null)
+                return null;
+            if (_outlines.TryGetValue(img, out UiImage o))
+                return o;
+            Bitmap32 bmp = ObjectHighlight.Outline(img.Bitmap, 1, ObjectHighlight.OutlineArgb);
+            o = new UiImage { Bitmap = bmp, Texture = UnityTextures.ToTexture(bmp, "outline") };
+            _outlines[img] = o;
+            return o;
+        }
+
         /// <summary>The stock-size picture, or its HD version (drawn at the stock size, so smoothed rather than point-sampled).</summary>
         private static Texture2D Texture(Bitmap32 bmp, Bitmap32 hd, string name)
         {
@@ -201,9 +219,12 @@ namespace UOClient.Unity.UI
             foreach (UiImage i in _bodies.Values)
                 if (i != null)
                     UnityEngine.Object.Destroy(i.Texture);
+            foreach (UiImage i in _outlines.Values)
+                UnityEngine.Object.Destroy(i.Texture);
             _gumps.Clear();
             _items.Clear();
             _bodies.Clear();
+            _outlines.Clear();
         }
     }
 }

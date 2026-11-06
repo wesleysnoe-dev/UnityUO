@@ -307,3 +307,17 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
 3. **Verified by tests:** 743 pass (13 new: per-facing order on foot and mounted, 0 vs 6, order classes, highlight copy; install: a tiledata-found cloak over/under a robe). Tests, Cli, EditorCheck (forced, 156 script metas OK) and GumpPreview build with 0 warnings.
 4. **Editor (read only):** `UOClient.Unity.dll` is 18:29:28, before every edit here (18:30:38-18:31:33). Unity has not compiled this change.
 5. **Not verified:** the look. Needs front / back / diagonal / mounted re-test (LIVE_PARITY checklist), play mode and live.
+
+## Session: hover outline on everything interactable (2026-11-05)
+
+1. **Hover feedback for all interactable objects, with a real outline** (Wes; backup tag `fidelity-pre-outline` = `173be55`; details in LIVE_PARITY "Hover outline on everything interactable").
+   - **Correction to the previous session:** it left `HighlightGameObjects` off, so characters, creatures, corpses and fixtures got no hover. It also skipped shop icons. Wes wants feedback on everything interactable, so `ObjectHighlight.HighlightGameObjects` now defaults to `true` in code. No profile or UserSettings is written.
+   - **TazUO's mouse-over is a hue, not an outline.** Its true outline (`DrawOutlined`, the OUTLINE shader mode) is only used for `OutlineColor`, e.g. notoriety. We keep the `0x0035` hue and add that outline rule as the main cue, in white, one original-art pixel thick:
+     - **World** (`OutlineQuad` + `MobileArt.Outline`): unlit, cached per atlas slot. Characters get the whole equipped silhouette, since each frame is all layers composited.
+     - **Windows** (`GumpArt.Outline`): containers, trade, paperdoll.
+     - **Shop lines:** opaque-pixel hover (`ShopWindow.IconPixel`), outline only.
+   - **Coverage = the pick** (`ObjectHighlight.Hovers`, used by `PickAt`): mobiles, corpses and server items, locked ones included. Never land, house/boat parts, map statics or no-draw markers.
+   - Cape layer order (`173be55`) and vendor body art (`06302cb`) were not touched.
+2. **Verified by tests:** 758 pass (15 new: default on, outline gating, all 8 pick kinds, ring-not-box / edge growth / thickness / empty, shop pixel mapping, opaque-only hover, outline rect). Tests, Cli, EditorCheck (forced, 157 script metas OK, incl. the new `OutlineQuad.cs.meta`) and GumpPreview build with 0 warnings.
+3. **Editor (read only, no refresh requested):** `UOClient.Unity.dll` is 18:36:11. That is before every edit here (18:45-18:47), so Unity has not compiled this change, including the `WorldSprite.shader` `_Unlit` property.
+4. **Not verified:** Unity compile, how it looks in play mode (outline thickness and white on bright ground, HD window art, shop scroll), and live.

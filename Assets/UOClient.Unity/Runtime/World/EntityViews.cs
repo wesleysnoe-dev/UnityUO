@@ -111,7 +111,10 @@ namespace UOClient.Unity
                 kv.Value.Render(_ctx.World);
             }
             foreach (var d in _dying)
+            {
+                d.Avatar.Selected = false; // no longer pickable: a fall never stays lit from before it began
                 d.Avatar.Render(_ctx.World);
+            }
             // Before the items: a fall that just reached its end hands over to its corpse in this same frame (the
             // avatar's destroy is carried out before rendering), so the last frame is never missing or doubled.
             DropFinishedFalls();
@@ -187,8 +190,9 @@ namespace UOClient.Unity
         private readonly List<(uint Serial, float Depth, Avatar Mobile, ItemView Item)> _pickable = new List<(uint, float, Avatar, ItemView)>();
 
         /// <summary>
-        /// The character or ground item drawn in front under a screen point, on an opaque pixel of what was last drawn
-        /// (TazUO picks by the art's pixels, so a sprite's transparent box never takes the click), or 0.
+        /// The character, corpse or ground item drawn in front under a screen point, on an opaque pixel of what was last
+        /// drawn (TazUO picks by the art's pixels, so a sprite's transparent box never takes the click), or 0. Only what
+        /// <see cref="ObjectHighlight.Hovers"/> takes: house and boat parts, map statics and land are never offered.
         /// </summary>
         public uint PickAt(Vector2 screen)
         {
@@ -198,10 +202,11 @@ namespace UOClient.Unity
             if (_ctx.Player.Visible)
                 _pickable.Add((_ctx.Session.World.PlayerSerial, _ctx.Player.LastDepth, _ctx.Player, null));
             foreach (KeyValuePair<uint, Avatar> kv in _others)
-                if (kv.Value.Visible)
+                if (kv.Value.Visible && ObjectHighlight.Hovers(ObjectHighlight.PickKind.Mobile))
                     _pickable.Add((kv.Key, kv.Value.LastDepth, kv.Value, null));
             foreach (KeyValuePair<uint, ItemView> kv in _items)
-                _pickable.Add((kv.Key, kv.Value.LastDepth, null, kv.Value));
+                if (ObjectHighlight.Hovers(kv.Value.PickKind))
+                    _pickable.Add((kv.Key, kv.Value.LastDepth, null, kv.Value));
             int i = ObjectHighlight.Nearest(_pickable.Count, k => _pickable[k].Depth,
                 k => _pickable[k].Mobile?.HitTest(p) ?? _pickable[k].Item.HitTest(p));
             return i < 0 ? 0 : _pickable[i].Serial;

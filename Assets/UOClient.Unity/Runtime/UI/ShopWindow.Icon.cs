@@ -41,6 +41,31 @@ namespace UOClient.Unity.UI
             return ((ItemBox - w) / 2, (lineHeight - h) / 2, w, h);
         }
 
+        /// <summary>
+        /// The picture's pixel under a point, for a picture whose part <paramref name="src"/> is drawn stretched over
+        /// <paramref name="dest"/> (y down, as the window's); null outside the drawn rectangle.
+        /// </summary>
+        public static (int X, int Y)? IconPixel(float px, float py, (float X, float Y, float W, float H) dest, (int X, int Y, int W, int H) src)
+        {
+            if (dest.W <= 0 || dest.H <= 0 || px < dest.X || py < dest.Y || px >= dest.X + dest.W || py >= dest.Y + dest.H)
+                return null;
+            int x = Math.Min(src.W - 1, (int)((px - dest.X) / dest.W * src.W));
+            int y = Math.Min(src.H - 1, (int)((py - dest.Y) / dest.H * src.H));
+            return (src.X + x, src.Y + y);
+        }
+
+        /// <summary>
+        /// Where a line's outline goes: the outline (<see cref="ObjectHighlight.Outline"/>, one pixel wider on each side)
+        /// of the same part of the picture, so its source is <paramref name="src"/> grown by one pixel in the outline's own
+        /// coordinates, drawn over <paramref name="dest"/> grown by one stretched pixel.
+        /// </summary>
+        public static ((float X, float Y, float W, float H) Dest, (int X, int Y, int W, int H) Src) OutlineRect(
+            (float X, float Y, float W, float H) dest, (int X, int Y, int W, int H) src)
+        {
+            float kx = dest.W / src.W, ky = dest.H / src.H;
+            return ((dest.X - kx, dest.Y - ky, dest.W + 2 * kx, dest.H + 2 * ky), (src.X, src.Y, src.W + 2, src.H + 2));
+        }
+
         /// <summary>The opaque part of a picture (Arts.GetRealArtBounds), or the whole of it if nothing is opaque.</summary>
         public static (int X, int Y, int W, int H) OpaqueBounds(Bitmap32 bmp)
         {

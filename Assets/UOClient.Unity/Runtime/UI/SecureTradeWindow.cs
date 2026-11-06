@@ -116,6 +116,8 @@ namespace UOClient.Unity.UI
             foreach (var (item, own, r, _) in _drawn)
             {
                 UiImage img = item == over ? Art.Item(item.Graphic, ObjectHighlight.WindowItemHue(item.Hue, true)) ?? own : own;
+                if (item == over)
+                    DrawOutline(img, r.x, r.y);
                 DrawImage(img, r.x, r.y);
                 if (item.Amount > 1)
                     Text(new Rect(r.x, r.y + r.height - 12, r.width + 20, 12), item.Amount.ToString(), Ink, 10);

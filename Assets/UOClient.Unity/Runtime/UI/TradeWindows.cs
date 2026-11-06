@@ -80,13 +80,16 @@ namespace UOClient.Unity.UI
             float content = 0;
             foreach (ShopItem it in _list.Items)
                 content += LineHeight(it.Serial, Art.Data.TileData.GetStatic(it.Graphic).Height);
+            // The mouse in the list's own coordinates, while it is on the visible list and no window covers it.
+            Vector2? mouse = MouseIsOver && view.Contains(Event.current.mousePosition)
+                ? Event.current.mousePosition - view.position + _scroll : (Vector2?)null;
             _scroll = GUI.BeginScrollView(view, _scroll, new Rect(0, 0, view.width - 18, content));
             float y = 0;
             foreach (ShopItem item in _list.Items)
             {
                 int row = LineHeight(item.Serial, Art.Data.TileData.GetStatic(item.Graphic).Height);
                 _order.TryGetValue(item.Serial, out int chosen);
-                DrawIcon(item, y, row);
+                DrawIcon(item, y, row, mouse);
                 float mid = y + (row - 46) / 2f; // the text and buttons keep their places in the line's middle
                 Text(new Rect(56, mid + 4, 216, 20), item.Name, new Color(0.95f, 0.92f, 0.82f));
                 Text(new Rect(56, mid + 22, 216, 20), $"{item.Price} gp   ({item.Amount} {(_list.Selling ? "owned" : "in stock")})", new Color(0.8f, 0.76f, 0.62f), 12);
@@ -129,8 +132,10 @@ namespace UOClient.Unity.UI
         /// <summary>
         /// A line's picture as TazUO's ShopItem.Draw makes it: a creature on sale is its body standing (frame 0, file
         /// direction 1, the Body.def hue); an item is the opaque part of its art in the line's hue (Arts.GetRealArtBounds).
+        /// With the mouse (<paramref name="mouse"/>, list coordinates) on its opaque pixels it is outlined, as the
+        /// world's and the containers' items are (our addition: TazUO's ShopItem has no mouse-over art).
         /// </summary>
-        private void DrawIcon(ShopItem item, float y, int row)
+        private void DrawIcon(ShopItem item, float y, int row, Vector2? mouse)
         {
             bool body = DrawsBody(_list.Selling, item.Serial);
             UiImage icon = body ? Art.Body(item.Graphic) : Art.Item(item.Graphic, item.Hue);
@@ -139,9 +144,20 @@ namespace UOClient.Unity.UI
             if (!_bounds.TryGetValue(icon, out var src))
                 _bounds[icon] = src = body ? (0, 0, icon.Width, icon.Height) : OpaqueBounds(icon.Bitmap);
             var (x, dy, w, h) = IconRect(body, src.W, src.H, row);
-            var uv = new Rect((float)src.X / icon.Width, 1f - (float)(src.Y + src.H) / icon.Height, (float)src.W / icon.Width, (float)src.H / icon.Height);
-            GUI.DrawTextureWithTexCoords(new Rect(x, y + dy, w, h), icon.Texture, uv);
+            (float X, float Y, float W, float H) dest = (x, y + dy, w, h);
+            var px = mouse.HasValue ? IconPixel(mouse.Value.x, mouse.Value.y, dest, src) : null;
+            if (px.HasValue && icon.HitTest(px.Value.X, px.Value.Y))
+            {
+                UiImage outline = Art.Outline(icon);
+                var (od, os) = OutlineRect(dest, src);
+                GUI.DrawTextureWithTexCoords(new Rect(od.X, od.Y, od.W, od.H), outline.Texture, Uv(os, outline));
+            }
+            GUI.DrawTextureWithTexCoords(new Rect(dest.X, dest.Y, dest.W, dest.H), icon.Texture, Uv(src, icon));
         }
+
+        /// <summary>A part of a picture (top-left origin) as texture coordinates (bottom-left origin).</summary>
+        private static Rect Uv((int X, int Y, int W, int H) part, UiImage img) =>
+            new Rect((float)part.X / img.Width, 1f - (float)(part.Y + part.H) / img.Height, (float)part.W / img.Width, (float)part.H / img.Height);
     }
 
     /// <summary>The server asked for a line of text (a name, a rune description, ...).</summary>

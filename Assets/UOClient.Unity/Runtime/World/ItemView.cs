@@ -56,7 +56,20 @@ namespace UOClient.Unity
             _shader = shader;
             _renderer = _go.AddComponent<MeshRenderer>();
             _renderer.enabled = false;
+            _outline = new OutlineQuad(_go.transform, shader);
         }
+
+        private readonly OutlineQuad _outline;
+
+        /// <summary>The mouse-over outline is drawn around what was last drawn.</summary>
+        public bool Outlined => _outline.Visible;
+
+        /// <summary>What the world pick sees this as (<see cref="ObjectHighlight.Hovers"/>); multi parts are never offered to it.</summary>
+        public ObjectHighlight.PickKind PickKind =>
+            _corpse != null ? ObjectHighlight.PickKind.Corpse : _locked ? ObjectHighlight.PickKind.LockedItem : ObjectHighlight.PickKind.GroundItem;
+
+        /// <summary>Drawn as a body (a corpse with frames), not as item art.</summary>
+        public bool IsBody => _corpse != null && _lastCorpseFrame != null;
 
         private readonly Shader _shader;
 
@@ -100,11 +113,12 @@ namespace UOClient.Unity
         public void Render(IWorldSpace world)
         {
             if (_corpse != null)
-            {
                 RenderCorpse(world);
-                return;
-            }
-            RenderArt(world);
+            else
+                RenderArt(world);
+            // The edge of what was drawn this frame: a corpse's body (every worn layer) or the item's art.
+            bool show = _renderer.enabled && ObjectHighlight.OutlinesInWorld(Selected, IsBody, _locked, ObjectHighlight.HighlightGameObjects);
+            _outline.Update(show, _art, LastSlot, LastRect, LastMirror, LastDepth, MeshBuilder.CutHeight(_item.Z));
         }
 
         private void RenderCorpse(IWorldSpace world)
@@ -206,6 +220,7 @@ namespace UOClient.Unity
 
         public void Dispose()
         {
+            _outline.Dispose();
             UnityEngine.Object.Destroy(_mesh);
             UnityEngine.Object.Destroy(_go);
         }

@@ -51,7 +51,13 @@ namespace UOClient.Unity
             _renderer = _go.AddComponent<MeshRenderer>();
             _renderer.sharedMaterial = _material;
             _renderer.shadowCastingMode = ShadowCastingMode.Off;
+            _outline = new OutlineQuad(_go.transform, shader);
         }
+
+        private readonly OutlineQuad _outline;
+
+        /// <summary>The mouse-over outline is drawn around the frame last drawn.</summary>
+        public bool Outlined => _outline.Visible;
 
         public int X { get; private set; }
         public int Y { get; private set; }
@@ -71,7 +77,7 @@ namespace UOClient.Unity
         public AtlasSlot LastSlot { get; private set; }
         public bool LastMirror { get; private set; }
 
-        /// <summary>Under the mouse in the world (TazUO's SelectedObject.Object): drawn highlighted with HighlightGameObjects.</summary>
+        /// <summary>Under the mouse in the world (TazUO's SelectedObject.Object): hued and outlined with HighlightGameObjects.</summary>
         public bool Selected { get; set; }
 
         private MobileLook _litFor, _lit;
@@ -279,6 +285,7 @@ namespace UOClient.Unity
             if (frames == null || frames.Length == 0)
             {
                 _renderer.enabled = false;
+                _outline.Update(false, _art, default, default, false, 0, 0);
                 return;
             }
             _lastFrames = frames;
@@ -325,6 +332,9 @@ namespace UOClient.Unity
             LastDepth = view.DepthFor(SortItem);
             // Characters on a floor above us are cut away with it (we ourselves always stand below the cut).
             MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, MeshBuilder.CutHeight(Z));
+            // The frame is every worn layer composited, so its outline is the whole equipped silhouette.
+            _outline.Update(ObjectHighlight.OutlinesInWorld(Selected, true, false, ObjectHighlight.HighlightGameObjects),
+                _art, f.Slot, r, mirror, LastDepth, MeshBuilder.CutHeight(Z));
         }
 
         private Vector2 TileAnchor(int x, int y, int z)
@@ -334,6 +344,7 @@ namespace UOClient.Unity
 
         public void Dispose()
         {
+            _outline.Dispose();
             UnityEngine.Object.Destroy(_material);
             UnityEngine.Object.Destroy(_mesh);
             UnityEngine.Object.Destroy(_go);
