@@ -51,9 +51,16 @@ namespace UOClient.Core
 
         /// <summary>
         /// A ghost body: ModernUO's <c>Race.GhostBody</c> (human 402/403, elf 607/608, gargoyle 694/695), plus 970,
-        /// which ClassicUO's <c>Mobile.IsDead</c> also counts.
+        /// which ClassicUO's <c>Mobile.IsDead</c> also counts. Or a dead bonded pet (<see cref="BondedDead"/>).
         /// </summary>
-        public bool IsDead => IsGhostBody(Body);
+        public bool IsDead => IsGhostBody(Body) || BondedDead;
+
+        /// <summary>
+        /// A dead bonded pet: 0xBF 0x19 version 0 said so (ModernUO's <c>SendBondedStatus</c> after the pet's 0x78, and
+        /// false on resurrection), kept as TazUO keeps <c>Mobile._isDead</c> (ExtendedCommand.cs:311-320). A pet keeps
+        /// its living body, so nothing else says it.
+        /// </summary>
+        public bool BondedDead;
 
         /// <summary>In war mode: flag 0x40 of 0x20/0x77/0x78, as ModernUO's <c>Mobile.GetPacketFlags</c> sets it and TazUO's <c>Mobile.InWarMode</c> reads it.</summary>
         public bool WarMode => (Flags & 0x40) != 0;
@@ -343,6 +350,19 @@ namespace UOClient.Core
             }
             if (removed)
                 EntityRemoved?.Invoke(serial);
+        }
+
+        /// <summary>
+        /// The server deleted an object (0x1D), as TazUO's DeleteObject (DeleteObject.cs): never the player, and what the
+        /// object held goes with it at any depth, as its <c>RemoveItem</c> / <c>RemoveMobile</c> cascade (contents, a
+        /// mobile's worn packs, their open windows; <see cref="RemoveWithContents"/>). Unknown or repeated serials do
+        /// nothing.
+        /// </summary>
+        internal void RemoveFromServer(uint serial)
+        {
+            if (serial == PlayerSerial && serial != 0)
+                return;
+            RemoveWithContents(serial);
         }
 
         /// <summary>

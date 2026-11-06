@@ -488,7 +488,7 @@ namespace UOClient.Unity
 
         private MobileLook LookOf(Core.Mobile m)
         {
-            return MobileLook.From(_ctx.Data, m.Body, m.Hue, m.Equipment.Values.Select(e => (e.Layer, (int)e.Graphic, (int)e.Hue)));
+            return MobileLook.From(_ctx.Data, m.Body, m.Hue, m.Equipment.Values.Select(e => (e.Layer, (int)e.Graphic, (int)e.Hue)), m.BondedDead);
         }
 
         /// <summary>Each distinct body near us, how many, and how many are drawn (have art), for the tour report.</summary>

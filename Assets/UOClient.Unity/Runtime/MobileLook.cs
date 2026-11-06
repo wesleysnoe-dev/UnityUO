@@ -127,14 +127,26 @@ namespace UOClient.Unity
         /// <summary>The hair and beard layers, which a ghost does not draw (MobileView.cs:372, 1245).</summary>
         public const byte HairLayer = 11, BeardLayer = 16, MountLayer = 25;
 
+        /// <summary>The hue TazUO draws a dead non-human in (MobileView.cs:120-123).</summary>
+        public const int DeadHue = 0x0386;
+
+        /// <summary>TazUO's <c>HumanGraphicCheck</c> (Mobile.cs:1127-1140), by the body as sent.</summary>
+        public static bool IsHumanGraphic(int body) =>
+            body >= 0x0190 && body <= 0x0193 || body >= 0x00B7 && body <= 0x00BA || body >= 0x025D && body <= 0x0260
+            || body == 0x029A || body == 0x029B || body == 0x02B6 || body == 0x02B7 || body == 0x03DB || body == 0x03DF
+            || body == 0x03E2 || body == 0x02E8 || body == 0x02E9 || body == 0x04E5;
+
         /// <summary>
         /// Builds a look from a body and worn items (graphic, hue per layer), resolving each item's animation.
         /// <see cref="Body"/> stays the body as sent; the art is drawn from <see cref="AnimationLibrary.AnimationBody"/>, so a
         /// ghost (402/403, 607/608, 694/695) draws as its living body, as TazUO's MobileView does. A ghost also draws no
         /// hair, beard (MobileView.cs:372) or mount (:172), and keeps the hues as sent: TazUO overrides a dead mobile's hue
         /// (0x0386) only when it is not human (:120-123), and every ghost body is human there (Mobile.cs:1127-1140).
+        /// A dead bonded pet (<paramref name="bondedDead"/>, 0xBF 0x19 version 0) keeps its body and is that non-human
+        /// dead case: drawn in <see cref="DeadHue"/>.
         /// </summary>
-        public static MobileLook From(UOData data, int body, int hue, IEnumerable<(byte Layer, int Graphic, int Hue)> equipment)
+        public static MobileLook From(UOData data, int body, int hue, IEnumerable<(byte Layer, int Graphic, int Hue)> equipment,
+            bool bondedDead = false)
         {
             var look = new MobileLook();
             AnimationLibrary anims = data.AnimationLibrary;
@@ -148,6 +160,8 @@ namespace UOClient.Unity
             int skin = hue & 0x3FFF;
             if (skin == 0)
                 skin = anims.ReplacementHue(drawn); // Body.def stand-ins come with their own hue
+            if (bondedDead && !IsHumanGraphic(body))
+                skin = DeadHue;
 
             var byLayer = new Dictionary<byte, (int Graphic, int Hue)>();
             foreach (var e in equipment)

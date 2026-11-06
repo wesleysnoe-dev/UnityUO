@@ -93,7 +93,7 @@ namespace UOClient.Core
             _handlers[0x20] = PlayerUpdate;
             _handlers[0x78] = MobileIncoming;
             _handlers[0x77] = MobileMoving;
-            _handlers[0x1D] = r => World.Remove(r.ReadUInt32());
+            _handlers[0x1D] = r => World.RemoveFromServer(r.ReadUInt32());
             _handlers[0xF3] = WorldEntity;
             _handlers[0x1A] = WorldItemOld;
             _handlers[0x2E] = EquipUpdate;

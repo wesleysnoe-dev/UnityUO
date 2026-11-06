@@ -460,14 +460,34 @@ namespace UOClient.Core
 
         /// <summary>
         /// 0xBF 0x19 extended stats. Version 2 (ModernUO's SendStatLockInfo, sent with our own 0x11 status): serial, a
-        /// byte, then the locks packed str &lt;&lt; 4 | dex &lt;&lt; 2 | int. Version 0 (bonded) is not kept.
+        /// byte, then the locks packed str &lt;&lt; 4 | dex &lt;&lt; 2 | int. Version 0 (ModernUO's CreateBondedStatus, 11
+        /// bytes): serial, then a bool, true when a bonded pet died and false when it is resurrected; it sets
+        /// <see cref="Mobile.BondedDead"/> on a mobile we know, as TazUO does (ExtendedCommand.cs:311-320), and is
+        /// ignored for one we don't (ModernUO sends it right after the pet's 0x78).
         /// </summary>
         private bool ExtendedStats(int sub, PacketReader r)
         {
             if (sub != 0x19)
                 return false;
+            if (r.Remaining < 5)
+                return true;
             byte version = r.ReadByte();
             uint serial = r.ReadUInt32();
+            if (version == 0)
+            {
+                if (r.Remaining >= 1 && World.Mobiles.TryGetValue(serial, out Mobile pet))
+                {
+                    bool dead = r.ReadByte() != 0;
+                    if (pet.BondedDead != dead)
+                    {
+                        pet.BondedDead = dead;
+                        pet.AppearanceVersion++; // drawn grey (0x0386) while dead
+                        World.RaiseMobileUpdated(pet);
+                        BondedDeadChanged?.Invoke(serial, dead);
+                    }
+                }
+                return true;
+            }
             if (version == 2 && serial == World.PlayerSerial && r.Remaining >= 2 && World.Player is Mobile p)
             {
                 r.ReadByte();
@@ -479,6 +499,9 @@ namespace UOClient.Core
             }
             return true;
         }
+
+        /// <summary>A bonded pet died (true) or was resurrected (false): its serial (0xBF 0x19 version 0).</summary>
+        public event Action<uint, bool> BondedDeadChanged;
 
         private void Stat(PacketReader r, Action<Mobile, int, int> set)
         {
