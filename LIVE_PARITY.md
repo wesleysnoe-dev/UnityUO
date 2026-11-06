@@ -635,7 +635,7 @@ Backup tag `fidelity-pre-login-media` = `c49d109`. `LoginMedia.cs` (Unity side),
    - [ ] Login screen Options → Sound: Sound volume greyed with the reason, Music volume live. Drag Music, Apply → the login music changes at once; `unity-uo-options.json` unchanged. Okay → saved. Hover each button → its hint.
    - [ ] Bad password → back to the form, video and music still (or again) playing, one of each. Log in for real → at the world, video and music are gone and the region music plays (also a region whose Config.txt entry has `.mp3`, ids 57-87, which played nothing before).
 
-**First:** focus the Unity Editor (outside play mode) so it reimports and compiles. Then check that `Library/ScriptAssemblies/UOClient.Unity.dll` has moved past 09:53:29 and that `Logs/Editor.log` has a new `Tundra build success` with no `error CS` after it. Until then nothing from `bad6cce` onward is in the Editor, so none of the items below can be tested. Each item works on local or live.
+**First:** focus the Unity Editor (outside play mode) so it reimports and compiles. Then check that `Library/ScriptAssemblies/UOClient.Unity.dll` is newer than the newest `Assets/**/*.cs` and that `Logs/Editor.log` has a `Tundra build success` with no `error CS` after it. **As of options batch 4 it is:** DLL 21:47:46 vs newest source `OptionsWindow.Pages.cs` 21:45:58; Editor.log's last `Tundra build success` (2.41 s) is at line 155421 of 155701, no `error CS` after it. So everything up to batch 4 is compiled in the Editor; **none of the items below has been verified in play.** Each item works on local or live.
 
 1. **Wes's original complaints**
    - [ ] Say "bank", "balance", "stable" near the NPC → banker or stablemaster answers (whole-word keywords).
