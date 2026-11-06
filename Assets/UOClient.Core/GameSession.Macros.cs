@@ -54,18 +54,20 @@ namespace UOClient.Core
         /// TazUO's TargetNext (World.FindNext with ScanTypeObject.Mobiles): the mobile after <see cref="LastTarget"/>,
         /// wrapping round, becomes the last target and the last attack. Nothing is sent (an attack or a cursor answer
         /// does that). The order here is by serial, since our mobiles are not kept in arrival order. 0 when there is no
-        /// other mobile in view.
+        /// other mobile in view. Only mobiles within <see cref="World.ViewRange"/> count: TazUO's list holds no others, as it
+        /// drops them every 50 ms; this holds between our own drops (<see cref="World.PruneOutOfRange"/>) too.
         /// </summary>
-        public uint TargetNext() => SelectTarget(NextMobile(World.Mobiles.Values, World.PlayerSerial, LastTarget));
+        public uint TargetNext() => SelectTarget(NextMobile(World.Mobiles.Values.Where(World.InView), World.PlayerSerial, LastTarget));
 
         /// <summary>
         /// The nearest mobile that is not us, an ally, an innocent or invulnerable (TazUO's ScanTypeObject.Hostile, without
-        /// its friends list), ties broken by serial; it becomes the last target and last attack, nothing sent. 0 if none.
+        /// its friends list), ties broken by serial, within <see cref="World.ViewRange"/>; it becomes the last target and
+        /// last attack, nothing sent. 0 if none.
         /// </summary>
         public uint TargetNearest()
         {
             Mobile p = World.Player;
-            return p == null ? 0 : SelectTarget(NearestHostile(World.Mobiles.Values, p));
+            return p == null ? 0 : SelectTarget(NearestHostile(World.Mobiles.Values.Where(World.InView), p));
         }
 
         private uint SelectTarget(uint serial)

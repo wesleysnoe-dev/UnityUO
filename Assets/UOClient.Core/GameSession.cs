@@ -62,6 +62,13 @@ namespace UOClient.Core
         private readonly Queue<int> _pendingSteps = new Queue<int>();
         private readonly HashSet<uint> _nameRequested = new HashSet<uint>();
 
+        // Out-of-range removal (World.PruneOutOfRange) on TazUO's 50 ms cadence (World.cs:463-468), in the world only.
+        private const double PruneInterval = 0.05;
+        private double _lastPrune;
+
+        /// <summary>Mobiles and ground items dropped as out of range this session (diagnostics).</summary>
+        public int PrunedCount { get; private set; }
+
         /// <summary>The client version we announce; some gumps are laid out by it, as in ClassicUO.</summary>
         public ClientVersion Version => _settings.Version;
 
@@ -73,6 +80,8 @@ namespace UOClient.Core
             _handlers[0x82] = LoginDenied;
             _handlers[0x53] = PopupMessage;
             _handlers[0xA8] = ServerList;
+            // A mobile that left view and comes back is a new one to us: ask its name again (RequestName).
+            World.EntityRemoved += serial => _nameRequested.Remove(serial);
             _handlers[0x8C] = Relay;
             _handlers[0xB9] = SupportedFeature;
             _handlers[0xA9] = CharacterList;
@@ -239,6 +248,13 @@ namespace UOClient.Core
             }
 
             SendQueuedActions();
+
+            // After this frame's packets, so a teleport's 0x20 (sent before what is around the new spot) has moved us.
+            if (State == SessionState.InWorld && (now < _lastPrune || now - _lastPrune >= PruneInterval))
+            {
+                _lastPrune = now;
+                PrunedCount += World.PruneOutOfRange().Count;
+            }
 
             if (State == SessionState.InWorld && now - _lastPing > PingInterval)
             {

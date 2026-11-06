@@ -20,6 +20,10 @@ namespace UOClient.Unity
         private readonly Dictionary<uint, ItemView> _items = new Dictionary<uint, ItemView>();
         private readonly Dictionary<uint, List<ItemView>> _multis = new Dictionary<uint, List<ItemView>>();
 
+        // Each drawn multi's half-extent in tiles (TazUO's MultiDistanceBonus), which World.PruneOutOfRange adds to its range.
+        private readonly Dictionary<uint, int> _multiExtent = new Dictionary<uint, int>();
+        private Func<WorldItem, int> _extentOf;
+
         // Mobiles playing their fall (0xAF), no longer tied to their serial: TazUO re-keys the dying mobile so a ghost
         // update for the same serial gets a fresh one (DisplayDeath.cs:26-38). Its corpse stays hidden while the session's
         // CorpseFalls lists it (ItemView.cs:183), and is turned to the owner's facing when the fall is dropped.
@@ -48,6 +52,8 @@ namespace UOClient.Unity
         public void Attach(GameSession s)
         {
             _attached = s;
+            _extentOf ??= m => _multiExtent.TryGetValue(m.Serial, out int e) ? e : 0;
+            s.World.MultiExtent = _extentOf;
             s.World.MobileUpdated += OnMobileUpdated;
             s.World.MobileMoved += OnMobileMoved;
             s.World.EntityRemoved += OnEntityRemoved;
@@ -61,6 +67,8 @@ namespace UOClient.Unity
         {
             if (_attached == null)
                 return;
+            if (_attached.World.MultiExtent == _extentOf)
+                _attached.World.MultiExtent = null;
             _attached.World.MobileUpdated -= OnMobileUpdated;
             _attached.World.MobileMoved -= OnMobileMoved;
             _attached.World.EntityRemoved -= OnEntityRemoved;
@@ -385,8 +393,10 @@ namespace UOClient.Unity
         {
             RemoveMulti(multi.Serial);
             var views = new List<ItemView>();
+            int extent = 0;
             foreach (MultiComponent part in CustomHouses.PartsOf(_ctx.Data, _ctx.Session?.World, multi))
             {
+                extent = Math.Max(extent, Math.Max(Math.Abs((int)part.X), Math.Abs((int)part.Y)));
                 if (!part.Fixed || part.Graphic <= 1) // placeholders and the invisible anchor
                     continue;
                 var piece = new WorldItem
@@ -398,10 +408,12 @@ namespace UOClient.Unity
                 _ctx.Walk?.AddMultiPart(multi.Serial, piece.X, piece.Y, piece.Z, piece.Graphic);
             }
             _multis[multi.Serial] = views;
+            _multiExtent[multi.Serial] = extent;
         }
 
         private void RemoveMulti(uint serial)
         {
+            _multiExtent.Remove(serial);
             if (!_multis.TryGetValue(serial, out List<ItemView> views))
                 return;
             foreach (ItemView v in views)
@@ -510,6 +522,7 @@ namespace UOClient.Unity
                 foreach (ItemView v in parts)
                     v.Dispose();
             _multis.Clear();
+            _multiExtent.Clear();
             _playerLook = -1;
         }
 

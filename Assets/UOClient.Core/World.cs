@@ -412,21 +412,108 @@ namespace UOClient.Core
             LightChanged?.Invoke(global);
         }
 
-        /// <summary>Removes everything farther than <paramref name="range"/> tiles from the player (the server stops updating it).</summary>
-        public void PruneOutOfRange(int range)
+        /// <summary>TazUO's <c>ClientViewRange</c> default, <c>MAX_VIEW_RANGE</c> (World.cs:171, Constants.cs:76).</summary>
+        public const int ViewRange = 24;
+
+        /// <summary>
+        /// ModernUO's send ranges: mobiles and items 18 (<c>Core.GlobalUpdateRange</c>, <c>Item.GetUpdateRange</c>), multis
+        /// 22 (<c>BaseMulti.GetUpdateRange</c>). It sends a thing again only when it comes into range (Mobile.cs:7457), so
+        /// nothing it still counts as in view may be dropped. ModernUO ignores 0xC8 (and this client never sends it).
+        /// </summary>
+        public const int ServerUpdateRange = 18, MultiUpdateRange = 22;
+
+        /// <summary>
+        /// How far the player's predicted position can be ahead of the server's: <see cref="GameSession.RequestStep"/>
+        /// keeps at most 4 steps unanswered, one tile each.
+        /// </summary>
+        public const int PredictionLead = 4;
+
+        /// <summary>
+        /// A drawn multi's half-extent in tiles (TazUO's <c>MultiDistanceBonus</c>, Item.cs:402-404), so a house stays while
+        /// any of it can be in view; set by whoever draws multis. Null, or an unknown multi, counts 0.
+        /// </summary>
+        public Func<WorldItem, int> MultiExtent { get; set; }
+
+        /// <summary>Tiles from <paramref name="p"/> to (x, y), as the server measures range (the larger of dx and dy).</summary>
+        public static int Distance(Mobile p, int x, int y) => Math.Max(Math.Abs(x - p.X), Math.Abs(y - p.Y));
+
+        /// <summary>A mobile no farther than <see cref="ViewRange"/> from the player (always false without a player).</summary>
+        public bool InView(Mobile m)
         {
             Mobile p = Player;
+            return p != null && m != null && Distance(p, m.X, m.Y) <= ViewRange;
+        }
+
+        private readonly List<uint> _prune = new List<uint>();
+
+        /// <summary>
+        /// TazUO's out-of-range removal (World.cs:463-541): drops the mobiles and ground items farther than
+        /// <paramref name="range"/> from the player, as the server stops updating them and (for our own moves and
+        /// teleports, Mobile.cs:7381-7462) never says they left. Never below the server's range plus
+        /// <see cref="PredictionLead"/>; multis only past <see cref="MultiUpdateRange"/> plus their extent. The player, what
+        /// it wears and carries (kept on <see cref="Mobile.Equipment"/> and in <see cref="Contained"/>, not in
+        /// <see cref="Items"/>) and <see cref="HouseDesigns"/> stay. What a dropped entity held goes with it
+        /// (<see cref="RemoveWithContents"/>). Returns the serials dropped (valid until the next call); none without a player.
+        /// </summary>
+        public IReadOnlyList<uint> PruneOutOfRange(int range = ViewRange)
+        {
+            _prune.Clear();
+            Mobile p = Player;
             if (p == null)
-                return;
-            var remove = new List<uint>();
+                return _prune;
+            int near = Math.Max(range, ServerUpdateRange + PredictionLead);
+            int multiNear = Math.Max(range, MultiUpdateRange + PredictionLead);
             foreach (Mobile m in Mobiles.Values)
-                if (m.Serial != PlayerSerial && Math.Max(Math.Abs(m.X - p.X), Math.Abs(m.Y - p.Y)) > range)
-                    remove.Add(m.Serial);
+                if (m.Serial != PlayerSerial && Distance(p, m.X, m.Y) > near)
+                    _prune.Add(m.Serial);
             foreach (WorldItem i in Items.Values)
-                if (Math.Max(Math.Abs(i.X - p.X), Math.Abs(i.Y - p.Y)) > range)
-                    remove.Add(i.Serial);
-            foreach (uint s in remove)
-                Remove(s);
+            {
+                int d = Distance(p, i.X, i.Y);
+                if (i.IsMulti ? d > multiNear && d > multiNear + Math.Max(0, MultiExtent?.Invoke(i) ?? 0) : d > near)
+                    _prune.Add(i.Serial);
+            }
+            // Collected first: removing changes the dictionaries walked above.
+            foreach (uint s in _prune)
+                RemoveWithContents(s);
+            return _prune;
+        }
+
+        /// <summary>
+        /// Removes an entity and everything inside it at any depth: a ground container's contents, and for a mobile what is
+        /// inside its worn items (a pack animal's backpack), with their open windows, as TazUO's RemoveItem / RemoveMobile
+        /// cascade (World.cs:729-793). Contents go first, then the entity (<see cref="Remove"/>).
+        /// </summary>
+        internal void RemoveWithContents(uint serial)
+        {
+            var holders = new HashSet<uint> { serial };
+            if (Mobiles.TryGetValue(serial, out Mobile m))
+                foreach (EquippedItem e in m.Equipment.Values)
+                    holders.Add(e.Serial);
+            var inside = new List<ContainedItem>();
+            for (bool grew = true; grew;)
+            {
+                grew = false;
+                foreach (ContainedItem c in Contained.Values)
+                    if (holders.Contains(c.Container) && holders.Add(c.Serial))
+                    {
+                        inside.Add(c);
+                        grew = true;
+                    }
+            }
+            var changed = new HashSet<uint>();
+            foreach (ContainedItem c in inside)
+            {
+                Contained.Remove(c.Serial);
+                OpenContainers.Remove(c.Serial);
+                changed.Add(c.Container);
+                EntityRemoved?.Invoke(c.Serial);
+            }
+            foreach (uint holder in holders)
+                if (holder != serial)
+                    OpenContainers.Remove(holder);
+            foreach (uint container in changed)
+                ContainerChanged?.Invoke(container);
+            Remove(serial);
         }
     }
 }
