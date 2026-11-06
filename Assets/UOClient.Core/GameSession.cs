@@ -629,7 +629,7 @@ namespace UOClient.Core
             r.ReadUInt16();
             int x = r.ReadUInt16(), y = r.ReadUInt16();
             sbyte z = r.ReadSByte();
-            r.ReadByte(); // light
+            byte direction = r.ReadByte(); // ModernUO's Item.Light, one field with Item.Direction (a corpse's facing)
             ushort hue = r.ReadUInt16();
             byte flags = r.ReadByte();
 
@@ -661,6 +661,7 @@ namespace UOClient.Core
             item.Z = z;
             item.Hue = hue;
             item.Flags = flags;
+            item.SetDirection(direction);
             World.RaiseItemUpdated(item);
         }
 
@@ -671,8 +672,7 @@ namespace UOClient.Core
             int amount = (serial & 0x80000000) != 0 ? r.ReadUInt16() : 1;
             serial &= 0x7FFFFFFF;
             int x = r.ReadUInt16(), y = r.ReadUInt16();
-            if ((x & 0x8000) != 0)
-                r.ReadByte(); // direction
+            byte direction = (x & 0x8000) != 0 ? r.ReadByte() : (byte)0;
             sbyte z = r.ReadSByte();
             ushort hue = (y & 0x8000) != 0 ? r.ReadUInt16() : (ushort)0;
             byte flags = (y & 0x4000) != 0 ? r.ReadByte() : (byte)0;
@@ -689,6 +689,7 @@ namespace UOClient.Core
             item.Z = z;
             item.Hue = hue;
             item.Flags = flags;
+            item.SetDirection(direction);
             World.RaiseItemUpdated(item);
         }
 

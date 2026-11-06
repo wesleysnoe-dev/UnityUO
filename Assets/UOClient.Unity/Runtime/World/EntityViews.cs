@@ -21,9 +21,9 @@ namespace UOClient.Unity
         private readonly Dictionary<uint, List<ItemView>> _multis = new Dictionary<uint, List<ItemView>>();
 
         // Mobiles playing their fall (0xAF), no longer tied to their serial: TazUO re-keys the dying mobile so a ghost
-        // update for the same serial gets a fresh one (DisplayDeath.cs:26-38), and hides its corpse until the fall is over
-        // (ItemView.cs:183).
-        private readonly List<(Avatar Avatar, uint Serial, uint Corpse)> _dying = new List<(Avatar, uint, uint)>();
+        // update for the same serial gets a fresh one (DisplayDeath.cs:26-38). Its corpse stays hidden while the session's
+        // CorpseFalls lists it (ItemView.cs:183), and is turned to the owner's facing when the fall is dropped.
+        private readonly List<(Avatar Avatar, uint Serial)> _dying = new List<(Avatar, uint)>();
         private int _playerLook = -1;
         private GameSession _attached;
 
@@ -52,6 +52,7 @@ namespace UOClient.Unity
             s.World.MobileMoved += OnMobileMoved;
             s.World.EntityRemoved += OnEntityRemoved;
             s.World.ItemUpdated += OnItemUpdated;
+            s.World.ContainerChanged += OnContainerChanged;
             s.MobileDying += OnMobileDying;
         }
 
@@ -63,6 +64,7 @@ namespace UOClient.Unity
             _attached.World.MobileMoved -= OnMobileMoved;
             _attached.World.EntityRemoved -= OnEntityRemoved;
             _attached.World.ItemUpdated -= OnItemUpdated;
+            _attached.World.ContainerChanged -= OnContainerChanged;
             _attached.MobileDying -= OnMobileDying;
             _attached = null;
         }
@@ -105,33 +107,32 @@ namespace UOClient.Unity
                 a.Render(_ctx.World);
             foreach (var d in _dying)
                 d.Avatar.Render(_ctx.World);
+            // Before the items: a fall that just reached its end hands over to its corpse in this same frame (the
+            // avatar's destroy is carried out before rendering), so the last frame is never missing or doubled.
+            DropFinishedFalls();
             foreach (KeyValuePair<uint, ItemView> kv in _items)
             {
                 kv.Value.Hidden = IsFallingCorpse(kv.Key);
                 kv.Value.Render(_ctx.World);
             }
             RenderMultis(hideUpperMultiParts);
-            DropFinishedFalls();
         }
 
-        private bool IsFallingCorpse(uint serial)
-        {
-            if (_dying.Count == 0 || serial == 0)
-                return false;
-            foreach (var d in _dying)
-                if (d.Corpse == serial)
-                    return true;
-            return false;
-        }
+        private bool IsFallingCorpse(uint serial) =>
+            _ctx.Session != null && _ctx.Session.World.CorpseFalls.Count > 0 && _ctx.Session.World.CorpseFalls.Exists(serial, 0);
 
         private void OnMobileDying(uint serial, uint corpse, bool second)
         {
             if (!_others.TryGetValue(serial, out Avatar a))
+            {
+                // No fall to watch: the corpse must not stay hidden waiting for one.
+                _ctx.Session?.World.CorpseFalls.Finish(serial);
                 return;
+            }
             _others.Remove(serial);
             _otherLook.Remove(serial);
             a.BeginDeath(second);
-            _dying.Add((a, serial, corpse));
+            _dying.Add((a, serial));
         }
 
         /// <summary>A fall that has played through is dropped (TazUO removes the dying mobile then, Mobile.cs:706-714).</summary>
@@ -144,6 +145,8 @@ namespace UOClient.Unity
                     continue;
                 d.Avatar.Dispose();
                 _dying.RemoveAt(i);
+                // CorpseManager.Remove: the corpse shows from now on, lying the way the owner faced.
+                _ctx.Session?.World.CorpseFalls.Finish(d.Serial);
                 // A player who died stays in view as a ghost; if no update has drawn it yet, draw it now.
                 if (_ctx.Session != null && !_others.ContainsKey(d.Serial) && _ctx.Session.World.Mobiles.TryGetValue(d.Serial, out Core.Mobile m))
                     OnMobileUpdated(m);
@@ -343,8 +346,29 @@ namespace UOClient.Unity
                 return;
             }
             if (_items.TryGetValue(item.Serial, out ItemView v))
+            {
+                // A corpse lying where it was (0x89 arrived, the same corpse re-sent): new look, same view, no flicker.
+                if (item.IsCorpse && v.IsCorpseOf(item))
+                {
+                    RefreshCorpse(v, item);
+                    return;
+                }
                 v.Dispose();
-            _items[item.Serial] = new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, item);
+            }
+            MobileLook corpseLook = item.IsCorpse ? CorpseDraw.Look(_ctx.Data, _ctx.Session.World, item) : null;
+            _items[item.Serial] = new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, item, corpseLook);
+        }
+
+        private void RefreshCorpse(ItemView v, WorldItem corpse) =>
+            v.SetCorpseLook(CorpseDraw.Look(_ctx.Data, _ctx.Session.World, corpse), CorpseDraw.Action(_ctx.Data.AnimationLibrary, corpse));
+
+        /// <summary>A corpse's contents changed (0x3C on sight, a piece looted): what it wears is redrawn.</summary>
+        private void OnContainerChanged(uint container)
+        {
+            if (_ctx.World == null || !_items.TryGetValue(container, out ItemView v))
+                return;
+            if (_ctx.Session.World.Items.TryGetValue(container, out WorldItem item) && v.IsCorpseOf(item))
+                RefreshCorpse(v, item);
         }
 
         private MobileLook LookOf(Core.Mobile m)

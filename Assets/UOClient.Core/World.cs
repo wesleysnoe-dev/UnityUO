@@ -80,6 +80,94 @@ namespace UOClient.Core
 
         /// <summary>The server lets it be picked up (ModernUO sets 0x20 for Movable items); multis never are.</summary>
         public bool Movable => !IsMulti && (Flags & 0x20) != 0;
+
+        public const ushort CorpseGraphic = 0x2006;
+
+        /// <summary>
+        /// The direction byte of 0xF3 / 0x1A. ModernUO writes <c>Item.Light</c> there, the same field as
+        /// <c>Item.Direction</c> (Item.cs:679-704), and a corpse takes its owner's (Corpse.cs:216).
+        /// </summary>
+        public byte Direction;
+
+        /// <summary>A corpse (TazUO <c>Item.IsCorpse</c>, Item.cs:98-99). Its <see cref="Amount"/> is the body it was (Corpse.cs:211).</summary>
+        public bool IsCorpse => !IsMulti && Graphic == CorpseGraphic;
+
+        /// <summary>
+        /// Corpse only: the facing it lies in, drawn from the low 3 bits (TazUO DrawCorpse, ItemView.cs:191). Set from the
+        /// direction byte (Item.CheckGraphicChange, Item.cs:432-445) and again when its owner's fall ends
+        /// (CorpseManager.Remove, CorpseManager.cs:72).
+        /// </summary>
+        public byte Layer;
+
+        /// <summary>
+        /// Corpse only: the direction byte had the run bit (0x80), so the corpse lies in the body's second fall. TazUO's
+        /// <c>UsedLayer</c> (Item.cs:434-441), passed to <c>GetDeathAction</c> as <c>second</c> (ItemView.cs:200-205).
+        /// </summary>
+        public bool UsedLayer;
+
+        /// <summary>
+        /// Corpse only: what 0x89 says it wears, layer to item serial (backpack left out, CorpseEquipment.cs:31); null until
+        /// then. The items themselves (graphic, hue) arrive by 0x3C into <see cref="World.Contained"/>.
+        /// </summary>
+        public Dictionary<byte, uint> CorpseEquipment;
+
+        /// <summary>Takes the packet's direction byte; a corpse reads its facing and fall from it, as CheckGraphicChange does.</summary>
+        internal void SetDirection(byte direction)
+        {
+            Direction = direction;
+            if (!IsCorpse)
+                return;
+            UsedLayer = (direction & 0x80) != 0;
+            Layer = (byte)(direction & 0x7F);
+        }
+    }
+
+    /// <summary>
+    /// Corpses whose owners are still playing their fall, as TazUO's <c>CorpseManager</c>: added on 0xAF
+    /// (DisplayDeath.cs:40-48), hidden while listed (ItemView.cs:183), and when the fall ends the corpse is turned to the
+    /// way its owner faced (CorpseManager.Remove, called from Mobile.cs:706-730).
+    /// </summary>
+    public sealed class CorpseFalls
+    {
+        private readonly World _world;
+        private readonly List<(uint Corpse, uint Owner, byte Direction, bool Running)> _falls = new List<(uint, uint, byte, bool)>();
+
+        internal CorpseFalls(World world) => _world = world;
+
+        public int Count => _falls.Count;
+
+        internal void Add(uint corpse, uint owner, byte direction, bool running)
+        {
+            foreach (var f in _falls)
+                if (f.Corpse == corpse)
+                    return;
+            _falls.Add((corpse, owner, direction, running));
+        }
+
+        /// <summary>A fall for this corpse, or by this owner, is still playing (CorpseManager.Exists).</summary>
+        public bool Exists(uint corpse, uint owner)
+        {
+            foreach (var f in _falls)
+                if ((corpse != 0 && f.Corpse == corpse) || (owner != 0 && f.Owner == owner))
+                    return true;
+            return false;
+        }
+
+        /// <summary>The owner's fall is over: its corpse faces the way the owner did, with the run bit if 0xAF set it.</summary>
+        public void Finish(uint owner)
+        {
+            for (int i = _falls.Count - 1; i >= 0; i--)
+            {
+                var f = _falls[i];
+                if (f.Owner != owner)
+                    continue;
+                if (_world.Items.TryGetValue(f.Corpse, out WorldItem corpse))
+                    corpse.Layer = (byte)((f.Direction & 7) | (f.Running ? 0x80 : 0));
+                _falls.RemoveAt(i);
+            }
+        }
+
+        internal void Clear() => _falls.Clear();
     }
 
     public struct JournalEntry
@@ -106,6 +194,14 @@ namespace UOClient.Core
     /// </summary>
     public sealed class World
     {
+        public World()
+        {
+            CorpseFalls = new CorpseFalls(this);
+        }
+
+        /// <summary>Corpses hidden while their owners fall (0xAF).</summary>
+        public CorpseFalls CorpseFalls { get; }
+
         public uint PlayerSerial { get; internal set; }
         public int Map { get; internal set; }
         public int MapWidth { get; internal set; }
@@ -140,6 +236,19 @@ namespace UOClient.Core
             foreach (ContainedItem i in Contained.Values)
                 if (i.Container == container)
                     yield return i;
+        }
+
+        /// <summary>
+        /// What a corpse is drawn wearing: each 0x89 layer whose item is still inside it (0x3C), as TazUO's
+        /// <c>FindItemByLayer</c> on the corpse (ItemView.cs:279-284). Looted pieces drop out.
+        /// </summary>
+        public IEnumerable<(byte Layer, int Graphic, int Hue)> CorpseWears(WorldItem corpse)
+        {
+            if (corpse?.CorpseEquipment == null)
+                yield break;
+            foreach (KeyValuePair<byte, uint> e in corpse.CorpseEquipment)
+                if (Contained.TryGetValue(e.Value, out ContainedItem i) && i.Container == corpse.Serial)
+                    yield return (e.Key, i.Graphic, i.Hue);
         }
 
         /// <summary>The serial of the item worn on a layer (21 = backpack), or 0.</summary>

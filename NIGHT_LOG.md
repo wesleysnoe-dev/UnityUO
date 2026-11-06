@@ -217,4 +217,19 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
     - **Next bounded priority:**
       1. Wes focuses the Editor once, then the Editor.log/DLL check above runs read-only. That gates everything else.
       2. A short play-mode look at the combat batch by Wes: war stance on a UOP creature, a criminal question on a harmful cursor, a party bar's heal button.
-      3. Then code: draw corpses from the last death frame (TazUO `ItemView.DrawCorpse` `:175-260`, `Item.ProcessAnimation` `:583-636`). It is bounded, and it removes the sprite swap that `33d613e` made visible.
+      3. Then code: draw corpses from the last death frame (TazUO `ItemView.DrawCorpse` `:175-260`, `Item.ProcessAnimation` `:583-636`). It is bounded, and it removes the sprite swap that `33d613e` made visible. (Done offline in item 32.)
+32. **Corpse drawn as TazUO's `DrawCorpse`, the body's last death frame** (TazUO `ItemView.cs:175-249`, `Item.cs:98-99, 432-445, 502-504, 622-630`, `CorpseManager.cs`, `DisplayDeath.cs:40-48`, `CorpseEquipment.cs`; ModernUO `Corpse.cs:211-216, 739-747`, `CorpsePackets.cs`, `Item.cs:679-704`, `OutgoingEntityPackets.cs:88-152`; backup tag `fidelity-pre-corpse` = `2214538`). Details in LIVE_PARITY, "corpses drawn as their body".
+    - **The pop is gone, offline:** a corpse is now drawn as its body (`Amount`) lying in the last frame of `GetDeathAction(body, UsedLayer)`, facing `Layer & 7`, in its hue. It stays hidden while its owner falls. When the fall ends, it is turned to the owner's facing and shows in that same frame. It no longer shows the `0x2006` art, and there is no blank frame.
+    - **New protocol reads, all real fields:**
+      - `0xF3`/`0x1A` direction byte. ModernUO's `Item.Light` is the same field as `Item.Direction`, and a corpse takes its owner's.
+      - `0x89` corpse equipment (layer + 1, serial). ModernUO sends it after `0x3C` for every human corpse.
+    - **Equipment:** worn pieces still inside the corpse are drawn through `MobileLook` (in the order living characters use, not TazUO's per-direction `UsedLayers`). Looted pieces drop out.
+    - **Fallback:** a body with no death frames draws the `0x2006` art, so a corpse is never invisible.
+    - **Known hand-off differences, all TazUO's own:**
+      - A mobile killed right after a run step falls with die 1 and lies in die 2. ModernUO keeps the run bit in `Direction` and sends `0xAF` running 0.
+      - Sea monsters: the fall uses `isRunning: true`, the corpse `false`.
+    - **Verified by tests:** 594 pass (12 new in `CorpseDrawTests`/`CorpseDrawInstallTests`, through `CorpseDraw.Select`, the call `ItemView` makes). Tests, Cli and EditorCheck build with 0 errors.
+    - **Not verified:**
+      - The Unity Editor compile. `Library/ScriptAssemblies/UOClient.Unity.dll` is still 09:53:29. Editor.log's mtime was not used as evidence.
+      - Play mode: no fall-to-corpse hand-off has been seen.
+      - Live: no `0x89` has been seen from the shard.
