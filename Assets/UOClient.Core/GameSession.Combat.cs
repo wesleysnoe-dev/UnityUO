@@ -246,10 +246,11 @@ namespace UOClient.Core
 
         // ---- combat ----
 
+        /// <summary>0x72 as TazUO's Send_ChangeWarMode writes it: the flag, 0x32, 0x00, one pad byte (ModernUO reads the flag alone).</summary>
         public void SetWarMode(bool on)
         {
             if (State == SessionState.InWorld)
-                _conn.Send(new PacketWriter(0x72, 5).Bool(on).Byte(0).Byte(0x32).Byte(0).ToArray());
+                _conn.Send(new PacketWriter(0x72, 5).Bool(on).Byte(0x32).Byte(0).Byte(0).ToArray());
         }
 
         /// <summary>ModernUO's Notoriety.Innocent and Notoriety.Ally (Notoriety.cs:7-8), as 0x77 / 0x78 / 0x22 carry them.</summary>

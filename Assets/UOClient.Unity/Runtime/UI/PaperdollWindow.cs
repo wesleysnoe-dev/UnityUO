@@ -111,7 +111,7 @@ namespace UOClient.Unity.UI
             // Laid out first, so the worn item under the mouse is known: it keeps its own hue and is outlined (the
             // outline alone is the mouse-over cue, ObjectHighlight). Only what is hit is outlined: the piece on the
             // body, or its slot's picture.
-            (int Slot, byte Layer, EquippedItem? Item) hit = MouseIsOver ? HitAt(Event.current.mousePosition) : (-1, (byte)0, null);
+            (int Slot, byte Layer, EquippedItem? Item) hit = MouseIsOver ? HitAt(Event.current.mousePosition) : (Slot: -1, Layer: (byte)0, Item: null);
             uint over = hit.Item?.Serial ?? 0;
             HoveredText = hit.Slot >= 0 && hit.Item == null ? SlotName(_slots[hit.Slot].Slot.Layer) : null;
 
