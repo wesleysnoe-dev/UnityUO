@@ -9,6 +9,10 @@ Shader "UOClient/WorldSprite"
         _MainTex ("Atlas", 2D) = "white" {}
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0.5
         _Unlit ("Unlit (hover outline)", Float) = 0
+        // Blend state: One/Zero (no blending, as always) unless a material asks; Avatar's spectral look sets
+        // SrcAlpha/OneMinusSrcAlpha for TazUO's SPECTRAL mode (see-through black, MobileLook.SpectralPixel).
+        [HideInInspector] _SrcBlend ("Src blend", Float) = 1
+        [HideInInspector] _DstBlend ("Dst blend", Float) = 0
     }
 
     SubShader
@@ -17,6 +21,7 @@ Shader "UOClient/WorldSprite"
         Cull Off
         ZWrite On
         ZTest LEqual
+        Blend [_SrcBlend] [_DstBlend]
         Lighting Off
 
         Pass

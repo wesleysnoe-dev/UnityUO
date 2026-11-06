@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using UOClient.IO;
@@ -15,6 +16,52 @@ namespace UOClient.Unity
             public bool Partial;
             public bool IsMount; // the creature being ridden: plays its own walk/run/stand under the rider
             public byte Slot;    // the worn item's layer (20 = cloak); 0 for the body and the mount
+            public bool Spectral; // hue flag 0x4000: drawn as TazUO's SPECTRAL shader mode (SpectralPixel), not by Hue
+        }
+
+        /// <summary>Some layer is spectral: the frames have see-through texels and are drawn blended.</summary>
+        public bool HasSpectral
+        {
+            get
+            {
+                foreach (Layer l in Layers)
+                    if (l.Spectral)
+                        return true;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// A hue with the spectral flag: TazUO's GetHueVector takes 0x8000 off first (partial), then 0x4000 selects
+        /// SHADER_SPECTRAL whatever the hue index (ShaderHueTranslator.cs:46-60). ModernUO sends 0x4001 for ethereal
+        /// mounts (Ethereals.cs:71) and for wraiths, shades, air elementals and wraith form.
+        /// </summary>
+        public static bool IsSpectral(int hue) => (hue & 0x7FFF & 0x4000) != 0;
+
+        /// <summary>
+        /// A texel in TazUO's SPECTRAL mode (IsometricWorld.fx:238-244): black, alpha 1 - 1.5 x its red, so dark art shows
+        /// as a dark shadow and bright art vanishes. A texel the art covers keeps at least alpha 1 (of 255), invisible but
+        /// still the silhouette TazUO picks by (its pick reads the frame's own alpha); a clear texel stays clear.
+        /// </summary>
+        public static uint SpectralPixel(uint argb)
+        {
+            if ((argb >> 24) == 0)
+                return 0;
+            float r = ((argb >> 16) & 0xFF) / 255f;
+            int a = (int)Math.Round(Math.Max(0f, Math.Min(1f, 1f - r * 1.5f)) * 255f);
+            return (uint)Math.Max(1, a) << 24;
+        }
+
+        /// <summary>A spectral texel (black, alpha a) over what is under it, straight alpha.</summary>
+        public static uint SpectralOver(uint src, uint dst)
+        {
+            uint a = src >> 24, da = dst >> 24;
+            if (a == 0)
+                return dst;
+            uint oa = a + da * (255 - a) / 255;
+            uint keep = da * (255 - a) / 255; // dst's share; the source adds black
+            uint C(int shift) => oa == 0 ? 0 : ((dst >> shift) & 0xFF) * keep / oa;
+            return (oa << 24) | (C(16) << 16) | (C(8) << 8) | C(0);
         }
 
         public readonly List<Layer> Layers = new List<Layer>();
@@ -52,7 +99,7 @@ namespace UOClient.Unity
                 var sb = new StringBuilder();
                 foreach (Layer l in Layers)
                     sb.Append(l.IsMount ? "m" : "").Append(l.Body).Append(':').Append(l.Hue).Append(l.Partial ? "p" : "")
-                        .Append('@').Append(l.Slot).Append(';');
+                        .Append(l.Spectral ? "s" : "").Append('@').Append(l.Slot).Append(';');
                 return sb.ToString();
             }
         }
@@ -191,11 +238,12 @@ namespace UOClient.Unity
                     look.Mounted = true;
                     look.MountGroup = anims.GroupOf(mountBody);
                     look.MountActions = anims.Actions(mountBody);
-                    look.Layers.Add(new Layer { Body = mountBody, Hue = mount.Hue & 0x3FFF, IsMount = true });
+                    look.Layers.Add(new Layer { Body = mountBody, Hue = mount.Hue & 0x3FFF, IsMount = true, Spectral = IsSpectral(mount.Hue) });
                 }
             }
 
-            look.Layers.Add(new Layer { Body = drawn, Hue = skin });
+            // The dead override replaces the hue, flag and all (overridenHue, MobileView.cs:120-123).
+            look.Layers.Add(new Layer { Body = drawn, Hue = skin, Spectral = !(bondedDead && !IsHumanGraphic(body)) && IsSpectral(hue) });
             if (look.Group != AnimGroup.Human)
                 return look; // creatures wear nothing visible
 
@@ -220,7 +268,8 @@ namespace UOClient.Unity
                     Body = anim,
                     Hue = itemHue,
                     Partial = (td.Flags & TileFlags.PartialHue) != 0 || (item.Hue & 0x8000) != 0,
-                    Slot = layer
+                    Slot = layer,
+                    Spectral = IsSpectral(item.Hue)
                 });
             }
             return look;

@@ -119,6 +119,18 @@ namespace UOClient.Unity
             return m;
         }
 
+        private static readonly Dictionary<Texture, Material> SpectralPageMaterials = new Dictionary<Texture, Material>();
+
+        private static Material SpectralMaterialFor(Shader shader, Texture page)
+        {
+            if (!SpectralPageMaterials.TryGetValue(page, out Material m) || m == null)
+            {
+                SpectralPageMaterials[page] = m = new Material(shader) { mainTexture = page };
+                Avatar.SetSpectral(m, true);
+            }
+            return m;
+        }
+
         /// <summary>Cheap: one quad. Re-done every frame because the depth origin moves as the player travels.</summary>
         /// <summary>Tile height (houses hide their parts above the player while inside).</summary>
         public int Z => _item.Z;
@@ -195,7 +207,10 @@ namespace UOClient.Unity
             LastDepth = Depth(world);
             LastSlot = f.Slot;
             LastMirror = mirror;
-            _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(f.Slot.Page));
+            // A spectral body (a wraith's corpse, hue 0x4001) is drawn blended, as Avatar draws it standing.
+            _renderer.sharedMaterial = _art.IsSpectral(f.Slot)
+                ? SpectralMaterialFor(_shader, _art.Atlas.Page(f.Slot.Page))
+                : MaterialFor(_shader, _art.Atlas.Page(f.Slot.Page));
             _renderer.enabled = true;
             SetQuad(world, _art.Atlas.Uv(f.Slot), mirror);
         }

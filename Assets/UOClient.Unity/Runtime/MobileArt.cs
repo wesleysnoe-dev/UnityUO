@@ -127,8 +127,22 @@ namespace UOClient.Unity
             SpriteWidth = slot.Width, SpriteHeight = slot.Height, Mirror = mirror, Depth = depth, CutHeight = cut
         };
 
-        /// <summary>The 8-bit alpha of a sprite's pixel (from its top-left) in the atlas, which the pick holds to the shader's cutoff.</summary>
-        public byte Alpha(AtlasSlot slot, int x, int y) => _atlas.Alpha(slot, x, y);
+        /// <summary>
+        /// The 8-bit alpha of a sprite's pixel (from its top-left) in the atlas, which the pick holds to the shader's cutoff.
+        /// A frame with a spectral layer counts every texel its art covers as solid (<see cref="MobileLook.SpectralPixel"/>
+        /// keeps those at alpha 1 or more): TazUO picks such a mobile by the frame's own alpha, the whole silhouette.
+        /// </summary>
+        public byte Alpha(AtlasSlot slot, int x, int y)
+        {
+            byte a = _atlas.Alpha(slot, x, y);
+            return a > 0 && _spectralSlots.Count > 0 && _spectralSlots.Contains((slot.Page, slot.X, slot.Y)) ? (byte)255 : a;
+        }
+
+        // Atlas places of frames with a spectral layer (main thread only).
+        private readonly HashSet<(int, int, int)> _spectralSlots = new HashSet<(int, int, int)>();
+
+        /// <summary>The frame in this slot has a spectral layer, so its see-through texels are drawn blended.</summary>
+        public bool IsSpectral(AtlasSlot slot) => _spectralSlots.Count > 0 && _spectralSlots.Contains((slot.Page, slot.X, slot.Y));
 
         // Outlines of sprites already in the atlas, by the sprite's place there (main thread only).
         private readonly Dictionary<(int, int, int), AtlasSlot> _outlines = new Dictionary<(int, int, int), AtlasSlot>();
@@ -148,6 +162,10 @@ namespace UOClient.Unity
             if (_outlines.TryGetValue((slot.Page, slot.X, slot.Y), out AtlasSlot o))
                 return o;
             Bitmap32 mask = _atlas.Read(slot);
+            if (IsSpectral(slot))
+                for (int i = 0; i < mask.Pixels.Length; i++)
+                    if ((mask.Pixels[i] >> 24) != 0)
+                        mask.Pixels[i] |= 0xFF000000; // the silhouette the pick takes (Alpha)
             o = _atlas.Add(ObjectHighlight.Outline(mask, OutlineThickness, ObjectHighlight.OutlineArgb, MousePick.AlphaCutoff));
             _atlas.Apply();
             _outlines[(slot.Page, slot.X, slot.Y)] = o;
@@ -191,6 +209,8 @@ namespace UOClient.Unity
                 {
                     BuiltFrame f = r.Frames[i];
                     frames[i] = new MobileFrame { Slot = _atlas.Add(f.Width, f.Height, f.Pixels), AnchorX = f.AnchorX, AnchorY = f.AnchorY };
+                    if (r.Spectral)
+                        _spectralSlots.Add((frames[i].Slot.Page, frames[i].Slot.X, frames[i].Slot.Y));
                 }
                 _pendingFrames.Remove((r.Key, r.Action, r.FileDir, r.Order));
                 _frames[(r.Key, r.Action, r.FileDir, r.Order)] = frames;
@@ -256,7 +276,7 @@ namespace UOClient.Unity
 
         private Result BuildFrames(Job job)
         {
-            var result = new Result { Key = job.Key, Action = job.Action, FileDir = job.FileDir, Order = job.Order, Frames = Array.Empty<BuiltFrame>() };
+            var result = new Result { Key = job.Key, Action = job.Action, FileDir = job.FileDir, Order = job.Order, Frames = Array.Empty<BuiltFrame>(), Spectral = job.Look.HasSpectral };
             var layerFrames = new List<(AnimationFrame[] Frames, MobileLook.Layer Layer)>();
             bool sawBody = false;
             foreach (MobileLook.Layer layer in job.Look.DrawOrder(job.Order))
@@ -293,6 +313,20 @@ namespace UOClient.Unity
                 foreach (var (frames, layer) in layerFrames)
                 {
                     AnimationFrame f = frames[i % frames.Length];
+                    if (layer.Spectral)
+                    {
+                        // TazUO's SPECTRAL mode reads the art's own colour, not a hue (MobileLook.SpectralPixel).
+                        int sx = -f.CenterX - minX, sy = -(f.CenterY + f.Image.Height) - minY;
+                        for (int y = 0; y < f.Image.Height; y++)
+                            for (int x = 0; x < f.Image.Width; x++)
+                            {
+                                uint s = MobileLook.SpectralPixel(f.Image.Pixels[y * f.Image.Width + x]);
+                                int k = (sy + y) * canvas.Width + sx + x;
+                                if (s != 0)
+                                    canvas.Pixels[k] = MobileLook.SpectralOver(s, canvas.Pixels[k]);
+                            }
+                        continue;
+                    }
                     Bitmap32 img = layer.Hue > 0 && layer.Hue <= _data.Hues.Entries.Length
                         ? HueApplier.Apply(f.Image, _data.Hues.Entries[layer.Hue - 1], layer.Partial)
                         : f.Image;
@@ -359,6 +393,7 @@ namespace UOClient.Unity
             public int Graphic, Hue, Width, Height;
             public Color32[] Pixels;
             public double BuildMs;
+            public bool Spectral; // a frame set with a spectral layer
         }
     }
 

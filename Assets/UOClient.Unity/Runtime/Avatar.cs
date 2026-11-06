@@ -56,6 +56,24 @@ namespace UOClient.Unity
 
         private readonly OutlineQuad _outline;
 
+        /// <summary>
+        /// A frame with a spectral layer (MobileArt.IsSpectral) is drawn blended, after the cutouts, as TazUO draws its
+        /// SPECTRAL texels (black at alpha 1 - 1.5 red over what is behind); any other frame keeps the cutout state. The
+        /// near-zero cutoff drops only the clear texels, so the silhouette's alpha-1 texels add nothing visible.
+        /// </summary>
+        public static void SetSpectral(Material m, bool spectral)
+        {
+            bool now = m.renderQueue == SpectralQueue;
+            if (now == spectral)
+                return;
+            m.SetFloat("_SrcBlend", spectral ? (float)BlendMode.SrcAlpha : (float)BlendMode.One);
+            m.SetFloat("_DstBlend", spectral ? (float)BlendMode.OneMinusSrcAlpha : (float)BlendMode.Zero);
+            m.SetFloat("_Cutoff", spectral ? 0.5f / 255f : 0.5f);
+            m.renderQueue = spectral ? SpectralQueue : -1;
+        }
+
+        private const int SpectralQueue = (int)RenderQueue.Transparent;
+
         /// <summary>The mouse-over outline is drawn around the frame last drawn.</summary>
         public bool Outlined => _outline.Visible;
 
@@ -355,6 +373,7 @@ namespace UOClient.Unity
             Rect r = view.ToUnityRect(left, top, f.Slot.Width, f.Slot.Height);
 
             _material.mainTexture = _art.Atlas.Page(f.Slot.Page);
+            SetSpectral(_material, _art.IsSpectral(f.Slot));
             LastSlot = f.Slot;
             LastMirror = mirror;
             LastRect = r;

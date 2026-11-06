@@ -2075,7 +2075,20 @@ public sealed class LiveGroundSpriteShadowSourceTests
         string head = Source("Assets", "LiveGroundCompare", "Evidence~", "WorldSprite.4aa51a6.shader.txt");
         string now = Shader();
         Assert.NotEqual(head, now); // the TEST path is there
-        Assert.Equal(head, DefaultVariant(now));
+        // Since 4aa51a6 the normal shader has one more state, the spectral blend (remainingFixes batch D): a property-driven
+        // Blend whose defaults, One / Zero, are the no-blend state it had. Without exactly those lines it is the head shader.
+        string[] spectral =
+        {
+            "        // Blend state: One/Zero (no blending, as always) unless a material asks; Avatar's spectral look sets",
+            "        // SrcAlpha/OneMinusSrcAlpha for TazUO's SPECTRAL mode (see-through black, MobileLook.SpectralPixel).",
+            "        [HideInInspector] _SrcBlend (\"Src blend\", Float) = 1",
+            "        [HideInInspector] _DstBlend (\"Dst blend\", Float) = 0",
+            "        Blend [_SrcBlend] [_DstBlend]",
+        };
+        string[] lines = DefaultVariant(now).Split('\n');
+        foreach (string s in spectral)
+            Assert.Single(lines, l => l.TrimEnd('\r') == s);
+        Assert.Equal(head, string.Join("\n", lines.Where(l => !spectral.Contains(l.TrimEnd('\r')))));
         Assert.DoesNotContain("_LG", DefaultVariant(now));
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(now, "multi_compile"));
     }
