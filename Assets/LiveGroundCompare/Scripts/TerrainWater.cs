@@ -1,8 +1,6 @@
 using System;
-using System.Reflection;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UOClient.IO;
 using UOClient.Unity;
 
 namespace UOClient.LiveGroundCompare
@@ -38,13 +36,9 @@ namespace UOClient.LiveGroundCompare
             error = null;
             try
             {
-                UOData data = StreamerData(world);
-                if (data == null)
-                {
-                    error = "no tiledata (WorldStreamer data not reachable)";
+                if (!WaterTiles.TryLand(world?.Data, out var land, out error))
                     return null;
-                }
-                bool[] table = WaterTiles.Table(data.TileData.Land);
+                bool[] table = WaterTiles.Table(land);
                 Shader shader = Resources.Load<Shader>(ShaderResource);
                 if (shader == null)
                     shader = Shader.Find(ShaderName);
@@ -62,16 +56,6 @@ namespace UOClient.LiveGroundCompare
                 error = $"{e.GetType().Name}: {e.Message}";
                 return null;
             }
-        }
-
-        /// <summary>
-        /// The streamer's own UOData (so tiledata overrides applied to it count). WorldStreamer does not expose it and is
-        /// out of this TEST folder's scope, so this reads its private field; if the field is ever renamed water says so.
-        /// </summary>
-        private static UOData StreamerData(WorldStreamer world)
-        {
-            FieldInfo f = typeof(WorldStreamer).GetField("_data", BindingFlags.Instance | BindingFlags.NonPublic);
-            return world == null ? null : f?.GetValue(world) as UOData;
         }
 
         public void Dispose()

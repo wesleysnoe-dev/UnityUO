@@ -95,8 +95,10 @@ LiveGround TEST | requested Mesh | active Mesh | ok | host 127.0.0.1 | mesh chun
 
 ## Terrain caveats (honest; do not read corner matches as parity)
 
-- **Sorting:** all terrain draws **behind every sprite**. Original sorts land per diagonal against statics and mobiles
-  (`DepthKey`), so with Terrain a static or mobile that is behind a hill shows through the hill.
+- **Sorting:** see *Terrain ↔ sprite occlusion* below. The terrain's colour is still drawn first by its own camera;
+  a depth-only proxy in the main camera gives every terrain tile its land sprite's `DepthKey`, so statics and mobiles
+  behind a hill are hidden as with Original. If the proxy shader is missing, all terrain sorts behind every sprite (the
+  old behaviour) and the indicator says `occlusion off: …`.
 - **Surface between samples:** Unity's heightmap cell triangulation and LOD (`heightmapPixelError` 1, max LOD 0) decide
   the surface between samples. Only the samples are guaranteed. The RIGHT–LEFT diagonal is reproduced only where
   Unity's cell diagonal happens to agree.
@@ -108,7 +110,6 @@ LiveGround TEST | requested Mesh | active Mesh | ok | host 127.0.0.1 | mesh chun
   old isolated, brighter light.
 - **Smooth elevation:** Unity interpolates the heightmap, so the hard per-tile edges of the diamond sprites are gone.
   This was reviewed and kept on purpose; do not restore hard tile edges.
-- **Sprites show through hills:** see Sorting. Statics, mobiles and items behind a rise stay visible over it.
 - **Holes:** they are set in TerrainData and the collider. The Legacy Diffuse material does not cut them visually, so they
   show black. Baked (HD) land, the only land that is not diverted, draws over them as sprites.
 - **Chunk seams under LOD:** neighbouring chunk terrains share identical edge samples (unit-tested), but they are not
@@ -127,9 +128,10 @@ surface there).
 - **Which tiles:** a land graphic is water when its tiledata land row has `Wet` (0x80) **and** is named `water`
   (`WaterTiles`, tested). In the shipped 7.0.23.1 tiledata that is 0xA8–0xAB and 0x136–0x137. `Wet` alone is not used:
   it also marks the Ter Mur `acid` rows (0x2E0E–0x2E5F) and three `TerrainFallback` rows. The tiledata is the
-  streamer's own `UOData` (overrides included), read from `WorldStreamer`'s private `_data` field because WorldStreamer
-  is out of this folder's scope. If that read or the shader fails, the indicator shows `water off: <why>` and the
-  terrain still draws.
+  streamer's own `UOData` (overrides included), through the read-only `WorldStreamer.Data` accessor (typed; no
+  reflection). `WaterTiles.TryLand` fails closed: no data, a tiledata that does not load or no land rows turn water off
+  with a reason instead of an empty "no water" table. If that or the shader fails, the indicator shows
+  `water off: <why>` and the terrain still draws.
 - **Static water is not covered.** Shore/lake water placed as statics (0x1797… "water" statics) is not land, is never
   diverted and still draws as classic sprites on top of everything here.
 - **Geometry:** `WaterSurfaceBuilder` (Unity-free, tested) builds one mesh per chunk over the water tiles only, in
@@ -150,7 +152,7 @@ surface there).
 - **Animation:** four analytic travelling waves perturb the normal, and the foam band drifts, both driven only by
   `_Time.y`. A screenshot or Player.log cannot prove motion; watch it live (or compare two frames).
 - **Sorting:** the water is drawn by the terrain camera after the opaque terrain and shares its depth, so hills in front
-  hide it; like the terrain it sorts behind every sprite (statics, mobiles, roofs).
+  hide it. Against sprites its tiles are land like any other: the occlusion proxy carries their `DepthKey`.
 - **Honesty counters:** the indicator adds `water tiles N in M chunks` while Terrain is active. Player.log gets
   `UOClient LiveGround water: on (water land rows with Wet: 6)` (or `off (…)`) when the presenter is made, and one line
   for the first chunk with water (tile count, vertices, graphics).
@@ -175,7 +177,8 @@ What the Terrain backend now does (`LiveGroundLighting`, Unity-free and tested; 
 - **No Unity light** in the shared path: the presenter's directional light is only created for the fallback.
 - **Fallback:** if the lit shader is missing/unsupported, Legacy Diffuse + the old isolated light, and the indicator
   says `light ISOLATED: <why>` (Player.log: `UOClient LiveGround light: isolated (…)`). Otherwise
-  `light shared (TOD+player), sun shadow terrain-only` and `UOClient LiveGround light: shared (…)`.
+  `light shared (TOD+player), sun shadow CPU mask terrain+static columns (N tiles), sprites unshadowed` and
+  `UOClient LiveGround light: shared (…)`.
 
 Shadow model (**labelled approximation, not a dynamic shadow map**):
 
@@ -184,20 +187,50 @@ Shadow model (**labelled approximation, not a dynamic shadow map**):
   ¼-tile soft edge). The shader pulls the shade toward the 0.7 floor where the sun is blocked. It is computed from the
   map's heights every time the chunk is built (nothing painted), for the fixed sun direction this client has; it is not
   a per-frame shadow map and does not follow a moving light (there is none).
+- **Static (building) columns:** `StaticOccluders` (tested, incl. a real Britain chunk) reads the chunk's own map statics
+  (`WorldStreamer.Data` → map → static blocks, on the worker; map reads are locked) and makes every tile with a static
+  of tiledata `Height` ≥ 3 that is not `Wet` a solid column up to its highest Z + Height. The same sun rays stop below a
+  column top, so walls, buildings and trees throw a shadow onto the terrain away from the sun. It is a **projected
+  silhouette from known heights on the CPU**, not a Unity shadow: no overhangs (a roof shades like a solid block), the
+  column's own tile is in shade, only map statics (no server items or multis, so no player houses), and only the
+  chunk's own statics. If reading them fails, the mask is terrain-only and the indicator says `statics off: …`.
 - **Chunk edges:** a ray that leaves its 16×16 chunk counts as lit (neighbours are not visible to the builder), so a hill
-  in the west/north neighbour does not shade this chunk (tested and documented).
-- **Not shadowed / not casting:** sprites (statics, mobiles, items, roofs) neither cast onto the terrain nor receive the
-  terrain's shadow; the water does not receive it.
+  or building in the west/north neighbour does not shade this chunk (tested and documented).
+- **Not shadowed:** sprites (statics, mobiles, items, roofs) do not receive the shadow, and mobiles/items do not cast;
+  the water does not receive it. The indicator says `sun shadow CPU mask terrain+static columns (N tiles), sprites
+  unshadowed`.
 
 Why not Unity shadow maps (checked, not done): the terrain camera's view is the UO projection (sheared, in pixel units,
 ~10000 units deep), while the active quality level's `shadowDistance` is 150 (Ultra; Standalone default) — every terrain
 pixel is beyond it, and changing it is a global QualitySettings change (out of scope). Sprites live in the main camera's
 XY plane, not in terrain space, so they could not cast into the same shadow map without proxies.
 
-Still isolated (needs files outside this folder → scope exception):
+## Terrain ↔ sprite occlusion (depth-only proxy)
 
-- Terrain still draws behind every sprite (separate camera, depth cleared between); hills do not occlude sprites.
-- Sprites standing in a terrain shadow are not darkened (that would need WorldSprite to read the mask).
+- **Problem:** the terrain camera draws first and the main camera clears depth, so the terrain alone can never hide a
+  sprite. A second camera's depth cannot be reused either: the terrain's depth is its own "nearness", not the sprites'
+  `DepthKey`, and stacked built-in cameras do not reliably share depth.
+- **What it does:** `TerrainDepthProxy` (Unity-free, tested) builds, per terrain chunk, a mesh over every diverted tile:
+  a 3×3 grid on the same height samples as the terrain heightmap, each sub-quad split along RIGHT–LEFT (so it is the
+  compositor's surface), and every vertex of a tile at that tile's production depth (`LandPlacement.Depth`, the land
+  sprite quad's `DepthKey` — the Mesh backend's contract). It is a child of the streamer's chunk transform (same
+  depth-origin offset as that chunk's sprites), drawn by the **main** camera with `LiveGroundCompare/DepthKey`
+  (`Shaders/Resources/LiveGroundCompareDepthKey.shader`: `ColorMask 0`, `ZWrite On`, queue Geometry, before the
+  AlphaTest sprites). Statics, mobiles and items then pass or fail the depth test exactly as against original land.
+- **Default path untouched:** `UOClient/WorldSprite` is not changed (no keyword, no global; source-guarded by a test);
+  the main camera's clear flags are the presenter's as before. Original and Mesh never build a proxy.
+- **Limits:** between samples Unity's terrain triangulation/LOD may differ from the proxy by about a pixel at a
+  silhouette. Tiles not diverted (holes, baked HD land) get no proxy, as they are sprites themselves.
+- **Indicator:** `occlusion depthkey N/M chunks` (proxies attached / terrain chunks) or `occlusion off: <why>`;
+  Player.log: `UOClient LiveGround occlusion: on (…)` / `off (…)`.
+
+## Still isolated (architecture, not done)
+
+- **Sprites do not receive any shadow.** A sprite pixel only knows its screen position; darkening it by the terrain or
+  building shadow needs each sprite's foot tile in its vertex data (WorldStreamer's quad format and the mobile/item
+  renderers) plus a WorldSprite seam. That is outside this folder's allowlist.
+- **No Unity shadow maps** (unchanged, see above): the ortho UO projection is ~10000 units deep against a 150
+  `shadowDistance`, and billboards have no volume to cast.
 - Original/Mesh land keep the compositor's per-face shade only (no sun shadow).
 
 ## Build

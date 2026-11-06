@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UOClient.ArtPipeline;
+using UOClient.IO;
 using UOClient.IO.Formats;
 
 namespace UOClient.LiveGroundCompare
@@ -31,6 +32,38 @@ namespace UOClient.LiveGroundCompare
         }
 
         public static bool Lookup(bool[] table, int graphic) => table != null && (uint)graphic < (uint)table.Length && table[graphic];
+
+        /// <summary>
+        /// The land rows of the streamer's own data (<c>WorldStreamer.Data</c>, overrides included). Fails closed:
+        /// no data, a tiledata that does not load, or no land rows give false and a reason, never an empty table that
+        /// would silently read as "no water".
+        /// </summary>
+        public static bool TryLand(UOData data, out LandTileData[] land, out string error)
+        {
+            land = null;
+            error = null;
+            if (data == null)
+            {
+                error = "no tiledata (WorldStreamer.Data is null)";
+                return false;
+            }
+            try
+            {
+                land = data.TileData?.Land;
+            }
+            catch (Exception e)
+            {
+                error = $"tiledata did not load ({e.GetType().Name}: {e.Message})";
+                return false;
+            }
+            if (land == null || land.Length == 0)
+            {
+                land = null;
+                error = "tiledata has no land rows";
+                return false;
+            }
+            return true;
+        }
     }
 
     /// <summary>

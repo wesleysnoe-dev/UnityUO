@@ -120,6 +120,10 @@ namespace UOClient.Unity
         public float IntegrateBudgetMs { get; set; } = 4f;
 
         public int Map => _map;
+
+        /// <summary>The data files this streamer composes from (tiledata overrides included). Read-only view.</summary>
+        public UOData Data => _data;
+
         public int LoadedChunks => _chunks.Count;
         public int PendingChunks => _requested.Count;
         public bool RoofsVisible => _roofsVisible;

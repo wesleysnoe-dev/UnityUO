@@ -58,8 +58,8 @@ namespace UOClient.LiveGroundCompare
             {
                 string line = LiveGroundStatus.Indicator(_switch.Requested, _switch.Active, _switch.Reason, _switch.Host, _switch.IsAttached, ActiveChunks);
                 if (_switch.Active == GroundBackendKind.Terrain && _terrain != null && !_terrain.IsDisposed)
-                    line += " | " + WaterIndicator(_terrain) + " | " + (_terrain.SharedLight
-                        ? "light shared (TOD+player), sun shadow terrain-only"
+                    line += " | " + WaterIndicator(_terrain) + " | " + OcclusionIndicator(_terrain) + " | " + (_terrain.SharedLight
+                        ? $"light shared (TOD+player), {ShadowIndicator(_terrain)}"
                         : $"light ISOLATED: {_terrain.LightIsolatedWhy}");
                 return _parseWarning == null ? line : $"{line} | {_parseWarning}";
             }
@@ -72,6 +72,19 @@ namespace UOClient.LiveGroundCompare
             string s = $"water tiles {t.WaterTileCount} in {t.WaterChunkCount} chunks";
             return t.WaterChunkError == null ? s : $"{s} (error: {t.WaterChunkError})";
         }
+
+        private static string OcclusionIndicator(TerrainIsoPresenter t)
+        {
+            if (t.DepthShader == null)
+                return $"occlusion off: {t.OcclusionError}";
+            string s = $"occlusion depthkey {t.ProxyChunkCount}/{t.ChunkCount} chunks";
+            return t.OcclusionChunkError == null ? s : $"{s} (error: {t.OcclusionChunkError})";
+        }
+
+        /// <summary>Labelled as what it is: a CPU mask from heights, not a Unity shadow map; sprites do not receive it.</summary>
+        private static string ShadowIndicator(TerrainIsoPresenter t) => t.OccluderError == null
+            ? $"sun shadow CPU mask terrain+static columns ({t.OccluderTileCount} tiles), sprites unshadowed"
+            : $"sun shadow CPU mask terrain-only (statics off: {t.OccluderError}), sprites unshadowed";
 
         public bool IsFallback => _switch.IsAttached && LiveGroundStatus.IsFallback(_switch.Requested, _switch.Active, _switch.Reason);
 

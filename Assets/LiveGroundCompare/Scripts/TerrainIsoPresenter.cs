@@ -10,15 +10,17 @@ namespace UOClient.LiveGroundCompare
     /// terrain space through the exact UO projection (<see cref="TerrainLandBuilder.ToWorldScreen"/>) into the main
     /// camera's view. The main camera then clears depth only and draws statics, mobiles and roofs on top.
     ///
-    /// Caveats (measured by design, not hidden): all diverted land sorts BEHIND every sprite (the original sorts land
-    /// per diagonal against statics, so a static behind a hill now shows through it); Unity's heightmap
-    /// triangulation/LOD decides the surface between samples.
+    /// Occlusion: the terrain's colour still comes from this camera, but each chunk also gets a depth-only proxy drawn by
+    /// the main camera (<see cref="TerrainDepthProxy"/>, <see cref="DepthShader"/>) carrying every tile's land-sprite
+    /// DepthKey, so sprites behind a hill are hidden as with the original land. Without that shader all diverted land
+    /// sorts behind every sprite, as before, and the indicator says so.
+    /// Caveat: Unity's heightmap triangulation/LOD decides the drawn surface between samples; the proxy agrees at the samples.
     /// Light: with the lit shader (<see cref="SharedLight"/>) terrain and water read the sprites' own globals
     /// (time-of-day ambient, player light, ghost) at each point's Unity x, y, times the compositor's shade and the
     /// chunk's sun shadow (<see cref="LiveGroundLighting"/>); no Unity light is used. Without it the terrain falls back to
     /// Legacy Diffuse and its own isolated directional light, and the indicator says so.
     /// Water (<see cref="TerrainWaterSupport"/>) is a transparent mesh per chunk on the same layer, drawn after the
-    /// terrain by this camera, so it shares the terrain's depth and sorts behind every sprite as well.
+    /// terrain by this camera, so it shares the terrain's depth; against sprites it is covered by the proxy of its tiles.
     /// Owns everything it changes and puts the main camera back on <see cref="Dispose"/>.
     /// </summary>
     internal sealed class TerrainIsoPresenter : IDisposable
@@ -35,6 +37,10 @@ namespace UOClient.LiveGroundCompare
 
         /// <summary>The terrain material's sun-visibility mask (LiveGroundLighting.ShadowMask).</summary>
         public const string SunMaskProperty = "_LGShadowTex";
+
+        /// <summary>The occlusion proxy's depth-only shader (Shaders/Resources/LiveGroundCompareDepthKey.shader).</summary>
+        public const string DepthShaderResource = "LiveGroundCompareDepthKey";
+        public const string DepthShaderName = "LiveGroundCompare/DepthKey";
 
         private static readonly int TerrainToUnityId = Shader.PropertyToID("_LGTerrainToUnity");
         private static readonly int SunDirId = Shader.PropertyToID("_LGSunDir");
@@ -103,7 +109,7 @@ namespace UOClient.LiveGroundCompare
             main.clearFlags = CameraClearFlags.Depth;
             Camera.onPreCull += OnPreCull;
             Debug.Log(SharedLight
-                ? "UOClient LiveGround light: shared (terrain and water read the sprites' time-of-day, player light and ghost globals; terrain sun shadow from map heights)"
+                ? "UOClient LiveGround light: shared (terrain and water read the sprites' time-of-day, player light and ghost globals; CPU sun mask from map heights and static columns)"
                 : $"UOClient LiveGround light: isolated ({isolatedWhy})");
 
             // Water is optional: without tiledata or its shader the terrain still draws, and the indicator says why.
@@ -112,7 +118,47 @@ namespace UOClient.LiveGroundCompare
             Debug.Log(Water != null
                 ? $"UOClient LiveGround water: on ({WaterTiles.WaterName} land rows with Wet: {CountWater(Water.Table)})"
                 : $"UOClient LiveGround water: off ({waterError})");
+
+            // Occlusion is optional too: without its shader the terrain draws behind every sprite, as before, and says so.
+            Shader depth = Resources.Load<Shader>(DepthShaderResource);
+            if (depth == null)
+                depth = Shader.Find(DepthShaderName);
+            if (depth != null && depth.isSupported)
+                DepthShader = depth;
+            else
+                OcclusionError = $"shader '{DepthShaderName}' is not in this build or not supported";
+            Debug.Log(DepthShader != null
+                ? "UOClient LiveGround occlusion: on (depth-only proxy per chunk in the main camera, each tile at its land sprite's DepthKey)"
+                : $"UOClient LiveGround occlusion: off ({OcclusionError})");
         }
+
+        /// <summary>The occlusion proxy's shader; null when occlusion is off (see <see cref="OcclusionError"/>).</summary>
+        public Shader DepthShader { get; }
+
+        public string OcclusionError { get; }
+
+        /// <summary>The first chunk whose proxy could not be uploaded (its terrain stays), for the indicator.</summary>
+        public string OcclusionChunkError { get; set; }
+
+        /// <summary>Chunks with an occlusion proxy attached right now (main thread).</summary>
+        public int ProxyChunkCount { get; set; }
+
+        /// <summary>Tiles whose static column casts into an attached chunk's sun mask (main thread).</summary>
+        public int OccluderTileCount { get; set; }
+
+        /// <summary>Set from the worker when static shadows could not be read; chunks then shade from terrain only.</summary>
+        public string OccluderError => _occluderError;
+
+        private volatile string _occluderError;
+
+        public void ReportOccluderError(string why)
+        {
+            if (_occluderError == null)
+                _occluderError = why;
+        }
+
+        /// <summary>The streamer this presenter draws for (the worker reads its typed data for static shadows).</summary>
+        public WorldStreamer World => _world;
 
         public Shader Shader { get; }
 

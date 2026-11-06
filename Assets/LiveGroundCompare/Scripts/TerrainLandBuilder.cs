@@ -34,6 +34,17 @@ namespace UOClient.LiveGroundCompare
         private readonly Bitmap32[,] _art = new Bitmap32[Tiles, Tiles];
         private readonly bool[,] _texmap = new bool[Tiles, Tiles];
         private readonly int?[,] _corner = new int?[Tiles + 1, Tiles + 1];
+        private readonly float[,] _depth = NewDepth();
+        private int[,] _occluderTop;
+
+        private static float[,] NewDepth()
+        {
+            var d = new float[Tiles, Tiles];
+            for (int i = 0; i < Tiles; i++)
+                for (int j = 0; j < Tiles; j++)
+                    d[i, j] = float.NaN;
+            return d;
+        }
 
         /// <param name="x0">First tile x of the chunk.</param>
         /// <param name="y0">First tile y of the chunk.</param>
@@ -54,7 +65,11 @@ namespace UOClient.LiveGroundCompare
 
         /// <param name="it">A land item as IsoCompositor.BuildDrawList made it (its four corner heights are the map's).</param>
         /// <param name="art">The texmap when <paramref name="texmap"/>, else the flat 44x44 land sprite.</param>
-        public void AddTile(in DrawItem it, Bitmap32 art, bool texmap)
+        /// <param name="depth">
+        /// The tile's production depth (LandPlacement.Depth: DepthKey.Relative against the chunk's base diagonal), for the
+        /// depth proxy that lets the terrain hide sprites as the original land would. NaN: no proxy for this tile.
+        /// </param>
+        public void AddTile(in DrawItem it, Bitmap32 art, bool texmap, float depth = float.NaN)
         {
             if (it.Kind != DrawKind.Land)
                 throw new ArgumentException("only land goes into the terrain", nameof(it));
@@ -68,11 +83,23 @@ namespace UOClient.LiveGroundCompare
             _present[i, j] = true;
             _art[i, j] = art;
             _texmap[i, j] = texmap;
+            _depth[i, j] = depth;
             // The map's corner heights (also for tiles the compositor draws flat: a heightfield cannot step).
             _corner[i, j] = it.Z;
             _corner[i + 1, j] = it.ZRight;
             _corner[i + 1, j + 1] = it.ZBottom;
             _corner[i, j + 1] = it.ZLeft;
+        }
+
+        /// <summary>
+        /// Static columns that also block the sun (<see cref="StaticOccluders"/>), [i, j] = top Z of tile (x0 + i, y0 + j),
+        /// <see cref="StaticOccluders.None"/> where nothing casts. Null: terrain-only shadow.
+        /// </summary>
+        public void SetOccluders(int[,] top)
+        {
+            if (top != null && (top.GetLength(0) != Tiles || top.GetLength(1) != Tiles))
+                throw new ArgumentException($"occluders must be {Tiles}x{Tiles}", nameof(top));
+            _occluderTop = top;
         }
 
         public TerrainLandData Finish()
@@ -115,7 +142,9 @@ namespace UOClient.LiveGroundCompare
                     d.Solid[row, col] = _present[col / SamplesPerTile, Tiles - 1 - row / SamplesPerTile];
 
             d.Rgba = BakeTexture(d.TextureSize);
-            d.SunMask = LiveGroundLighting.ShadowMask(d.CornerZ);
+            d.SunMask = LiveGroundLighting.ShadowMask(d.CornerZ, _occluderTop);
+            d.OccluderTiles = StaticOccluders.Count(_occluderTop);
+            d.TileDepth = (float[,])_depth.Clone();
             return d;
         }
 
@@ -224,6 +253,12 @@ namespace UOClient.LiveGroundCompare
         /// <summary>Sun visibility, <see cref="LiveGroundLighting.ShadowSize"/>² R8 rows bottom-up (null when there is no land).</summary>
         public byte[] SunMask;
 
+        /// <summary>Tiles whose static column took part in <see cref="SunMask"/> (0: terrain-only shadow).</summary>
+        public int OccluderTiles;
+
+        /// <summary>[i, j]: production depth of tile (x0 + i, y0 + j) relative to the chunk's base diagonal; NaN = none.</summary>
+        public float[,] TileDepth;
+
         /// <summary>Terrain size in terrain-space units (tiles, Z range, tiles).</summary>
         public (float X, float Y, float Z) Size =>
             (TerrainLandBuilder.Tiles, TerrainLandBuilder.ZRange * TerrainLandBuilder.HeightUnitPerZ, TerrainLandBuilder.Tiles);
@@ -231,5 +266,88 @@ namespace UOClient.LiveGroundCompare
         /// <summary>The terrain's position: its local (0, 0, 0) is tile (x0, y0 + 16) at Z -128.</summary>
         public (float X, float Y, float Z) Position =>
             (ChunkX0, TerrainLandBuilder.MinZ * TerrainLandBuilder.HeightUnitPerZ, -(ChunkY0 + TerrainLandBuilder.Tiles));
+    }
+
+    /// <summary>
+    /// Terrain ↔ sprite occlusion for the Terrain backend. The terrain camera draws before the main camera, which clears
+    /// depth, so on its own the terrain can never hide a sprite. This builds an invisible (depth-only) mesh drawn by the
+    /// MAIN camera that covers exactly what the terrain covers on screen and carries, per tile, the depth that tile's
+    /// land sprite quad would have had (the Mesh backend's contract). Statics, mobiles and items then pass or fail the
+    /// depth test against it exactly as they would against original land: a static behind a hill is hidden by the hill
+    /// tiles drawn after it, a mobile standing in front of it is not.
+    ///
+    /// Geometry: per present tile a 3x3 grid (corners, edge midpoints, centre) at <see cref="TerrainLandBuilder.SampleZ"/>,
+    /// i.e. on the heightmap samples the terrain itself is built from; each of the four sub-quads is split along the
+    /// RIGHT–LEFT direction, so the proxy is the compositor's surface. Between samples Unity's terrain triangulation may
+    /// differ by a pixel or so at silhouettes; the samples agree exactly.
+    /// </summary>
+    public static class TerrainDepthProxy
+    {
+        public const int GridPerTile = TerrainLandBuilder.SamplesPerTile + 1; // 3
+        public const int VerticesPerTile = GridPerTile * GridPerTile;          // 9
+        public const int IndicesPerTile = 2 * 2 * 2 * 3;                      // 4 sub-quads, 2 triangles each
+
+        /// <summary>
+        /// X, Y: UO world-screen pixels at <paramref name="scale"/> (y down, as WorldStreamer.ToUnity takes them); Depth:
+        /// the tile's production depth relative to the chunk's base diagonal (the streamer's chunk transform adds the rest).
+        /// Null when no tile has a depth.
+        /// </summary>
+        public static DepthProxyData Build(TerrainLandData d, int scale)
+        {
+            if (d?.TileDepth == null || d.CornerZ == null || scale < 1)
+                return null;
+            const int t = TerrainLandBuilder.Tiles, g = GridPerTile, s = TerrainLandBuilder.SamplesPerTile;
+            int tiles = 0;
+            foreach (float z in d.TileDepth)
+                if (!float.IsNaN(z) && !float.IsInfinity(z))
+                    tiles++;
+            if (tiles == 0)
+                return null;
+
+            var p = new DepthProxyData
+            {
+                X = new float[tiles * VerticesPerTile],
+                Y = new float[tiles * VerticesPerTile],
+                Depth = new float[tiles * VerticesPerTile],
+                Indices = new int[tiles * IndicesPerTile],
+                TileCount = tiles
+            };
+            int v = 0, n = 0;
+            for (int j = 0; j < t; j++)
+                for (int i = 0; i < t; i++)
+                {
+                    float depth = d.TileDepth[i, j];
+                    if (float.IsNaN(depth) || float.IsInfinity(depth))
+                        continue;
+                    int first = v;
+                    for (int b = 0; b < g; b++)
+                        for (int a = 0; a < g; a++)
+                        {
+                            float tx = i + (float)a / s, ty = j + (float)b / s;
+                            float z = TerrainLandBuilder.SampleZ(d.CornerZ, tx, ty);
+                            (float px, float py, float pz) = TerrainLandBuilder.TerrainPoint(d.ChunkX0 + tx, d.ChunkY0 + ty, z);
+                            (p.X[v], p.Y[v]) = TerrainLandBuilder.ToWorldScreen(px, py, pz, scale);
+                            p.Depth[v] = depth;
+                            v++;
+                        }
+                    for (int b = 0; b < s; b++)
+                        for (int a = 0; a < s; a++)
+                        {
+                            int tl = first + b * g + a, tr = tl + 1, bl = tl + g, br = bl + 1;
+                            // Diagonal tr–bl: parallel to the tile's RIGHT–LEFT split, so every sub-triangle is planar on it.
+                            p.Indices[n++] = tl; p.Indices[n++] = tr; p.Indices[n++] = bl;
+                            p.Indices[n++] = tr; p.Indices[n++] = br; p.Indices[n++] = bl;
+                        }
+                }
+            return p;
+        }
+    }
+
+    public sealed class DepthProxyData
+    {
+        public float[] X, Y, Depth;
+        public int[] Indices;
+        public int TileCount;
+        public int VertexCount => X?.Length ?? 0;
     }
 }

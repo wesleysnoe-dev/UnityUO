@@ -10,14 +10,39 @@ namespace UOClient.LiveGroundCompare
     internal sealed class TerrainLandEmitter : ILandEmitter
     {
         private readonly TerrainIsoPresenter _presenter;
-        private readonly int _texels;
+        private readonly int _scale, _texels;
         private readonly bool[] _water; // null: water off
+        private readonly bool _occlusion;
 
         public TerrainLandEmitter(TerrainIsoPresenter presenter, int scale)
         {
             _presenter = presenter;
+            _scale = scale;
             _texels = TerrainLandBuilder.TexelsFor(scale);
             _water = presenter.Water?.Table;
+            _occlusion = presenter.DepthShader != null;
+        }
+
+        /// <summary>The chunk's static columns for the sun mask, or null (terrain-only shadow, reason reported once).</summary>
+        private int[,] Occluders(int x0, int y0)
+        {
+            if (_presenter.OccluderError != null)
+                return null;
+            try
+            {
+                WorldStreamer world = _presenter.World;
+                if (world?.Data == null)
+                {
+                    _presenter.ReportOccluderError("no WorldStreamer.Data");
+                    return null;
+                }
+                return StaticOccluders.FromMap(world.Data.GetMap(world.Map), world.Data.TileData, x0, y0);
+            }
+            catch (Exception e)
+            {
+                _presenter.ReportOccluderError($"{e.GetType().Name}: {e.Message}");
+                return null;
+            }
         }
 
         public bool Diverts(in ArtPipeline.DrawItem item, bool baked) => GroundBackend.Diverts(GroundBackendKind.Terrain, item, baked);
@@ -31,12 +56,15 @@ namespace UOClient.LiveGroundCompare
                 var water = _water != null ? new WaterSurfaceBuilder(x0, y0) : null;
                 foreach (LandPlacement p in land)
                 {
-                    builder.AddTile(p.Item, p.Art, p.Texmap);
+                    builder.AddTile(p.Item, p.Art, p.Texmap, _occlusion ? p.Depth : float.NaN);
                     water?.AddTile(p.Item, p.Art, p.Texmap, WaterTiles.Lookup(_water, p.Item.Graphic));
                 }
+                if (_presenter.SharedLight)
+                    builder.SetOccluders(Occluders(x0, y0));
                 TerrainLandData data = builder.Finish();
                 WaterSurfaceData waterData = water != null && water.WaterTileCount > 0 ? water.Finish() : null;
-                return data.TileCount == 0 ? null : new TerrainLandChunk(_presenter, data, waterData);
+                DepthProxyData proxy = _occlusion ? TerrainDepthProxy.Build(data, _scale) : null;
+                return data.TileCount == 0 ? null : new TerrainLandChunk(_presenter, data, waterData, proxy);
             }
             catch (Exception e)
             {
@@ -64,12 +92,18 @@ namespace UOClient.LiveGroundCompare
         private WaterSurfaceData _waterData;
         private TerrainWaterSurface _water;
         private int _waterTiles;
+        private DepthProxyData _proxyData;
+        private Mesh _proxyMesh;
+        private Material _proxyMaterial;
+        private GameObject _proxyGo;
+        private int _occluderTiles;
 
-        public TerrainLandChunk(TerrainIsoPresenter presenter, TerrainLandData data, WaterSurfaceData water)
+        public TerrainLandChunk(TerrainIsoPresenter presenter, TerrainLandData data, WaterSurfaceData water, DepthProxyData proxy)
         {
             _presenter = presenter;
             _data = data;
             _waterData = water;
+            _proxyData = proxy;
         }
 
         public void Attach(Transform chunk, Shader shader, IWorldSpace world)
@@ -77,7 +111,7 @@ namespace UOClient.LiveGroundCompare
             TerrainLandData d = _data;
             _data = null;
             if (d == null || _presenter.IsDisposed)
-                return; // the chunk's own transform is not used: a Terrain must stay at its terrain-space position
+                return; // a Terrain must stay at its terrain-space position; only the occlusion proxy uses the chunk's transform
             string name = $"{d.ChunkX0 / WorldStreamer.ChunkSize},{d.ChunkY0 / WorldStreamer.ChunkSize}";
             try
             {
@@ -128,6 +162,8 @@ namespace UOClient.LiveGroundCompare
                 t.allowAutoConnect = false;
 
                 _presenter.ChunkCount++;
+                _occluderTiles = d.OccluderTiles;
+                _presenter.OccluderTileCount += _occluderTiles;
                 _counted = true;
             }
             catch (Exception e)
@@ -137,6 +173,66 @@ namespace UOClient.LiveGroundCompare
                 return;
             }
             AttachWater(name);
+            AttachProxy(chunk, world, name);
+        }
+
+        /// <summary>
+        /// The depth-only occlusion proxy (<see cref="TerrainDepthProxy"/>), a child of the streamer's chunk so it gets the
+        /// same depth-origin offset as that chunk's sprites, on the chunk's layer so the main camera draws it. A failure
+        /// leaves the terrain up (drawn behind every sprite, as before) and is shown.
+        /// </summary>
+        private void AttachProxy(Transform chunk, IWorldSpace world, string name)
+        {
+            DepthProxyData p = _proxyData;
+            _proxyData = null;
+            if (p == null || chunk == null || _presenter.DepthShader == null)
+                return;
+            try
+            {
+                int n = p.VertexCount;
+                var vertices = new Vector3[n];
+                for (int i = 0; i < n; i++)
+                {
+                    Vector2 u = world.ToUnity(new Vector2(p.X[i], p.Y[i]));
+                    vertices[i] = new Vector3(u.x, u.y, p.Depth[i]);
+                }
+                _proxyMesh = new Mesh { name = $"UO land depth proxy {name}", indexFormat = IndexFormat.UInt32 };
+                _proxyMesh.vertices = vertices;
+                _proxyMesh.triangles = p.Indices;
+                _proxyMesh.RecalculateBounds();
+                _proxyMaterial = new Material(_presenter.DepthShader) { name = $"UO land depth proxy {name}" };
+
+                _proxyGo = new GameObject("Land depth (LiveGround terrain occlusion)") { layer = chunk.gameObject.layer };
+                _proxyGo.transform.SetParent(chunk, false);
+                _proxyGo.AddComponent<MeshFilter>().sharedMesh = _proxyMesh;
+                var r = _proxyGo.AddComponent<MeshRenderer>();
+                r.sharedMaterial = _proxyMaterial;
+                r.shadowCastingMode = ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                r.lightProbeUsage = LightProbeUsage.Off;
+                r.reflectionProbeUsage = ReflectionProbeUsage.Off;
+                _presenter.ProxyChunkCount++;
+            }
+            catch (Exception e)
+            {
+                DisposeProxy();
+                _presenter.OcclusionChunkError ??= $"occlusion chunk {name}: {e.GetType().Name}: {e.Message}";
+                Debug.LogWarning($"UOClient LiveGround occlusion: chunk {name} failed: {e.GetType().Name}: {e.Message}");
+            }
+        }
+
+        private void DisposeProxy()
+        {
+            if (_proxyGo != null)
+            {
+                _presenter.ProxyChunkCount--;
+                UnityEngine.Object.Destroy(_proxyGo);
+            }
+            if (_proxyMesh != null) UnityEngine.Object.Destroy(_proxyMesh);
+            if (_proxyMaterial != null) UnityEngine.Object.Destroy(_proxyMaterial);
+            _proxyGo = null;
+            _proxyMesh = null;
+            _proxyMaterial = null;
         }
 
         /// <summary>The chunk's water surface, if it has water tiles. A failure here leaves the terrain up and is shown.</summary>
@@ -174,6 +270,10 @@ namespace UOClient.LiveGroundCompare
         {
             _data = null;
             _waterData = null;
+            _proxyData = null;
+            DisposeProxy();
+            _presenter.OccluderTileCount -= _occluderTiles;
+            _occluderTiles = 0;
             if (_water != null)
             {
                 _presenter.WaterTileCount -= _waterTiles;

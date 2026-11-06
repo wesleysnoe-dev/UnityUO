@@ -818,6 +818,14 @@ public class LiveGroundCompareTests
         Assert.False(WaterTiles.Lookup(null!, 2));
     }
 
+    [Fact]
+    public void Water_TypedDataAccessFailsClosedWithoutData()
+    {
+        Assert.False(WaterTiles.TryLand(null!, out LandTileData[] land, out string error));
+        Assert.Null(land);
+        Assert.Contains("WorldStreamer.Data", error);
+    }
+
     private const uint WaterArgb = 0xFF204080u, LandArgb = 0xFF608020u;
 
     /// <summary>A full chunk where <paramref name="water"/>(i, j) tiles are water (graphic 0xA8) and the rest land.</summary>
@@ -1058,6 +1066,206 @@ public class LiveGroundCompareTests
         Assert.Equal(LiveGroundLighting.ShadowMask(d.CornerZ), d.SunMask);
         Assert.Null(new TerrainLandBuilder(0, 0, 8).Finish().SunMask);
     }
+
+    // ---- static (building) shadow columns ----
+
+    private static StaticTileData Static(int height, TileFlags flags = TileFlags.None) => new StaticTileData { Height = (byte)height, Flags = flags };
+
+    [Fact]
+    public void Occluders_OnlyTallDryStaticsCastAndTheHighestTopWins()
+    {
+        Assert.False(StaticOccluders.Casts(Static(StaticOccluders.MinHeight - 1)));
+        Assert.True(StaticOccluders.Casts(Static(StaticOccluders.MinHeight)));
+        Assert.False(StaticOccluders.Casts(Static(20, TileFlags.Wet)), "water statics never cast");
+
+        int[,] top = StaticOccluders.Empty();
+        StaticOccluders.Add(top, 3, 4, 0, Static(20));
+        StaticOccluders.Add(top, 3, 4, 10, Static(5));   // lower top on the same tile
+        StaticOccluders.Add(top, 3, 4, 0, Static(1));    // too low to cast
+        StaticOccluders.Add(top, -1, 4, 0, Static(20));  // outside the chunk: ignored
+        StaticOccluders.Add(top, 16, 4, 0, Static(20));
+        Assert.Equal(20, top[3, 4]);
+        Assert.Equal(1, StaticOccluders.Count(top));
+        Assert.Equal(0, StaticOccluders.Count(null!));
+    }
+
+    [Fact]
+    public void Occluders_AColumnShadowsFlatGroundAwayFromTheSunOnly()
+    {
+        int[,] c = Corners((_, _) => 0);
+        int[,] top = StaticOccluders.Empty();
+        top[5, 8] = 40; // one 40 Z column on tile (5, 8); the sun comes from -x, slightly -y
+        byte[] terrainOnly = LiveGroundLighting.ShadowMask(c);
+        byte[] withColumn = LiveGroundLighting.ShadowMask(c, top);
+        Assert.All(terrainOnly, b => Assert.Equal(255, b));
+        Assert.Equal(terrainOnly, LiveGroundLighting.ShadowMask(c, StaticOccluders.Empty()));
+
+        Assert.False(MaskLit(withColumn, 5.5f, 8.5f), "the column's own tile");
+        Assert.False(MaskLit(withColumn, 7.1f, 8.9f), "behind it, away from the sun");
+        Assert.True(MaskLit(withColumn, 3.5f, 8.5f), "the sunward side");
+        Assert.True(MaskLit(withColumn, 5.5f, 11.5f), "beside it");
+        // Shadow length as the ridge test: 40 Z over the sun ray's rise ≈ 4.2 tiles along the ray.
+        float hl = MathF.Sqrt(LiveGroundLighting.SunX * LiveGroundLighting.SunX + LiveGroundLighting.SunY * LiveGroundLighting.SunY);
+        float reach = 40f / (LiveGroundLighting.SunUp / hl / TerrainLandBuilder.HeightUnitPerZ) * (-LiveGroundLighting.SunX / hl);
+        Assert.True(MaskLit(withColumn, 6f + reach + 0.9f, 8.9f), "past the shadow length");
+        Assert.Equal(0f, LiveGroundLighting.SunVisibility(c, top, 7.1f, 8.9f, 40));
+        Assert.Equal(1f, LiveGroundLighting.SunVisibility(c, null!, 7.1f, 8.9f, 40));
+    }
+
+    [Fact]
+    public void Occluders_ALowColumnUnderAHillsShadowChangesNothing()
+    {
+        // The ridge already shades behind it; a column lower than the ground it stands on adds no shadow anywhere.
+        int[,] c = Corners((i, _) => i == 6 ? 40 : 0);
+        int[,] top = StaticOccluders.Empty();
+        top[10, 3] = -5;
+        Assert.Equal(LiveGroundLighting.ShadowMask(c), LiveGroundLighting.ShadowMask(c, top));
+    }
+
+    [Fact]
+    public void Occluders_BuilderBakesThemIntoTheSunMaskAndCountsThem()
+    {
+        TerrainLandBuilder tb = FilledChunk(1600, 1504);
+        int[,] top = StaticOccluders.Empty();
+        top[2, 2] = 100;
+        tb.SetOccluders(top);
+        TerrainLandData d = tb.Finish();
+        Assert.Equal(1, d.OccluderTiles);
+        Assert.Equal(LiveGroundLighting.ShadowMask(d.CornerZ, top), d.SunMask);
+        Assert.NotEqual(LiveGroundLighting.ShadowMask(d.CornerZ), d.SunMask);
+        Assert.Equal(0, FilledChunk(1600, 1504).Finish().OccluderTiles);
+        Assert.Throws<ArgumentException>(() => new TerrainLandBuilder(0, 0, 8).SetOccluders(new int[4, 4]));
+    }
+
+    // ---- terrain ↔ sprite occlusion proxy ----
+
+    private static TerrainLandBuilder DepthChunk(int x0, int y0, Func<int, int, bool>? present = null)
+    {
+        var tb = new TerrainLandBuilder(x0, y0, 8);
+        for (int j = 0; j < Chunk; j++)
+            for (int i = 0; i < Chunk; i++)
+            {
+                if (present != null && !present(i, j))
+                    continue;
+                int x = x0 + i, y = y0 + j;
+                DrawItem it = LiveGroundProjection.LandItem(x, y, 3, MapZ(x, y), MapZ(x + 1, y), MapZ(x + 1, y + 1), MapZ(x, y + 1), hasTexmap: true);
+                tb.AddTile(it, Solid(64, 0xFF336699u), true, TileDepthOf(i, j));
+            }
+        return tb;
+    }
+
+    /// <summary>A stand-in for DepthKey.Relative: distinct per tile, larger diagonals nearer (more negative).</summary>
+    private static float TileDepthOf(int i, int j) => -((i + j) * 30.72f + i * 0.005f);
+
+    [Fact]
+    public void Proxy_EveryVertexOfATileCarriesThatTilesDepth()
+    {
+        TerrainLandData d = DepthChunk(1600, 1504).Finish();
+        DepthProxyData p = TerrainDepthProxy.Build(d, 1)!;
+        Assert.Equal(256, p.TileCount);
+        Assert.Equal(256 * TerrainDepthProxy.VerticesPerTile, p.VertexCount);
+        Assert.Equal(256 * TerrainDepthProxy.IndicesPerTile, p.Indices.Length);
+        int v = 0;
+        for (int j = 0; j < Chunk; j++)
+            for (int i = 0; i < Chunk; i++)
+                for (int k = 0; k < TerrainDepthProxy.VerticesPerTile; k++)
+                    Assert.Equal(TileDepthOf(i, j), p.Depth[v++]);
+        // Triangles never mix tiles (the depth is a per-tile step, as the land sprite quads).
+        for (int t = 0; t < p.Indices.Length; t += 3)
+        {
+            int tile = p.Indices[t] / TerrainDepthProxy.VerticesPerTile;
+            Assert.Equal(tile, p.Indices[t + 1] / TerrainDepthProxy.VerticesPerTile);
+            Assert.Equal(tile, p.Indices[t + 2] / TerrainDepthProxy.VerticesPerTile);
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Proxy_TileCornersLandOnTheCompositorsCorners(int scale)
+    {
+        const int x0 = 320, y0 = 480;
+        TerrainLandData d = DepthChunk(x0, y0).Finish();
+        DepthProxyData p = TerrainDepthProxy.Build(d, scale)!;
+        int g = TerrainDepthProxy.GridPerTile;
+        for (int j = 0; j < Chunk; j += 5)
+            for (int i = 0; i < Chunk; i += 3)
+            {
+                int first = (j * Chunk + i) * TerrainDepthProxy.VerticesPerTile;
+                int x = x0 + i, y = y0 + j;
+                (float tX, float tY) = LiveGroundProjection.Corner(x, y, T, MapZ(x, y), scale);
+                (float rX, float rY) = LiveGroundProjection.Corner(x, y, R, MapZ(x + 1, y), scale);
+                (float bX, float bY) = LiveGroundProjection.Corner(x, y, B, MapZ(x + 1, y + 1), scale);
+                (float lX, float lY) = LiveGroundProjection.Corner(x, y, L, MapZ(x, y + 1), scale);
+                AssertNear(tX, tY, p, first);
+                AssertNear(rX, rY, p, first + g - 1);
+                AssertNear(bX, bY, p, first + g * g - 1);
+                AssertNear(lX, lY, p, first + g * (g - 1));
+                // The centre sits on the RIGHT–LEFT split: halfway between the right and left corners on screen.
+                AssertNear((rX + lX) / 2f, (rY + lY) / 2f, p, first + g + 1);
+            }
+    }
+
+    private static void AssertNear(float x, float y, DepthProxyData p, int v)
+    {
+        Assert.Equal(x, p.X[v], 3);
+        Assert.Equal(y, p.Y[v], 3);
+    }
+
+    [Fact]
+    public void Proxy_SkipsHolesAndTilesWithoutDepth()
+    {
+        TerrainLandData holes = DepthChunk(0, 0, (i, j) => (i + j) % 3 != 0).Finish();
+        DepthProxyData p = TerrainDepthProxy.Build(holes, 1)!;
+        int present = 0;
+        for (int j = 0; j < Chunk; j++)
+            for (int i = 0; i < Chunk; i++)
+                if ((i + j) % 3 != 0)
+                    present++;
+        Assert.Equal(present, p.TileCount);
+        Assert.All(p.Depth, z => Assert.False(float.IsNaN(z)));
+
+        // Land added without a depth (occlusion off) gives no proxy at all.
+        Assert.Null(TerrainDepthProxy.Build(FilledChunk(0, 0).Finish(), 1));
+        Assert.Null(TerrainDepthProxy.Build(null!, 1));
+        Assert.Null(TerrainDepthProxy.Build(DepthChunk(0, 0).Finish(), 0));
+        Assert.All(FilledChunk(0, 0).Finish().TileDepth.Cast<float>(), z => Assert.True(float.IsNaN(z)));
+    }
+
+    [Fact]
+    public void Proxy_SubQuadsSplitAlongRightLeftSoTheyAreCoplanarOnTheTile()
+    {
+        // One tile with only its right corner raised: RIGHT–LEFT split → top-right-left is a tilted plane, right-bottom-left
+        // another; every proxy triangle must lie in one of them (a top–bottom split would bend through the centre).
+        var tb = new TerrainLandBuilder(0, 0, 8);
+        DrawItem it = LiveGroundProjection.LandItem(0, 0, 3, 0, 20, 0, 0, hasTexmap: true);
+        tb.AddTile(it, Solid(64, 0xFF000000u), true, -1f);
+        TerrainLandData d = tb.Finish();
+        DepthProxyData p = TerrainDepthProxy.Build(d, 1)!;
+        Assert.Equal(1, p.TileCount);
+        // Screen Y of a terrain point = (x + y)·22 − 4·z, so z = ((x + y)·22 − Y) / 4 recovers each vertex height.
+        int g = TerrainDepthProxy.GridPerTile;
+        var vx = new float[g * g];
+        var vy = new float[g * g];
+        var vz = new float[g * g];
+        for (int b = 0; b < g; b++)
+            for (int a = 0; a < g; a++)
+            {
+                int v = b * g + a;
+                vx[v] = a / 2f;
+                vy[v] = b / 2f;
+                vz[v] = ((vx[v] + vy[v]) * LiveGroundProjection.TileHalf - p.Y[v]) / LiveGroundProjection.ZStep;
+                Assert.Equal(LiveGroundProjection.HeightAt(0, 20, 0, 0, vx[v], vy[v]), vz[v], 3);
+            }
+        Assert.Equal(10f, vz[g + 1], 3); // centre = mean(right, left)
+        // Each triangle's centroid lies on the surface: it does not cut across the RIGHT–LEFT crease.
+        for (int t = 0; t < p.Indices.Length; t += 3)
+        {
+            int i0 = p.Indices[t], i1 = p.Indices[t + 1], i2 = p.Indices[t + 2];
+            float cx = (vx[i0] + vx[i1] + vx[i2]) / 3f, cy = (vy[i0] + vy[i1] + vy[i2]) / 3f, cz = (vz[i0] + vz[i1] + vz[i2]) / 3f;
+            Assert.Equal(LiveGroundProjection.HeightAt(0, 20, 0, 0, cx, cy), cz, 3);
+        }
+    }
 }
 
 /// <summary>Water detection against the real tiledata (the shipped client's land rows).</summary>
@@ -1087,5 +1295,74 @@ public sealed class LiveGroundWaterDataTests
             if ((row.Flags & TileFlags.Wet) != 0)
                 wet++;
         Assert.True(wet > water.Count, "Wet alone also covers acid/fallback rows; the name check must stay");
+    }
+
+    [Fact]
+    public void Occluders_BritainHasCastingStaticColumnsFromTheRealMap()
+    {
+        // Britain's west bank area (Felucca/Trammel map 0): buildings and walls, all map statics.
+        MapFile map = _data.GetMap(0);
+        int[,] top = StaticOccluders.FromMap(map, _data.TileData, 1424, 1680);
+        Assert.NotNull(top);
+        int n = StaticOccluders.Count(top);
+        Assert.True(n > 0, "a town chunk has walls/buildings tall enough to cast");
+        // Every column is exactly the highest casting static on its tile.
+        for (int j = 0; j < TerrainLandBuilder.Tiles; j++)
+            for (int i = 0; i < TerrainLandBuilder.Tiles; i++)
+            {
+                int x = 1424 + i, y = 1680 + j, expected = StaticOccluders.None;
+                foreach (StaticCell s in map.ReadStaticBlock(x >> 3, y >> 3))
+                    if (s.X == (x & 7) && s.Y == (y & 7) && StaticOccluders.Casts(_data.TileData.GetStatic(s.Graphic)))
+                        expected = Math.Max(expected, s.Z + _data.TileData.GetStatic(s.Graphic).Height);
+                Assert.Equal(expected, top[i, j]);
+            }
+        Assert.Null(StaticOccluders.FromMap(null!, _data.TileData, 0, 0));
+    }
+
+    [Fact]
+    public void Water_TypedDataAccessReadsTheSameLandRows()
+    {
+        Assert.True(WaterTiles.TryLand(_data, out LandTileData[] land, out string error), error);
+        Assert.Null(error);
+        Assert.Same(_data.TileData.Land, land);
+    }
+}
+
+/// <summary>Source guards for the TEST seams: typed data access only, and the default sprite shader untouched.</summary>
+public sealed class LiveGroundSourceTests
+{
+    private static string RepoRoot()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, "Assets", "LiveGroundCompare")))
+                return dir.FullName;
+        throw new DirectoryNotFoundException("repo root");
+    }
+
+    private static string Source(params string[] path) => File.ReadAllText(Path.Combine(new[] { RepoRoot() }.Concat(path).ToArray()));
+
+    [Fact]
+    public void Water_ReadsTheStreamersDataTypedNotByReflection()
+    {
+        string water = Source("Assets", "LiveGroundCompare", "Scripts", "TerrainWater.cs");
+        Assert.DoesNotContain("System.Reflection", water);
+        Assert.DoesNotContain("GetField", water);
+        Assert.Contains("world?.Data", water);
+        Assert.Contains("public UOData Data => _data;", Source("Assets", "UOClient.Unity", "Runtime", "WorldStreamer.cs"));
+        foreach (string f in Directory.GetFiles(Path.Combine(RepoRoot(), "Assets", "LiveGroundCompare", "Scripts"), "*.cs"))
+            Assert.DoesNotContain("BindingFlags", File.ReadAllText(f));
+    }
+
+    [Fact]
+    public void Occlusion_NeedsNoChangeToTheDefaultSpriteShader()
+    {
+        // The proxy is its own depth-only shader; UOClient/WorldSprite has no LiveGround keyword or global.
+        string sprite = Source("Assets", "UOClient.Unity", "Runtime", "Resources", "WorldSprite.shader");
+        Assert.DoesNotContain("_LG", sprite);
+        Assert.DoesNotContain("multi_compile", sprite);
+        string depth = Source("Assets", "LiveGroundCompare", "Shaders", "Resources", "LiveGroundCompareDepthKey.shader");
+        Assert.Contains("ColorMask 0", depth);
+        Assert.Contains("ZWrite On", depth);
+        Assert.True(File.Exists(Path.Combine(RepoRoot(), "Assets", "LiveGroundCompare", "Shaders", "Resources", "LiveGroundCompareDepthKey.shader.meta")));
     }
 }

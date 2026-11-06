@@ -1,4 +1,5 @@
 using System;
+using UOClient.IO.Formats;
 
 namespace UOClient.LiveGroundCompare
 {
@@ -76,7 +77,15 @@ namespace UOClient.LiveGroundCompare
         /// surface: 0 when the heightfield blocks the ray toward the sun, else 1. Rays that leave the chunk count as lit
         /// (the builder does not see neighbouring chunks).
         /// </summary>
-        public static float SunVisibility(int[,] cornerZ, float tx, float ty, int maxZ)
+        public static float SunVisibility(int[,] cornerZ, float tx, float ty, int maxZ) => SunVisibility(cornerZ, null, tx, ty, maxZ);
+
+        /// <summary>
+        /// As above, and a ray also stops where it passes below the top of a static column
+        /// (<paramref name="occluderTop"/>[i, j], <see cref="StaticOccluders.None"/> = no column). The column is the
+        /// tile's whole footprint from the ground up to its highest casting static (<see cref="StaticOccluders"/>), so a
+        /// point on a column's own tile is in its shadow.
+        /// </summary>
+        public static float SunVisibility(int[,] cornerZ, int[,] occluderTop, float tx, float ty, int maxZ)
         {
             const int t = TerrainLandBuilder.Tiles;
             float hl = (float)Math.Sqrt(SunX * SunX + SunY * SunY);
@@ -93,6 +102,12 @@ namespace UOClient.LiveGroundCompare
                     return 1f;
                 if (TerrainLandBuilder.SampleZ(cornerZ, px, py) > rayZ)
                     return 0f;
+                if (occluderTop != null)
+                {
+                    int i = Math.Min(t - 1, (int)px), j = Math.Min(t - 1, (int)py);
+                    if (occluderTop[i, j] > rayZ)
+                        return 0f;
+                }
             }
         }
 
@@ -101,12 +116,18 @@ namespace UOClient.LiveGroundCompare
         /// chunk texture (row 0 = tile y max), so terrain UVs address it directly. Computed from the map's corner
         /// heights each time the chunk is built; nothing is painted.
         /// </summary>
-        public static byte[] ShadowMask(int[,] cornerZ)
+        public static byte[] ShadowMask(int[,] cornerZ) => ShadowMask(cornerZ, null);
+
+        /// <summary>As above, with the chunk's own static columns also casting (null: terrain only).</summary>
+        public static byte[] ShadowMask(int[,] cornerZ, int[,] occluderTop)
         {
             const int n = ShadowSize, t = TerrainLandBuilder.Tiles;
             int maxZ = int.MinValue;
             foreach (int z in cornerZ)
                 maxZ = Math.Max(maxZ, z);
+            if (occluderTop != null)
+                foreach (int z in occluderTop)
+                    maxZ = Math.Max(maxZ, z);
             var mask = new byte[n * n];
             for (int row = 0; row < n; row++)
             {
@@ -114,10 +135,77 @@ namespace UOClient.LiveGroundCompare
                 for (int col = 0; col < n; col++)
                 {
                     float tx = (col + 0.5f) / ShadowTexelsPerTile;
-                    mask[row * n + col] = SunVisibility(cornerZ, tx, ty, maxZ) > 0.5f ? (byte)255 : (byte)0;
+                    mask[row * n + col] = SunVisibility(cornerZ, occluderTop, tx, ty, maxZ) > 0.5f ? (byte)255 : (byte)0;
                 }
             }
             return mask;
+        }
+    }
+
+    /// <summary>
+    /// Building (static) shadows for the Terrain sun mask, as a labelled approximation: every map static whose tiledata
+    /// <see cref="StaticTileData.Height"/> is at least <see cref="MinHeight"/> (and that is not water) makes its tile a
+    /// solid column from the ground up to Z + Height; the mask's sun rays stop at the highest column per tile. This is
+    /// a projected silhouette from known heights, computed on the CPU when the chunk is built: not a Unity shadow map,
+    /// no overhangs (a roof shades as a solid block), only the chunk's own map statics (no neighbouring chunks, no
+    /// server items or multis such as player houses), and the sprites themselves are not darkened by it.
+    /// </summary>
+    public static class StaticOccluders
+    {
+        public const int None = int.MinValue;
+
+        /// <summary>Lower statics (rugs, papers, low fences) would darken their whole tile for a sliver of real shadow.</summary>
+        public const int MinHeight = 3;
+
+        public static bool Casts(in StaticTileData td) => td.Height >= MinHeight && (td.Flags & TileFlags.Wet) == 0;
+
+        public static int[,] Empty()
+        {
+            const int t = TerrainLandBuilder.Tiles;
+            var top = new int[t, t];
+            for (int i = 0; i < t; i++)
+                for (int j = 0; j < t; j++)
+                    top[i, j] = None;
+            return top;
+        }
+
+        /// <summary>Raises chunk-local tile (i, j) to the top of a static at <paramref name="z"/> if it casts.</summary>
+        public static void Add(int[,] top, int i, int j, int z, in StaticTileData td)
+        {
+            const int t = TerrainLandBuilder.Tiles;
+            if (top == null || (uint)i >= t || (uint)j >= t || !Casts(td))
+                return;
+            top[i, j] = Math.Max(top[i, j], z + td.Height);
+        }
+
+        /// <summary>The chunk's columns from the map's static blocks (the 2x2 8x8 blocks under a 16x16 chunk).</summary>
+        public static int[,] FromMap(MapFile map, TileData tileData, int x0, int y0)
+        {
+            if (map == null || tileData == null)
+                return null;
+            const int t = TerrainLandBuilder.Tiles, b = MapFile.BlockSize;
+            int[,] top = Empty();
+            for (int by = y0 / b; by < (y0 + t) / b; by++)
+                for (int bx = x0 / b; bx < (x0 + t) / b; bx++)
+                {
+                    StaticCell[] cells = map.ReadStaticBlock(bx, by);
+                    if (cells == null)
+                        continue;
+                    foreach (StaticCell s in cells)
+                        Add(top, bx * b + s.X - x0, by * b + s.Y - y0, s.Z, tileData.GetStatic(s.Graphic));
+                }
+            return top;
+        }
+
+        public static int Count(int[,] top)
+        {
+            if (top == null)
+                return 0;
+            int n = 0;
+            foreach (int z in top)
+                if (z != None)
+                    n++;
+            return n;
         }
     }
 }
