@@ -125,6 +125,7 @@ namespace UOClient.Unity
 
                 // Unattended runs log straight in with the account file; people get the login screen.
                 LaunchOptions launch = LaunchOptions.FromCommandLine();
+                _liveGround = CreateLiveGround(launch);
                 bool unattended = File.Exists(Path.Combine(ProjectRoot, CaptureRequestFile))
                                   || launch.CaptureFromCommandLine
                                   || launch.AutoLogin;
@@ -195,10 +196,35 @@ namespace UOClient.Unity
 
         private void CreateWorld(int mapIndex, int x, int y)
         {
+            _liveGround?.Detach();
             _ctx.World?.Dispose();
             _ctx.World = new WorldStreamer(_ctx.Data, _ctx.Root, _ctx.Shader, _ctx.ArtScale, _compositorFactory, mapIndex, x, y) { LoadRadius = loadRadius };
             _ctx.Walk = new Walkability(_ctx.Data, mapIndex);
             _ctx.Hud.Summary = $"streaming {WorldStreamer.ChunkSize}x{WorldStreamer.ChunkSize} chunks, radius {loadRadius}, {_bakedCount} baked placements available, {_ctx.ArtScale}x art";
+            if (_liveGround?.Attach(_ctx.World, _ctx.Session != null ? _sessionHost : Settings.host) is string groundStatus)
+                _ctx.Hud.Log(null, groundStatus);
+        }
+
+        // ---- LiveGroundCompare (TEST only) ----
+
+        private ILandBackendSwitch _liveGround;
+        private string _sessionHost;
+
+        /// <summary>
+        /// Only under -liveground. Found by name so this assembly does not depend on LiveGroundCompare; its host guard
+        /// keeps anything but a local test server on the original land.
+        /// </summary>
+        private ILandBackendSwitch CreateLiveGround(LaunchOptions launch)
+        {
+            if (!launch.LiveGround)
+                return null;
+            Type type = Type.GetType("UOClient.LiveGroundCompare.LiveGroundController, UOClient.LiveGroundCompare");
+            if (type == null)
+            {
+                Debug.LogWarning("UOClient: -liveground given but LiveGroundCompare is not in this build; original land.");
+                return null;
+            }
+            return (ILandBackendSwitch)Activator.CreateInstance(type, launch.LiveGround, launch.GroundBackend, _ctx.ArtScale);
         }
 
         // ---- offline ----
@@ -507,6 +533,7 @@ namespace UOClient.Unity
             if (_ctx.Session != null)
                 TearDownSession(); // a session still live (never expected from the login screen): it goes first
             characterName = login.CharacterName;
+            _sessionHost = login.Host; // LiveGroundCompare's host guard checks the server actually logged in to
             _ctx.Session = new GameSession(login);
             // Every handler below is guarded: once the session ends (TearDownSession) none of them runs again.
             _life.Begin(_ctx.Session);
@@ -604,6 +631,7 @@ namespace UOClient.Unity
             _placement.Clear();
             _ctx.Player?.Dispose();
             _ctx.Player = null;
+            _liveGround?.Detach();
             _ctx.World?.Dispose();
             _ctx.World = null;
             _ctx.Walk = null;
@@ -651,6 +679,8 @@ namespace UOClient.Unity
 
             if (_ctx.World == null || _ctx.Player == null)
                 return;
+            if (_liveGround?.Tick() is string groundStatus)
+                _ctx.Hud.Log(null, groundStatus);
 
             if (_ctx.Session != null && _ctx.Session.World.Map != _ctx.World.Map)
             {
@@ -815,6 +845,8 @@ namespace UOClient.Unity
             _ctx.Session?.Dispose();
             _ctx.Player?.Dispose();
             _entities?.Dispose();
+            _liveGround?.Detach();
+            _liveGround?.Dispose();
             _ctx.World?.Dispose();
             _gumpArt?.Dispose();
             _ctx.MobileArt?.Dispose();

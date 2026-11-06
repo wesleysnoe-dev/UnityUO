@@ -11,6 +11,51 @@ using UOClient.IO.Formats;
 namespace UOClient.Unity
 {
     /// <summary>
+    /// Opt-in replacement for LAND emission only (LiveGroundCompare, TEST host). Statics, mobiles and roofs never
+    /// pass through it; without an emitter the streamer draws land exactly as before.
+    /// </summary>
+    public interface ILandEmitter
+    {
+        /// <summary>Worker thread: whether this placement leaves the original sprite path.</summary>
+        bool Diverts(in DrawItem item, bool baked);
+
+        /// <summary>Worker thread, no Unity API: the chunk's diverted land (with production depth). Null draws nothing for it.</summary>
+        ILandChunk BuildLand(int chunkX, int chunkY, List<LandPlacement> land);
+    }
+
+    /// <summary>A chunk's replacement land; owned and disposed by the chunk.</summary>
+    public interface ILandChunk : IDisposable
+    {
+        /// <summary>Main thread: creates the land objects under the chunk (its transform carries the depth origin).</summary>
+        void Attach(Transform chunk, Shader shader, IWorldSpace world);
+    }
+
+    /// <summary>
+    /// LiveGroundCompare's controller as WorldDemo sees it. Created by type name only under -liveground (this assembly
+    /// does not reference LiveGroundCompare), so without the flag nothing of it runs.
+    /// </summary>
+    public interface ILandBackendSwitch : IDisposable
+    {
+        /// <summary>A world was created for a session on <paramref name="host"/>; returns a status line for the journal.</summary>
+        string Attach(WorldStreamer world, string host);
+
+        /// <summary>The world is going away.</summary>
+        void Detach();
+
+        /// <summary>Every frame: handles the toggle key; returns a status line when the backend changed, else null.</summary>
+        string Tick();
+    }
+
+    /// <summary>One diverted land placement: the compositor's item and art (texmap when stretched) and its sort depth.</summary>
+    public struct LandPlacement
+    {
+        public DrawItem Item;
+        public Bitmap32 Art;
+        public bool Texmap;
+        public float Depth;
+    }
+
+    /// <summary>
     /// Streams the map around the player in 16x16-tile chunks. A worker thread composes each chunk
     /// (draw list, sloped-land rasterizing, pixel conversion and packing); the main thread only
     /// uploads finished textures and builds meshes, a bounded amount per frame, so walking never
@@ -48,6 +93,7 @@ namespace UOClient.Unity
 
         private int _originDiagonal;
         private bool _roofsVisible = true;
+        private ILandEmitter _landEmitter; // guarded by _queue
 
         public WorldStreamer(UOData data, Transform parent, Shader shader, int scale, Func<IsoCompositor> compositorFactory, int map, int originX, int originY)
         {
@@ -121,6 +167,25 @@ namespace UOClient.Unity
             if (map == _map)
                 return;
             _map = map;
+            Rebuild();
+        }
+
+        /// <summary>LiveGroundCompare: swaps how land is emitted (null = original) and rebuilds the chunks; nothing else moves.</summary>
+        public ILandEmitter LandEmitter
+        {
+            get => _landEmitter;
+            set
+            {
+                if (value == _landEmitter)
+                    return;
+                lock (_queue)
+                    _landEmitter = value;
+                Rebuild();
+            }
+        }
+
+        private void Rebuild()
+        {
             _generation++;
             foreach (Chunk c in _chunks.Values)
                 c.Dispose();
@@ -206,7 +271,10 @@ namespace UOClient.Unity
                          || Math.Max(Math.Abs(build.ChunkX - pcx), Math.Abs(build.ChunkY - pcy)) > r + 1
                          || _chunks.ContainsKey((build.ChunkX, build.ChunkY));
             if (stale)
+            {
+                build.Land?.Dispose();
                 return;
+            }
 
             var chunk = new Chunk(_root, build.ChunkX, build.ChunkY, build.BaseDiagonal);
             Texture2D unique = null;
@@ -264,6 +332,11 @@ namespace UOClient.Unity
                 }
                 chunk.AddMesh(g.Value.Build($"Chunk {build.ChunkX},{build.ChunkY}"), material, g.Key.Item2);
             }
+            if (build.Land != null)
+            {
+                chunk.Land = build.Land;
+                build.Land.Attach(chunk.Transform, _shader, this);
+            }
 
             chunk.SetDepthOrigin(_originDiagonal);
             chunk.SetRoofsVisible(_roofsVisible);
@@ -280,6 +353,7 @@ namespace UOClient.Unity
             {
                 (int, int) next;
                 int generation, map;
+                ILandEmitter landEmitter;
                 lock (_queue)
                 {
                     if (_queue.Count == 0)
@@ -302,6 +376,7 @@ namespace UOClient.Unity
                     }
                     generation = _generation;
                     map = _map;
+                    landEmitter = _landEmitter;
                 }
 
                 if (next.Item1 < 0)
@@ -314,7 +389,7 @@ namespace UOClient.Unity
                 {
                     compositor ??= _compositorFactory();
                     tileData ??= _data.TileData;
-                    _results.Enqueue(BuildChunk(compositor, tileData, map, next.Item1, next.Item2, generation));
+                    _results.Enqueue(BuildChunk(compositor, tileData, map, next.Item1, next.Item2, generation, landEmitter));
                 }
                 catch (Exception e)
                 {
@@ -324,8 +399,9 @@ namespace UOClient.Unity
             }
         }
 
-        private ChunkBuild BuildChunk(IsoCompositor compositor, TileData tileData, int map, int cx, int cy, int generation)
+        private ChunkBuild BuildChunk(IsoCompositor compositor, TileData tileData, int map, int cx, int cy, int generation, ILandEmitter landEmitter)
         {
+            List<LandPlacement> land = landEmitter != null ? new List<LandPlacement>() : null;
             var watch = System.Diagnostics.Stopwatch.StartNew();
             int x0 = cx * ChunkSize, y0 = cy * ChunkSize;
             List<IsoCompositor.DrawEntry> entries = compositor.BuildDrawList(map, x0, y0, ChunkSize, ChunkSize);
@@ -341,7 +417,8 @@ namespace UOClient.Unity
                     continue;
                 DrawItem it = e.Item;
                 bool unique = e.Baked || it.Stretched;
-                Bitmap32 bmp = it.Stretched && !e.Baked ? compositor.RenderPlacementAlone(it) : e.Sprite;
+                bool divert = land != null && landEmitter.Diverts(it, e.Baked); // LiveGroundCompare; false by default
+                Bitmap32 bmp = it.Stretched && !e.Baked && !divert ? compositor.RenderPlacementAlone(it) : e.Sprite;
                 if (bmp == null)
                     continue;
 
@@ -350,6 +427,13 @@ namespace UOClient.Unity
                 lastDiagonal = diagonal;
                 lastPriority = it.PriorityZ;
                 lastKind = it.Kind;
+
+                // LiveGroundCompare: diverted land keeps the exact depth it would have had as a sprite quad.
+                if (divert)
+                {
+                    land.Add(new LandPlacement { Item = it, Art = e.Sprite, Texmap = it.Stretched, Depth = DepthKey.Relative(it, build.BaseDiagonal, tie) });
+                    continue;
+                }
 
                 var quad = new ChunkQuad
                 {
@@ -373,6 +457,8 @@ namespace UOClient.Unity
 
             if (uniques.Count > 0)
                 PackUniques(build, uniques);
+            if (land != null && land.Count > 0)
+                build.Land = landEmitter.BuildLand(cx, cy, land);
 
             build.BuildMs = watch.Elapsed.TotalMilliseconds;
             return build;
@@ -463,6 +549,7 @@ namespace UOClient.Unity
             public Color32[] UniqueColors;
             public int UniqueWidth, UniqueHeight;
             public double BuildMs;
+            public ILandChunk Land; // LiveGroundCompare only
         }
 
         private sealed class Chunk : IDisposable
@@ -474,6 +561,9 @@ namespace UOClient.Unity
 
             public readonly List<Material> OwnedMaterials = new List<Material>();
             public Texture2D UniqueTexture;
+            public ILandChunk Land;
+
+            public Transform Transform => _go.transform;
 
             public Chunk(Transform parent, int cx, int cy, int baseDiagonal)
             {
@@ -515,6 +605,7 @@ namespace UOClient.Unity
                     UnityEngine.Object.Destroy(m);
                 if (UniqueTexture != null)
                     UnityEngine.Object.Destroy(UniqueTexture);
+                Land?.Dispose();
                 UnityEngine.Object.Destroy(_go);
             }
         }
