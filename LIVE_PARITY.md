@@ -349,6 +349,36 @@ Works:
   - **Difference, kept:** TazUO's `ShopGump` Accept sends the request even with nothing chosen (`ShopGump.cs:588-604`); our `ShopWindow` just closes. Harmless on ModernUO (an empty buy only earns a `0x3B`, an empty sell does nothing), so unchanged. `Buy` with an empty order still sends flag `0x00`.
   - **Verified:** 614 tests pass (7 new in `TradeTests`, offline `StartOffline` sessions): an injected `0x3C`/`0x74`/`0x24` buy list and a two-line order send exactly `3B 00 16 … 02 1A <serial> <amount> …`, and an injected `0x3B` closes it; an empty order sends the 8-byte flag-0 form; a re-opened list after a sell-out pairs serials, names and prices right and orders the right serial (this test fails without the fix); an injected `0x9E` and a two-line sell send exactly `9F 00 15 … 00 02 <serial> <amount> …`; a `0x3A` type-2 list then the lock and use send `3A 00 06 00 15 02` and `12 00 09 24 "21 0" 00` for Hiding; a type-1 menu with indices 4, 7, 2 (and a hued entry) parses in order and choosing the third sends index 2. Tests, Cli and EditorCheck build. **Not verified:** Unity play mode (the Editor has not compiled since 09:53, below) and live.
 - **Editor compile status (read only, re-checked after `213e952`; corrects the earlier entries).** Earlier notes dated the last Editor compile by `Logs/Editor.log`'s mtime (13:28, 14:28). That was wrong: the mtime moves every hour at :28 because of `[Licensing::Client]` token-refresh lines, not compiles. The build lines have no timestamps. The reliable clock is the compiler output: `Library/ScriptAssemblies/UOClient.Unity.dll` and `Library/Bee/artifacts/1900b0aE.dag/UOClient.Unity.dll` are both **09:53:29**, Core/Editor 09:46:21, IO 01:59:03. The log's last `Tundra build success` (line 129740) copies `UOClient.Unity.dll` to ScriptAssemblies, so that build is the 09:53 one (right after `809ff58`, 09:52). Its `Scripting: successfully reloaded assembly` is line 129763. **0** `error CS` follow it; the 15 earlier ones (around line 111131) are stale. Nothing after it compiled: as of 15:28:02 (mtime) only licensing lines and one no-op `RefreshV2(AllowForceSynchronousImport)` follow. **So the open Editor has not compiled any of the 50 commits touching `Assets/` from `bad6cce` (10:04) through `213e952` (15:56)**, nor the corpse commit after them (the DLL times were re-read after it: `UOClient.Unity.dll` 09:53:29, Core 09:46:21, IO 01:59:03). That includes everything after `fidelity-pre-combat` (`e6114ad`: its `AnimationLibrary.cs` is in `UOClient.IO`, whose DLL is from 01:59). The only compile evidence for them is EditorCheck's type-check against the Unity 6000.6.8f1 assemblies, which is not Unity's own compile (no ILPP, no per-asmdef split, no import). How to refresh without disrupting the session: see NIGHT_LOG item 31.
+- [x] **Mouse-over highlight and vendor creature art** (backup tag `fidelity-pre-hovervendor` = `dcb7924`). TazUO: `ItemGump.cs:107-151`, `ItemView.cs:111-146, 395-404`, `MobileView.cs:88-96`, `StaticView.cs:80-88`, `PaperdollGump.cs:898, 985-990`, `PaperDollInteractable.cs:587-672`, `TradingGump.cs:182-184, 248-250`, `ShopGump.cs:741-870`, `Item.IsLocked` (`Item.cs:75`). ModernUO: `BaseVendor.cs:880-904`, `AnimalBuyInfo` (`SBAnimalTrainer.cs:17`: Horse, ItemID 204).
+  - **Highlight (`ObjectHighlight.cs`, one helper for the world and the windows):** TazUO draws no outline. The thing under the mouse is re-hued to `0x0035`.
+    - Container, trade and paperdoll items: the topmost item under the mouse, on an opaque pixel, is hued whole (no partial hue), stack copy included. Nothing is highlighted when another window covers that spot (`UiWindow.MouseIsOver` = `TopWindowAt`).
+    - World: `WorldInput` selects what `EntityViews.PickAt` finds, or nothing over a window or the journal.
+    - **`PickAt` now hit-tests opaque pixels** (atlas CPU copy, mirrored frames handled), nearest depth first. Clicks, drops and tooltips use the same pick, so a sprite's transparent box no longer takes them and what lights up is what a click hits.
+    - Ground items hue as TazUO's default profile: a selected item that is not locked (movable, or 90 stones or lighter) and not a multi, its partial flag kept.
+    - `ObjectHighlight.HighlightGameObjects` is TazUO's profile option. It is off in a new TazUO profile and in this PC's TazUO profiles (`"highlight_game_objects": false`). We have no setting for it, so it's a code default: nothing is written to UserSettings. With it on, any selected item, a mobile (all layers, via `MobileLook.Rehued`) and a corpse are hued whole.
+  - **Differences:**
+    - Paperdoll worn items highlight here. TazUO's `GumpPicEquipment` only sets `SelectedObject`, and its slot icons turn the highlight off. Added because the paperdoll was explicitly in scope.
+    - Map statics are never highlighted. TazUO needs `HighlightGameObjects` for those, and ours are baked into regions.
+    - Mobiles and corpses do not highlight by default, as in TazUO.
+    - Shop line icons are not highlighted: TazUO's `ShopItem` only re-hues the line's text.
+  - **Vendor buy art (`ShopWindow.Icon.cs`):**
+    - A buy line whose serial is a mobile (`< 0x40000000`, TazUO `InBuyGump && SerialHelper.IsMobile`) is a creature for sale. Its graphic is the body (a horse is 0xCC; static 0xCC is a pillar). It now draws frame 0 of the body's stand action, file direction 1, in the `Body.def` hue (`GumpArt.Body`), at most 45 x 45.
+    - Items and every sell line keep the static art, cropped to its opaque bounds and centered in a 50-wide column, or squeezed to it when larger.
+    - Lines are at least 50 tall, and an item's line at least its tiledata height. No graphic-specific mapping.
+    - **Difference:** TazUO puts the body at (x-3, y+20) and the art at (x-5, y+10) of its own line. Our lines keep our layout, so both are centered in the icon column.
+  - **Verified (tests):** 730 pass (19 new, 2 of them install cases; `ObjectHighlightTests`, `ShopIconTests`, `ShopIconInstallTests`):
+    - Window hue only under the mouse.
+    - Ground-item rules: locked, multi and light non-movable items; `IsLocked` thresholds.
+    - Bodies only with `HighlightGameObjects`, which defaults off.
+    - Nothing selected through a window.
+    - Topmost item wins and a transparent corner falls through to the one below; the nearest opaque sprite wins over a nearer transparent box.
+    - World-to-sprite pixel mapping with y-up, mirroring and scaling.
+    - Mobile buy serial draws the body; item serial, sell list and serial 0 draw static art.
+    - Line heights, icon rects and opaque bounds.
+    - Against the install: bodies 0xCC and 0x123 have a stand frame in file direction 1.
+    - Tests, Cli, EditorCheck (forced rebuild, incl. `CheckUnityScriptMetas`) and GumpPreview build with 0 warnings.
+  - **Not verified:** play mode (how 0x0035 looks on HD art, the world pick on mirrored mobiles, the horse picture), and live.
+  - **Editor:** `UOClient.Unity.dll` 18:21:15 was compiled from a mid-edit state: only the new `ObjectHighlight.cs` was on disk. This batch is not in it. See NIGHT_LOG.
 
 Still missing:
 - [ ] Party bars, heal buttons, the heal target and renaming are done offline (above) but never seen in play mode or live. Damageable item bars wait on a server that sends `0xF3` type 3. The TazUO compact status is not gump art and is not planned.
@@ -370,6 +400,8 @@ Still missing:
    - [ ] Left-click a vendor → context menu with Buy/Sell (and Train on a trainer); each one works.
    - [ ] Buy a vendor's last one of something, then open Buy again → that line is gone and every other line shows its own name and price; buying one of them takes that item and the gold. Sell an item → the gold comes and the window closes.
    - [ ] Skills window (K) → a use button (e.g. Hiding) uses the skill; a lock arrow cycles up/down/locked, and after a re-log the server still has it.
+   - [ ] Hover items in a backpack, a bank box, a trade and on your paperdoll → only the item under the cursor turns 0x0035 (stacks too), not on its transparent edges, and not while another window covers it. Hover a dropped item on the ground → it turns 0x0035; a door, sign or furniture (locked) does not; mobiles and corpses don't either (TazUO's default `HighlightGameObjects` off). Move a window over a ground item → it stops highlighting. Click near (not on) a sprite → the click goes to what's actually under the cursor.
+   - [ ] Animal trainer → Buy → the horse and pack horse lines show the animal standing (not a pillar); item lines show their art.
    - [ ] Hover an item or mobile → the tooltip sits 24 px under the cursor, stays inside the view, and is the right size at your UI scale.
    - [ ] Train on a trainer NPC (context menu → Train) → the NPC's train line comes, and paying (drop gold on them) raises the skill; the `0x3A` update shows in the skills window and the "Your skill in … has increased" line.
 2. **Gumps**

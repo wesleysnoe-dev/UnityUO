@@ -64,6 +64,9 @@ namespace UOClient.Unity.UI
 
         protected void Close() => Ui.Close(this);
 
+        /// <summary>The mouse is on this window and no window above covers that spot (TazUO's MouseIsOver), so its items may highlight.</summary>
+        protected bool MouseIsOver => Ui.TopWindowAt(Rect.position + Event.current.mousePosition) == this;
+
         /// <summary>Draws UI art at a local position, at native size.</summary>
         protected static void DrawImage(UiImage img, float x, float y)
         {

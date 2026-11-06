@@ -67,6 +67,19 @@ namespace UOClient.Unity
         public float LastDepth { get; private set; }
         public bool Visible => _renderer.enabled;
 
+        /// <summary>The frame last drawn and whether it was mirrored, for pixel-exact picking.</summary>
+        public AtlasSlot LastSlot { get; private set; }
+        public bool LastMirror { get; private set; }
+
+        /// <summary>Under the mouse in the world (TazUO's SelectedObject.Object): drawn highlighted with HighlightGameObjects.</summary>
+        public bool Selected { get; set; }
+
+        private MobileLook _litFor, _lit;
+        private string _litKey;
+
+        /// <summary>Whether a world point (Unity units) falls on an opaque pixel of the frame last drawn.</summary>
+        public bool HitTest(Vector2 p) => Visible && _art.HitTest(LastRect, LastSlot, LastMirror, p);
+
         /// <summary>Remaining time of the current step, in seconds.</summary>
         public float StepRemaining => IsMoving ? _stepDuration - _stepTime : 0f;
 
@@ -229,6 +242,7 @@ namespace UOClient.Unity
             bool moving = _stepDuration > 0 && !Dying;
             MobileFrame[] frames = null;
             bool falling = false;
+            int shown = -1; // the action whose frames were found this time
             if (Dying)
             {
                 MobileFrame[] fall = _art.Get(_look, _lookKey, DeathAction, fileDir);
@@ -236,6 +250,7 @@ namespace UOClient.Unity
                 {
                     frames = fall;
                     falling = true;
+                    shown = DeathAction;
                 }
                 else if (fall != null)
                     DeathFinished = true; // no fall for this body: gone at once (TazUO, Mobile.cs:720-724)
@@ -248,7 +263,9 @@ namespace UOClient.Unity
                 var peace = MobileArt.Actions(_look);
                 int action = MobileActions.Pick(MobileArt.Actions(_look, WarMode, Dead), moving, _running);
                 frames = MobileActions.WithFallback(action, MobileActions.Pick(peace, moving, _running), peace.Stand,
-                    a => _art.Get(_look, _lookKey, a, fileDir), out _);
+                    a => _art.Get(_look, _lookKey, a, fileDir), out int chosen);
+                if (frames != null)
+                    shown = chosen;
             }
 
             if (frames == null)
@@ -265,6 +282,20 @@ namespace UOClient.Unity
             _lastFrames = frames;
             _lastMirror = mirror;
             _renderer.enabled = true;
+
+            // Selected with HighlightGameObjects: the same frames wholly in the highlight hue, once they are built.
+            if (shown >= 0 && ObjectHighlight.HighlightsBody(Selected, ObjectHighlight.HighlightGameObjects))
+            {
+                if (!ReferenceEquals(_litFor, _look))
+                {
+                    _litFor = _look;
+                    _lit = _look.Rehued(ObjectHighlight.Hue);
+                    _litKey = _lit.Key;
+                }
+                MobileFrame[] lit = _art.Get(_lit, _litKey, shown, fileDir);
+                if (lit != null && lit.Length == frames.Length)
+                    frames = lit;
+            }
 
             MobileFrame f;
             if (falling)
@@ -286,6 +317,8 @@ namespace UOClient.Unity
             Rect r = view.ToUnityRect(left, top, f.Slot.Width, f.Slot.Height);
 
             _material.mainTexture = _art.Atlas.Page(f.Slot.Page);
+            LastSlot = f.Slot;
+            LastMirror = mirror;
             LastRect = r;
             LastDepth = view.DepthFor(SortItem);
             // Characters on a floor above us are cut away with it (we ourselves always stand below the cut).

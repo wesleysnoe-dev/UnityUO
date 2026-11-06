@@ -31,7 +31,7 @@ namespace UOClient.Unity.UI
         private readonly uint _serial;
         private string _title;
         private GUIStyle _titleStyle;
-        private readonly List<(byte Layer, EquippedItem Item, UiImage Image)> _drawn = new List<(byte, EquippedItem, UiImage)>();
+        private readonly List<(byte Layer, EquippedItem Item, UiImage Image, int Gump)> _drawn = new List<(byte, EquippedItem, UiImage, int)>();
         private Vector2 _pressAt;
         private (byte Layer, EquippedItem Item)? _pressed;
         private float _lastClick;
@@ -84,12 +84,17 @@ namespace UOClient.Unity.UI
                     continue;
                 bool partial = (td.Flags & TileFlags.PartialHue) != 0;
                 int gump = Art.Data.TryEquipConv(m.Body, td.AnimId, out EquipConvEntry conv) ? conv.Gump : td.AnimId;
-                UiImage img = (female ? Art.Gump(gump + 60000, e.Hue, partial) : null) ?? Art.Gump(gump + 50000, e.Hue, partial);
+                UiImage img = female ? Art.Gump(gump + 60000, e.Hue, partial) : null;
+                gump += img != null ? 60000 : 50000;
+                img ??= Art.Gump(gump, e.Hue, partial);
                 if (img == null)
                     continue;
-                DrawImage(img, BodyX, BodyY);
-                _drawn.Add((layer, e, img));
+                _drawn.Add((layer, e, img, gump));
             }
+            // Laid out first, so the worn item under the mouse is drawn wholly in 0x0035, as window items are (ItemGump).
+            uint over = MouseIsOver ? ItemAt(Event.current.mousePosition)?.Item.Serial ?? 0 : 0;
+            foreach (var (_, e, own, gump) in _drawn)
+                DrawImage(over != 0 && e.Serial == over ? Art.Gump(gump, ObjectHighlight.Hue) ?? own : own, BodyX, BodyY);
 
             if (_titleStyle == null)
             {
@@ -128,7 +133,7 @@ namespace UOClient.Unity.UI
             }
 
             if (Event.current.type == EventType.Repaint)
-                Hovered = ItemAt(Event.current.mousePosition)?.Item.Serial ?? 0;
+                Hovered = over;
             HandleMouse();
 
             // After the worn items, which sit on top and take their clicks first.
@@ -158,7 +163,7 @@ namespace UOClient.Unity.UI
         {
             for (int i = _drawn.Count - 1; i >= 0; i--)
             {
-                var (layer, item, img) = _drawn[i];
+                var (layer, item, img, _) = _drawn[i];
                 if (img.HitTest((int)(local.x - BodyX), (int)(local.y - BodyY)))
                     return layer == 11 || layer == 16 ? ((byte, EquippedItem)?)null : (layer, item);
             }

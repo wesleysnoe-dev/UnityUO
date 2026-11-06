@@ -280,3 +280,20 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
 ## Session: compile fix (2026-11-05)
 
 1. **Unity ignored `ServerGumpWindow.Layout.cs`, causing the 17:50 CS0246s** (`GumpPositions`, `HtmlScrollbarKind`, `HtmlScrollParts`, `HtmlScroll`, `GumpControls`): its `.meta` ended without a newline, so Unity reported it had no valid GUID, left it out of `UOClient.Unity.rsp`, and still compiled `ServerGumpWindow.cs`/`UiManager.cs`. EditorCheck reported success because it globs `Runtime/**/*.cs` and never reads metas. Fix: the meta now ends with a newline (same guid, 240 bytes); 80 other stub or no-newline `.cs.meta` files were upgraded to the full MonoImporter shape with guids unchanged. EditorCheck now runs `CheckUnityScriptMetas` before compiling. It fails on any `Assets/**/*.cs` whose meta is missing, has no 32-hex guid, has no `MonoImporter:`, has a duplicate guid, or does not end with a newline. Verified: the check fails on the old meta and passes on all 154 fixed metas; Tests (711), Cli and EditorCheck pass. Not verified: Unity recompile (`UOClient.Unity.dll` still 09:53:29).
+
+## Session: hover highlight + vendor creature art (2026-11-05)
+
+1. **Mouse-over highlight as TazUO** (backup tag `fidelity-pre-hovervendor` = `dcb7924`; details in LIVE_PARITY "Mouse-over highlight and vendor creature art").
+   - **What changed:**
+     - The thing under the mouse is re-hued to `0x0035` (TazUO draws no outline). Container, trade and paperdoll items: always. Ground items: when movable or light, not multis.
+     - Mobiles and corpses only with `ObjectHighlight.HighlightGameObjects`. That flag is TazUO's profile default, off in new profiles and in this PC's TazUO profiles. It is a code default, not a setting, so nothing is written to UserSettings.
+     - `EntityViews.PickAt` now tests opaque pixels, so clicks, drops and tooltips pick the same thing that lights up.
+     - No selection while a window or the journal covers the world. A window item doesn't highlight under another window.
+   - **Deviation:** paperdoll worn items highlight (TazUO doesn't; the paperdoll was explicitly asked for). Shop icons and map statics don't (TazUO doesn't by default).
+2. **Vendor buy art:** a buy line with a mobile serial (ModernUO's `AnimalBuyInfo`: Horse, ItemID 204 = body 0xCC) drew static art 0xCC, a pillar.
+   - Now it draws the body's stand frame, as TazUO's `ShopItem.Draw` does: file direction 1, `Body.def` hue, at most 45 x 45.
+   - Items keep their static art, cropped to its opaque bounds, in a 50-wide column.
+3. **Verified by tests:** 730 pass (19 new). Tests, Cli, EditorCheck (forced, metas checked) and GumpPreview build with 0 warnings.
+   - On the way, EditorCheck's meta check caught `ShopWindow.Icon.cs.meta` missing. I had written it before the `.cs`, and the Editor's auto-refresh deleted it as an orphan. Rewritten, with a new guid.
+4. **Editor (read only, no refresh requested):** `UOClient.Unity.dll` is 18:21:15. That is 11 s after `ObjectHighlight.cs` was created and before every other edit (18:21:30-18:25:23), so the open Editor auto-refreshed once on the new file. That compile has only an unused static class added; this batch is not in it. Re-read after the commit: see the commit report.
+5. **Not verified:** play mode (0x0035 on HD art, the world pick on mirrored mobiles, the horse picture), and live.

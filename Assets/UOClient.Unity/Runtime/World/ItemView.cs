@@ -45,6 +45,7 @@ namespace UOClient.Unity
                 SetCorpseLook(corpseLook, CorpseDraw.Action(data.AnimationLibrary, item));
             }
             StaticTileData td = data.TileData.GetStatic(item.Graphic);
+            _locked = ObjectHighlight.IsLocked(item.Flags, td.Weight);
             int priorityZ = item.Z + (td.IsBackground ? -1 : 0) + (td.Height > 0 ? 1 : 0);
             _item = new DrawItem { Kind = DrawKind.Static, Graphic = item.Graphic, X = item.X, Y = item.Y, Z = item.Z, PriorityZ = priorityZ };
 
@@ -75,6 +76,13 @@ namespace UOClient.Unity
 
         public bool Hidden { get; set; }
 
+        /// <summary>Under the mouse in the world (TazUO's SelectedObject.Object): drawn in the highlight hue (<see cref="ObjectHighlight"/>).</summary>
+        public bool Selected { get; set; }
+
+        private readonly bool _locked; // TazUO's Item.IsLocked: a fixture, never highlighted without HighlightGameObjects
+        private MobileLook _litCorpse;
+        private string _litCorpseKey;
+
         /// <summary>This view draws <paramref name="item"/> as a corpse where it already lies, so a new look can be set in place.</summary>
         public bool IsCorpseOf(WorldItem item) =>
             _corpse != null && ReferenceEquals(_corpse, item) && item.IsCorpse && item.Graphic == _graphic && item.Hue == _hue
@@ -86,6 +94,7 @@ namespace UOClient.Unity
             _corpseLook = look;
             _corpseKey = look.Key;
             _corpseAction = action;
+            _litCorpse = null;
         }
 
         public void Render(IWorldSpace world)
@@ -100,8 +109,22 @@ namespace UOClient.Unity
 
         private void RenderCorpse(IWorldSpace world)
         {
-            CorpseDraw.Pick pick = CorpseDraw.Select(_corpse, _corpseAction, Hidden,
-                (action, fileDir) => _art.Get(_corpseLook, _corpseKey, action, fileDir), out MobileFrame[] frames);
+            // Selected with HighlightGameObjects, the body lies in the highlight hue once those frames are built.
+            bool lit = ObjectHighlight.HighlightsBody(Selected, ObjectHighlight.HighlightGameObjects);
+            if (lit && _litCorpse == null)
+            {
+                _litCorpse = _corpseLook.Rehued(ObjectHighlight.Hue);
+                _litCorpseKey = _litCorpse.Key;
+            }
+            MobileFrame[] Frames(int action, int fileDir)
+            {
+                MobileFrame[] own = _art.Get(_corpseLook, _corpseKey, action, fileDir);
+                if (!lit || own == null)
+                    return own;
+                MobileFrame[] hued = _art.Get(_litCorpse, _litCorpseKey, action, fileDir);
+                return hued != null && hued.Length == own.Length ? hued : own;
+            }
+            CorpseDraw.Pick pick = CorpseDraw.Select(_corpse, _corpseAction, Hidden, Frames, out MobileFrame[] frames);
             MobileFrame f;
             bool mirror;
             switch (pick.Art)
@@ -136,6 +159,8 @@ namespace UOClient.Unity
             float top = anchor.y - f.AnchorY;
             LastRect = world.ToUnityRect(left, top, f.Slot.Width, f.Slot.Height);
             LastDepth = world.DepthFor(_item);
+            LastSlot = f.Slot;
+            LastMirror = mirror;
             _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(f.Slot.Page));
             _renderer.enabled = true;
             MeshBuilder.SetQuad(_mesh, LastRect, _art.Atlas.Uv(f.Slot), LastDepth, mirror, MeshBuilder.CutHeight(_item.Z));
@@ -154,14 +179,29 @@ namespace UOClient.Unity
             _renderer.enabled = !Hidden;
             if (Hidden)
                 return;
+            // Selected: the same art in the highlight hue (built like any other hue; the plain sprite shows until it is ready).
+            ItemSprite sprite = _sprite;
+            int hue = ObjectHighlight.GroundItemHue(_hue, Selected, _locked, false, ObjectHighlight.HighlightGameObjects);
+            if (hue != _hue && _art.GetItem(_graphic, hue) is ItemSprite lit)
+                sprite = lit;
+            _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(sprite.Slot.Page));
             LastRect = world.ToUnityRect(_item.Left, _item.Top, _item.Width, _item.Height);
             LastDepth = world.DepthFor(_item);
-            MeshBuilder.SetQuad(_mesh, LastRect, _art.Atlas.Uv(_sprite.Slot), LastDepth, false, MeshBuilder.CutHeight(_item.Z));
+            LastSlot = sprite.Slot;
+            LastMirror = false;
+            MeshBuilder.SetQuad(_mesh, LastRect, _art.Atlas.Uv(sprite.Slot), LastDepth, false, MeshBuilder.CutHeight(_item.Z));
         }
 
         /// <summary>Where the item was last drawn (Unity units) and its depth, for mouse picking; empty until its art is ready.</summary>
         public Rect LastRect { get; private set; }
         public float LastDepth { get; private set; }
+
+        /// <summary>The sprite last drawn and whether it was mirrored (a corpse), for pixel-exact picking.</summary>
+        public AtlasSlot LastSlot { get; private set; }
+        public bool LastMirror { get; private set; }
+
+        /// <summary>Whether a world point (Unity units) falls on an opaque pixel of what was last drawn.</summary>
+        public bool HitTest(Vector2 p) => _renderer.enabled && _art.HitTest(LastRect, LastSlot, LastMirror, p);
 
         public void Dispose()
         {

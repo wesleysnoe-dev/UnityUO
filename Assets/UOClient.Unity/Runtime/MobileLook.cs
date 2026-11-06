@@ -55,6 +55,22 @@ namespace UOClient.Unity
             }
         }
 
+        /// <summary>
+        /// The same look with every layer (body, clothes, mount) wholly in <paramref name="hue"/>: TazUO's selected mobile,
+        /// drawn with the highlight hue in place of each layer's own (MobileView.cs:92-96).
+        /// </summary>
+        public MobileLook Rehued(int hue)
+        {
+            var look = new MobileLook
+            {
+                Body = Body, Group = Group, Mounted = Mounted, MountGroup = MountGroup, BodyActions = BodyActions,
+                MountActions = MountActions, WarActions = WarActions, DeathActions = DeathActions
+            };
+            foreach (Layer l in Layers)
+                look.Layers.Add(new Layer { Body = l.Body, Hue = hue, Partial = false, IsMount = l.IsMount });
+            return look;
+        }
+
         public int BaseBody
         {
             get

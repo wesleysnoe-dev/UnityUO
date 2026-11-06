@@ -114,6 +114,18 @@ namespace UOClient.Unity
             }
         }
 
+        /// <summary>
+        /// Whether a world point (Unity units) is on an opaque pixel of a sprite drawn over <paramref name="drawn"/> (mirrored
+        /// or not), as TazUO's pick tests the art's pixels; atlas pages stay readable on the CPU.
+        /// </summary>
+        public bool HitTest(Rect drawn, AtlasSlot slot, bool mirror, Vector2 p)
+        {
+            if (slot.Width <= 0 || slot.Height <= 0)
+                return false;
+            var px = ObjectHighlight.SpritePixel(p.x, p.y, drawn.xMin, drawn.yMin, drawn.width, drawn.height, slot.Width, slot.Height, mirror);
+            return px.HasValue && _atlas.Opaque(slot, px.Value.X, px.Value.Y);
+        }
+
         /// <summary>A ground item's sprite: null while being built (requested on first call).</summary>
         public ItemSprite GetItem(int graphic, int hue)
         {
@@ -204,7 +216,8 @@ namespace UOClient.Unity
             int hue = job.Hue & 0x3FFF;
             if (hue != 0 && hue <= _data.Hues.Entries.Length)
             {
-                bool partial = (_data.TileData.GetStatic(job.Graphic).Flags & TileFlags.PartialHue) != 0;
+                // The highlight hues the whole sprite (ObjectHighlight.WholeArt), whatever the tiledata says.
+                bool partial = !ObjectHighlight.IsWholeArt(job.Hue) && (_data.TileData.GetStatic(job.Graphic).Flags & TileFlags.PartialHue) != 0;
                 art = HueApplier.Apply(art, _data.Hues.Entries[hue - 1], partial);
             }
             Bitmap32 scaled = hd != null ? art : Resample.Nearest(art, _scale);
@@ -381,6 +394,9 @@ namespace UOClient.Unity
             _shelf = Math.Max(_shelf, h);
             return slot;
         }
+
+        /// <summary>Whether a slot's pixel (x, y) from its top-left is opaque, read from the page's CPU copy (rows are stored bottom-up).</summary>
+        public bool Opaque(AtlasSlot s, int x, int y) => _pages[s.Page].GetPixel(s.X + x, _pageSize - 1 - s.Y - y).a > 0;
 
         public Vector4 Uv(AtlasSlot s)
         {

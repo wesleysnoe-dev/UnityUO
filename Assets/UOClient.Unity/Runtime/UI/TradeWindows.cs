@@ -54,10 +54,11 @@ namespace UOClient.Unity.UI
     /// A vendor's buy or sell list: click a line (or +) to add one, shift-click for all; - takes one back.
     /// Accept sends the order; the server closes the window when the trade is done.
     /// </summary>
-    public sealed class ShopWindow : UiWindow
+    public sealed partial class ShopWindow : UiWindow
     {
         private readonly ShopList _list;
         private readonly Dictionary<uint, int> _order = new Dictionary<uint, int>();
+        private readonly Dictionary<UiImage, (int X, int Y, int W, int H)> _bounds = new Dictionary<UiImage, (int, int, int, int)>();
         private Vector2 _scroll;
 
         public ShopWindow(ShopList list)
@@ -75,31 +76,30 @@ namespace UOClient.Unity.UI
             string who = Session.World.Mobiles.TryGetValue(_list.Vendor, out Mobile m) && !string.IsNullOrEmpty(m.Name) ? m.Name : "the vendor";
             Text(new Rect(0, 10, Rect.width, 22), (_list.Selling ? "Sell to " : "Buy from ") + who, new Color(1f, 0.9f, 0.6f), 16, TextAnchor.UpperCenter, true);
 
-            const float row = 46;
             var view = new Rect(12, 40, Rect.width - 24, Rect.height - 130);
-            _scroll = GUI.BeginScrollView(view, _scroll, new Rect(0, 0, view.width - 18, _list.Items.Count * row));
-            for (int i = 0; i < _list.Items.Count; i++)
+            float content = 0;
+            foreach (ShopItem it in _list.Items)
+                content += LineHeight(it.Serial, Art.Data.TileData.GetStatic(it.Graphic).Height);
+            _scroll = GUI.BeginScrollView(view, _scroll, new Rect(0, 0, view.width - 18, content));
+            float y = 0;
+            foreach (ShopItem item in _list.Items)
             {
-                ShopItem item = _list.Items[i];
-                float y = i * row;
+                int row = LineHeight(item.Serial, Art.Data.TileData.GetStatic(item.Graphic).Height);
                 _order.TryGetValue(item.Serial, out int chosen);
-                UiImage icon = Art.Item(item.Graphic, item.Hue);
-                if (icon != null)
-                {
-                    float s = Mathf.Min(1f, 40f / Mathf.Max(icon.Width, icon.Height));
-                    GUI.DrawTexture(new Rect(4 + (40 - icon.Width * s) / 2, y + 3 + (40 - icon.Height * s) / 2, icon.Width * s, icon.Height * s), icon.Texture);
-                }
-                Text(new Rect(52, y + 4, 220, 20), item.Name, new Color(0.95f, 0.92f, 0.82f));
-                Text(new Rect(52, y + 22, 220, 20), $"{item.Price} gp   ({item.Amount} {(_list.Selling ? "owned" : "in stock")})", new Color(0.8f, 0.76f, 0.62f), 12);
+                DrawIcon(item, y, row);
+                float mid = y + (row - 46) / 2f; // the text and buttons keep their places in the line's middle
+                Text(new Rect(56, mid + 4, 216, 20), item.Name, new Color(0.95f, 0.92f, 0.82f));
+                Text(new Rect(56, mid + 22, 216, 20), $"{item.Price} gp   ({item.Amount} {(_list.Selling ? "owned" : "in stock")})", new Color(0.8f, 0.76f, 0.62f), 12);
                 if (chosen > 0)
-                    Text(new Rect(258, y + 12, 40, 20), chosen.ToString(), new Color(1f, 0.85f, 0.4f), 15, TextAnchor.UpperRight, true);
+                    Text(new Rect(258, mid + 12, 40, 20), chosen.ToString(), new Color(1f, 0.85f, 0.4f), 15, TextAnchor.UpperRight, true);
 
-                bool add = GUI.Button(new Rect(306, y + 10, 26, 24), "+")
+                bool add = GUI.Button(new Rect(306, mid + 10, 26, 24), "+")
                            || GUI.Button(new Rect(0, y, 250, row), GUIContent.none, GUIStyle.none);
                 if (add)
                     _order[item.Serial] = Event.current.shift ? item.Amount : Mathf.Min(item.Amount, chosen + 1);
-                if (GUI.Button(new Rect(336, y + 10, 26, 24), "-") && chosen > 0)
+                if (GUI.Button(new Rect(336, mid + 10, 26, 24), "-") && chosen > 0)
                     _order[item.Serial] = chosen - 1;
+                y += row;
             }
             GUI.EndScrollView();
 
@@ -124,6 +124,23 @@ namespace UOClient.Unity.UI
                 _order.Clear();
             if (GUI.Button(new Rect(Rect.width - 130, Rect.height - 52, 110, 28), "Close"))
                 Close();
+        }
+
+        /// <summary>
+        /// A line's picture as TazUO's ShopItem.Draw makes it: a creature on sale is its body standing (frame 0, file
+        /// direction 1, the Body.def hue); an item is the opaque part of its art in the line's hue (Arts.GetRealArtBounds).
+        /// </summary>
+        private void DrawIcon(ShopItem item, float y, int row)
+        {
+            bool body = DrawsBody(_list.Selling, item.Serial);
+            UiImage icon = body ? Art.Body(item.Graphic) : Art.Item(item.Graphic, item.Hue);
+            if (icon == null)
+                return;
+            if (!_bounds.TryGetValue(icon, out var src))
+                _bounds[icon] = src = body ? (0, 0, icon.Width, icon.Height) : OpaqueBounds(icon.Bitmap);
+            var (x, dy, w, h) = IconRect(body, src.W, src.H, row);
+            var uv = new Rect((float)src.X / icon.Width, 1f - (float)(src.Y + src.H) / icon.Height, (float)src.W / icon.Width, (float)src.H / icon.Height);
+            GUI.DrawTextureWithTexCoords(new Rect(x, y + dy, w, h), icon.Texture, uv);
         }
     }
 

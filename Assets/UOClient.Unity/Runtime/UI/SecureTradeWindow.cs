@@ -71,13 +71,15 @@ namespace UOClient.Unity.UI
             DrawImage(Art.Gump(_trade.TheyAccept ? Checked : Unchecked), _layout.TheirCheck.X, _layout.TheirCheck.Y);
 
             _drawn.Clear();
-            DrawItems(_trade.MyContainer, MyBox, true);
-            DrawItems(_trade.TheirContainer, TheirBox, false);
+            PlaceItems(_trade.MyContainer, MyBox, true);
+            PlaceItems(_trade.TheirContainer, TheirBox, false);
+            ContainedItem over = MouseIsOver ? ItemAt(Event.current.mousePosition)?.Item : null;
+            DrawItems(over);
             if (_layout.HasCoins)
                 DrawCoins();
 
             if (Event.current.type == EventType.Repaint)
-                Hovered = ItemAt(Event.current.mousePosition)?.Item.Serial ?? 0;
+                Hovered = over?.Serial ?? 0;
             if (_pendingLook != 0 && Time.realtimeSinceStartup - _lastClick >= DoubleClickTime)
             {
                 if (Session.Target == null)
@@ -96,7 +98,7 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>Items at the positions the server gives, kept inside the box as TazUO does.</summary>
-        private void DrawItems(uint container, Rect box, bool mine)
+        private void PlaceItems(uint container, Rect box, bool mine)
         {
             foreach (ContainedItem item in Session.World.ItemsIn(container))
             {
@@ -104,12 +106,19 @@ namespace UOClient.Unity.UI
                 if (img == null)
                     continue;
                 (int fx, int fy) = FitInBox(item.X, item.Y, img.Width, img.Height);
-                float x = box.x + fx, y = box.y + fy;
-                DrawImage(img, x, y);
-                var r = new Rect(x, y, img.Width, img.Height);
+                _drawn.Add((item, img, new Rect(box.x + fx, box.y + fy, img.Width, img.Height), mine));
+            }
+        }
+
+        /// <summary>The placed items; the one under the mouse wholly in 0x0035 (TradingGump's ItemGumps highlight on mouse over).</summary>
+        private void DrawItems(ContainedItem over)
+        {
+            foreach (var (item, own, r, _) in _drawn)
+            {
+                UiImage img = item == over ? Art.Item(item.Graphic, ObjectHighlight.WindowItemHue(item.Hue, true)) ?? own : own;
+                DrawImage(img, r.x, r.y);
                 if (item.Amount > 1)
-                    Text(new Rect(x, y + img.Height - 12, img.Width + 20, 12), item.Amount.ToString(), Ink, 10);
-                _drawn.Add((item, img, r, mine));
+                    Text(new Rect(r.x, r.y + r.height - 12, r.width + 20, 12), item.Amount.ToString(), Ink, 10);
             }
         }
 

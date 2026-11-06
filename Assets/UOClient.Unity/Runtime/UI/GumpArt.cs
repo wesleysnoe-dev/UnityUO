@@ -109,25 +109,52 @@ namespace UOClient.Unity.UI
             return img;
         }
 
-        /// <summary>An item's (static) art at its native size, hued as the item is.</summary>
+        /// <summary>
+        /// An item's (static) art at its native size, hued as the item is; with <see cref="ObjectHighlight.WholeArt"/> in
+        /// the hue every pixel is hued, whatever the tiledata's partial-hue flag (the mouse-over highlight).
+        /// </summary>
         public UiImage Item(int graphic, int hue = 0)
         {
-            hue &= 0x3FFF;
+            bool whole = ObjectHighlight.IsWholeArt(hue);
+            hue = (hue & 0x3FFF) | (whole ? ObjectHighlight.WholeArt : 0);
             if (_items.TryGetValue((graphic, hue), out UiImage img))
                 return img;
             Bitmap32 bmp = _data.GetStatic(graphic);
             Bitmap32 hd = null;
             for (int s = 2; s <= 4 && hd == null && bmp != null; s++)
                 hd = _data.GetStaticHd(graphic, s);
-            if (bmp != null && hue > 0 && hue <= _data.Hues.Entries.Length)
+            int entry = hue & 0x3FFF;
+            if (bmp != null && entry > 0 && entry <= _data.Hues.Entries.Length)
             {
-                bool partial = (_data.TileData.GetStatic(graphic).Flags & TileFlags.PartialHue) != 0;
-                bmp = HueApplier.Apply(bmp, _data.Hues.Entries[hue - 1], partial);
+                bool partial = !whole && (_data.TileData.GetStatic(graphic).Flags & TileFlags.PartialHue) != 0;
+                bmp = HueApplier.Apply(bmp, _data.Hues.Entries[entry - 1], partial);
                 if (hd != null)
-                    hd = HueApplier.Apply(hd, _data.Hues.Entries[hue - 1], partial);
+                    hd = HueApplier.Apply(hd, _data.Hues.Entries[entry - 1], partial);
             }
             img = bmp == null ? null : new UiImage { Bitmap = bmp, Texture = Texture(bmp, hd, $"item 0x{graphic:X4}") };
             _items[(graphic, hue)] = img;
+            return img;
+        }
+
+        private readonly Dictionary<int, UiImage> _bodies = new Dictionary<int, UiImage>();
+
+        /// <summary>
+        /// A body's first standing frame facing file direction 1, as TazUO's ShopGump draws a mobile on sale
+        /// (GetAnimationFrames(body, Stand, 1)): in the Body.def stand-in hue, partial by the static tile of the same
+        /// number, as TazUO reads it. Null when the body has no art.
+        /// </summary>
+        public UiImage Body(int body)
+        {
+            if (_bodies.TryGetValue(body, out UiImage img))
+                return img;
+            AnimationLibrary anims = _data.AnimationLibrary;
+            AnimationFrame[] frames = anims.Read(body, anims.Actions(body).Stand, 1);
+            Bitmap32 bmp = frames.Length > 0 ? frames[0].Image : null;
+            int hue = anims.ReplacementHue(body);
+            if (bmp != null && hue > 0 && hue <= _data.Hues.Entries.Length)
+                bmp = HueApplier.Apply(bmp, _data.Hues.Entries[hue - 1], (_data.TileData.GetStatic(body).Flags & TileFlags.PartialHue) != 0);
+            img = bmp == null ? null : new UiImage { Bitmap = bmp, Texture = UnityTextures.ToTexture(bmp, $"body 0x{body:X4}") };
+            _bodies[body] = img;
             return img;
         }
 
@@ -171,8 +198,12 @@ namespace UOClient.Unity.UI
             foreach (UiImage i in _items.Values)
                 if (i != null)
                     UnityEngine.Object.Destroy(i.Texture);
+            foreach (UiImage i in _bodies.Values)
+                if (i != null)
+                    UnityEngine.Object.Destroy(i.Texture);
             _gumps.Clear();
             _items.Clear();
+            _bodies.Clear();
         }
     }
 }

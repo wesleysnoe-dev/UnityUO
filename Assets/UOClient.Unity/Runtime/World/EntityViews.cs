@@ -103,8 +103,13 @@ namespace UOClient.Unity
 
         public void Render(bool hideUpperMultiParts)
         {
-            foreach (Avatar a in _others.Values)
-                a.Render(_ctx.World);
+            if (_ctx.Player != null && _ctx.Session != null)
+                _ctx.Player.Selected = Selected != 0 && Selected == _ctx.Session.World.PlayerSerial;
+            foreach (KeyValuePair<uint, Avatar> kv in _others)
+            {
+                kv.Value.Selected = Selected != 0 && kv.Key == Selected;
+                kv.Value.Render(_ctx.World);
+            }
             foreach (var d in _dying)
                 d.Avatar.Render(_ctx.World);
             // Before the items: a fall that just reached its end hands over to its corpse in this same frame (the
@@ -113,6 +118,7 @@ namespace UOClient.Unity
             foreach (KeyValuePair<uint, ItemView> kv in _items)
             {
                 kv.Value.Hidden = IsFallingCorpse(kv.Key);
+                kv.Value.Selected = Selected != 0 && kv.Key == Selected;
                 kv.Value.Render(_ctx.World);
             }
             RenderMultis(hideUpperMultiParts);
@@ -177,29 +183,35 @@ namespace UOClient.Unity
             return null;
         }
 
-        /// <summary>The nearest character or ground item under a screen point (by drawn rectangle), or 0.</summary>
+        // PickAt's candidates, reused every call: serial, depth, and the view whose pixels are tested.
+        private readonly List<(uint Serial, float Depth, Avatar Mobile, ItemView Item)> _pickable = new List<(uint, float, Avatar, ItemView)>();
+
+        /// <summary>
+        /// The character or ground item drawn in front under a screen point, on an opaque pixel of what was last drawn
+        /// (TazUO picks by the art's pixels, so a sprite's transparent box never takes the click), or 0.
+        /// </summary>
         public uint PickAt(Vector2 screen)
         {
-            Vector3 p = _ctx.Camera.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0));
-            uint best = 0;
-            float bestDepth = float.MaxValue;
-            void Consider(uint serial, Rect r, float depth)
-            {
-                if (r.width > 0 && r.Contains(new Vector2(p.x, p.y)) && depth < bestDepth)
-                {
-                    best = serial;
-                    bestDepth = depth;
-                }
-            }
+            Vector3 w = _ctx.Camera.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0));
+            var p = new Vector2(w.x, w.y);
+            _pickable.Clear();
             if (_ctx.Player.Visible)
-                Consider(_ctx.Session.World.PlayerSerial, _ctx.Player.LastRect, _ctx.Player.LastDepth);
+                _pickable.Add((_ctx.Session.World.PlayerSerial, _ctx.Player.LastDepth, _ctx.Player, null));
             foreach (KeyValuePair<uint, Avatar> kv in _others)
                 if (kv.Value.Visible)
-                    Consider(kv.Key, kv.Value.LastRect, kv.Value.LastDepth);
+                    _pickable.Add((kv.Key, kv.Value.LastDepth, kv.Value, null));
             foreach (KeyValuePair<uint, ItemView> kv in _items)
-                Consider(kv.Key, kv.Value.LastRect, kv.Value.LastDepth);
-            return best;
+                _pickable.Add((kv.Key, kv.Value.LastDepth, null, kv.Value));
+            int i = ObjectHighlight.Nearest(_pickable.Count, k => _pickable[k].Depth,
+                k => _pickable[k].Mobile?.HitTest(p) ?? _pickable[k].Item.HitTest(p));
+            return i < 0 ? 0 : _pickable[i].Serial;
         }
+
+        /// <summary>
+        /// What the mouse is on in the world (0 for nothing, or while a window covers the world), as TazUO's
+        /// SelectedObject.Object: drawn in the highlight hue where <see cref="ObjectHighlight"/> says so.
+        /// </summary>
+        public uint Selected { get; set; }
 
         private void OnMobileUpdated(Core.Mobile m)
         {
