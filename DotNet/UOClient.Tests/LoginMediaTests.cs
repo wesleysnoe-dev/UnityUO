@@ -221,6 +221,29 @@ public sealed class LoginMediaTests
         Assert.Equal(logoA, L.Logo.W / L.Logo.H, 2);
         Assert.Equal(accountA, L.Account.W / L.Account.H, 2);
         Assert.Equal(loginA, L.Login.W / L.Login.H, 2);
+        // Stack order and gaps stay non-negative.
+        Assert.True(L.Account.Y - L.Logo.YMax >= 0);
+        Assert.True(L.Password.Y - L.Account.YMax >= 0);
+        Assert.True(L.Login.Y - L.Password.YMax >= 0);
+        // Secondary reserve under the Login button.
+        Assert.True(L.Login.YMax <= h - h * LoginMediaRules.OrnamentSecondaryReserveFrac + 1f);
+    }
+
+    [Fact]
+    public void LayoutOrnament_1920x1080_NearRecommendedPreview()
+    {
+        float logoA = LoginMediaRules.LogoNativeW / LoginMediaRules.LogoNativeH;
+        float accountA = LoginMediaRules.AccountNativeW / LoginMediaRules.AccountNativeH;
+        float passwordA = LoginMediaRules.PasswordNativeW / LoginMediaRules.PasswordNativeH;
+        float loginA = LoginMediaRules.LoginNativeW / LoginMediaRules.LoginNativeH;
+        var L = LoginMediaRules.LayoutOrnament(1920, 1080, logoA, accountA, passwordA, loginA);
+        Assert.True(L.Valid);
+        // Preview pack scales to ~0.36/0.32/0.24 when fitting; we allow the nominal 0.42/0.38/0.28 too.
+        Assert.InRange(L.Logo.W / 1920f, 0.30f, 0.43f);
+        Assert.InRange(L.Account.W / 1920f, 0.27f, 0.39f);
+        Assert.InRange(L.Login.W / 1920f, 0.20f, 0.29f);
+        Assert.True(L.Logo.Y < L.Account.Y);
+        Assert.True(L.Login.YMax < 1080f);
     }
 
     [Fact]

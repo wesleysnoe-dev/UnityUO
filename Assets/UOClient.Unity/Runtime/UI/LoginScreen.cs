@@ -248,6 +248,10 @@ namespace UOClient.Unity.UI
             GUI.DrawTexture(ToRect(layout.Password), _passwordPanel, ScaleMode.StretchToFill);
 
             // Baked labels stay in the art — only the editable slots are real controls.
+            // Font tracks the slot height so 1280x720 / 4:3 stay legible.
+            int fieldFont = Mathf.Clamp(Mathf.RoundToInt(layout.AccountInput.H * 0.55f), 11, 22);
+            _ornamentField.fontSize = fieldFont;
+            _ornamentField.padding = new RectOffset(Mathf.Max(4, fieldFont / 3), Mathf.Max(4, fieldFont / 3), 2, 2);
             GUI.SetNextControlName("login-account");
             Account = GUI.TextField(ToRect(layout.AccountInput), Account, 30, _ornamentField);
             GUI.SetNextControlName("login-password");
@@ -262,12 +266,13 @@ namespace UOClient.Unity.UI
                 LoginPressed?.Invoke(this);
             }
 
-            // Compact server / remember / quit under the art so existing login behaviour stays.
-            float secondaryY = layout.Login.YMax + 8f;
+            // Compact server / remember / quit in the bottom-margin reserve under the Login art.
+            float secondaryY = layout.Login.YMax + 4f;
             float secondaryW = layout.Account.W;
             float sx = layout.Account.X;
-            GUI.Label(new Rect(sx, secondaryY, 50, 22), "Server", _small);
-            string typedHost = GUI.TextField(new Rect(sx + 52, secondaryY, secondaryW - 140, 24), Host, 64, _field);
+            float rowH = 22f;
+            GUI.Label(new Rect(sx, secondaryY, 48, rowH), "Server", _small);
+            string typedHost = GUI.TextField(new Rect(sx + 50, secondaryY, secondaryW - 136, rowH), Host, 64, _field);
             if (typedHost != Host)
             {
                 Host = typedHost;
@@ -276,13 +281,13 @@ namespace UOClient.Unity.UI
                 Password = password;
                 RememberPassword = password.Length > 0;
             }
-            _portText = GUI.TextField(new Rect(sx + secondaryW - 80, secondaryY, 80, 24), _portText, 5, _field);
-            RememberPassword = GUI.Toggle(new Rect(sx, secondaryY + 28, secondaryW - 130, 22), RememberPassword, " Remember password", _toggle);
-            if (GUI.Button(new Rect(sx + secondaryW - 120, secondaryY + 26, 120, 26), "Quit"))
+            _portText = GUI.TextField(new Rect(sx + secondaryW - 78, secondaryY, 78, rowH), _portText, 5, _field);
+            RememberPassword = GUI.Toggle(new Rect(sx, secondaryY + 24, secondaryW - 120, rowH), RememberPassword, " Remember password", _toggle);
+            if (GUI.Button(new Rect(sx + secondaryW - 110, secondaryY + 22, 110, 24), "Quit"))
                 QuitPressed?.Invoke();
 
             if (!string.IsNullOrEmpty(Status))
-                GUI.Label(new Rect(sx, Math.Min(h - 36f, secondaryY + 54f), secondaryW, 36), Status, _small);
+                GUI.Label(new Rect(sx, Mathf.Min(h - 28f, secondaryY + 48f), secondaryW, 28), Status, _small);
 
             if (!_focusedOnce && Event.current.type == EventType.Repaint)
             {

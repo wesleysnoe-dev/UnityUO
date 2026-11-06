@@ -33,12 +33,12 @@ namespace UOClient.Unity
 
         /// <summary>
         /// Inner editable slot inside <see cref="AccountPanelRelativePath"/>, as fractions of the panel (provisional
-        /// from edge detection on the shipped PNG; replace if ornament-manifest.json gains official rects).
+        /// from ornament-manifest.json input_text_xywh / native size).
         /// </summary>
-        public static readonly (float X, float Y, float W, float H) AccountInputFrac = (0.0453f, 0.5556f, 0.9081f, 0.1884f);
+        public static readonly (float X, float Y, float W, float H) AccountInputFrac = (0.052696f, 0.560386f, 0.897059f, 0.183575f);
 
         /// <summary>Inner editable slot inside <see cref="PasswordPanelRelativePath"/>.</summary>
-        public static readonly (float X, float Y, float W, float H) PasswordInputFrac = (0.0454f, 0.5473f, 0.9067f, 0.1891f);
+        public static readonly (float X, float Y, float W, float H) PasswordInputFrac = (0.050307f, 0.552239f, 0.898160f, 0.179104f);
 
         /// <summary>Native pixel size of the logo PNG (for aspect when the texture is not loaded yet).</summary>
         public const float LogoNativeW = 1521f, LogoNativeH = 985f;
@@ -126,6 +126,18 @@ namespace UOClient.Unity
         /// the login screen's scaled GUI space (Screen / UiScale). Aspects are width/height. The baked labels stay in
         /// the art; <see cref="LoginOrnamentLayout.AccountInput"/> / PasswordInput are where the real fields go.
         /// </summary>
+        // Recommended stacking from ornament-manifest.json (scale down uniformly when the stack is too tall).
+        public const float OrnamentLogoWidthFrac = 0.42f;
+        public const float OrnamentPanelWidthFrac = 0.38f;
+        public const float OrnamentButtonWidthFrac = 0.28f;
+        public const float OrnamentGapLogoToAccount = 0.045f;
+        public const float OrnamentGapAccountToPassword = 0.018f;
+        public const float OrnamentGapPasswordToLogin = 0.022f;
+        public const float OrnamentBottomMarginFrac = 0.07f;
+        public const float OrnamentTopMarginFrac = 0.06f;
+        /// <summary>Reserved under the Login button for host/port/remember/quit (still inside the bottom margin band).</summary>
+        public const float OrnamentSecondaryReserveFrac = 0.045f;
+
         public static LoginOrnamentLayout LayoutOrnament(
             float screenW, float screenH,
             float logoAspect, float accountAspect, float passwordAspect, float loginAspect)
@@ -133,57 +145,56 @@ namespace UOClient.Unity
             if (screenW <= 1f || screenH <= 1f || logoAspect <= 0f || accountAspect <= 0f || passwordAspect <= 0f || loginAspect <= 0f)
                 return default;
 
-            float bottomMargin = Math.Max(14f, screenH * 0.035f);
-            float topMargin = Math.Max(10f, screenH * 0.025f);
-            float gapControls = Math.Max(8f, screenH * 0.012f);
-            float gapLogo = Math.Max(14f, screenH * 0.02f);
-            float secondaryH = Math.Max(52f, screenH * 0.08f); // host/port + remember/quit under the art
-
-            float width = Math.Min(screenW * 0.46f, 780f);
+            float scale = 1f;
             LoginOrnamentLayout best = default;
-            for (int attempt = 0; attempt < 12; attempt++)
+            for (int attempt = 0; attempt < 16; attempt++)
             {
-                float accountH = width / accountAspect;
-                float passwordH = width / passwordAspect;
-                float loginW = Math.Min(width * 0.78f, width);
-                float loginH = loginW / loginAspect;
-                float stackH = accountH + passwordH + loginH + 2f * gapControls;
-                float usedBottom = bottomMargin + secondaryH + stackH;
-                if (usedBottom > screenH * 0.72f && width > screenW * 0.28f)
-                {
-                    width *= 0.92f;
-                    continue;
-                }
+                float topMargin = screenH * OrnamentTopMarginFrac * scale;
+                // Keep a thin secondary strip inside the bottom margin so host/port never cover the Login art.
+                float bottomMargin = Math.Max(screenH * OrnamentBottomMarginFrac * scale, screenH * OrnamentSecondaryReserveFrac + 4f);
+                float gapLogo = screenH * OrnamentGapLogoToAccount * scale;
+                float gapAp = screenH * OrnamentGapAccountToPassword * scale;
+                float gapPl = screenH * OrnamentGapPasswordToLogin * scale;
 
-                float loginY = screenH - bottomMargin - secondaryH - loginH;
-                float passwordY = loginY - gapControls - passwordH;
-                float accountY = passwordY - gapControls - accountH;
-                float cx = screenW * 0.5f;
-                var account = new LoginRect(cx - width * 0.5f, accountY, width, accountH);
-                var password = new LoginRect(cx - width * 0.5f, passwordY, width, passwordH);
-                var login = new LoginRect(cx - loginW * 0.5f, loginY, loginW, loginH);
-
-                float availTop = accountY - gapLogo - topMargin;
-                if (availTop < 24f && width > screenW * 0.28f)
-                {
-                    width *= 0.9f;
-                    continue;
-                }
-
-                float logoW = Math.Min(Math.Min(screenW * 0.36f, Math.Max(8f, availTop) * logoAspect), width * 1.05f);
+                float logoW = screenW * OrnamentLogoWidthFrac * scale;
+                float panelW = screenW * OrnamentPanelWidthFrac * scale;
+                float loginW = screenW * OrnamentButtonWidthFrac * scale;
                 float logoH = logoW / logoAspect;
-                if (logoH > availTop && availTop > 0f)
-                {
-                    logoH = availTop;
-                    logoW = logoH * logoAspect;
-                }
-                float logoY = topMargin + Math.Max(0f, (availTop - logoH) * 0.15f);
-                var logo = new LoginRect(cx - logoW * 0.5f, logoY, logoW, logoH);
+                float accountH = panelW / accountAspect;
+                float passwordH = panelW / passwordAspect;
+                float loginH = loginW / loginAspect;
 
-                // No overlap: logo bottom must stay above account top.
-                if (logo.Y + logo.H > account.Y - gapLogo * 0.5f && width > screenW * 0.28f)
+                float stackH = logoH + gapLogo + accountH + gapAp + passwordH + gapPl + loginH;
+                float needed = topMargin + stackH + bottomMargin;
+                if (needed > screenH + 0.5f && scale > 0.35f)
                 {
-                    width *= 0.9f;
+                    scale *= 0.92f;
+                    continue;
+                }
+
+                float cx = screenW * 0.5f;
+                float y = topMargin;
+                // If spare vertical room, bias the logo slightly toward the top and the controls toward the bottom.
+                float spare = screenH - needed;
+                if (spare > 0f)
+                    y += spare * 0.15f;
+
+                var logo = new LoginRect(cx - logoW * 0.5f, y, logoW, logoH);
+                y = logo.YMax + gapLogo;
+                var account = new LoginRect(cx - panelW * 0.5f, y, panelW, accountH);
+                y = account.YMax + gapAp;
+                var password = new LoginRect(cx - panelW * 0.5f, y, panelW, passwordH);
+                y = password.YMax + gapPl;
+                var login = new LoginRect(cx - loginW * 0.5f, y, loginW, loginH);
+
+                if (login.YMax > screenH - screenH * OrnamentSecondaryReserveFrac + 0.5f && scale > 0.35f)
+                {
+                    scale *= 0.92f;
+                    continue;
+                }
+                if (logo.Overlaps(account) || account.Overlaps(password) || password.Overlaps(login))
+                {
+                    scale *= 0.9f;
                     continue;
                 }
 

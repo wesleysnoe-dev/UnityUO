@@ -1,69 +1,384 @@
 {
-  "version": 1,
-  "note": "Provisional from edge detection pending official art-worker manifest",
-  "assets": {
-    "logo": {
-      "file": "logo.png",
-      "width": 1521,
-      "height": 985
+  "title": "Unity UO login UI art pack",
+  "purpose": "Asset handoff only. Transparent PNGs extracted from Wes-supplied JPEGs for login screen over video background. No Unity/code changes in this pack.",
+  "method": {
+    "masking": "Contiguous exterior near-black flood-fill from image edges only (seed max-channel<=12, fringe expand <=26-28). Soft alpha on JPEG near-black fringe adjacent to exterior. NOT a global black chroma key \u2014 interior charcoal panels, engraved dark metal, and input-slot blacks remain opaque.",
+    "labels": "Account Name / Password / Login glyphs are baked into the art as decorative labels and must stay. Unity must draw the typed account/password text into the input slots separately.",
+    "no_generated_art": true
+  },
+  "sources": {
+    "controls": {
+      "attachment": "01M6QJST14ABE3MXY2EYN84KZB.jpg",
+      "copied_to": "src/controls_source.jpg",
+      "size": [
+        1168,
+        784
+      ]
     },
+    "logo": {
+      "attachment": "01M6QJST9D5FJ83FGWGNSD3NT2.jpg",
+      "copied_to": "src/logo_source.jpg",
+      "size": [
+        1712,
+        1152
+      ]
+    }
+  },
+  "assets": {
     "account_panel": {
-      "file": "account_panel.png",
-      "w": 816,
-      "h": 207,
-      "px": {
-        "x": 37,
-        "y": 115,
-        "w": 741,
-        "h": 39
-      },
-      "frac": {
-        "x": 0.0453,
-        "y": 0.5556,
-        "w": 0.9081,
-        "h": 0.1884
-      },
-      "edges": {
-        "top": 106,
-        "bottom": 162,
-        "left": 27,
-        "right": 788
+      "file": "panels/account_panel.png",
+      "native_w": 816,
+      "native_h": 207,
+      "source_file": "src/controls_source.jpg",
+      "source_size": [
+        1168,
+        784
+      ],
+      "source_crop_xyxy": [
+        176,
+        92,
+        991,
+        298
+      ],
+      "source_crop_xywh": [
+        176,
+        92,
+        816,
+        207
+      ],
+      "labels_baked": true,
+      "notes": "Baked decorative labels retained; Unity draws actual input text separately.",
+      "input_slot_xyxy": [
+        37,
+        110,
+        780,
+        159
+      ],
+      "input_slot_xywh": [
+        37,
+        110,
+        744,
+        50
+      ],
+      "input_text_xyxy": [
+        43,
+        116,
+        774,
+        153
+      ],
+      "input_text_xywh": [
+        43,
+        116,
+        732,
+        38
+      ],
+      "hit_area_xyxy": [
+        37,
+        110,
+        780,
+        159
+      ],
+      "input_slot_normalized": [
+        0.045343,
+        0.531401,
+        0.957108,
+        0.772947
+      ],
+      "input_text_normalized": [
+        0.052696,
+        0.560386,
+        0.949755,
+        0.743961
+      ],
+      "hit_area_normalized": [
+        0.045343,
+        0.531401,
+        0.957108,
+        0.772947
+      ],
+      "detection": {
+        "top_rail": [
+          106,
+          109
+        ],
+        "bot_rail": [
+          160,
+          163
+        ],
+        "gap": 51
       }
     },
     "password_panel": {
-      "file": "password_panel.png",
-      "w": 815,
-      "h": 201,
-      "px": {
-        "x": 37,
-        "y": 110,
-        "w": 739,
-        "h": 38
-      },
-      "frac": {
-        "x": 0.0454,
-        "y": 0.5473,
-        "w": 0.9067,
-        "h": 0.1891
-      },
-      "edges": {
-        "top": 101,
-        "bottom": 156,
-        "left": 27,
-        "right": 786
+      "file": "panels/password_panel.png",
+      "native_w": 815,
+      "native_h": 201,
+      "source_file": "src/controls_source.jpg",
+      "source_size": [
+        1168,
+        784
+      ],
+      "source_crop_xyxy": [
+        177,
+        301,
+        991,
+        501
+      ],
+      "source_crop_xywh": [
+        177,
+        301,
+        815,
+        201
+      ],
+      "labels_baked": true,
+      "notes": "Baked decorative labels retained; Unity draws actual input text separately.",
+      "input_slot_xyxy": [
+        35,
+        105,
+        778,
+        152
+      ],
+      "input_slot_xywh": [
+        35,
+        105,
+        744,
+        48
+      ],
+      "input_text_xyxy": [
+        41,
+        111,
+        772,
+        146
+      ],
+      "input_text_xywh": [
+        41,
+        111,
+        732,
+        36
+      ],
+      "hit_area_xyxy": [
+        35,
+        105,
+        778,
+        152
+      ],
+      "input_slot_normalized": [
+        0.042945,
+        0.522388,
+        0.955828,
+        0.761194
+      ],
+      "input_text_normalized": [
+        0.050307,
+        0.552239,
+        0.948466,
+        0.731343
+      ],
+      "hit_area_normalized": [
+        0.042945,
+        0.522388,
+        0.955828,
+        0.761194
+      ],
+      "detection": {
+        "top_rail": [
+          101,
+          104
+        ],
+        "bot_rail": [
+          153,
+          157
+        ],
+        "gap": 49
       }
     },
     "login_button": {
-      "file": "login_button.png",
-      "width": 617,
-      "height": 146
+      "file": "panels/login_button.png",
+      "native_w": 617,
+      "native_h": 146,
+      "source_file": "src/controls_source.jpg",
+      "source_size": [
+        1168,
+        784
+      ],
+      "source_crop_xyxy": [
+        276,
+        508,
+        892,
+        653
+      ],
+      "source_crop_xywh": [
+        276,
+        508,
+        617,
+        146
+      ],
+      "labels_baked": true,
+      "notes": "Baked decorative labels retained; Unity draws actual input text separately.",
+      "hit_area_xyxy": [
+        10,
+        7,
+        605,
+        138
+      ],
+      "hit_area_xywh": [
+        10,
+        7,
+        596,
+        132
+      ],
+      "hit_area_normalized": [
+        0.016207,
+        0.047945,
+        0.982172,
+        0.952055
+      ],
+      "labels_baked_text": "Login"
+    },
+    "logo": {
+      "file": "panels/logo.png",
+      "native_w": 1521,
+      "native_h": 985,
+      "source_file": "src/logo_source.jpg",
+      "source_size": [
+        1712,
+        1152
+      ],
+      "source_crop_xyxy": [
+        97,
+        62,
+        1617,
+        1046
+      ],
+      "source_crop_xywh": [
+        97,
+        62,
+        1521,
+        985
+      ],
+      "labels_baked": true,
+      "notes": "Unity UO logo; exterior black flood-filled only. Interior dark engraved metal preserved opaque."
     }
   },
-  "layout": {
-    "logo_max_width_frac": 0.42,
-    "controls_max_width_frac": 0.42,
-    "bottom_stack_anchor_y_frac": 0.92,
-    "gap_logo_to_controls_min_px": 16,
-    "gap_between_controls_px_at_ref": 10
-  }
+  "recommended_stacking": {
+    "order_top_to_bottom": [
+      "logo",
+      "account_panel",
+      "password_panel",
+      "login_button"
+    ],
+    "horizontal_align": "center",
+    "vertical_placement": "logo upper-center; account/password/login stacked low-center above bottom margin; no overlap",
+    "width_fractions_of_screen": {
+      "logo": 0.42,
+      "account_panel": 0.38,
+      "password_panel": 0.38,
+      "login_button": 0.28
+    },
+    "vertical_gaps_frac_of_screen_height": {
+      "logo_to_account": 0.045,
+      "account_to_password": 0.018,
+      "password_to_login": 0.022,
+      "bottom_margin": 0.07,
+      "min_top_margin": 0.06
+    },
+    "preview_applied": {
+      "1920x1080": {
+        "logo_width_frac": 0.3573,
+        "panel_width_frac": 0.3234,
+        "button_width_frac": 0.238,
+        "gap_logo_to_panels_px": 40,
+        "gap_between_panels_px": 16,
+        "gap_panel_to_button_px": 19,
+        "top_margin_px": 68,
+        "bottom_margin_px": 75,
+        "stack_top_y": 68,
+        "no_overlap": true
+      },
+      "1280x720": {
+        "logo_width_frac": 0.3578,
+        "panel_width_frac": 0.3234,
+        "button_width_frac": 0.2383,
+        "gap_logo_to_panels_px": 27,
+        "gap_between_panels_px": 10,
+        "gap_panel_to_button_px": 12,
+        "top_margin_px": 47,
+        "bottom_margin_px": 50,
+        "stack_top_y": 47,
+        "no_overlap": true
+      }
+    },
+    "preview_layouts_px": {
+      "1920x1080": {
+        "logo": {
+          "x": 617,
+          "y": 68,
+          "w": 686,
+          "h": 444
+        },
+        "account_panel": {
+          "x": 649,
+          "y": 552,
+          "w": 621,
+          "h": 157
+        },
+        "password_panel": {
+          "x": 649,
+          "y": 725,
+          "w": 621,
+          "h": 153
+        },
+        "login_button": {
+          "x": 731,
+          "y": 897,
+          "w": 457,
+          "h": 108
+        }
+      },
+      "1280x720": {
+        "logo": {
+          "x": 411,
+          "y": 47,
+          "w": 458,
+          "h": 296
+        },
+        "account_panel": {
+          "x": 433,
+          "y": 370,
+          "w": 414,
+          "h": 104
+        },
+        "password_panel": {
+          "x": 433,
+          "y": 484,
+          "w": 414,
+          "h": 102
+        },
+        "login_button": {
+          "x": 487,
+          "y": 598,
+          "w": 305,
+          "h": 72
+        }
+      }
+    }
+  },
+  "coordinate_conventions": {
+    "xyxy": "inclusive pixel bounds [x0,y0,x1,y1] in the cropped PNG unless noted",
+    "xywh": "[x,y,width,height]",
+    "normalized": "[x0/w, y0/h, x1_exclusive/w, y1_exclusive/h] relative to each cropped asset",
+    "source_crop_xyxy": "inclusive crop from source JPEG into the PNG"
+  },
+  "masking_defects_and_jpeg_halo": {
+    "expected": "JPEG sources have near-black compression fringe around gold/silver filigree. Soft-alpha fringe cleanup reduces hard matte lines but some dark halo may remain at sharp points.",
+    "interior_black": "Preserved opaque (verified input slots mean alpha 255).",
+    "do_not": "Do not global-key black; that would punch holes in panels/logo engraving.",
+    "logo_wisps": "Any intentional dark edge distress on the logo crest is preserved with the art; only exterior-connected black was cleared."
+  },
+  "related_video_assets_note": "Login video/music assets live separately under /workspace/login-background-assets/ (muted loop + LoginLoop.mp3). This pack is UI chrome only.",
+  "previews": [
+    "previews/login_layout_1920x1080.png",
+    "previews/login_layout_1920x1080_guides.png",
+    "previews/login_layout_1280x720.png",
+    "previews/login_layout_1280x720_guides.png"
+  ]
 }
