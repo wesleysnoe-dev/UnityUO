@@ -505,10 +505,34 @@ namespace UOClient.Core
         /// <summary>Casts a spell by number (1 = Clumsy ... 64 = Water Elemental for Magery).</summary>
         public void CastSpell(int spellId)
         {
-            if (State == SessionState.InWorld)
-                Macros.Note($"cast {spellId}");
-            TextCommand(0x56, spellId.ToString());
+            if (State != SessionState.InWorld)
+                return;
+            Macros.Note($"cast {spellId}");
+            _conn.Send(CastSpellRequest(spellId, Version));
         }
+
+        /// <summary>
+        /// TazUO's Send_CastSpell (OutgoingPackets.cs:1056-1103): from 6.0.14.2 the extended 0xBF 0x1C with 2 (no book) and
+        /// the spell number, which ModernUO's IncomingExtendedCommandPackets.CastSpell reads (1 would be followed by a book
+        /// serial); older clients the 0x12 0x56 macro cast.
+        /// </summary>
+        public static byte[] CastSpellRequest(int spellId, ClientVersion version) =>
+            version >= new ClientVersion(6, 0, 14, 2)
+                ? new PacketWriter(0xBF).UInt16(0x1C).UInt16(0x02).UInt16((ushort)spellId).ToArray()
+                : new PacketWriter(0x12).Byte(0x56).AsciiZ(spellId.ToString()).ToArray();
+
+        /// <summary>Casts a spell from a given spellbook: TazUO's Send_CastSpellFromBook, 0x12 0x27 "spell serial".</summary>
+        public void CastSpellFromBook(int spellId, uint bookSerial)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            Macros.Note($"cast {spellId}");
+            _conn.Send(CastSpellFromBookRequest(spellId, bookSerial));
+        }
+
+        /// <summary>ModernUO's TextCommand 0x27 (IncomingPlayerPackets.cs:162-171): spell number, a space, the book serial.</summary>
+        public static byte[] CastSpellFromBookRequest(int spellId, uint bookSerial) =>
+            new PacketWriter(0x12).Byte(0x27).AsciiZ($"{spellId} {bookSerial}").ToArray();
 
         /// <summary>Opens a spellbook (1 = Magery, 2 = Necromancy, 3 = Chivalry, ...).</summary>
         public void OpenSpellbook(int type = 1) => TextCommand(0x43, type.ToString());

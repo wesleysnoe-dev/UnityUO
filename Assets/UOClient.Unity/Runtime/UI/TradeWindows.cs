@@ -244,7 +244,7 @@ namespace UOClient.Unity.UI
     }
 
     /// <summary>A spellbook: the spells it holds, by circle; click one to cast it.</summary>
-    public sealed class SpellbookWindow : UiWindow
+    public sealed partial class SpellbookWindow : UiWindow
     {
         private readonly uint _book;
         private readonly int _first;
@@ -287,7 +287,7 @@ namespace UOClient.Unity.UI
                 Text(new Rect(56, y + 6, 240, 20), names[i], new Color(0.95f, 0.92f, 0.82f), 14);
                 Text(new Rect(56, y + 24, 240, 20), circle, new Color(0.7f, 0.66f, 0.55f), 12);
                 if (GUI.Button(new Rect(0, y, view.width - 18, row), GUIContent.none, GUIStyle.none))
-                    Session.CastSpell(_first + i);
+                    CastFromBook(Session, _book, _first, i);
             }
             GUI.EndScrollView();
         }

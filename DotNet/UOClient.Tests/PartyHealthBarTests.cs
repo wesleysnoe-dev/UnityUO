@@ -58,8 +58,9 @@ public sealed class PartyHealthBarTests
         new PacketWriter(0x6C, 19).Byte(0).UInt32(Cursor).Byte(flags).UInt32(serial).UInt16(0).UInt16(0).Byte(0).Byte(0)
             .UInt16(0).ToArray();
 
-    // GameActions.CastSpell as we send it: 0x12 type 0x56, the spell number (ModernUO's TextCommand CastSpell).
-    private static byte[] Cast(int spell) => new PacketWriter(0x12).Byte(0x56).AsciiZ(spell.ToString()).ToArray();
+    // GameActions.CastSpell as we send it at 7.0.23.1: 0xBF 0x1C, 2 (no book), the spell number (ModernUO's
+    // IncomingExtendedCommandPackets.CastSpell).
+    private static byte[] Cast(int spell) => new PacketWriter(0xBF).UInt16(0x1C).UInt16(0x02).UInt16((ushort)spell).ToArray();
 
     private static List<byte[]> NoPings(List<byte[]> sent) => sent.Where(p => p[0] != 0x73).ToList();
 
