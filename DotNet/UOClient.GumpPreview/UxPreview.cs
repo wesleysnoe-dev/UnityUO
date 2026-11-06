@@ -5,11 +5,13 @@ using UOClient.Core;
 using UOClient.IO;
 using UOClient.IO.Files;
 using UOClient.IO.Formats;
+using UOClient.Net;
 using UOClient.Unity.UI;
 
 /// <summary>
-/// gumppreview &lt;uoDataDir&gt; --ux &lt;outDir&gt;: synthetic health bars and the classic status, drawn as HealthBarWindow.Draw
-/// and StatusWindow.Draw lay them out (HealthBarWindow.Layout, StatusWindow.Layout) from made-up mobiles. RENDERER-ONLY:
+/// gumppreview &lt;uoDataDir&gt; --ux &lt;outDir&gt;: synthetic health bars, the AoS status and the paperdoll's chrome, drawn as
+/// HealthBarWindow.Draw, StatusWindow.Draw and PaperdollWindow.Draw lay them out (their .Layout files) from made-up
+/// mobiles at our client version. RENDERER-ONLY:
 /// an offline fixture, not a capture of the running client (no Unity, Session or server; no ui.Scale, HD art or sampling).
 /// </summary>
 internal static class UxPreview
@@ -27,7 +29,8 @@ internal static class UxPreview
         {
             Serial = Me, Name = "Wes", Hits = 62, HitsMax = 100, Mana = 30, ManaMax = 40, Stamina = 95, StaminaMax = 100,
             Female = false, Str = 90, Dex = 45, Int = 25, Armor = 12, Gold = 1234, Weight = 150, MaxWeight = 390,
-            HasFullStatus = true, StrLock = 0, DexLock = 1, IntLock = 2
+            StatCap = 225, Followers = 1, FollowersMax = 5, FireResist = 20, ColdResist = 15, PoisonResist = 10, EnergyResist = 5,
+            Luck = 100, DamageMin = 11, DamageMax = 13, HasFullStatus = true, StrLock = 0, DexLock = 1, IntLock = 2
         };
         var orc = new Mobile { Serial = Orc, Name = "an orc", Hits = 18, HitsMax = 25, Notoriety = 5 };
         var poisoned = new Mobile { Serial = Orc, Name = "a giant spider", Hits = 9, HitsMax = 25, Notoriety = 3, Poisoned = true };
@@ -46,7 +49,10 @@ internal static class UxPreview
         Write(outDir, "partybar-self", PartyBar(data, text, hues, HealthBarWindow.ComputeParty(Me, Me, me, null)));
         Write(outDir, "partybar-member", PartyBar(data, text, hues, HealthBarWindow.ComputeParty(Orc, Me, friend, null)));
         Write(outDir, "partybar-out-of-range", PartyBar(data, text, hues, HealthBarWindow.ComputeParty(Orc, Me, null, "Friend")));
-        Write(outDir, "status-classic", Status(data, text, hues, me));
+        Write(outDir, "status-aos", Status(data, text, hues, me, ClientVersion.Default));
+        Write(outDir, "paperdoll-self-aos", Paperdoll(data, hues, ClientVersion.Default, self: true, war: false));
+        Write(outDir, "paperdoll-self-aos-war", Paperdoll(data, hues, ClientVersion.Default, self: true, war: true));
+        Write(outDir, "paperdoll-other", Paperdoll(data, hues, ClientVersion.Default, self: false, war: false));
         Write(outDir, "question-criminal", Question(data, text, hues, QuestionWindow.CriminalText));
         return 0;
     }
@@ -134,18 +140,46 @@ internal static class UxPreview
 
     // ---- StatusWindow.Draw ------------------------------------------------------------------------------------------
 
-    private static Bitmap32 Status(UOData data, UniText text, HueEntry[] hues, Mobile p)
+    private static Bitmap32 Status(UOData data, UniText text, HueEntry[] hues, Mobile p, ClientVersion v)
     {
         Bitmap32 bg = Gump(data, hues, StatusWindow.Background);
-        var canvas = Canvas(bg?.Width ?? 260, bg?.Height ?? 130);
+        var canvas = Canvas(bg?.Width ?? 432, bg?.Height ?? 184);
         Blit(canvas, bg, 0, 0, canvas.Width);
-        (int nx, int ny) = StatusWindow.NamePos;
-        Blit(canvas, Label(text, hues, p.Name, StatusWindow.LabelHue), nx, ny, canvas.Width);
-        int lockX = StatusWindow.LockX(data.GumpFile is UopFile);
+        Bitmap32 name = Label(text, hues, p.Name, StatusWindow.LabelHue);
+        if (name != null)
+            Blit(canvas, name, new StatusWindow.Label(StatusWindow.NameX, StatusWindow.NameY, null, StatusWindow.NameWidth).TextX(name.Width),
+                StatusWindow.NameY, canvas.Width);
+        if (StatusWindow.HasBuffButton(v))
+            Blit(canvas, Gump(data, hues, StatusWindow.BuffButton), StatusWindow.BuffButtonX, StatusWindow.BuffButtonY, canvas.Width);
         for (int stat = 0; stat < 3; stat++)
-            Blit(canvas, Gump(data, hues, StatusWindow.LockGump(StatusWindow.LockOf(p, stat))), lockX, StatusWindow.LockY[stat], canvas.Width);
+            Blit(canvas, Gump(data, hues, StatusWindow.LockGump(StatusWindow.LockOf(p, stat))), StatusWindow.LockX, StatusWindow.LockY[stat], canvas.Width);
         foreach (StatusWindow.Label l in StatusWindow.Labels(p))
-            Blit(canvas, Label(text, hues, l.Text, StatusWindow.LabelHue), l.X, l.Y, canvas.Width);
+        {
+            Bitmap32 img = Label(text, hues, l.Text, StatusWindow.LabelHue);
+            if (img != null)
+                Blit(canvas, img, l.TextX(img.Width), l.Y, canvas.Width);
+        }
+        foreach (StatusWindow.Rule r in StatusWindow.Rules)
+            for (int x = r.X; x < r.X + r.Width && x < canvas.Width; x++)
+                canvas.Pixels[r.Y * canvas.Width + x] = StatusWindow.RuleArgb;
+        return canvas;
+    }
+
+    // ---- PaperdollWindow.Draw's chrome (background, virtue gem, scrolls, button column; no body or worn items) -------
+
+    private static Bitmap32 Paperdoll(UOData data, HueEntry[] hues, ClientVersion v, bool self, bool war)
+    {
+        Bitmap32 bg = Gump(data, hues, self ? PaperdollWindow.BackgroundPlayer : PaperdollWindow.BackgroundOther)
+                      ?? Gump(data, hues, PaperdollWindow.BackgroundPlayer);
+        var canvas = Canvas(bg?.Width ?? 262, bg?.Height ?? 324);
+        Blit(canvas, bg, 0, 0, canvas.Width);
+        Blit(canvas, Gump(data, hues, PaperdollWindow.VirtueGem), PaperdollWindow.VirtueX, PaperdollWindow.VirtueY, canvas.Width);
+        Bitmap32 scroll = Gump(data, hues, PaperdollWindow.ScrollGump);
+        Blit(canvas, scroll, PaperdollWindow.ProfileX, PaperdollWindow.ProfileY, canvas.Width);
+        if (self && scroll != null)
+            Blit(canvas, scroll, PaperdollWindow.PartyX(scroll.Width), PaperdollWindow.ProfileY, canvas.Width);
+        foreach (PaperdollWindow.Button b in PaperdollWindow.Buttons(v, self, war))
+            Blit(canvas, Gump(data, hues, b.Normal), b.X, b.Y, canvas.Width);
         return canvas;
     }
 

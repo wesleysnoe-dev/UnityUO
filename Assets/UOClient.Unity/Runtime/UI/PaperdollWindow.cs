@@ -13,15 +13,10 @@ namespace UOClient.Unity.UI
     /// Double-click the backpack to open it, double-click other items to use them, drag items off to
     /// take them off, drop items onto it to put them on. Double-click the scroll for the character's profile;
     /// double-click the virtue gem for the virtue gump, and (our own) the party scroll for the party window.
+    /// The button column is PaperdollWindow.Layout's (TazUO's PaperDollGump for our client version).
     /// </summary>
-    public sealed class PaperdollWindow : UiWindow
+    public sealed partial class PaperdollWindow : UiWindow
     {
-        private const float BodyX = 8, BodyY = 19;
-
-        // TazUO's PaperDollGump Settings: the profile and party scrolls (0x7D2) and the virtue gem (0x71).
-        private const int ScrollGump = 0x07D2, VirtueGem = 0x0071;
-        private const float ProfileX = 25, ProfileY = 196, VirtueX = 80, VirtueY = 4;
-
         // Back to front, as the classic paperdoll layers them.
         private static readonly byte[] PaperdollOrder =
         {
@@ -55,7 +50,7 @@ namespace UOClient.Unity.UI
 
         public override void OnOpened()
         {
-            UiImage bg = Art.Gump(_serial == Session.World.PlayerSerial ? 0x07D0 : 0x07D1) ?? Art.Gump(0x07D0);
+            UiImage bg = Art.Gump(_serial == Session.World.PlayerSerial ? BackgroundPlayer : BackgroundOther) ?? Art.Gump(BackgroundPlayer);
             if (bg != null)
                 Rect.size = new Vector2(bg.Width, bg.Height);
         }
@@ -65,7 +60,7 @@ namespace UOClient.Unity.UI
             if (!Session.World.Mobiles.TryGetValue(_serial, out Mobile m))
                 return;
 
-            DrawImage(Art.Gump(_serial == Session.World.PlayerSerial ? 0x07D0 : 0x07D1) ?? Art.Gump(0x07D0), 0, 0);
+            DrawImage(Art.Gump(_serial == Session.World.PlayerSerial ? BackgroundPlayer : BackgroundOther) ?? Art.Gump(BackgroundPlayer), 0, 0);
 
             // The virtue gem on every paperdoll, under the body (TazUO adds its PaperDollInteractable after the gem).
             UiImage virtue = Art.Gump(VirtueGem);
@@ -106,7 +101,7 @@ namespace UOClient.Unity.UI
                 _titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true, alignment = TextAnchor.UpperLeft };
                 _titleStyle.normal.textColor = new Color(0.12f, 0.1f, 0.06f);
             }
-            GUI.Label(new Rect(39, 262, 185, 40), _title ?? m.Name ?? "", _titleStyle);
+            GUI.Label(new Rect(TitleX, TitleY, TitleWidth, 40), _title ?? m.Name ?? "", _titleStyle);
 
             // The profile scroll (where ClassicUO puts it): a double-click asks for this character's profile (0xB8).
             UiImage profile = Art.Gump(ScrollGump);
@@ -117,24 +112,20 @@ namespace UOClient.Unity.UI
             float partyX = 0;
             if (_serial == Session.World.PlayerSerial && (party = Art.Gump(ScrollGump)) != null)
             {
-                partyX = ProfileX + party.Width - 4;
+                partyX = PartyX(party.Width);
                 DrawImage(party, partyX, ProfileY);
             }
 
-            // Our own paperdoll carries the classic column of buttons on the right.
-            if (_serial == Session.World.PlayerSerial)
+            // The button column: ours in full (Quests and Guild from CV_500A), anyone else's Status alone.
+            bool self = _serial == Session.World.PlayerSerial;
+            foreach (Button b in Buttons(Session.Version, self, Session.WarMode))
             {
-                bool war = Session.WarMode;
-                (int Normal, int Pressed, string Command)[] buttons =
-                {
-                    (0x07EF, 0x07F0, "help"), (0x07D6, 0x07D7, "options"), (0x07D9, 0x07DA, "logout"),
-                    (0x07DC, 0x07DD, "journal"), (0x07DF, 0x07E0, "skills"), (0x07E2, 0x07E3, "chat"),
-                    (war ? 0x07E8 : 0x07E5, war ? 0x07E9 : 0x07E6, "war"), (0x07EB, 0x07EC, "status")
-                };
-                float[] ys = { 44, 71, 98, 124, 151, 178, 205, 233 };
-                for (int i = 0; i < buttons.Length; i++)
-                    if (GumpButton(buttons[i].Normal, buttons[i].Pressed, 185, ys[i]))
-                        Ui.Command?.Invoke(buttons[i].Command);
+                if (!GumpButton(b.Normal, b.Pressed, b.X, b.Y))
+                    continue;
+                if (self)
+                    Ui.Command?.Invoke(b.Command);
+                else
+                    OpenOtherBar();
             }
 
             if (Event.current.type == EventType.Repaint)
@@ -149,6 +140,17 @@ namespace UOClient.Unity.UI
             // The party scroll overlaps the profile's right edge by 4px and sits above it, so it's tested first.
             else if (DoubleClicked(profile, ProfileX, ProfileY))
                 Session.RequestProfile(_serial);
+        }
+
+        /// <summary>Someone else's Status button: their health bar under the mouse, unless they already have one.</summary>
+        private void OpenOtherBar()
+        {
+            if (Ui.Find(HealthBarWindow.KeyFor(_serial)) != null)
+                return;
+            Vector2 mouse = Rect.position + Event.current.mousePosition;
+            int width = Art.Gump(HealthBarWindow.BackgroundOther)?.Width ?? 130;
+            (float x, float y) = OtherBarAt(mouse.x, mouse.y, width);
+            Ui.Open(new HealthBarWindow(_serial, x, y));
         }
 
         /// <summary>A left double-click on a picture's opaque pixels (TazUO's GumpPic with a MouseDoubleClick handler).</summary>

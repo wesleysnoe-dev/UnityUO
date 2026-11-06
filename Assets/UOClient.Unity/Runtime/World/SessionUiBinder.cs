@@ -368,6 +368,8 @@ namespace UOClient.Unity
                 case "journal": _ctx.Hud.JournalVisible = !_ctx.Hud.JournalVisible; break;
                 case "skills": Ui.Open(new UI.SkillsWindow()); break;
                 case "chat": _chatLine.Open(); break;
+                case "quests": _ctx.Session.RequestQuestMenu(); break;
+                case "guild": _ctx.Session.RequestGuildMenu(); break;
                 case "war": _ctx.Session.SetWarMode(!_ctx.Session.WarMode); break;
                 case "status": Ui.Open(new UI.StatusWindow()); break;
                 case "party":

@@ -170,6 +170,30 @@ namespace UOClient.Core
         }
 
         /// <summary>
+        /// The paperdoll's Quests button (TazUO's Send_QuestMenuRequest): 0xD7 command 0x32. ModernUO answers with the ML
+        /// quest log, and with nothing while ML quests are off (an AoS shard).
+        /// </summary>
+        public void RequestQuestMenu()
+        {
+            if (State == SessionState.InWorld)
+                _conn.Send(EncodedCommand(World.PlayerSerial, 0x32, 0x00));
+        }
+
+        /// <summary>
+        /// The paperdoll's Guild button (TazUO's Send_GuildMenuRequest): 0xD7 command 0x28. ModernUO answers with the new
+        /// (SE) guild gumps, and with nothing before SE.
+        /// </summary>
+        public void RequestGuildMenu()
+        {
+            if (State == SessionState.InWorld)
+                _conn.Send(EncodedCommand(World.PlayerSerial, 0x28, 0x0A));
+        }
+
+        /// <summary>0xD7 as TazUO writes it: length, the player's serial, the command, one byte.</summary>
+        public static byte[] EncodedCommand(uint player, int command, byte arg) =>
+            new PacketWriter(0xD7).UInt32(player).UInt16(command).Byte(arg).ToArray();
+
+        /// <summary>
         /// The paperdoll's virtue gem, as TazUO's PaperDollGump.VirtueMenu_MouseDoubleClickEvent: a reply to gump type
         /// 461 from the player, button 1, with the paperdoll's mobile as the one switch. ModernUO's DisplayGumpResponse
         /// answers that with VirtueGump.RequestVirtueGump for the switch's player.

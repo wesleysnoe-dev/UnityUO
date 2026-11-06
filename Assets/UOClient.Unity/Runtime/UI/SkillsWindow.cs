@@ -366,22 +366,22 @@ namespace UOClient.Unity.UI
     }
 
     /// <summary>
-    /// The status window as TazUO's StatusGumpOld draws it (layout in StatusWindow.Layout): the 0x0802 scroll with the name,
-    /// str / dex / int and their gain locks, sex, armor, hits, mana, stamina, gold and weight from the full status (0x11).
-    /// A lock click cycles it and tells the server (0xBF 0x1A); a click in the bottom-right corner turns the status into
-    /// our health bar, and opening it closes that bar (StatusGumpBarMutuallyExclusive, on by default). TazUO's default
-    /// style is the modern one; the classic one is used here. TazUO's compact styles are drawn with plain colour boxes,
-    /// not gump art, so they are not offered.
+    /// The status window as TazUO's StatusGumpModern draws it for our AoS-era client (layout in StatusWindow.Layout): the
+    /// 0x2A6C background with the name, str / dex / int and their gain locks, hits / stamina / mana over their maxima,
+    /// stat cap, luck, weight, damage, gold, followers and resists from the full status (0x11). A lock click cycles it
+    /// and tells the server (0xBF 0x1A); a click from (389, 152) to the corner turns the status into our health bar,
+    /// and opening it closes that bar (StatusGumpBarMutuallyExclusive, on by default). TazUO's other styles (Old,
+    /// vertical / horizontal, compact, bars) are profile options, not the Standard one, so they are not offered.
     /// </summary>
     public sealed partial class StatusWindow : UiWindow
     {
         private readonly CachedLabel _name = new CachedLabel();
-        private readonly CachedLabel[] _labels = Enumerable.Range(0, 10).Select(_ => new CachedLabel()).ToArray();
+        private readonly CachedLabel[] _labels = Enumerable.Range(0, Labels(new Mobile()).Length).Select(_ => new CachedLabel()).ToArray();
         private Vector2? _pressedAt; // the window's position when the corner was pressed
 
         public StatusWindow()
         {
-            Rect = new Rect(100, 100, 260, 130); // Profile.StatusGumpPosition's default; sized to 0x0802 on open
+            Rect = new Rect(100, 100, 432, 184); // Profile.StatusGumpPosition's default; sized to 0x2A6C on open
         }
 
         public override string Key => "status";
@@ -414,21 +414,21 @@ namespace UOClient.Unity.UI
             if (m == null)
                 return;
 
-            (int nx, int ny) = NamePos;
-            DrawImage(_name.Get(Art, m.Name ?? "", LabelHue), nx, ny);
+            UiImage name = _name.Get(Art, m.Name ?? "", LabelHue);
+            if (name != null)
+                DrawImage(name, new Label(NameX, NameY, null, NameWidth).TextX(name.Width), NameY);
 
-            // StatusGumpOld's buff button (CV_5020 and later): opens the buff bar, or brings it forward.
-            if (GumpButton(BuffButton, BuffButtonPressed, BuffButtonX, BuffButtonY, BuffButtonPressed))
+            // The buff button (CV_5020 and later): opens the buff bar, or brings it forward.
+            if (HasBuffButton(Session.Version) && GumpButton(BuffButton, BuffButtonPressed, BuffButtonX, BuffButtonY, BuffButtonPressed))
                 Ui.Open(new BuffBarWindow());
 
-            bool uop = Art.Data.GumpFile is UOClient.IO.Files.UopFile;
             for (int stat = 0; stat < 3; stat++)
             {
                 byte state = LockOf(m, stat);
                 UiImage lockArt = Art.Gump(LockGump(state));
                 if (lockArt == null)
                     continue;
-                var r = new Rect(LockX(uop), LockY[stat], lockArt.Width, lockArt.Height);
+                var r = new Rect(LockX, LockY[stat], lockArt.Width, lockArt.Height);
                 DrawImage(lockArt, r.x, r.y);
                 if (GUI.Button(r, GUIContent.none, GUIStyle.none))
                     Session.SetStatLock(stat, NextLock(state));
@@ -436,9 +436,21 @@ namespace UOClient.Unity.UI
 
             Label[] labels = Labels(m);
             for (int i = 0; i < labels.Length; i++)
-                DrawImage(_labels[i].Get(Art, labels[i].Text, LabelHue), labels[i].X, labels[i].Y);
+            {
+                UiImage img = _labels[i].Get(Art, labels[i].Text, LabelHue);
+                if (img != null)
+                    DrawImage(img, labels[i].TextX(img.Width), labels[i].Y);
+            }
 
-            // StatusGumpBase.OnMouseUp: a click (dragged under 5 pixels) from (244, 112) on swaps the status for our health bar.
+            // The 1-pixel rules between each value and its maximum.
+            if (e.type == EventType.Repaint)
+            {
+                var ruleColor = unchecked(new Color32((byte)(RuleArgb >> 16), (byte)(RuleArgb >> 8), (byte)RuleArgb, (byte)(RuleArgb >> 24)));
+                foreach (Rule rule in Rules)
+                    GUI.DrawTexture(new Rect(rule.X, rule.Y, rule.Width, 1), Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0, ruleColor, 0, 0);
+            }
+
+            // StatusGumpBase.OnMouseUp: a click (dragged under 5 pixels) from (389, 152) on swaps the status for our health bar.
             bool inCorner = e.mousePosition.x >= BarCornerX && e.mousePosition.y >= BarCornerY;
             if (e.type == EventType.MouseDown && e.button == 0)
                 _pressedAt = inCorner ? Rect.position : (Vector2?)null;

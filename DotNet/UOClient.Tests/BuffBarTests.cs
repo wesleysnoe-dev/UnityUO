@@ -145,7 +145,7 @@ public sealed class BuffBarTests
         Assert.Equal((21, 5), BuffBarWindow.IconPos(0x7582, 1, 100, 60));
         Assert.Equal((25, 57), BuffBarWindow.IconPos(0x757F, 1, 60, 100));
         Assert.Equal((100, 100), (BuffBarWindow.OpenX, BuffBarWindow.OpenY));
-        Assert.Equal((0x7538, 20, 42), (StatusWindow.BuffButton, StatusWindow.BuffButtonX, StatusWindow.BuffButtonY));
+        Assert.Equal((0x7538, 40, 50), (StatusWindow.BuffButton, StatusWindow.BuffButtonX, StatusWindow.BuffButtonY));
     }
 
     [Theory]

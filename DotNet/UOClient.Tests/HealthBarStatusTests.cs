@@ -5,7 +5,7 @@ using UOClient.Unity.UI;
 namespace UOClient.Tests;
 
 /// <summary>
-/// Health bars and the classic status (TazUO's HealthBarGump / StatusGumpOld) from an offline session: packets injected as
+/// Health bars and the AoS status (TazUO's HealthBarGump / StatusGumpModern) from an offline session: packets injected as
 /// ModernUO writes them, what we send checked against ModernUO's readers. No server, no Unity.
 /// </summary>
 public sealed class HealthBarStatusTests
@@ -36,8 +36,8 @@ public sealed class HealthBarStatusTests
             .Int32(1234).UInt16(12).UInt16(150)               // gold, armor, weight
             .UInt16(390).Byte(1)                              // max weight, race
             .UInt16(225).Byte(1).Byte(5)                      // stat cap, followers, followers max
-            .UInt16(0).UInt16(0).UInt16(0).UInt16(0).UInt16(0) // fire cold poison energy resists, luck
-            .UInt16(0).UInt16(0).Int32(0).ToArray();          // damage min, max, tithe
+            .UInt16(20).UInt16(15).UInt16(10).UInt16(5).UInt16(100) // fire cold poison energy resists, luck
+            .UInt16(11).UInt16(13).Int32(0).ToArray();        // damage min, max, tithe
 
     // ---- last attack ----
 
@@ -194,18 +194,60 @@ public sealed class HealthBarStatusTests
         Mobile me = session.World.Player;
         Assert.True(me.HasFullStatus);
 
+        // StatusGumpModern without the extended status: every label TazUO adds, where it adds it, and nothing else.
         StatusWindow.Label[] labels = StatusWindow.Labels(me);
+        Assert.Equal(21, labels.Length);
+        Assert.Equal(labels.Length, labels.Select(l => (l.X, l.Y)).Distinct().Count());
         string At(int x, int y) => Assert.Single(labels, l => l.X == x && l.Y == y).Text;
-        Assert.Equal("90", At(86, 62));
-        Assert.Equal("45", At(86, 74));
-        Assert.Equal("25", At(86, 86));
-        Assert.Equal("Female", At(86, 98));
-        Assert.Equal("12", At(86, 110));
-        Assert.Equal("80/100", At(171, 62));
-        Assert.Equal("10/25", At(171, 74));
-        Assert.Equal("30/45", At(171, 86));
-        Assert.Equal("1234", At(171, 98));
-        Assert.Equal("150/390", At(171, 110));
+        int WidthAt(int x, int y) => Assert.Single(labels, l => l.X == x && l.Y == y).Width;
+        Assert.Equal("90", At(88, 77));
+        Assert.Equal("45", At(88, 105));
+        Assert.Equal("25", At(88, 133));
+        Assert.Equal("80", At(141, 70));
+        Assert.Equal("100", At(141, 83));
+        Assert.Equal("30", At(141, 98));
+        Assert.Equal("45", At(141, 111));
+        Assert.Equal("10", At(141, 126));
+        Assert.Equal("25", At(141, 139));
+        Assert.Equal("225", At(220, 77));
+        Assert.Equal("100", At(220, 105));
+        Assert.Equal("150", At(210, 126));
+        Assert.Equal("390", At(210, 139));
+        Assert.Equal("11-13", At(280, 77));
+        Assert.Equal("1234", At(280, 105));
+        Assert.Equal("1/5", At(280, 133));
+        Assert.Equal("12", At(354, 76)); // physical: the 0x11 armour field
+        Assert.Equal("20", At(354, 92));
+        Assert.Equal("15", At(354, 106));
+        Assert.Equal("10", At(354, 120));
+        Assert.Equal("5", At(354, 134));
+
+        // Hits / stamina / mana and weight are centred in 40; the rest are left-aligned.
+        foreach (int y in new[] { 70, 83, 98, 111, 126, 139 })
+            Assert.Equal(40, WidthAt(141, y));
+        Assert.Equal(40, WidthAt(210, 126));
+        Assert.Equal(40, WidthAt(210, 139));
+        Assert.Equal(0, WidthAt(88, 77));
+        Assert.Equal(141 + (40 - 10) / 2, new StatusWindow.Label(141, 70, "", 40).TextX(10));
+        Assert.Equal(88, new StatusWindow.Label(88, 77, "").TextX(10));
+
+        // Not the old scroll's sex row, nor the extended status's hit / defence chance, casting or cost increases.
+        Assert.DoesNotContain(labels, l => l.Text == "Female" || l.Text == "Male");
+    }
+
+    [Fact]
+    public void ModernStatusIsTheAosStandardAndNotExtendedFor7_0_23_1()
+    {
+        var v = ClientVersion.Default;
+        Assert.Equal("7.0.23.1", v.ToString());
+        Assert.True(StatusWindow.IsModern(v));                       // >= CV_308Z: StatusGumpModern, not StatusGumpOld
+        Assert.False(StatusWindow.IsExtended(v));                    // < CV_70300 (7.0.30.0): useExtendedStatus is false
+        Assert.True(StatusWindow.HasBuffButton(v));                  // >= CV_5020
+        Assert.False(StatusWindow.IsModern(new ClientVersion(3, 0, 8, 'y')));
+        Assert.True(StatusWindow.IsModern(new ClientVersion(3, 0, 8, 'z')));
+        Assert.True(StatusWindow.IsExtended(new ClientVersion(7, 0, 30, 0)));
+        Assert.False(StatusWindow.IsExtended(new ClientVersion(7, 0, 29, 99)));
+        Assert.False(StatusWindow.HasBuffButton(new ClientVersion(5, 0, 1, 0)));
     }
 
     [Fact]
@@ -238,14 +280,18 @@ public sealed class HealthBarStatusTests
     }
 
     [Fact]
-    public void LockArtAndCornerFollowStatusGumpOld()
+    public void LockArtAndCornerFollowStatusGumpModern()
     {
-        Assert.Equal(0x0802, StatusWindow.Background);
+        Assert.Equal(0x2A6C, StatusWindow.Background);
         Assert.Equal(0x0386, StatusWindow.LabelHue);
-        Assert.Equal(28, StatusWindow.LockX(uopGumps: true));
-        Assert.Equal(40, StatusWindow.LockX(uopGumps: false));
-        Assert.Equal(new[] { 62, 74, 86 }, StatusWindow.LockY);
+        Assert.Equal(40, StatusWindow.LockX);
+        Assert.Equal(new[] { 76, 102, 132 }, StatusWindow.LockY);
+        Assert.Equal((0x0984, 0x0986, 0x082C), (StatusWindow.LockUp, StatusWindow.LockDown, StatusWindow.LockLocked));
         Assert.Equal(-1, StatusWindow.LockGump(3));
-        Assert.Equal((244, 112), (StatusWindow.BarCornerX, StatusWindow.BarCornerY));
+        Assert.Equal((389, 152), (StatusWindow.BarCornerX, StatusWindow.BarCornerY));
+        Assert.Equal((58, 50, 320), (StatusWindow.NameX, StatusWindow.NameY, StatusWindow.NameWidth));
+        Assert.Equal(0xFF383838u, StatusWindow.RuleArgb);
+        Assert.Equal(new[] { (146, 138, 39), (146, 110, 39), (146, 82, 39), (216, 138, 34) },
+            StatusWindow.Rules.Select(r => (r.X, r.Y, r.Width)));
     }
 }
