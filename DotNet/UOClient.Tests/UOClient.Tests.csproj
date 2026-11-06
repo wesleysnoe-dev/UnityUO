@@ -36,6 +36,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\QuestionWindow.Layout.cs" Link="Unity\QuestionWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\TargetCursor.Direction.cs" Link="Unity\TargetCursor.Direction.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\SpellbookWindow.Cast.cs" Link="Unity\SpellbookWindow.Cast.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\SpellbookWindow.Layout.cs" Link="Unity\SpellbookWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MobileActions.cs" Link="Unity\MobileActions.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MobileLook.cs" Link="Unity\MobileLook.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\CorpseDraw.cs" Link="Unity\CorpseDraw.cs" />

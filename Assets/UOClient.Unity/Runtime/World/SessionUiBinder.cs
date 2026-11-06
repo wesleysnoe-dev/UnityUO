@@ -322,7 +322,9 @@ namespace UOClient.Unity
 
         private void OnTextEntryRequested(TextEntryRequest e) => Ui.Open(new UI.TextEntryWindow(e));
 
-        private void OnSpellbookContent(uint book, int first, ulong bits) => Ui.Open(new UI.SpellbookWindow(book, first, bits));
+        // Already open (the book used again, a scroll added): the open one takes the new content.
+        private void OnSpellbookContent(uint book, int first, ulong bits) =>
+            Ui.Open(new UI.SpellbookWindow(book, first, bits)).SetContent(first, bits);
 
         private void OnProfileReceived(CharacterProfile p) => Ui.Open(new UI.ProfileWindow(p)).SetProfile(p);
 

@@ -108,7 +108,7 @@ The packet log blanks password fields.
 - **Creatures and mounts:** drawn from anim.mul through anim6.mul via `Bodyconv.def` and `Body.def`. Riders sit on their mounts and move at mounted speed.
 - **Houses and boats:** drawn from multi.mul, and walkable. Upper floors hide while you're inside.
 - **Spell effects** (missiles, explosions, auras, lightning), **sound effects** and **region music**. Volumes are in Options.
-- **Spellbooks:** double-click a book to list its spells, then click one to cast.
+- **Spellbooks:** double-click a book to open it. Magery, Necromancy and Chivalry books look like the classic book: double-click a name in the index to open its page, then click the icon or name to cast. Other schools show a list; click a spell to cast it.
 - **Top bar:** UO Smallz client buttons — Map, Paperdoll, Inventory, Journal, Chat, Help, World Map, Skills, Status, Groups (`[groups`, the server's Group Finder) and Options.
 - **Shard chat window** (Chat):
   - Tabs: All, Global, Trade, Faction, Guild, Whispers and News, with unread counts.

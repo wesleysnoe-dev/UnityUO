@@ -92,6 +92,28 @@ public sealed class SpellcastTests
     }
 
     [Fact]
+    public void TheClassicBooksSpellCastsFromThatBook()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, ClientVersion.Default);
+        var opened = new List<(uint Book, int First, ulong Bits)>();
+        session.SpellbookContent += (b, f, bits) => opened.Add((b, f, bits));
+
+        // A paladin book (0x2252) holding Close Wounds (bit 1) and Dispel Evil (bit 3).
+        session.Inject(new PacketWriter(0xBF).UInt16(0x1B).UInt16(0x01).UInt32(Book).UInt16(0x2252).UInt16(201)
+            .Byte(0x0A).Zero(7).ToArray(), true);
+        (uint book, int first, ulong bits) = Assert.Single(opened);
+        Assert.True(SpellbookWindow.TryGetBookInfo(first, out SpellbookInfo info));
+
+        // The first detail spread's right page is Dispel Evil; its icon or name click casts it from this book.
+        SpellbookWindow.DetailEntry right = SpellbookWindow.DetailEntries(info, bits)[1];
+        Assert.Equal((2, true, 3), (right.Page, right.Right, right.Spell));
+        SpellbookWindow.CastFromBook(session, book, info.First, right.Spell);
+
+        Assert.Equal(GameSession.CastSpellFromBookRequest(204, Book), Assert.Single(NoPings(sent)));
+    }
+
+    [Fact]
     public void NothingIsCastOutOfWorld()
     {
         var sent = new List<byte[]>();
