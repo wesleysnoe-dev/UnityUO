@@ -236,7 +236,7 @@ namespace UOClient.Unity
         }
 
         /// <summary>Lifts a ground item onto the cursor; a drop the server or a window refuses puts it back where it lay.</summary>
-        private void BeginGroundDrag(UI.UiManager ui, uint serial, bool split)
+        private void BeginGroundDrag(UI.UiManager ui, uint serial, bool shiftHeld)
         {
             if (!_ctx.Session.World.Items.TryGetValue(serial, out Core.WorldItem item))
                 return;
@@ -254,7 +254,7 @@ namespace UOClient.Unity
                 FromY = item.Y,
                 FromZ = item.Z,
                 Grab = art != null ? new Vector2(MousePick.CentreGrab(art.Width), MousePick.CentreGrab(art.Height)) : Vector2.zero
-            }, split);
+            }, shiftHeld); // the split menu or not: UiManager.Lift (HoldShiftToSplitStack)
         }
 
         /// <summary>The mouse is over a window or the HUD's journal, not the world.</summary>

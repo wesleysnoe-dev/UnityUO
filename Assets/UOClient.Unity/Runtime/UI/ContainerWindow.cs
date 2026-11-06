@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UOClient.Core;
 using UOClient.IO.Formats;
@@ -26,6 +27,15 @@ namespace UOClient.Unity.UI
         private const float DoubleClickTime = 0.4f;
         private static int _cascade;
 
+        /// <summary>The options' ContainersScale in percent (TazUO's, 50-200): every container gump and its items draw at this size.</summary>
+        public static int ScalePercent { get; set; } = 100;
+
+        /// <summary>The options' DoubleClickToLootInsideContainers (TazUO's): GameOptions.LootsOnDoubleClick.</summary>
+        public static bool DoubleClickToLoot { get; set; }
+
+        /// <summary>This container's size: the chess and backgammon boards keep theirs (GameOptions.ContainerScale).</summary>
+        private float S => GameOptions.ContainerScale(ScalePercent, _gump);
+
         public ContainerWindow(uint serial, ushort gump)
         {
             _serial = serial;
@@ -40,18 +50,31 @@ namespace UOClient.Unity.UI
 
         public override bool StillValid => Session.World.OpenContainers.ContainsKey(_serial);
 
-        public override void OnOpened()
+        public override void OnOpened() => FitToGump();
+
+        /// <summary>The window is the gump at the container scale (again each frame, so a new scale takes at once).</summary>
+        private void FitToGump()
         {
             UiImage bg = Art.Gump(_gump);
             if (bg != null)
-                Rect.size = new Vector2(bg.Width, bg.Height);
+                Rect.size = new Vector2(bg.Width * S, bg.Height * S);
         }
 
         public override void OnClosed() => Session.World.OpenContainers.Remove(_serial);
 
+        /// <summary>Art at a gump position (unscaled gump pixels), drawn at the container scale.</summary>
+        private void DrawScaled(UiImage img, float x, float y)
+        {
+            float s = S;
+            if (img != null)
+                GUI.DrawTexture(new Rect(x * s, y * s, img.Width * s, img.Height * s), img.Texture);
+        }
+
         public override void Draw()
         {
-            DrawImage(Art.Gump(_gump), 0, 0);
+            // Items and their hit tests are in the gump's own pixels; only drawing and the mouse go through the scale.
+            FitToGump();
+            DrawScaled(Art.Gump(_gump), 0, 0);
 
             // Laid out first, so the item under the mouse is known before anything is drawn.
             _drawn.Clear();
@@ -71,13 +94,13 @@ namespace UOClient.Unity.UI
                 // pair shows one edge): the outline alone is the mouse-over cue (ObjectHighlight).
                 if (item == over)
                 {
-                    DrawOutline(img, item.X, item.Y);
+                    DrawScaled(Art.Outline(img), item.X - 1, item.Y - 1);
                     if (rect.width > img.Width)
-                        DrawOutline(img, item.X + MousePick.StackOffset, item.Y + MousePick.StackOffset);
+                        DrawScaled(Art.Outline(img), item.X + MousePick.StackOffset - 1, item.Y + MousePick.StackOffset - 1);
                 }
-                DrawImage(img, item.X, item.Y);
+                DrawScaled(img, item.X, item.Y);
                 if (rect.width > img.Width)
-                    DrawImage(img, item.X + MousePick.StackOffset, item.Y + MousePick.StackOffset); // the classic two-copies look of a stack
+                    DrawScaled(img, item.X + MousePick.StackOffset, item.Y + MousePick.StackOffset); // the classic two-copies look of a stack
             }
 
             if (Event.current.type == EventType.Repaint)
@@ -102,20 +125,25 @@ namespace UOClient.Unity.UI
         private void DrawLabels()
         {
             DateTime now = DateTime.Now;
+            float s = S;
             foreach (var (item, _, rect) in _drawn)
             {
                 if (!(Session.World.RecentLine(item.Serial, now, 3) is JournalEntry line))
                     continue;
-                var r = new Rect(rect.center.x - 90, Mathf.Max(0, rect.y - 16), 180, 16); // the window clips anything above its top
+                var r = new Rect(rect.center.x * s - 90, Mathf.Max(0, rect.y * s - 16), 180, 16); // the window clips anything above its top
                 Text(new Rect(r.x + 1, r.y + 1, r.width, r.height), line.Text, Color.black, 11, TextAnchor.MiddleCenter);
                 Text(r, line.Text, Art.HueColor(line.Hue, new Color(0.95f, 0.95f, 0.9f)), 11, TextAnchor.MiddleCenter);
             }
         }
 
-        /// <summary>The topmost item on an opaque pixel under a window point, and where in its art (MousePick.WindowItem).</summary>
+        /// <summary>
+        /// The topmost item on an opaque pixel under a window point, and where in its art (MousePick.WindowItem). The point
+        /// is taken back to gump pixels, each of which is Ui.Scale x the container scale display pixels.
+        /// </summary>
         private (ContainedItem Item, Vector2 Offset)? ItemAt(Vector2 local)
         {
-            var (i, px, py) = MousePick.WindowItem(_drawn.Count, local.x, local.y, Ui.Scale, k => (_drawn[k].Item.X, _drawn[k].Item.Y),
+            float s = S;
+            var (i, px, py) = MousePick.WindowItem(_drawn.Count, local.x / s, local.y / s, Ui.Scale * s, k => (_drawn[k].Item.X, _drawn[k].Item.Y),
                 k => _drawn[k].Rect.width > _drawn[k].Image.Width, (k, x, y) => _drawn[k].Image.HitTest(x, y));
             return i < 0 ? ((ContainedItem, Vector2)?)null : (_drawn[i].Item, new Vector2(px, py));
         }
@@ -155,7 +183,8 @@ namespace UOClient.Unity.UI
                     _shiftPressed = false;
                     if (Time.realtimeSinceStartup - _lastClick < DoubleClickTime && _lastClickSerial == _pressed.Serial)
                     {
-                        Session.Use(_pressed.Serial);
+                        if (!TryLoot(_pressed, e.control))
+                            Session.Use(_pressed.Serial);
                         _lastClick = 0;
                         _pendingLook = 0;
                         _pressed = null;
@@ -200,6 +229,32 @@ namespace UOClient.Unity.UI
             }
         }
 
+        /// <summary>
+        /// A double-click that loots (GameOptions.LootsOnDoubleClick, TazUO's ItemGump.OnMouseDoubleClick): the item goes
+        /// whole into the backpack, as TazUO's GameActions.GrabItem (lift, then drop into the pack where it fits).
+        /// </summary>
+        private bool TryLoot(ContainedItem item, bool ctrlHeld)
+        {
+            World world = Session.World;
+            uint pack = world.Worn(world.Player, 21);
+            bool isContainer = (Art.Data.TileData.GetStatic(item.Graphic).Flags & TileFlags.Container) != 0;
+            bool hasContents = world.ItemsIn(item.Serial).Any();
+            if (!GameOptions.LootsOnDoubleClick(DoubleClickToLoot, ctrlHeld, isContainer, hasContents, OutermostIsWorldItem(item), pack != 0))
+                return false;
+            Session.Lift(item.Serial, item.Amount);
+            Session.DropInto(item.Serial, pack, 0xFFFF, 0xFFFF);
+            return true;
+        }
+
+        /// <summary>Whether the outermost container holding the item is an item in the world (a corpse, a chest), not worn.</summary>
+        private bool OutermostIsWorldItem(ContainedItem item)
+        {
+            uint top = item.Container;
+            for (int depth = 0; depth < 32 && Session.World.Contained.TryGetValue(top, out ContainedItem parent); depth++)
+                top = parent.Container;
+            return Session.World.Items.ContainsKey(top);
+        }
+
         public override bool Drop(DraggedItem item, Vector2 local)
         {
             // Onto a bag, a corpse or a like stack in here: into it (the server places it or merges the stack).
@@ -211,10 +266,12 @@ namespace UOClient.Unity.UI
                 return true;
             }
             // The item's top-left goes where it was grabbed from relative to the cursor, kept inside the gump.
+            // In gump pixels, as ItemAt: the window is the gump at the container scale.
+            float s = S;
             UiImage art = Art.Item(item.Graphic, item.Hue);
-            (int dx, int dy) = MousePick.DropOrigin(local.x, local.y, item.Grab.x, item.Grab.y, Ui.Scale);
-            int x = Mathf.Clamp(dx, 0, Mathf.Max(0, (int)Rect.width - (art?.Width ?? 20)));
-            int y = Mathf.Clamp(dy, 0, Mathf.Max(0, (int)Rect.height - (art?.Height ?? 20)));
+            (int dx, int dy) = MousePick.DropOrigin(local.x / s, local.y / s, item.Grab.x, item.Grab.y, Ui.Scale * s);
+            int x = Mathf.Clamp(dx, 0, Mathf.Max(0, (int)(Rect.width / s) - (art?.Width ?? 20)));
+            int y = Mathf.Clamp(dy, 0, Mathf.Max(0, (int)(Rect.height / s) - (art?.Height ?? 20)));
             Session.DropInto(item.Serial, _serial, x, y);
             return true;
         }

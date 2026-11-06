@@ -13,11 +13,17 @@ namespace UOClient.Unity
     /// value is clamped to its range by <see cref="Clamp"/> on load and before it is applied.
     /// </summary>
     [Serializable]
-    public sealed class GameOptions
+    public sealed partial class GameOptions
     {
         public const string FileName = "unity-uo-options.json";
 
         public const float MinZoom = 0.25f, MaxZoom = 4f;
+
+        /// <summary>TazUO's Constants.MIN/MAX_CONTAINER_SIZE_PERC (ContainersScale, percent).</summary>
+        public const int MinContainersScale = 50, MaxContainersScale = 200;
+
+        /// <summary>TazUO's speech delay slider range (ModernOptionsGump.BuildSpeech, 0-1000).</summary>
+        public const int MinSpeechDelay = 0, MaxSpeechDelay = 1000;
 
         /// <summary>The fixed UI scale's range; 0 (<see cref="AutoUiScale"/>) follows the screen height.</summary>
         public const float MinUiScale = 0.75f, MaxUiScale = 2.5f;
@@ -52,6 +58,48 @@ namespace UOClient.Unity
         /// <summary>TazUO's EnabledBeneficialCriminalActionQuery (GameSession.BeneficialCriminalActionQuery): ask before helping a criminal or gray. Off by default.</summary>
         public bool beneficialCriminalActionQuery = false;
 
+        /// <summary>
+        /// TazUO's AlwaysRun (PlayerMovement): every step runs, Shift or not. Off by default here (TazUO: on), so walking
+        /// stays as it was until chosen.
+        /// </summary>
+        public bool alwaysRun = false;
+
+        /// <summary>TazUO's AlwaysRunUnlessHidden: with always run on, a hidden player walks (so stealth isn't broken). On, as TazUO.</summary>
+        public bool alwaysRunUnlessHidden = true;
+
+        /// <summary>TazUO's ScaleSpeechDelay: overhead speech stays longer for longer lines (<see cref="SpeechSeconds"/>). On, as TazUO.</summary>
+        public bool scaleSpeechDelay = true;
+
+        /// <summary>TazUO's SpeechDelay (0-1000, default 100): how long overhead speech stays (<see cref="SpeechSeconds"/>).</summary>
+        public int speechDelay = 100;
+
+        /// <summary>TazUO's SaveJournalToFile: every journal line is also appended to Logs/JournalLogs (JournalFile). Off, as TazUO.</summary>
+        public bool saveJournalToFile = false;
+
+        /// <summary>TazUO's ContainersScale (percent, 50-200): container gumps and their items draw at this size (ContainerWindow).</summary>
+        public int containersScale = 100;
+
+        /// <summary>
+        /// TazUO's DoubleClickToLootInsideContainers: a double-click on a plain item in a corpse or a chest on the ground moves
+        /// it to the backpack instead of using it (<see cref="LootsOnDoubleClick"/>). Off, as TazUO.
+        /// </summary>
+        public bool doubleClickToLootInsideContainers = false;
+
+        /// <summary>
+        /// TazUO's HoldShiftToSplitStack (<see cref="OpensSplitMenu"/>): on, a stack dragged with Shift asks how many; off, a
+        /// plain drag asks and Shift lifts the lot. On by default here (TazUO: off), as this client always worked.
+        /// </summary>
+        public bool holdShiftToSplitStack = true;
+
+        /// <summary>TazUO's UseTooltip (Tooltip.SetText): off hides the text tooltips of windows (buffs, gump elements, spell icons), not item or mobile properties.</summary>
+        public bool useTooltip = true;
+
+        /// <summary>TazUO's BuffBarTime: the time left drawn over each timed buff icon. On by default here (TazUO: off), as this client always drew it.</summary>
+        public bool buffBarTime = true;
+
+        /// <summary>TazUO's CastSpellsByOneClick (GlobalSettings.SingleClickIconUse): a single click on a floating spell icon casts it. Off, as TazUO.</summary>
+        public bool castSpellsByOneClick = false;
+
         public static GameOptions Defaults() => new GameOptions();
 
         public GameOptions Clone() => (GameOptions)MemberwiseClone();
@@ -65,6 +113,8 @@ namespace UOClient.Unity
             tooltipDelay = Range(tooltipDelay, 0f, MaxTooltipDelay, d.tooltipDelay);
             soundVolume = Range(soundVolume, 0f, 1f, d.soundVolume);
             musicVolume = Range(musicVolume, 0f, 1f, d.musicVolume);
+            speechDelay = Math.Max(MinSpeechDelay, Math.Min(MaxSpeechDelay, speechDelay));
+            containersScale = Math.Max(MinContainersScale, Math.Min(MaxContainersScale, containersScale));
             return this;
         }
 
@@ -80,7 +130,12 @@ namespace UOClient.Unity
             o != null && showNames == o.showNames && showJournal == o.showJournal && showHud == o.showHud && autoRoofs == o.autoRoofs
             && zoom == o.zoom && uiScale == o.uiScale && highlightGameObjects == o.highlightGameObjects
             && tooltipDelay == o.tooltipDelay && soundVolume == o.soundVolume && musicVolume == o.musicVolume
-            && criminalActionQuery == o.criminalActionQuery && beneficialCriminalActionQuery == o.beneficialCriminalActionQuery;
+            && criminalActionQuery == o.criminalActionQuery && beneficialCriminalActionQuery == o.beneficialCriminalActionQuery
+            && alwaysRun == o.alwaysRun && alwaysRunUnlessHidden == o.alwaysRunUnlessHidden
+            && scaleSpeechDelay == o.scaleSpeechDelay && speechDelay == o.speechDelay && saveJournalToFile == o.saveJournalToFile
+            && containersScale == o.containersScale && doubleClickToLootInsideContainers == o.doubleClickToLootInsideContainers
+            && holdShiftToSplitStack == o.holdShiftToSplitStack && useTooltip == o.useTooltip
+            && buffBarTime == o.buffBarTime && castSpellsByOneClick == o.castSpellsByOneClick;
 
         // ---- the file: a flat JSON object; keys this version doesn't know are kept as they were ----
 
@@ -110,6 +165,17 @@ namespace UOClient.Unity
                     case "musicVolume": Number(raw, ref o.musicVolume); break;
                     case "criminalActionQuery": Bool(raw, ref o.criminalActionQuery); break;
                     case "beneficialCriminalActionQuery": Bool(raw, ref o.beneficialCriminalActionQuery); break;
+                    case "alwaysRun": Bool(raw, ref o.alwaysRun); break;
+                    case "alwaysRunUnlessHidden": Bool(raw, ref o.alwaysRunUnlessHidden); break;
+                    case "scaleSpeechDelay": Bool(raw, ref o.scaleSpeechDelay); break;
+                    case "speechDelay": Integer(raw, ref o.speechDelay); break;
+                    case "saveJournalToFile": Bool(raw, ref o.saveJournalToFile); break;
+                    case "containersScale": Integer(raw, ref o.containersScale); break;
+                    case "doubleClickToLootInsideContainers": Bool(raw, ref o.doubleClickToLootInsideContainers); break;
+                    case "holdShiftToSplitStack": Bool(raw, ref o.holdShiftToSplitStack); break;
+                    case "useTooltip": Bool(raw, ref o.useTooltip); break;
+                    case "buffBarTime": Bool(raw, ref o.buffBarTime); break;
+                    case "castSpellsByOneClick": Bool(raw, ref o.castSpellsByOneClick); break;
                     default: unknown.Add(new KeyValuePair<string, string>(key, raw)); break;
                 }
             }
@@ -126,6 +192,14 @@ namespace UOClient.Unity
         {
             if (float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out float v))
                 field = v;
+        }
+
+        /// <summary>A whole number; a fraction is rounded, anything out of int's range or not a number is ignored (Clamp then ranges it).</summary>
+        private static void Integer(string raw, ref int field)
+        {
+            if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && !double.IsNaN(v)
+                && v >= int.MinValue && v <= int.MaxValue)
+                field = (int)Math.Round(v);
         }
 
         /// <summary>The file's text: these options, then <paramref name="unknown"/> as they were read.</summary>
@@ -147,6 +221,17 @@ namespace UOClient.Unity
             Add("musicVolume", F(musicVolume));
             Add("criminalActionQuery", B(criminalActionQuery));
             Add("beneficialCriminalActionQuery", B(beneficialCriminalActionQuery));
+            Add("alwaysRun", B(alwaysRun));
+            Add("alwaysRunUnlessHidden", B(alwaysRunUnlessHidden));
+            Add("scaleSpeechDelay", B(scaleSpeechDelay));
+            Add("speechDelay", speechDelay.ToString(CultureInfo.InvariantCulture));
+            Add("saveJournalToFile", B(saveJournalToFile));
+            Add("containersScale", containersScale.ToString(CultureInfo.InvariantCulture));
+            Add("doubleClickToLootInsideContainers", B(doubleClickToLootInsideContainers));
+            Add("holdShiftToSplitStack", B(holdShiftToSplitStack));
+            Add("useTooltip", B(useTooltip));
+            Add("buffBarTime", B(buffBarTime));
+            Add("castSpellsByOneClick", B(castSpellsByOneClick));
             if (unknown != null)
                 foreach (var kv in unknown)
                     Add(FlatJson.Escape(kv.Key), kv.Value);

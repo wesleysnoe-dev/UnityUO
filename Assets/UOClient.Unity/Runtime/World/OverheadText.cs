@@ -22,6 +22,14 @@ namespace UOClient.Unity
         /// <summary>Lines alive right now.</summary>
         public int Count => _overheads.Count;
 
+        /// <summary>The options' ScaleSpeechDelay and SpeechDelay (TazUO's), for <see cref="SpeechSeconds"/>.</summary>
+        public bool ScaleSpeechDelay { get; set; } = true;
+
+        public int SpeechDelay { get; set; } = 100;
+
+        /// <summary>How long a line of speech stays overhead (TazUO's MessageManager.CalculateTimeToLive, GameOptions.SpeechSeconds).</summary>
+        public float SpeechSeconds(string text) => GameOptions.SpeechSeconds(text?.Length ?? 0, ScaleSpeechDelay, SpeechDelay);
+
         public void Add(uint serial, string text, Color color, int size, float life, bool rises)
         {
             // Classic clients keep a few lines per speaker; older ones scroll off.

@@ -9,7 +9,7 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed partial class OptionsWindow
     {
-        public enum Page { General, Sound, Video, Macros, Tooltip, CombatSpells }
+        public enum Page { General, Sound, Video, Macros, Tooltip, Speech, CombatSpells, Containers }
 
         public static readonly (Page Page, string Title)[] Pages =
         {
@@ -18,24 +18,44 @@ namespace UOClient.Unity.UI
             (Page.Video, "Video"),
             (Page.Macros, "Macros"),
             (Page.Tooltip, "Tooltip"),
+            (Page.Speech, "Speech"),
             (Page.CombatSpells, "Combat & Spells"),
+            (Page.Containers, "Containers"),
         };
 
         /// <summary>TazUO pages this client has no system for yet: shown greyed in the side menu, never opened.</summary>
         public static readonly string[] UnavailablePages =
         {
-            "Speech", "Counters", "Info Bar", "Containers", "Ignore List", "Nameplates", "Cooldowns", "Experimental", "TazUO",
+            "Counters", "Info Bar", "Ignore List", "Nameplates", "Cooldowns", "Experimental", "TazUO",
+        };
+
+        /// <summary>
+        /// TazUO options on the offered pages that are left out, each with why: listed greyed at the foot of its page so
+        /// nothing looks like a setting and does nothing.
+        /// </summary>
+        public static readonly (Page Page, string Text)[] NotOffered =
+        {
+            (Page.General, "Pathfinding: this client has no pathfinder."),
+            (Page.General, "Health lines over mobiles: nothing draws them yet."),
+            (Page.Sound, "Footsteps: the client plays no footstep sounds of its own."),
+            (Page.Sound, "Music / sound on-off, combat music: volume only."),
+            (Page.Tooltip, "Center mobile tooltips: TazUO reads that option nowhere."),
+            (Page.Tooltip, "Tooltip font, colours, background: one fixed style."),
+            (Page.Speech, "Chat without Enter: always on here (WASD and keys need the keyboard)."),
+            (Page.Speech, "Speech / emote / yell / party hues: one server-side hue."),
+            (Page.CombatSpells, "Spell hues, cursor spell names, HP colours: not drawn."),
+            (Page.Containers, "Container opacity and grid containers: classic gumps only."),
         };
 
         /// <summary>What Defaults, Cancel, Apply and Okay do, shown while the mouse is on each (in that order).</summary>
         public static readonly string[] ButtonHints =
         {
-            "Defaults: resets this window to the defaults; nothing changes until Apply or Okay.",
+            "Defaults: resets the options (not macros) to the defaults; nothing changes until Apply or Okay.",
             "Cancel: closes, dropping changes not applied. Nothing is saved.",
             "Apply: uses the changes now, for this run only. Nothing is saved.",
-            "Okay: uses the changes and saves them (UserSettings/unity-uo-options.json).",
+            "Okay: uses the changes and saves them (unity-uo-options.json; edited macros: unity-uo-hotkeys.json).",
         };
 
-        public const int Width = 600, Height = 440, MenuX = 16, MenuWidth = 140, ContentX = 172;
+        public const int Width = 660, Height = 520, MenuX = 16, MenuWidth = 140, ContentX = 172;
     }
 }

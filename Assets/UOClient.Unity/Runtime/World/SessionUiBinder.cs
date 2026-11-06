@@ -229,7 +229,7 @@ namespace UOClient.Unity
             // Said, emoted, whispered, yelled, cast or a click label: overhead. Guild, alliance, broadcast: journal only.
             bool local = j.Type == 0 || j.Type == 2 || (j.Type >= 6 && j.Type <= 10);
             if (local && j.Serial != 0xFFFFFFFF && j.Serial != 0)
-                _overheads.Add(j.Serial, j.Text, _gumpArt.HueColor(j.Hue, new Color(0.95f, 0.95f, 0.9f)), 14, 3f + j.Text.Length * 0.05f, false);
+                _overheads.Add(j.Serial, j.Text, _gumpArt.HueColor(j.Hue, new Color(0.95f, 0.95f, 0.9f)), 14, _overheads.SpeechSeconds(j.Text), false);
         }
 
         private void OnPlayerDied()

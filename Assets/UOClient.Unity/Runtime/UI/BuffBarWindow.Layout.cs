@@ -78,6 +78,9 @@ namespace UOClient.Unity.UI
             return span.Minutes > 0 ? $"{span.Minutes}:{span.Seconds:00}" : $"{span.Seconds:00}s";
         }
 
+        /// <summary>The timer text drawn over an icon: <see cref="TimerText"/> with the options' BuffBarTime on, nothing with it off (BuffGump.Draw).</summary>
+        public static string ShownTimer(bool buffBarTime, double secondsLeft) => buffBarTime ? TimerText(secondsLeft) : "";
+
         /// <summary>
         /// The tooltip (Receive's text, then Update's "time_left" line while time is left): the title, the description and
         /// under it, each capitalized as Clilocs.Translate does, inside &lt;left&gt; (ModernUO's third cliloc is always 0, so

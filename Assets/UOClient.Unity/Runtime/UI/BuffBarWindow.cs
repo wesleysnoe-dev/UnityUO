@@ -21,6 +21,9 @@ namespace UOClient.Unity.UI
             Rect = new Rect(OpenX, OpenY, 120, 40);
         }
 
+        /// <summary>The options' BuffBarTime (TazUO's): the time left over each timed icon. The tooltip keeps its time line either way.</summary>
+        public static bool ShowTimers { get; set; } = true;
+
         public override string Key => "buffs";
 
         public override bool ClosesOnEsc => false;
@@ -60,7 +63,7 @@ namespace UOClient.Unity.UI
                 var r = new Rect(x, y, icon?.Width ?? 28, icon?.Height ?? 28);
                 GUI.color = new Color(1f, 1f, 1f, alpha / 255f);
                 DrawImage(icon, x, y);
-                string timer = TimerText(left);
+                string timer = ShownTimer(ShowTimers, left);
                 if (timer.Length > 0)
                 {
                     var t = new Rect(x - 3, y + r.height / 2 - 3, r.width + 6, 14);

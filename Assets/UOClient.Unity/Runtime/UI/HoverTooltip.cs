@@ -29,6 +29,9 @@ namespace UOClient.Unity.UI
         /// <summary>Seconds the mouse rests before the tooltip shows (the options' tooltip delay).</summary>
         public float Delay { get; set; } = 0.4f;
 
+        /// <summary>The options' UseTooltip (TazUO's): off hides window parts' text tooltips, not item or mobile properties (GameOptions.ShowsTooltip).</summary>
+        public bool UseTooltip { get; set; } = true;
+
         /// <summary>What the mouse rests on: an item in a window, else whatever <paramref name="pick"/> finds under it in the world.</summary>
         public void UpdateHover(UiManager ui, Func<Vector2, uint> pick)
         {
@@ -73,6 +76,8 @@ namespace UOClient.Unity.UI
             PropertyList props = _hoverSerial != 0 ? session.GetProperties(_hoverSerial) : null;
             if (_hoverSerial != 0 && (props == null || props.Lines.Count == 0))
                 return;
+            if (!GameOptions.ShowsTooltip(UseTooltip, props == null))
+                return; // a window part's text tooltip, with UseTooltip off
             if (_tooltipStyle == null)
             {
                 _tooltipStyle = new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true, fontSize = 14, alignment = TextAnchor.UpperCenter, padding = new RectOffset(8, 8, 6, 6) };

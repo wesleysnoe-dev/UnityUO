@@ -343,7 +343,7 @@ namespace UOClient.Unity.UI
     /// <summary>
     /// A spell icon dragged out of a classic book: TazUO's UseSpellButtonGump without its saving, hotkey label or macro
     /// edit. SingleClickIconUse off (TazUO's default): a double-click casts the spell (0xBF 0x1C, SpellbookWindow.CastIcon)
-    /// and a single click does nothing; drag moves it; right-click closes it;
+    /// and a single click does nothing; on (the options' CastSpellsByOneClick), a click that doesn't move casts; drag moves it; right-click closes it;
     /// Esc leaves it. Session-only: it belongs to this session's UiManager and goes with it, and nothing is written.
     /// </summary>
     public sealed class SpellIconWindow : UiWindow
@@ -378,6 +378,25 @@ namespace UOClient.Unity.UI
             Event e = Event.current;
             bool inside = new Rect(0, 0, Rect.width, Rect.height).Contains(e.mousePosition);
             HoveredText = inside ? Tooltip() : null;
+            if (SingleClickIconUse)
+            {
+                // A press is not used, so it still drags the icon; the release casts if the mouse stayed put. Measured on
+                // the screen: the icon moves with the mouse, so its local position says nothing.
+                if (inside && e.type == EventType.MouseDown && e.button == 0)
+                {
+                    _pressedAt = Input.mousePosition;
+                    _pressed = true;
+                }
+                else if (_pressed && e.type == EventType.MouseUp && e.button == 0)
+                {
+                    _pressed = false;
+                    Vector2 moved = ((Vector2)Input.mousePosition - _pressedAt) / Ui.Scale;
+                    if (inside && SpellbookWindow.SingleClickCasts(true, moved.x, moved.y))
+                        SpellbookWindow.CastIcon(Session, _spell);
+                }
+                return;
+            }
+            _pressed = false;
             // A press is counted, not used, so it still drags the icon; the second within 350 ms casts.
             if (inside && e.type == EventType.MouseDown && e.button == 0
                 && _clicks.Press(BookTarget.Icon, _spell, 0, e.mousePosition.x, e.mousePosition.y, Time.realtimeSinceStartupAsDouble) == BookAction.Cast)
@@ -386,6 +405,12 @@ namespace UOClient.Unity.UI
                 e.Use();
             }
         }
+
+        /// <summary>The options' CastSpellsByOneClick (TazUO's SingleClickIconUse): one click casts instead of a double-click.</summary>
+        public static bool SingleClickIconUse { get; set; }
+
+        private bool _pressed;
+        private Vector2 _pressedAt;
 
         /// <summary>UseSpellButtonGump.GetSpellTooltip's cliloc (Magery 3002011+, Necromancy 1060509+, Chivalry 1060585+); the name without it.</summary>
         private string Tooltip()

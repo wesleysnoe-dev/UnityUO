@@ -35,6 +35,12 @@ namespace UOClient.Unity.UI
 
         public static bool StartsDrag(float dx, float dy) => System.Math.Abs(dx) >= DragDistance || System.Math.Abs(dy) >= DragDistance;
 
+        /// <summary>
+        /// With the options' CastSpellsByOneClick (TazUO's SingleClickIconUse), a left release on a floating icon casts when
+        /// the mouse moved under 5 px since the press (UseSpellButtonGump.OnMouseUp, :204-213), so a drag never casts.
+        /// </summary>
+        public static bool SingleClickCasts(bool singleClickIconUse, float dx, float dy) => singleClickIconUse && !StartsDrag(dx, dy);
+
         /// <summary>The floating icon opens with the mouse 22 px into it (OnIconDragBegin :822-826, LClickPosition - 22).</summary>
         public const int FloatingIconGrab = 22;
 

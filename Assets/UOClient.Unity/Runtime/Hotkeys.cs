@@ -15,7 +15,8 @@ namespace UOClient.Unity
     /// that graphic in the backpack), <c>useobject 0x...</c> (that serial), <c>lastobject</c>, <c>backpack</c>,
     /// <c>paperdoll</c>, <c>skills</c>, <c>status</c>, <c>journal</c>, <c>cancel</c>, and <c>record</c> (start/stop
     /// recording what you do, kept in the file as <c>recorded</c>) and <c>playmacro</c> (play it back; each target
-    /// step waits for the next cursor).
+    /// step waits for the next cursor). The options window's Macros page edits the bindings (<see cref="SetBindings"/> on
+    /// Apply, <see cref="SaveBindings"/> on Okay; MacroDraft).
     /// </summary>
     public sealed class Hotkeys
     {
@@ -101,12 +102,57 @@ namespace UOClient.Unity
                 _readOnly = true; // never overwrite a file we could not read
             }
             data.recorded ??= new List<string>();
+            data.bindings ??= new List<Binding>();
             _data = data;
+            Rebind();
+        }
 
+        private void Rebind()
+        {
             _parsed.Clear();
-            foreach (Binding b in data.bindings)
+            foreach (Binding b in _data.bindings)
                 if (TryParseKey(b.key, out KeyCode k, out bool ctrl, out bool alt, out bool shift))
                     _parsed.Add((k, ctrl, alt, shift, b));
+        }
+
+        /// <summary>Every binding as the file has it, those whose key doesn't parse too (the options window edits these).</summary>
+        public IReadOnlyList<Binding> AllBindings => _data.bindings.Select(b => new Binding { key = b.key, action = b.action }).ToList();
+
+        /// <summary>The file could not be read, so it is never written (defaults are in use).</summary>
+        public bool ReadOnly => _readOnly;
+
+        /// <summary>Uses these bindings from now on, for this run only; the file is not written (the options window's Apply).</summary>
+        public void SetBindings(IEnumerable<Binding> bindings)
+        {
+            _data.bindings = bindings.Select(b => new Binding { key = b.key ?? "", action = b.action ?? "" }).ToList();
+            Rebind();
+        }
+
+        /// <summary>
+        /// Uses these bindings and writes them, with the recorded macro, to the hotkeys file (the options window's Okay,
+        /// and only that). False when the file was unreadable at load (never overwritten) or could not be written.
+        /// </summary>
+        public bool SaveBindings(IEnumerable<Binding> bindings)
+        {
+            SetBindings(bindings);
+            if (_readOnly)
+                return false;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
+                string temp = FilePath + ".tmp";
+                File.WriteAllText(temp, JsonUtility.ToJson(_data, true));
+                if (File.Exists(FilePath))
+                    File.Replace(temp, FilePath, null);
+                else
+                    File.Move(temp, FilePath);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"UOClient: could not write {FilePath} ({e.Message}).");
+                return false;
+            }
         }
 
         /// <summary>Runs bindings whose key went down this frame. Call when no text field has focus.</summary>

@@ -14,6 +14,15 @@ namespace UOClient.Unity
             _ctx = ctx;
         }
 
+        /// <summary>The options' always run (TazUO's AlwaysRun): every step runs, Shift or not.</summary>
+        public bool AlwaysRun { get; set; }
+
+        /// <summary>The options' "unless hidden" (TazUO's AlwaysRunUnlessHidden): always run leaves a hidden player walking.</summary>
+        public bool AlwaysRunUnlessHidden { get; set; } = true;
+
+        /// <summary>The player's hidden flag (0x80 in the mobile's flags, as TazUO's Flags.Hidden).</summary>
+        private bool PlayerHidden => _ctx.Session?.World.Player is Core.Mobile p && (p.Flags & 0x80) != 0;
+
         /// <summary>WASD / arrows (Shift runs), or right mouse toward the cursor while over the world.</summary>
         public void Update(UI.UiManager ui)
         {
@@ -23,7 +32,8 @@ namespace UOClient.Unity
             if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) intent.y += 1;
             if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)) intent.x -= 1;
             if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) intent.x += 1;
-            bool run = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            bool run = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)
+                       || AlwaysRun && !(AlwaysRunUnlessHidden && PlayerHidden);
 
             // Right mouse walks only over the world; over a window it closes the window instead.
             // (Nor over the quest arrow, where a right click cancels it.)

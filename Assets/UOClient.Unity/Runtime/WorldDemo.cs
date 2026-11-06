@@ -303,6 +303,7 @@ namespace UOClient.Unity
             _binder.Attach(_ctx.Session);
             ApplyAudioOptions(); // the session's Audio exists from here
             ApplyCombatOptions();
+            _journalFile.Attach(_ctx.Session.World, () => characterName); // a new log file per session, if saving is on
         }
 
         /// <summary>Sound effects and music (null until online).</summary>
@@ -355,6 +356,17 @@ namespace UOClient.Unity
             musicVolume = Sound != null ? Sound.MusicVolume : _musicVolume,
             criminalActionQuery = _ctx.Session != null ? _ctx.Session.CriminalActionQuery : _criminalActionQuery,
             beneficialCriminalActionQuery = _ctx.Session != null ? _ctx.Session.BeneficialCriminalActionQuery : _beneficialCriminalActionQuery,
+            alwaysRun = _movement.AlwaysRun,
+            alwaysRunUnlessHidden = _movement.AlwaysRunUnlessHidden,
+            scaleSpeechDelay = _overheads.ScaleSpeechDelay,
+            speechDelay = _overheads.SpeechDelay,
+            saveJournalToFile = _journalFile.Enabled,
+            containersScale = UI.ContainerWindow.ScalePercent,
+            doubleClickToLootInsideContainers = UI.ContainerWindow.DoubleClickToLoot,
+            holdShiftToSplitStack = UI.UiManager.HoldShiftToSplitStack,
+            useTooltip = _tooltip.UseTooltip,
+            buffBarTime = UI.BuffBarWindow.ShowTimers,
+            castSpellsByOneClick = UI.SpellIconWindow.SingleClickIconUse,
         };
 
         public void ApplyOptions(GameOptions options)
@@ -375,7 +387,22 @@ namespace UOClient.Unity
             _criminalActionQuery = o.criminalActionQuery;
             _beneficialCriminalActionQuery = o.beneficialCriminalActionQuery;
             ApplyCombatOptions();
+            _movement.AlwaysRun = o.alwaysRun;
+            _movement.AlwaysRunUnlessHidden = o.alwaysRunUnlessHidden;
+            _overheads.ScaleSpeechDelay = o.scaleSpeechDelay;
+            _overheads.SpeechDelay = o.speechDelay;
+            _journalFile.Enabled = o.saveJournalToFile;
+            UI.ContainerWindow.ScalePercent = o.containersScale;
+            UI.ContainerWindow.DoubleClickToLoot = o.doubleClickToLootInsideContainers;
+            UI.UiManager.HoldShiftToSplitStack = o.holdShiftToSplitStack;
+            _tooltip.UseTooltip = o.useTooltip;
+            UI.BuffBarWindow.ShowTimers = o.buffBarTime;
+            UI.SpellIconWindow.SingleClickIconUse = o.castSpellsByOneClick;
         }
+
+        // ---- journal log (the options' SaveJournalToFile) ----
+
+        private readonly JournalFile _journalFile = new JournalFile();
 
         public void SaveOptions(GameOptions options) => GameOptionsStore.Save(options);
 
@@ -657,6 +684,7 @@ namespace UOClient.Unity
 
         private void OnDestroy()
         {
+            _journalFile.Dispose();
             _binder?.Dispose();
             _ctx.Session?.Dispose();
             _ctx.Player?.Dispose();
