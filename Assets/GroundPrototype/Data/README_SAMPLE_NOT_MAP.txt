@@ -105,3 +105,18 @@ Opening it
 ----------
 File > Open Scene > Assets/GroundPrototype/Scenes/GroundCompare.unity, then
 Play. Keys/buttons: 1 = Terrain, 2 = Mesh, 3 = Side by side (default).
+
+Assembly / Play Mode note (2026-11-06)
+--------------------------------------
+P1 originally set includePlatforms to Editor only. In this Unity 6 project that
+made scene MonoBehaviours fail at Play with:
+  "The class named '...GroundCompareBootstrap' is not derived from MonoBehaviour"
+Game view stayed black; HeightParityCheck.Measure never ran.
+
+Fix: includePlatforms is empty (any platform) so Editor Play can load the types.
+Still: autoReferenced=false, no UOClient.* references, GroundCompare is NOT in
+EditorBuildSettings / PlayerBuilder scenes — so the standalone Unity UO player
+does not open this scene. Tradeoff: the assembly *could* be pulled into a player
+build only if someone later adds GroundCompare (or refs this asmdef) to a build;
+it does not auto-enter production scenes today.
+

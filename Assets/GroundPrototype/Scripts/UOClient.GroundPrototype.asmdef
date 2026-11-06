@@ -1,10 +1,8 @@
-{
+﻿{
     "name": "UOClient.GroundPrototype",
     "rootNamespace": "UOClient.GroundPrototype",
     "references": [],
-    "includePlatforms": [
-        "Editor"
-    ],
+    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
