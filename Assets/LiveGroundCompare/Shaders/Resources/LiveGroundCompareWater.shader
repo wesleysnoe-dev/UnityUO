@@ -2,7 +2,10 @@
 // Drawn by TerrainIsoPresenter's camera on layer 31 after the opaque terrain, alpha-blended over the classic water art
 // the terrain already shows. Built-in pipeline, no Unity lights: lit like the sprites and the terrain
 // (LiveGroundLight.cginc): the compositor's sun shade on the wave normal, times the time-of-day ambient and the player's
-// light, ghost grey; the sun highlight is scaled by the ambient. No emission; no sun shadow on the water.
+// light, ghost grey; the sun highlight is scaled by the ambient. No emission.
+// Sun shadow: the presenter's world CPU ceiling (LGCeilVisibility, as TerrainLit and the sprites) dims only the ambient
+// term and the sun highlight (LGLitShadowed); the player's light is not shadowed. Without the ceiling (_LGCeilOn 0)
+// visibility is 1 and the water is lit exactly as before.
 //
 // Mesh contract (TerrainWater): world space = terrain space (1 unit per tile, +Y up, tile y along -Z);
 // vertex colour rgb = mean colour of that tile's classic art; uv.x = shore distance / MaxShore (0 shoreline, 1 open).
@@ -90,8 +93,8 @@ Shader "LiveGroundCompare/Water"
 
                 float3 l = normalize(_LGSunDir.xyz);
                 float3 v = normalize(_EyeDir.xyz);
-                float3 light = LGSpriteLight(i.world);
-                float spec = pow(saturate(dot(n, normalize(l + v))), 48.0) * _Gloss;
+                float visibility = LGCeilVisibility(i.world); // 1 without the ceiling
+                float spec = pow(saturate(dot(n, normalize(l + v))), 48.0) * _Gloss * visibility; // no sun glint in shadow
 
                 // The map's own water colour, slightly darker away from the shore (shore distance, not real depth).
                 float open = i.shore;
@@ -102,7 +105,7 @@ Shader "LiveGroundCompare/Water"
                 float breakup = saturate(0.5 + (g.x + g.y) * 4.0);
                 float foam = _Foam * saturate(1.0 - open * 2.5) * smoothstep(0.55, 0.95, band * breakup + (1.0 - open) * 0.35);
 
-                float3 lit = lerp(baseCol, float3(0.92, 0.95, 0.97), foam) * LGShade(n, 1.0) * light;
+                float3 lit = lerp(baseCol, float3(0.92, 0.95, 0.97), foam) * LGLitShadowed(n, visibility, i.world);
                 lit += spec * _UOAmbient.rgb; // the sun's highlight dims with the time of day; the player light adds none
                 float alpha = saturate(lerp(_ShoreAlpha, _OpenAlpha, open) + foam * 0.5 + spec * 0.3);
                 return fixed4(LGGhost(lit), alpha);

@@ -46,7 +46,8 @@ float3 LGLitShadowed(float3 n, float visibility, float3 terrainWorld)
 }
 
 // The presenter's world-wrapped CPU shadow ceiling (SpriteShadowCeiling: chunk ceilings, loaded-neighbour margins and
-// the mobiles/items columns). _LGCeilOn is 0 unless that texture is live, so without it the terrain reads only its mask.
+// the mobiles/items columns). _LGCeilOn is 0 unless that texture is live, so without it the terrain reads only its mask
+// and the water is unshadowed.
 sampler2D _LGShadowCeil;
 float4 _LGSpriteShadowMap; // w: 1 / wrapped tiles
 float _LGCeilOn;

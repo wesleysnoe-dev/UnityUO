@@ -305,6 +305,12 @@ The same CPU ceiling, with moving casters stamped in (`DynamicShadow`, `ShadowCe
 - **Terrain receives it too:** with `_LGCeilOn` (set only while the ceiling lives), `TerrainLit` takes
   `min(chunk mask, world ceiling at its tile point)`, so the dynamic casts and margins fall on the ground as well as on
   sprites.
+- **Water receives it too:** `LiveGroundCompare/Water` reads `LGCeilVisibility` at its own surface point and lights with
+  `LGLitShadowed`: the ambient (sun/sky) term goes to the 0.7 floor in shadow and the sun glint goes out, while the
+  player's light stays unshadowed. Shore foam, open-water shade, `_Time` motion, blend/queue/offset are unchanged.
+  With `_LGCeilOn` 0 (no presenter ceiling, light isolated, RHalf missing) or an empty ceiling, visibility is 1 and the
+  water renders **0 px** different from the 83c0a85 shader (GPU, `stills/waterrecv.md`; CPU mirror in
+  `LiveGroundWaterRecvTests`).
 
 ### Cross-chunk margins (loaded neighbours only)
 
@@ -350,7 +356,8 @@ What was checked in code, so the next step is not "shadowDistance, impossible":
 
 - **No Unity shadow maps** (see the route above).
 - Mobiles/items cast only as tile-snapped columns (no silhouette, no self-shadow on their own tile; a moving mobile's
-  shadow jumps a tile at a time). Effects and the water do not receive. The multi placement preview (`MultiPlacementGhost`
+  shadow jumps a tile at a time). Effects do not receive; the water receives only at its surface point (no refraction or
+  depth). The multi placement preview (`MultiPlacementGhost`
   draws `ItemView`s) casts like real items while it is shown.
 - Original/Mesh land keep the compositor's per-face shade only (no sun shadow, no sprite receive).
 
@@ -422,6 +429,21 @@ you run by hand, not a live session and not the streaming path. Everything is in
   0.410 → 0.743 → 1.077 s. The pixels changed on every frame step (41k–46k of 369k px), and same-frame repeats were 0
   px. Editor `_Time` advances with Unity's clamped delta (≤ 0.333 s per frame), not with wall time. These are Editor
   frames, not a live session's player loop.
+
+## Evidence stills: water sun-ceiling receive
+
+- **Fixture:** `Evidence~/waterRecvChunk.json` from `LiveGroundWaterRecvFixtureTests` (real data; rewrite with
+  `UOCLIENT_WRITE_LIVEGROUND_EVIDENCE=1`): the coastal chunk (1456, 1456) of `realWaterChunk.json`, its own CPU ceiling
+  (terrain only: no casting statics there, 0 water texels shadowed) and the same with a 16 Z column in open water at
+  (1469, 1457, -5) (30 water texels shadowed on the CPU).
+- **Capture:** `run-evidence-scratch.ps1 -WaterRecv` (menu `Capture water sun-ceiling receive stills (TEST)`) writes
+  `stills/waterrecv_*.png` and `waterrecv.md`; `-WaterRealtime -WaterRecv` repeats the separate-frame `_Time` run with
+  that ceiling live (`waterrecv_realtime*`).
+- **Measured (2026-11-06, D3D12, RTX 5080, Gamma; not logged in):** 83c0a85 water vs shipped with the ceiling off, or
+  on but empty, day and night + player light, time-patched and untimed: **0 of 368,640 px** each. Column on: 972 px
+  darker, 687 of them on the water alone. Probe in its shadow: day 0.766, night 0.796, night + player light 0.900
+  (only the ambient share is dimmed). t0/t1 with the receive on: 47,960 px moved; same t0 twice 0 px. Shipped water,
+  Unity `_Time` on 5 separate frames with the ceiling live: 0 → 1.188 s, pixels changed on every step.
 
 ## Build
 

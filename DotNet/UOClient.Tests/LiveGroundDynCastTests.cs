@@ -641,3 +641,228 @@ public sealed class LiveGroundDynCastFixtureTests
     private static float[] Composite(ShadowCeilingCore core, int x0, int y0) =>
         core.TryGet(x0, y0, out ShadowCeilingCore.Chunk c) ? (float[])c.Composite.Clone() : null;
 }
+
+/// <summary>
+/// Water receive (TEST only): the real coastal chunk of realWaterChunk.json, its own CPU ceiling (terrain; the chunk has
+/// no casting statics) and the same with a mobile-height column standing in open water, so the world ceiling the water
+/// shader reads shades water texels. Writes Evidence~/waterRecvChunk.json (LiveGroundEvidenceCapture.WaterRecv) with
+/// UOCLIENT_WRITE_LIVEGROUND_EVIDENCE=1; otherwise checks it is current.
+/// </summary>
+[Collection("UO install")]
+public sealed class LiveGroundWaterRecvFixtureTests
+{
+    private const int T = TerrainLandBuilder.Tiles, K = LiveGroundLighting.ShadowTexelsPerTile;
+    private readonly UOData _data;
+
+    public LiveGroundWaterRecvFixtureTests(UOInstallFixture fixture) => _data = fixture.Data;
+
+    private static string EvidenceDir()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, "Assets", "LiveGroundCompare")))
+                return Path.Combine(dir.FullName, "Assets", "LiveGroundCompare", "Evidence~");
+        throw new DirectoryNotFoundException("repo root");
+    }
+
+    /// <summary>JsonUtility-friendly (LiveGroundEvidenceCapture.WaterRecvFixture, same field names).</summary>
+    public sealed class WaterRecvFixture
+    {
+        public string source = "", baseFixture = "realWaterChunk.json";
+        public int map, x0, y0, tiles, shadowTexels, wrapTiles, casterHeight, waterTexels, shadowedStatic, shadowedCast;
+        public float heightUnitPerZ, noCeiling, softZ, biasZ;
+        public int[] caster = Array.Empty<int>();    // tile x, y, Z
+        public float[] probe = Array.Empty<float>(); // world tile x, y and ground Z of a water point the column shades
+        public float[] ceilStatic = Array.Empty<float>(), ceilCast = Array.Empty<float>();
+    }
+
+    private static float[] R(float[] a) => Array.ConvertAll(a, c => (float)Math.Round(c, 3));
+
+    [Fact]
+    public void Fixture_RealCoastalChunk_CeilingShadesWater()
+    {
+        string dir = EvidenceDir();
+        using var baseJson = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, "realWaterChunk.json")));
+        int x0 = baseJson.RootElement.GetProperty("x0").GetInt32(), y0 = baseJson.RootElement.GetProperty("y0").GetInt32();
+        MapFile map = _data.GetMap(0);
+        bool[] waterTable = WaterTiles.Table(_data.TileData.Land);
+        RealMapPatch patch = RealMapPatch.FromMap(map, x0, y0, T, T);
+        var z = new int[T + 1, T + 1];
+        for (int j = 0; j <= T; j++)
+            for (int i = 0; i <= T; i++)
+                z[i, j] = patch.CornerZ(i, j);
+        var water = new bool[T, T];
+        for (int j = 0; j < T; j++)
+            for (int i = 0; i < T; i++)
+                water[i, j] = WaterTiles.Lookup(waterTable, patch.Graphic(i, j));
+        int[,] occ = StaticOccluders.FromMap(map, _data.TileData, x0, y0);
+        float[] ceilStatic = LiveGroundLighting.ShadowCeiling(z, occ);
+
+        int Shadowed(float[] c)
+        {
+            int n = 0;
+            for (int r = 0; r < T * K; r++)
+                for (int col = 0; col < T * K; col++)
+                {
+                    float tx = (col + 0.5f) / K, ty = (r + 0.5f) / K;
+                    if (water[(int)tx, (int)ty] && SpriteShadow.Visibility(TerrainLandBuilder.SampleZ(z, tx, ty), c[r * T * K + col]) < 0.5f)
+                        n++;
+                }
+            return n;
+        }
+
+        // The column: the open-water tile whose shadow (away from the sun, +x/+y) falls on the most lit water texels.
+        int best = 0;
+        (int I, int J, int Z) caster = default;
+        float[] ceilCast = null;
+        for (int j = 0; j < T - 2; j++)
+            for (int i = 0; i < T - 2; i++)
+            {
+                if (!water[i, j])
+                    continue;
+                int cz = (int)Math.Round(TerrainLandBuilder.SampleZ(z, i + 0.5f, j + 0.5f));
+                float[] c = (float[])ceilStatic.Clone();
+                DynamicShadow.Stamp(c, x0, y0, x0 + i, y0 + j, cz + DynamicShadow.MobileHeight, DynamicShadow.MobileHeight);
+                int gain = Shadowed(c) - Shadowed(ceilStatic);
+                if (gain > best)
+                    (best, caster, ceilCast) = (gain, (i, j, cz), c);
+            }
+        Assert.True(best > 0 && ceilCast != null, "a water tile whose column shades water");
+
+        // Probe: the water texel just behind the column (away from the sun) that it shades and the terrain alone does not.
+        float[] probe = null;
+        for (int d = 1; d <= 3 && probe == null; d++)
+            foreach ((int di, int dj) in new[] { (d, 0), (d, d), (0, d) })
+            {
+                int i = caster.I + di, j = caster.J + dj;
+                if (i >= T || j >= T || !water[i, j])
+                    continue;
+                float tx = i + 0.5f, ty = j + 0.5f, gz = TerrainLandBuilder.SampleZ(z, tx, ty);
+                int k = (j * K + K / 2) * T * K + i * K + K / 2;
+                if (SpriteShadow.Visibility(gz, ceilCast[k]) < 0.25f && SpriteShadow.Visibility(gz, ceilStatic[k]) > 0.99f)
+                {
+                    probe = new[] { x0 + tx, y0 + ty, gz };
+                    break;
+                }
+            }
+        Assert.NotNull(probe);
+
+        int waterTexels = 0;
+        foreach (bool w in water)
+            if (w)
+                waterTexels += K * K;
+        var f = new WaterRecvFixture
+        {
+            source = "map0 corner heights + map static columns via UOInstallFixture; ceilings LiveGroundLighting.ShadowCeiling + DynamicShadow.Stamp (shipped code)",
+            map = 0, x0 = x0, y0 = y0, tiles = T, shadowTexels = K, wrapTiles = SpriteShadow.WrapTiles, casterHeight = DynamicShadow.MobileHeight,
+            heightUnitPerZ = TerrainLandBuilder.HeightUnitPerZ, noCeiling = LiveGroundLighting.NoCeiling, softZ = SpriteShadow.SoftZ, biasZ = LiveGroundLighting.ShadowBiasZ,
+            caster = new[] { x0 + caster.I, y0 + caster.J, caster.Z }, probe = probe,
+            waterTexels = waterTexels, shadowedStatic = Shadowed(ceilStatic), shadowedCast = Shadowed(ceilCast),
+            ceilStatic = R(ceilStatic), ceilCast = R(ceilCast)
+        };
+        string path = Path.Combine(dir, "waterRecvChunk.json");
+        string built = System.Text.Json.JsonSerializer.Serialize(f, new System.Text.Json.JsonSerializerOptions { IncludeFields = true });
+        if (Environment.GetEnvironmentVariable("UOCLIENT_WRITE_LIVEGROUND_EVIDENCE") == "1")
+            File.WriteAllText(path, built + "\n");
+        if (File.Exists(path))
+            Assert.Equal(built, File.ReadAllText(path).TrimEnd('\n'));
+    }
+}
+
+/// <summary>
+/// The water shader's receive, Unity-free: the shipped source wires the world ceiling like TerrainLit, and the light it
+/// computes equals the 83c0a85 water (Evidence~/LiveGroundCompareWater.83c0a85.shader.txt) whenever visibility is 1
+/// (ceiling off, missing, or empty). The GPU render of both is compared in waterrecv.md.
+/// </summary>
+public sealed class LiveGroundWaterRecvTests
+{
+    private static string RepoRoot()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, "Assets", "LiveGroundCompare")))
+                return dir.FullName;
+        throw new DirectoryNotFoundException("repo root");
+    }
+
+    private static string Source(params string[] path) =>
+        File.ReadAllText(Path.Combine(new[] { RepoRoot() }.Concat(path).ToArray())).Replace("\r\n", "\n");
+
+    private static string Water() => Source("Assets", "LiveGroundCompare", "Shaders", "Resources", "LiveGroundCompareWater.shader");
+
+    private static string Frag(string shader) => shader.Substring(shader.IndexOf("fixed4 frag(", StringComparison.Ordinal));
+
+    [Fact]
+    public void WaterShader_ReadsTheCeilingLikeTerrain_AmbientAndGlintOnly()
+    {
+        string frag = Frag(Water());
+        Assert.Contains("float visibility = LGCeilVisibility(i.world);", frag);
+        Assert.Contains("* LGLitShadowed(n, visibility, i.world);", frag);
+        Assert.Contains("* _Gloss * visibility;", frag);
+        Assert.Contains("lit += spec * _UOAmbient.rgb;", frag); // the glint is sun light: never the player's
+        Assert.DoesNotContain("LGSpriteLight", frag);         // unshadowed light path gone (ambient would escape the shadow)
+        Assert.DoesNotContain("_LGShadowCeil", frag);         // only through the shared include (off when _LGCeilOn is 0)
+        // Motion, foam and sorting untouched: one _Time.y read (the evidence time patch relies on it), same blend state.
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(frag, @"_Time\.y"));
+        string water = Water(), old = Source("Assets", "LiveGroundCompare", "Evidence~", "LiveGroundCompareWater.83c0a85.shader.txt");
+        foreach (string keep in new[]
+        {
+            "Tags { \"Queue\" = \"Transparent\" \"RenderType\" = \"Transparent\" \"IgnoreProjector\" = \"True\" }",
+            "Blend SrcAlpha OneMinusSrcAlpha", "ZWrite Off", "ZTest LEqual", "Offset -1, -1",
+            "float band = sin((open * 4.0 + t * 0.6) * 6.2831853) * 0.5 + 0.5;",
+            "float alpha = saturate(lerp(_ShoreAlpha, _OpenAlpha, open) + foam * 0.5 + spec * 0.3);",
+            "return fixed4(LGGhost(lit), alpha);"
+        })
+        {
+            Assert.Contains(keep, water);
+            Assert.Contains(keep, old);
+        }
+        Assert.Contains("float3 light = LGSpriteLight(i.world);", old); // the reference really is the pre-receive shader
+    }
+
+    [Fact]
+    public void WaterShader_OnlyItsLightingLinesChangedSince83c0a85()
+    {
+        string[] now = Frag(Water()).Split('\n'), old = Frag(Source("Assets", "LiveGroundCompare", "Evidence~", "LiveGroundCompareWater.83c0a85.shader.txt")).Split('\n');
+        var added = now.Except(old).Select(l => l.Trim()).ToArray();
+        var removed = old.Except(now).Select(l => l.Trim()).ToArray();
+        Assert.Equal(3, added.Length);
+        Assert.Equal(3, removed.Length);
+        Assert.All(removed, l => Assert.True(l.Contains("light") || l.Contains("spec ="), l));
+    }
+
+    // CPU mirrors of the cginc (LGShade / LGLocalLight already mirrored by LiveGroundLighting.Shade / PointFalloff).
+    private static float Shade(float ndotl, float sunY, float vis)
+    {
+        float s = Math.Clamp(ndotl / sunY, 0.7f, 1.25f);
+        return 0.7f + (s - 0.7f) * Math.Clamp(vis, 0f, 1f);
+    }
+
+    private static float CeilVisibility(bool on, float z, float ceiling) =>
+        !on ? 1f : Math.Clamp((z + 0.25f - ceiling) / 2f + 0.5f, 0f, 1f);
+
+    [Fact]
+    public void WaterLight_EqualsThePriorWaterWheneverTheCeilingIsOffOrEmpty_AndDimsOnlyAmbientInShadow()
+    {
+        var rng = new Random(83);
+        for (int k = 0; k < 20000; k++)
+        {
+            float ndotl = 0.4f + (float)rng.NextDouble() * 0.6f, sunY = 0.77f;
+            float amb = (float)rng.NextDouble(), local = (float)rng.NextDouble() * 1.5f, spec = (float)rng.NextDouble() * 1.2f;
+            float z = (float)rng.Next(-10, 60), ceiling = z + (float)rng.NextDouble() * 40f - 20f;
+            float prior = Shade(ndotl, sunY, 1f) * (amb + local) + spec * amb; // 83c0a85: LGShade(n, 1) * LGSpriteLight + spec * ambient
+
+            foreach ((bool on, float c) in new[] { (false, ceiling), (true, LiveGroundLighting.NoCeiling) })
+            {
+                float vis = CeilVisibility(on, z, c);
+                Assert.Equal(1f, vis);
+                float now = amb * Shade(ndotl, sunY, vis) + local * Shade(ndotl, sunY, 1f) + spec * vis * amb;
+                Assert.True(Math.Abs(prior - now) < 1e-5f, $"{prior} vs {now}"); // float re-association only, far below 1/255
+            }
+
+            float v = CeilVisibility(true, z, ceiling);
+            float shadowed = amb * Shade(ndotl, sunY, v) + local * Shade(ndotl, sunY, 1f) + spec * v * amb;
+            Assert.True(shadowed <= prior + 1e-5f);
+            // The player's light alone (night, no ambient) is never dimmed by the sun shadow.
+            Assert.Equal(local * Shade(ndotl, sunY, 1f), 0f * Shade(ndotl, sunY, v) + local * Shade(ndotl, sunY, 1f) + spec * v * 0f, 6);
+        }
+    }
+}
