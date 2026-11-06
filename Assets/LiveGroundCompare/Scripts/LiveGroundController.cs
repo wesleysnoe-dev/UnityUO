@@ -57,8 +57,18 @@ namespace UOClient.LiveGroundCompare
             get
             {
                 string line = LiveGroundStatus.Indicator(_switch.Requested, _switch.Active, _switch.Reason, _switch.Host, _switch.IsAttached, ActiveChunks);
+                if (_switch.Active == GroundBackendKind.Terrain && _terrain != null && !_terrain.IsDisposed)
+                    line += " | " + WaterIndicator(_terrain);
                 return _parseWarning == null ? line : $"{line} | {_parseWarning}";
             }
+        }
+
+        private static string WaterIndicator(TerrainIsoPresenter t)
+        {
+            if (t.Water == null)
+                return $"water off: {t.WaterError}";
+            string s = $"water tiles {t.WaterTileCount} in {t.WaterChunkCount} chunks";
+            return t.WaterChunkError == null ? s : $"{s} (error: {t.WaterChunkError})";
         }
 
         public bool IsFallback => _switch.IsAttached && LiveGroundStatus.IsFallback(_switch.Requested, _switch.Active, _switch.Reason);

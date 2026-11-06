@@ -14,6 +14,8 @@ namespace UOClient.LiveGroundCompare
     /// per diagonal against statics, so a static behind a hill now shows through it); the terrain is lit by its own
     /// directional light (the compositor's shade direction and flat = 1) and not by the time-of-day ambient or the
     /// player's light; Unity's heightmap triangulation/LOD decides the surface between samples.
+    /// Water (<see cref="TerrainWaterSupport"/>) is a transparent mesh per chunk on the same layer, drawn after the
+    /// terrain by this camera, so it shares the terrain's depth and sorts behind every sprite as well.
     /// Owns everything it changes and puts the main camera back on <see cref="Dispose"/>.
     /// </summary>
     internal sealed class TerrainIsoPresenter : IDisposable
@@ -79,9 +81,41 @@ namespace UOClient.LiveGroundCompare
             main.cullingMask &= ~(1 << Layer);
             main.clearFlags = CameraClearFlags.Depth;
             Camera.onPreCull += OnPreCull;
+
+            // Water is optional: without tiledata or its shader the terrain still draws, and the indicator says why.
+            Water = TerrainWaterSupport.TryCreate(world, out string waterError);
+            WaterError = waterError;
+            Debug.Log(Water != null
+                ? $"UOClient LiveGround water: on ({WaterTiles.WaterName} land rows with Wet: {CountWater(Water.Table)})"
+                : $"UOClient LiveGround water: off ({waterError})");
         }
 
         public Shader Shader { get; }
+
+        /// <summary>Null when water is off (see <see cref="WaterError"/>).</summary>
+        public TerrainWaterSupport Water { get; private set; }
+
+        public string WaterError { get; }
+
+        /// <summary>The first water chunk that could not be uploaded (its terrain stays), for the indicator.</summary>
+        public string WaterChunkError { get; set; }
+
+        /// <summary>Water tiles / chunks with water currently attached (main thread).</summary>
+        public int WaterTileCount { get; set; }
+
+        public int WaterChunkCount { get; set; }
+
+        /// <summary>Whether the first water chunk was logged (one Player.log line per presenter, not per chunk).</summary>
+        public bool LoggedWaterChunk { get; set; }
+
+        private static int CountWater(bool[] table)
+        {
+            int n = 0;
+            foreach (bool w in table)
+                if (w)
+                    n++;
+            return n;
+        }
 
         public Transform Root => _root != null ? _root.transform : null;
 
@@ -171,6 +205,8 @@ namespace UOClient.LiveGroundCompare
                 _main.clearFlags = _savedClear;
             }
             UnityEngine.Object.Destroy(_root); // camera, light and any terrain chunk not yet disposed
+            Water?.Dispose();
+            Water = null;
             _root = null;
             _cam = null;
             _light = null;

@@ -121,6 +121,42 @@ LiveGround TEST | requested Mesh | active Mesh | ok | host 127.0.0.1 | mesh chun
   fallbacks. If the shader, camera or a chunk fails, the switch goes back to **Original** and shows
   `FALLBACK: Terrain failed: …` in red. It never fails silently.
 
+## Terrain water (real map water tiles, animated)
+
+Terrain backend only. Original keeps the classic water sprites; Mesh keeps the classic water art on its mesh (no water
+surface there).
+
+- **Which tiles:** a land graphic is water when its tiledata land row has `Wet` (0x80) **and** is named `water`
+  (`WaterTiles`, tested). In the shipped 7.0.23.1 tiledata that is 0xA8–0xAB and 0x136–0x137. `Wet` alone is not used:
+  it also marks the Ter Mur `acid` rows (0x2E0E–0x2E5F) and three `TerrainFallback` rows. The tiledata is the
+  streamer's own `UOData` (overrides included), read from `WorldStreamer`'s private `_data` field because WorldStreamer
+  is out of this folder's scope. If that read or the shader fails, the indicator shows `water off: <why>` and the
+  terrain still draws.
+- **Static water is not covered.** Shore/lake water placed as statics (0x1797… "water" statics) is not land, is never
+  diverted and still draws as classic sprites on top of everything here.
+- **Geometry:** `WaterSurfaceBuilder` (Unity-free, tested) builds one mesh per chunk over the water tiles only, in
+  terrain space at the map's corner heights (the same corners the terrain heightmap uses), split RIGHT–LEFT. Heights,
+  holes, the collider and movement are unchanged; the water has no collider.
+- **Colour:** each vertex carries the mean colour of its tile's own classic art, so the surface takes the map's water
+  colour. The classic water art in the terrain texture shows through the semi-transparent surface.
+- **Shore:** per vertex, the distance in tiles (Chebyshev over corners, capped at 4) to the nearest corner touching
+  non-water land in the same chunk. It drives alpha, a slight open-water darkening and a foam band. It is **not water
+  depth** (UO has none; ocean land is one Z). Neighbouring chunks are not visible to the builder, so a shoreline that
+  runs exactly along a 16-tile border gets no foam on that side.
+- **Shader:** `Shaders/Resources/LiveGroundCompareWater.shader` (`LiveGroundCompare/Water`, built-in pipeline,
+  ForwardBase, alpha-blended, `ZWrite Off`, `Offset -1,-1`). Loaded with `Resources.Load`, so it ships in every player
+  built from this project (unused unless Terrain is active). One runtime material for all chunks.
+- **Lighting:** the presenter's own directional light (Lambert + Blinn specular) plus SH ambient, as the terrain. No
+  emission. Same isolation caveat as the terrain: not the time-of-day or player light.
+- **Animation:** four analytic travelling waves perturb the normal, and the foam band drifts, both driven only by
+  `_Time.y`. A screenshot or Player.log cannot prove motion; watch it live (or compare two frames).
+- **Sorting:** the water is drawn by the terrain camera after the opaque terrain and shares its depth, so hills in front
+  hide it; like the terrain it sorts behind every sprite (statics, mobiles, roofs).
+- **Honesty counters:** the indicator adds `water tiles N in M chunks` while Terrain is active. Player.log gets
+  `UOClient LiveGround water: on (water land rows with Wet: 6)` (or `off (…)`) when the presenter is made, and one line
+  for the first chunk with water (tile count, vertices, graphics).
+- Nothing here comes from P2 GroundPrototype (no StylizedWater/FluidSurfaceBuilder art or rects).
+
 ## Build
 
 `UOClient/Build Windows Player (GroundCompare TEST)` writes to `Builds/Windows-GroundCompare/Unity UO GroundCompare.exe`

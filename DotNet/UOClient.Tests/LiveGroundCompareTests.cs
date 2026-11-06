@@ -790,4 +790,155 @@ public class LiveGroundCompareTests
         Assert.Equal(b.Pixels[0], TerrainLandBuilder.SampleArt(b, true, 0f, 0f)); // texmaps map directly
         Assert.Equal(b.Pixels[44 * 44 - 1], TerrainLandBuilder.SampleArt(b, true, 0.999f, 0.999f));
     }
+
+    // ---- terrain water ----
+
+    [Theory]
+    [InlineData(TileFlags.Wet, "water", true)]
+    [InlineData(TileFlags.Wet | TileFlags.Impassable, " Water ", true)]
+    [InlineData(TileFlags.Wet | TileFlags.Surface, "acid", false)]           // Ter Mur acid is Wet but not water
+    [InlineData(TileFlags.Wet | TileFlags.Surface, "TerrainFallback", false)]
+    [InlineData(TileFlags.Impassable, "water", false)]                      // the name alone is not enough
+    [InlineData(TileFlags.Wet, null, false)]
+    public void Water_NeedsWetFlagAndWaterName(TileFlags flags, string? name, bool water)
+    {
+        Assert.Equal(water, WaterTiles.IsWater(flags, name!));
+    }
+
+    [Fact]
+    public void Water_TableLookupIsBoundsSafe()
+    {
+        var land = new LandTileData[4];
+        land[2] = new LandTileData { Flags = TileFlags.Wet, Name = "water" };
+        bool[] table = WaterTiles.Table(land);
+        Assert.Equal(new[] { false, false, true, false }, table);
+        Assert.True(WaterTiles.Lookup(table, 2));
+        Assert.False(WaterTiles.Lookup(table, -1));
+        Assert.False(WaterTiles.Lookup(table, 4));
+        Assert.False(WaterTiles.Lookup(null!, 2));
+    }
+
+    private const uint WaterArgb = 0xFF204080u, LandArgb = 0xFF608020u;
+
+    /// <summary>A full chunk where <paramref name="water"/>(i, j) tiles are water (graphic 0xA8) and the rest land.</summary>
+    private static WaterSurfaceBuilder WaterChunk(int x0, int y0, Func<int, int, bool> water, Func<int, int, int>? z = null)
+    {
+        z ??= MapZ;
+        var wb = new WaterSurfaceBuilder(x0, y0);
+        for (int j = 0; j < Chunk; j++)
+            for (int i = 0; i < Chunk; i++)
+            {
+                int x = x0 + i, y = y0 + j;
+                bool w = water(i, j);
+                DrawItem it = LiveGroundProjection.LandItem(x, y, (ushort)(w ? 0xA8 : 3),z(x, y), z(x + 1, y), z(x + 1, y + 1), z(x, y + 1), hasTexmap: false);
+                wb.AddTile(it, Solid(44, w ? WaterArgb : LandArgb), false, w);
+            }
+        return wb;
+    }
+
+    [Fact]
+    public void Water_SurfaceCoversOnlyWaterTilesAtTheMapsCornerHeights()
+    {
+        const int x0 = 1600, y0 = 1504;
+        WaterSurfaceData d = WaterChunk(x0, y0, (i, j) => i < 6).Finish();
+        Assert.Equal(6 * Chunk, d.TileCount);
+        Assert.Equal(new List<int> { 0xA8 }, d.Graphics);
+        Assert.Equal(7 * (Chunk + 1), d.VertexCount);       // corners touching a water tile
+        Assert.Equal(6 * Chunk * 6, d.Indices.Length);      // two triangles per water tile
+
+        for (int v = 0; v < d.VertexCount; v++)
+        {
+            int tx = (int)Math.Round(d.X[v]), ty = (int)Math.Round(-d.Z[v]);
+            Assert.InRange(tx - x0, 0, 6);                  // never past the last water column's right edge
+            (float _, float py, float _) = TerrainLandBuilder.TerrainPoint(tx, ty, MapZ(tx, ty));
+            Assert.Equal(py, d.Y[v], 4);                    // heights are the map's, as the terrain under it
+        }
+    }
+
+    [Fact]
+    public void Water_TrianglesFaceUpWithTheRightLeftSplit()
+    {
+        WaterSurfaceData d = WaterChunk(0, 0, (_, _) => true, (_, _) => -5).Finish();
+        for (int t = 0; t < d.Indices.Length; t += 3)
+        {
+            int a = d.Indices[t], b = d.Indices[t + 1], c = d.Indices[t + 2];
+            float ux = d.X[b] - d.X[a], uz = d.Z[b] - d.Z[a], vx = d.X[c] - d.X[a], vz = d.Z[c] - d.Z[a];
+            Assert.True(uz * vx - ux * vz > 0, $"triangle {t / 3} faces down"); // cross(b - a, c - a).y
+        }
+        // The first tile's triangles share the RIGHT–LEFT diagonal: right (1,0) and left (0,1) are in both.
+        var first = new HashSet<int>(d.Indices[..3]);
+        first.IntersectWith(d.Indices[3..6]);
+        Assert.Equal(2, first.Count);
+        foreach (int v in first)
+            Assert.Equal(1f, Math.Abs(d.X[v]) + Math.Abs(d.Z[v]), 4);
+    }
+
+    [Fact]
+    public void Water_ShoreDistanceGrowsFromTheShorelineAndCaps()
+    {
+        // Land in columns 0..3, water from column 4: corner column 4 touches land.
+        WaterSurfaceData d = WaterChunk(0, 0, (i, _) => i >= 4).Finish();
+        for (int v = 0; v < d.VertexCount; v++)
+        {
+            int ci = (int)Math.Round(d.X[v]);
+            float expected = Math.Min(ci - 4, WaterSurfaceBuilder.MaxShore) / (float)WaterSurfaceBuilder.MaxShore;
+            Assert.Equal(expected, d.Shore[v], 4);
+        }
+        // Open water with no land in the chunk: everything reads open (1), never shoreline.
+        WaterSurfaceData open = WaterChunk(0, 0, (_, _) => true).Finish();
+        Assert.All(open.Shore, s => Assert.Equal(1f, s));
+    }
+
+    [Fact]
+    public void Water_TintIsTheTilesOwnArtColour()
+    {
+        WaterSurfaceData d = WaterChunk(0, 0, (i, _) => i >= 8).Finish();
+        Assert.All(d.Tint, c => Assert.Equal(WaterArgb, c)); // land colour never bleeds into the water tint
+        Assert.Equal(WaterArgb, WaterSurfaceBuilder.MeanColor(Solid(44, WaterArgb), false));
+    }
+
+    [Fact]
+    public void Water_NoWaterTilesGivesNoSurfaceAndBadInputThrows()
+    {
+        WaterSurfaceData none = WaterChunk(0, 0, (_, _) => false).Finish();
+        Assert.Equal(0, none.TileCount);
+        Assert.Equal(0, none.VertexCount);
+
+        var wb = new WaterSurfaceBuilder(0, 0);
+        DrawItem outside = LiveGroundProjection.LandItem(16, 0, 0xA8, 0, 0, 0, 0, hasTexmap: false);
+        Assert.Throws<ArgumentOutOfRangeException>(() => wb.AddTile(outside, Solid(44, WaterArgb), false, true));
+        DrawItem stat = outside;
+        stat.Kind = DrawKind.Static;
+        Assert.Throws<ArgumentException>(() => wb.AddTile(stat, Solid(44, WaterArgb), false, true));
+    }
+}
+
+/// <summary>Water detection against the real tiledata (the shipped client's land rows).</summary>
+[Collection("UO install")]
+public sealed class LiveGroundWaterDataTests
+{
+    private readonly UOData _data;
+
+    public LiveGroundWaterDataTests(UOInstallFixture fixture) => _data = fixture.Data;
+
+    [Fact]
+    public void Water_RealTiledataWaterRowsAreTheClassicWaterLand()
+    {
+        bool[] table = WaterTiles.Table(_data.TileData.Land);
+        var water = new List<int>();
+        for (int g = 0; g < table.Length; g++)
+            if (table[g])
+                water.Add(g);
+        // 0xA8–0xAB and 0x136–0x137: the land rows named "water" with Wet (in the 7.0.23.1 data checked).
+        Assert.Contains(0xA8, water);
+        Assert.Contains(0xAB, water);
+        Assert.Contains(0x136, water);
+        Assert.All(water, g => Assert.Equal("water", _data.TileData.Land[g].Name.Trim().ToLowerInvariant()));
+
+        int wet = 0;
+        foreach (LandTileData row in _data.TileData.Land)
+            if ((row.Flags & TileFlags.Wet) != 0)
+                wet++;
+        Assert.True(wet > water.Count, "Wet alone also covers acid/fallback rows; the name check must stay");
+    }
 }

@@ -11,11 +11,13 @@ namespace UOClient.LiveGroundCompare
     {
         private readonly TerrainIsoPresenter _presenter;
         private readonly int _texels;
+        private readonly bool[] _water; // null: water off
 
         public TerrainLandEmitter(TerrainIsoPresenter presenter, int scale)
         {
             _presenter = presenter;
             _texels = TerrainLandBuilder.TexelsFor(scale);
+            _water = presenter.Water?.Table;
         }
 
         public bool Diverts(in ArtPipeline.DrawItem item, bool baked) => GroundBackend.Diverts(GroundBackendKind.Terrain, item, baked);
@@ -24,11 +26,17 @@ namespace UOClient.LiveGroundCompare
         {
             try
             {
-                var builder = new TerrainLandBuilder(chunkX * WorldStreamer.ChunkSize, chunkY * WorldStreamer.ChunkSize, _texels);
+                int x0 = chunkX * WorldStreamer.ChunkSize, y0 = chunkY * WorldStreamer.ChunkSize;
+                var builder = new TerrainLandBuilder(x0, y0, _texels);
+                var water = _water != null ? new WaterSurfaceBuilder(x0, y0) : null;
                 foreach (LandPlacement p in land)
+                {
                     builder.AddTile(p.Item, p.Art, p.Texmap);
+                    water?.AddTile(p.Item, p.Art, p.Texmap, WaterTiles.Lookup(_water, p.Item.Graphic));
+                }
                 TerrainLandData data = builder.Finish();
-                return data.TileCount == 0 ? null : new TerrainLandChunk(_presenter, data);
+                WaterSurfaceData waterData = water != null && water.WaterTileCount > 0 ? water.Finish() : null;
+                return data.TileCount == 0 ? null : new TerrainLandChunk(_presenter, data, waterData);
             }
             catch (Exception e)
             {
@@ -52,11 +60,15 @@ namespace UOClient.LiveGroundCompare
         private Material _material;
         private GameObject _go;
         private bool _counted;
+        private WaterSurfaceData _waterData;
+        private TerrainWaterSurface _water;
+        private int _waterTiles;
 
-        public TerrainLandChunk(TerrainIsoPresenter presenter, TerrainLandData data)
+        public TerrainLandChunk(TerrainIsoPresenter presenter, TerrainLandData data, WaterSurfaceData water)
         {
             _presenter = presenter;
             _data = data;
+            _waterData = water;
         }
 
         public void Attach(Transform chunk, Shader shader, IWorldSpace world)
@@ -109,12 +121,54 @@ namespace UOClient.LiveGroundCompare
             {
                 Dispose();
                 _presenter.ReportFailure($"terrain chunk {name}: {e.GetType().Name}: {e.Message}");
+                return;
+            }
+            AttachWater(name);
+        }
+
+        /// <summary>The chunk's water surface, if it has water tiles. A failure here leaves the terrain up and is shown.</summary>
+        private void AttachWater(string name)
+        {
+            WaterSurfaceData w = _waterData;
+            _waterData = null;
+            if (w == null || _presenter.Water == null)
+                return;
+            try
+            {
+                _water = TerrainWaterSurface.Attach(_presenter.Root, _presenter.Water.Material, w, name);
+                if (_water == null)
+                    return;
+                _waterTiles = w.TileCount;
+                _presenter.WaterTileCount += _waterTiles;
+                _presenter.WaterChunkCount++;
+                if (!_presenter.LoggedWaterChunk)
+                {
+                    _presenter.LoggedWaterChunk = true;
+                    Debug.Log($"UOClient LiveGround water: first water chunk {name}: {w.TileCount} water tiles, " +
+                              $"{w.VertexCount} vertices, land graphics {string.Join(",", w.Graphics.ConvertAll(g => $"0x{g:X4}"))}");
+                }
+            }
+            catch (Exception e)
+            {
+                _water?.Dispose();
+                _water = null;
+                _presenter.WaterChunkError ??= $"water chunk {name}: {e.GetType().Name}: {e.Message}";
+                Debug.LogWarning($"UOClient LiveGround water: chunk {name} failed: {e.GetType().Name}: {e.Message}");
             }
         }
 
         public void Dispose()
         {
             _data = null;
+            _waterData = null;
+            if (_water != null)
+            {
+                _presenter.WaterTileCount -= _waterTiles;
+                _presenter.WaterChunkCount--;
+                _water.Dispose();
+            }
+            _water = null;
+            _waterTiles = 0;
             if (_counted)
                 _presenter.ChunkCount--;
             _counted = false;
