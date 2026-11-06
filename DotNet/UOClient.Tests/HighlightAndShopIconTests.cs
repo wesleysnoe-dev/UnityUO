@@ -96,6 +96,37 @@ public sealed class ObjectHighlightTests
         Assert.All(ObjectHighlight.Outline(new Bitmap32(3, 3), 1, 0xFFFFFFFF).Pixels, p => Assert.Equal(0u, p));
 
     [Fact]
+    public void Outline_OfAMirroredSprite_IsTheMirroredOutline()
+    {
+        // OutlineQuad mirrors the outline's UVs with the frame's, so the outline of the art must mirror with it.
+        var art = new Bitmap32(5, 3);
+        foreach (var (x, y) in new[] { (0, 0), (1, 1), (2, 1), (4, 2) })
+            art.Pixels[y * 5 + x] = 0xFF808080;
+        var flipped = new Bitmap32(5, 3);
+        for (int y = 0; y < 3; y++)
+            for (int x = 0; x < 5; x++)
+                flipped.Pixels[y * 5 + (4 - x)] = art.Pixels[y * 5 + x];
+        Bitmap32 o = ObjectHighlight.Outline(art, 2, 0xFFFFFFFF), f = ObjectHighlight.Outline(flipped, 2, 0xFFFFFFFF);
+        for (int y = 0; y < o.Height; y++)
+            for (int x = 0; x < o.Width; x++)
+                Assert.True(Lit(o, x, y) == Lit(f, o.Width - 1 - x, y), $"({x},{y})");
+    }
+
+    [Fact]
+    public void Outline_OfLayersDrawnTogether_IsOneEdgeAroundTheirUnion()
+    {
+        // A character frame is its worn layers composited (a cape beside the body): the outline rings the union, so
+        // where two layers touch there is no edge between them.
+        var frame = new Bitmap32(6, 3);
+        for (int x = 0; x < 6; x++)
+            frame.Pixels[1 * 6 + x] = x < 3 ? 0xFF202020 : 0xFF0000A0; // body pixels, then cape pixels
+        Bitmap32 o = ObjectHighlight.Outline(frame, 1, 0xFFFFFFFF);
+        for (int x = 1; x <= 6; x++)
+            Assert.False(Lit(o, x, 2)); // the composited row itself, including the seam at x = 3/4
+        Assert.True(Lit(o, 0, 2) && Lit(o, 7, 2) && Lit(o, 3, 1) && Lit(o, 4, 3));
+    }
+
+    [Fact]
     public void GroundItem_WithoutHighlightGameObjects_OnlyMovableOrLightItemsHighlight()
     {
         // ItemView.cs:141-145: !IsLocked && !IsMulti && isSelected, the item's partial flag kept.

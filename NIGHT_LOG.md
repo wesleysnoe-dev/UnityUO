@@ -321,3 +321,11 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
 2. **Verified by tests:** 758 pass (15 new: default on, outline gating, all 8 pick kinds, ring-not-box / edge growth / thickness / empty, shop pixel mapping, opaque-only hover, outline rect). Tests, Cli, EditorCheck (forced, 157 script metas OK, incl. the new `OutlineQuad.cs.meta`) and GumpPreview build with 0 warnings.
 3. **Editor (read only, no refresh requested):** `UOClient.Unity.dll` is 18:36:11. That is before every edit here (18:45-18:47), so Unity has not compiled this change, including the `WorldSprite.shader` `_Unlit` property.
 4. **Not verified:** Unity compile, how it looks in play mode (outline thickness and white on bright ground, HD window art, shop scroll), and live.
+
+## Session: hover outline follow-up (2026-11-05, ~18:51-18:55)
+
+1. **Code re-read, no change needed:** world outline depth (in front of the sprite, behind the next diagonal), hide paths (hidden, no frames, dying), multi parts kept off the pick, shop scroll coordinates, stack outline order, atlas `Read` row order. Cape `LayerOrder` (`173be55`) and vendor body art (`06302cb`) untouched.
+2. **Docs fix:** in LIVE_PARITY the outline entry had been inserted in the middle of the hover/vendor entry, cutting off that entry's "Not verified" and "Editor" lines; they are back under their own entry.
+3. **Tests:** 2 new (760 pass): an outline mirrors with its sprite, and composited layers (body + cape) get one edge around their union. Cape and vendor-body tests still pass (22). Tests, Cli, EditorCheck (forced, 157 script metas OK) and GumpPreview build with 0 warnings.
+4. **Unity compile (read only, no refresh requested):** the open Editor recompiled by itself. `UOClient.Unity.dll` is **18:51:39**, after every `Assets/` edit of `39f61a7` (commit 18:50:18). `Editor.log` shows the `WorldSprite.shader` import, then `Tundra build success` (line 133250) and a reloaded assembly, with no `error CS` or shader error after them. This follow-up changed only tests and docs, so that DLL is HEAD's Unity code. (Item 3 of the previous session was true when written.)
+5. **Still not verified:** the look in play mode (outline thickness, white on snow and sand, HD window art, shop scroll), and live.
