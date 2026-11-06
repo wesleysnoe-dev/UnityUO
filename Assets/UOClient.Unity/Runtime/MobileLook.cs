@@ -124,26 +124,41 @@ namespace UOClient.Unity
             return ordered;
         }
 
-        /// <summary>Builds a look from a body and worn items (graphic, hue per layer), resolving each item's animation.</summary>
+        /// <summary>The hair and beard layers, which a ghost does not draw (MobileView.cs:372, 1245).</summary>
+        public const byte HairLayer = 11, BeardLayer = 16, MountLayer = 25;
+
+        /// <summary>
+        /// Builds a look from a body and worn items (graphic, hue per layer), resolving each item's animation.
+        /// <see cref="Body"/> stays the body as sent; the art is drawn from <see cref="AnimationLibrary.AnimationBody"/>, so a
+        /// ghost (402/403, 607/608, 694/695) draws as its living body, as TazUO's MobileView does. A ghost also draws no
+        /// hair, beard (MobileView.cs:372) or mount (:172), and keeps the hues as sent: TazUO overrides a dead mobile's hue
+        /// (0x0386) only when it is not human (:120-123), and every ghost body is human there (Mobile.cs:1127-1140).
+        /// </summary>
         public static MobileLook From(UOData data, int body, int hue, IEnumerable<(byte Layer, int Graphic, int Hue)> equipment)
         {
             var look = new MobileLook();
             AnimationLibrary anims = data.AnimationLibrary;
+            int drawn = AnimationLibrary.AnimationBody(body);
+            bool ghost = drawn != body;
             look.Body = body;
-            look.Group = anims.GroupOf(body);
-            look.BodyActions = anims.Actions(body);
-            look.WarActions = anims.Actions(body, warMode: true);
-            look.DeathActions = (anims.DeathAction(body, false, running: true), anims.DeathAction(body, true, running: true));
+            look.Group = anims.GroupOf(drawn);
+            look.BodyActions = anims.Actions(drawn);
+            look.WarActions = anims.Actions(drawn, warMode: true);
+            look.DeathActions = (anims.DeathAction(drawn, false, running: true), anims.DeathAction(drawn, true, running: true));
             int skin = hue & 0x3FFF;
             if (skin == 0)
-                skin = anims.ReplacementHue(body); // Body.def stand-ins come with their own hue
+                skin = anims.ReplacementHue(drawn); // Body.def stand-ins come with their own hue
 
             var byLayer = new Dictionary<byte, (int Graphic, int Hue)>();
             foreach (var e in equipment)
+            {
+                if (ghost && (e.Layer == HairLayer || e.Layer == BeardLayer || e.Layer == MountLayer))
+                    continue;
                 byLayer[e.Layer] = (e.Graphic, e.Hue);
+            }
 
             // People walk, run and stand by what they hold: layer 1 (one-handed) and 2 (two-handed or shield).
-            if (anims.UsesPeopleActions(body))
+            if (anims.UsesPeopleActions(drawn))
             {
                 bool one = byLayer.ContainsKey(1), two = byLayer.TryGetValue(2, out var hand2);
                 int twoAnim = two ? data.TileData.GetStatic(hand2.Graphic).AnimId : 0;
@@ -152,7 +167,7 @@ namespace UOClient.Unity
             }
 
             // The mount goes first, so the rider is drawn over it.
-            if (look.Group == AnimGroup.Human && byLayer.TryGetValue(25, out var mount))
+            if (look.Group == AnimGroup.Human && byLayer.TryGetValue(MountLayer, out var mount))
             {
                 int mountBody = AnimationLibrary.MountBody(mount.Graphic);
                 if (mountBody == 0)
@@ -166,7 +181,7 @@ namespace UOClient.Unity
                 }
             }
 
-            look.Layers.Add(new Layer { Body = body, Hue = skin });
+            look.Layers.Add(new Layer { Body = drawn, Hue = skin });
             if (look.Group != AnimGroup.Human)
                 return look; // creatures wear nothing visible
 

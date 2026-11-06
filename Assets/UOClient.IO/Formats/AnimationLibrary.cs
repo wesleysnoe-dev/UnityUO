@@ -110,16 +110,48 @@ namespace UOClient.IO.Formats
             return HasAny(file, real) || !_replace.TryGetValue(body, out var rep) ? body : rep.Body;
         }
 
-        /// <summary>A body as <see cref="ServerAnimationGroups"/> reads it.</summary>
+        /// <summary>
+        /// The body a mobile's animation is drawn from: TazUO's <c>Mobile.GetGraphicForAnimation</c>
+        /// (MobileAnimation.cs:53-81). The ghost bodies have no art of their own in the classic files (anim.idx holds
+        /// nothing for 402/403), so human and elf ghosts draw as their living body (402/403 and 607/608 less 2) and
+        /// gargoyle ghosts as 667/666 (0x2B6 to 667, 0x2B7 to 666, as TazUO has them). Any other body is itself.
+        /// Bodyconv.def and Body.def then apply to the result, as TazUO's ConvertBodyIfNeeded does after it.
+        /// </summary>
+        public static int AnimationBody(int body)
+        {
+            switch (body)
+            {
+                case 0x0192:
+                case 0x0193:
+                case 0x025F:
+                case 0x0260:
+                    return body - 2;
+                case 0x02B6:
+                    return 667;
+                case 0x02B7:
+                    return 666;
+                default:
+                    return body;
+            }
+        }
+
+        /// <summary>A ghost body TazUO draws as another (<see cref="AnimationBody"/>): its <c>Mobile.IsDead</c> by body (Mobile.cs:120-128).</summary>
+        public static bool IsGhostBody(int body) => AnimationBody(body) != body;
+
+        /// <summary>
+        /// A body as <see cref="ServerAnimationGroups"/> reads it for drawing: TazUO's <c>GetGroupForAnimation</c> starts
+        /// from <see cref="AnimationBody"/> (MobileAnimation.cs:529-545), so a ghost picks its groups from the living body.
+        /// </summary>
         public ServerAnimationGroups.Body ServerBody(int body, bool mounted, bool warMode)
         {
-            int converted = ConvertedBody(body);
+            int drawn = AnimationBody(body);
+            int converted = ConvertedBody(drawn);
             return new ServerAnimationGroups.Body
             {
-                OriginalType = AnimType(body),
+                OriginalType = AnimType(drawn),
                 Type = AnimType(converted),
                 Flags = AnimFlags(converted),
-                Exists = a => AnimationExists(body, a),
+                Exists = a => AnimationExists(drawn, a),
                 Mounted = mounted,
                 WarMode = warMode,
                 Gargoyle = IsGargoyle(body)
