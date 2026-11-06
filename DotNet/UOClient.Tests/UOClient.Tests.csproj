@@ -24,6 +24,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\AccountStore.PathRule.cs" Link="Unity\AccountStore.PathRule.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\LaunchOptions.cs" Link="Unity\LaunchOptions.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\GameOptions.cs" Link="Unity\GameOptions.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\LoginMedia.Rules.cs" Link="Unity\LoginMedia.Rules.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\OptionsWindow.Pages.cs" Link="Unity\OptionsWindow.Pages.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\HoverTooltip.Placement.cs" Link="Unity\HoverTooltip.Placement.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\ContextMenuWindow.Placement.cs" Link="Unity\ContextMenuWindow.Placement.cs" />

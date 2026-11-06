@@ -27,6 +27,15 @@ namespace UOClient.Unity.UI
             "Speech", "Counters", "Info Bar", "Containers", "Ignore List", "Nameplates", "Cooldowns", "Experimental", "TazUO",
         };
 
+        /// <summary>What Defaults, Cancel, Apply and Okay do, shown while the mouse is on each (in that order).</summary>
+        public static readonly string[] ButtonHints =
+        {
+            "Defaults: resets this window to the defaults; nothing changes until Apply or Okay.",
+            "Cancel: closes, dropping changes not applied. Nothing is saved.",
+            "Apply: uses the changes now, for this run only. Nothing is saved.",
+            "Okay: uses the changes and saves them (UserSettings/unity-uo-options.json).",
+        };
+
         public const int Width = 600, Height = 440, MenuX = 16, MenuWidth = 140, ContentX = 172;
     }
 }

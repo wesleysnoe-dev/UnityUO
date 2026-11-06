@@ -72,23 +72,26 @@ namespace UOClient.Unity.UI
         private void DrawButtons()
         {
             float y = Rect.height - 42;
-            if (GUI.Button(new Rect(MenuX, y, 90, 26), "Defaults"))
+            if (GUI.Button(new Rect(MenuX, y, 90, 26), new GUIContent("Defaults", ButtonHints[0])))
                 _draft.Defaults();
             if (_draft.Changed)
                 Text(new Rect(MenuX + 100, y + 5, 150, 20), "Not applied yet", Note, 12);
             float x = Rect.width - 20 - 3 * 86;
-            if (GUI.Button(new Rect(x, y, 80, 26), "Cancel"))
+            if (GUI.Button(new Rect(x, y, 80, 26), new GUIContent("Cancel", ButtonHints[1])))
             {
                 _draft.Cancel();
                 Close();
             }
-            if (GUI.Button(new Rect(x + 86, y, 80, 26), "Apply"))
+            if (GUI.Button(new Rect(x + 86, y, 80, 26), new GUIContent("Apply", ButtonHints[2])))
                 _draft.Apply();
-            if (GUI.Button(new Rect(x + 172, y, 80, 26), "Okay"))
+            if (GUI.Button(new Rect(x + 172, y, 80, 26), new GUIContent("Okay", ButtonHints[3])))
             {
                 _draft.Okay();
                 Close();
             }
+            // The hovered button's hint, just above the row.
+            if (!string.IsNullOrEmpty(GUI.tooltip))
+                Text(new Rect(MenuX, y - 20, Rect.width - 2 * MenuX, 18), GUI.tooltip, Note, 12);
         }
 
         // ---- page helpers: y runs down the page ----
@@ -135,10 +138,15 @@ namespace UOClient.Unity.UI
         private void DrawSound(GameOptions d)
         {
             _y = 0;
+            // Sound effects only exist with the session's Audio: greyed until then (the draft keeps its value).
+            bool effects = _game.Sound != null;
+            GUI.enabled = effects;
             d.soundVolume = Slider("Sound volume", d.soundVolume, 0f, 1f, Percent(d.soundVolume));
+            GUI.enabled = true;
+            if (!effects)
+                Line("Sound effects start when you log in; unavailable until then.");
             d.musicVolume = Slider("Music volume", d.musicVolume, 0f, 1f, Percent(d.musicVolume));
-            if (_game.Sound == null)
-                Line("Sound starts when you are online; these take effect then.");
+            Line("Music: the login music now, the region music in the world.");
         }
 
         private void DrawVideo(GameOptions d)

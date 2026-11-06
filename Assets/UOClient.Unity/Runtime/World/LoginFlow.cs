@@ -33,9 +33,17 @@ namespace UOClient.Unity
 
         public UI.LoginScreen Screen { get; private set; }
 
+        /// <summary>The login video's current frame (null: the old backdrop); set before <see cref="Show"/>.</summary>
+        public Func<Texture> VideoFrame { get; set; }
+
+        /// <summary>The login screen's Options button; set before <see cref="Show"/>.</summary>
+        public Action OptionsPressed { get; set; }
+
         public void Show()
         {
             Screen = new UI.LoginScreen(_gumpArt, Path.Combine(GameContext.ProjectRoot, "Tools", "ComfyRestyle", "style", "mockup_scene.png"));
+            Screen.VideoFrame = VideoFrame;
+            Screen.OptionsPressed = OptionsPressed;
             Screen.Host = _settings.host;
             Screen.Port = _settings.port;
             if (_accounts().Stored(_settings.host) is (var account, var password))

@@ -115,7 +115,7 @@ namespace UOClient.Unity
             _tracks ??= ReadTracks(Path.Combine(_data.Directory, "Music", "Digital", "Config.txt"));
             if (!_tracks.TryGetValue(id, out var track))
                 return;
-            string path = Path.Combine(_data.Directory, "Music", "Digital", track.File + ".mp3");
+            string path = LoginMediaRules.MusicFile(Path.Combine(_data.Directory, "Music", "Digital"), track.File);
             if (!File.Exists(path))
                 return;
             StartCoroutine(LoadAndFade(request, path, track.Loop));
@@ -185,21 +185,8 @@ namespace UOClient.Unity
         }
 
         /// <summary>Config.txt: "id name[,loop]" per line.</summary>
-        private static Dictionary<int, (string, bool)> ReadTracks(string path)
-        {
-            var tracks = new Dictionary<int, (string, bool)>();
-            if (!File.Exists(path))
-                return tracks;
-            foreach (string line in File.ReadAllLines(path))
-            {
-                string[] parts = line.Trim().Split(new[] { ' ', '\t' }, 2, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 2 || !int.TryParse(parts[0], out int id))
-                    continue;
-                string[] nameAndFlag = parts[1].Split(',');
-                tracks[id] = (nameAndFlag[0].Trim(), nameAndFlag.Length > 1 && nameAndFlag[1].Trim().Equals("loop", StringComparison.OrdinalIgnoreCase));
-            }
-            return tracks;
-        }
+        private static Dictionary<int, (string File, bool Loop)> ReadTracks(string path) =>
+            File.Exists(path) ? LoginMediaRules.ParseMusicConfig(File.ReadAllLines(path)) : new Dictionary<int, (string, bool)>();
 
         private void OnDestroy()
         {

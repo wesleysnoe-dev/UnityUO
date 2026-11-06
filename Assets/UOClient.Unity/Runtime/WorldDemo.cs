@@ -238,8 +238,43 @@ namespace UOClient.Unity
         private void ShowLoginScreen()
         {
             _gumpArt ??= new UI.GumpArt(_ctx.Data);
-            _login = new LoginFlow(_ctx, _gumpArt, () => Accounts, Settings, StartOnline, Quit);
+            _login = new LoginFlow(_ctx, _gumpArt, () => Accounts, Settings, StartOnline, () =>
+            {
+                EndLoginScreen();
+                Quit();
+            })
+            {
+                VideoFrame = () => _loginMedia != null ? _loginMedia.VideoFrame : null,
+                OptionsPressed = () => _loginUi?.Open(new UI.OptionsWindow(this)),
+            };
             _login.Show();
+            StartLoginMedia();
+        }
+
+        // ---- login video and music ----
+
+        private LoginMedia _loginMedia;
+        private UI.UiManager _loginUi;
+
+        /// <summary>
+        /// Starts the login video and music (again after a failed login); already playing, nothing changes. Also the
+        /// login screen's own window manager: only the options window opens there, and it goes (unsaved draft and all)
+        /// with <see cref="EndLoginScreen"/>.
+        /// </summary>
+        private void StartLoginMedia()
+        {
+            _loginUi ??= new UI.UiManager(null, _gumpArt, null);
+            if (_loginMedia == null)
+                _loginMedia = gameObject.AddComponent<LoginMedia>();
+            _loginMedia.MusicVolume = _musicVolume;
+            _loginMedia.Begin(_ctx.Data.Directory);
+        }
+
+        /// <summary>Entering the world, or quitting: the video and login music stop and are freed, the options window goes.</summary>
+        private void EndLoginScreen()
+        {
+            _loginMedia?.End();
+            _loginUi = null;
         }
 
         private static void Quit()
@@ -346,6 +381,8 @@ namespace UOClient.Unity
 
         private void ApplyAudioOptions()
         {
+            if (_loginMedia != null)
+                _loginMedia.MusicVolume = _musicVolume; // the login music, while it plays
             if (Sound == null)
                 return;
             Sound.SoundVolume = _soundVolume;
@@ -391,6 +428,8 @@ namespace UOClient.Unity
 
             _ctx.Session.StatusChanged += s => _ctx.Hud.ConnectionStatus = s;
             _ctx.Session.Entered += OnEnteredWorld;
+            // The server's first region music can come before the login completes: the login music is gone by then.
+            _ctx.Session.MusicRequested += _ => EndLoginScreen();
             SetUpUi();
             _ctx.Session.MoveRejected += (x, y, z, d) =>
             {
@@ -414,6 +453,7 @@ namespace UOClient.Unity
                 if (login.Interactive && _login != null)
                 {
                     _login.Failed($"Could not reach {login.Host}:{login.Port} ({e.Message}).");
+                    StartLoginMedia();
                     return;
                 }
                 Debug.LogWarning($"UOClient: could not reach the server ({e.Message}); running the offline demo.");
@@ -423,6 +463,7 @@ namespace UOClient.Unity
 
         private void OnEnteredWorld()
         {
+            EndLoginScreen();
             Core.Mobile p = _ctx.Session.World.Player;
             CreateWorld(_ctx.Session.World.Map, p.X, p.Y);
             _entities.SpawnPlayer(p, p.Name ?? characterName);
@@ -453,6 +494,7 @@ namespace UOClient.Unity
                 _login.Failed(_ctx.Session.Status);
                 _ctx.Session.Dispose();
                 _ctx.Session = null;
+                StartLoginMedia(); // stopped if the server's music came before the drop
             }
             // Logged out: the server saved us and closed the connection.
             if (_quitAfterLogout && _ctx.Session != null && _ctx.Session.State == SessionState.Disconnected)
@@ -536,6 +578,11 @@ namespace UOClient.Unity
             if (_login != null && _ctx.World == null)
             {
                 _login.Draw();
+                if (_loginUi != null)
+                {
+                    _loginUi.Scale = UI.UiScale.Current;
+                    _loginUi.OnGUI();
+                }
                 return;
             }
             if (!_ready)

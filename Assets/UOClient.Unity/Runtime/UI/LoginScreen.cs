@@ -25,6 +25,12 @@ namespace UOClient.Unity.UI
         public Action<LoginScreen> LoginPressed;
         public Action QuitPressed;
 
+        /// <summary>Opens the options window over the login screen (music volume works here); null hides the button.</summary>
+        public Action OptionsPressed;
+
+        /// <summary>The login video's current frame, or null for the mockup / dark backdrop.</summary>
+        public Func<Texture> VideoFrame;
+
         /// <summary>The account and password remembered for a server (empty when none).</summary>
         public Func<string, (string Account, string Password)> RememberedFor;
 
@@ -82,17 +88,36 @@ namespace UOClient.Unity.UI
             float s = UiScale.Current;
             float w = Screen.width / s, h = Screen.height / s;
 
-            // Backdrop: the art-direction mockup, cropped to fill, darkened toward the bottom.
-            GUI.color = Color.white;
-            if (_backdrop != null)
-                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), _backdrop, ScaleMode.ScaleAndCrop);
-            GUI.color = new Color(0.02f, 0.02f, 0.03f, _backdrop != null ? 0.55f : 1f);
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), _shade);
+            // Backdrop: the login video, whole (contain) on dark bars under a light scrim; without it the
+            // art-direction mockup, cropped to fill and darkened; without that, plain dark.
+            var screen = new Rect(0, 0, Screen.width, Screen.height);
+            Texture video = VideoFrame?.Invoke();
+            if (video != null)
+            {
+                GUI.color = new Color(0.02f, 0.02f, 0.03f, 1f);
+                GUI.DrawTexture(screen, _shade);
+                var (vx, vy, vw, vh) = LoginMediaRules.Contain(Screen.width, Screen.height, video.width, video.height);
+                GUI.color = Color.white;
+                GUI.DrawTexture(new Rect(vx, vy, vw, vh), video, ScaleMode.StretchToFill);
+                GUI.color = new Color(0.02f, 0.02f, 0.03f, LoginMediaRules.VideoScrim);
+                GUI.DrawTexture(screen, _shade);
+            }
+            else
+            {
+                GUI.color = Color.white;
+                if (_backdrop != null)
+                    GUI.DrawTexture(screen, _backdrop, ScaleMode.ScaleAndCrop);
+                GUI.color = new Color(0.02f, 0.02f, 0.03f, _backdrop != null ? 0.55f : 1f);
+                GUI.DrawTexture(screen, _shade);
+            }
             GUI.color = Color.white;
 
             Matrix4x4 saved = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1));
             GUI.Label(new Rect(0, h * 0.08f, w, 60), "Unity UO", _title);
+            // Top right, clear of the panel and of the video's bottom-right caption.
+            if (OptionsPressed != null && GUI.Button(new Rect(w - 110, 16, 94, 28), "Options"))
+                OptionsPressed();
 
             switch (Current)
             {
