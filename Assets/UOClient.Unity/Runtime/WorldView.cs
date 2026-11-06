@@ -52,8 +52,26 @@ namespace UOClient.Unity
         private readonly System.Collections.Generic.List<Vector2> _uvs = new System.Collections.Generic.List<Vector2>();
         private readonly System.Collections.Generic.List<int> _indices = new System.Collections.Generic.List<int>();
         private readonly System.Collections.Generic.List<Vector2> _heights = new System.Collections.Generic.List<Vector2>();
+        private System.Collections.Generic.List<Vector4> _feet; // made by the first foot quad; null keeps today's mesh
 
         public int QuadCount => _vertices.Count / 4;
+
+        /// <summary>
+        /// LiveGroundCompare (TEST) only: when set, quads given a foot anchor carry it in UV3 for the sprite shadow
+        /// receive (WorldSprite.shader, LG_SPRITE_SHADOW). Off by default; the presenter sets it and clears it on
+        /// dispose. While off, every mesh is exactly what it was without the foot overloads.
+        /// </summary>
+        public static bool FootMetadata
+        {
+            get => _footMetadata;
+            set
+            {
+                _footMetadata = value;
+                _footEverSet |= value;
+            }
+        }
+
+        private static bool _footMetadata, _footEverSet; // the second spares the normal client any check per quad
 
         /// <summary>
         /// Tile height passed to the shader (second UV channel) for cutting away upper floors, offset by 1000 so a
@@ -90,6 +108,28 @@ namespace UOClient.Unity
             _indices.Add(i);
             _indices.Add(i + 2);
             _indices.Add(i + 3);
+            if (_feet != null)
+                for (int k = 0; k < 4; k++)
+                    _feet.Add(Vector4.zero);
+        }
+
+        /// <param name="foot">
+        /// LiveGroundCompare sprite shadow: the foot anchor (Unity x, y; UO Z; kind, 0 = none). Written only while
+        /// <see cref="FootMetadata"/> is set; otherwise this is the overload without it.
+        /// </param>
+        public void AddQuad(Rect r, Vector4 uv, float z, bool mirror, float height, Vector4 foot)
+        {
+            AddQuad(r, uv, z, mirror, height);
+            if (!FootMetadata)
+                return;
+            if (_feet == null)
+            {
+                _feet = new System.Collections.Generic.List<Vector4>(_vertices.Count);
+                for (int k = 0; k < _vertices.Count; k++)
+                    _feet.Add(Vector4.zero);
+            }
+            for (int k = _feet.Count - 4; k < _feet.Count; k++)
+                _feet[k] = foot;
         }
 
         public Mesh Build(string name)
@@ -98,6 +138,8 @@ namespace UOClient.Unity
             mesh.SetVertices(_vertices);
             mesh.SetUVs(0, _uvs);
             mesh.SetUVs(1, _heights);
+            if (_feet != null)
+                mesh.SetUVs(2, _feet);
             mesh.SetTriangles(_indices, 0);
             mesh.RecalculateBounds();
             return mesh;
@@ -107,11 +149,32 @@ namespace UOClient.Unity
         private static readonly Vector3[] QuadVertices = new Vector3[4];
         private static readonly Vector2[] QuadUvs = new Vector2[4];
         private static readonly Vector2[] QuadHeights = new Vector2[4];
+        private static readonly Vector4[] QuadFeet = new Vector4[4];
         private static readonly int[] QuadIndices = { 0, 1, 2, 0, 2, 3 };
+
+        /// <summary>
+        /// As the overload without a foot, and while <see cref="FootMetadata"/> is set the quad also carries
+        /// <paramref name="foot"/> in UV3 (LiveGroundCompare sprite shadow). When it is not set the mesh is the same as
+        /// without it (a foot channel left from before is removed).
+        /// </summary>
+        public static void SetQuad(Mesh mesh, Rect r, Vector4 uv, float z, bool mirror, float height, Vector4 foot)
+        {
+            if (!FootMetadata)
+            {
+                SetQuad(mesh, r, uv, z, mirror, height);
+                return;
+            }
+            SetQuad(mesh, r, uv, z, mirror, height);
+            for (int k = 0; k < 4; k++)
+                QuadFeet[k] = foot;
+            mesh.SetUVs(2, QuadFeet);
+        }
 
         /// <summary>Rewrites the single quad of a one-sprite mesh (characters, items) without allocating.</summary>
         public static void SetQuad(Mesh mesh, Rect r, Vector4 uv, float z, bool mirror, float height = NeverCut)
         {
+            if (_footEverSet && !_footMetadata && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.TexCoord2))
+                mesh.Clear(); // a foot left by the TEST sprite shadow: back to the plain quad (rebuilt below)
             for (int k = 0; k < 4; k++)
                 QuadHeights[k] = new Vector2(height, 0);
             QuadVertices[0] = new Vector3(r.xMin, r.yMin, z);

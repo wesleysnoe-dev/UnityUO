@@ -318,7 +318,14 @@ namespace UOClient.Unity
                 var key = (texture, q.Roof);
                 if (!groups.TryGetValue(key, out MeshBuilder mb))
                     groups[key] = mb = new MeshBuilder();
-                mb.AddQuad(ToUnityRect(q.Left, q.Top, q.Width, q.Height), uv, q.Depth, false, q.CutHeight);
+                Rect rect = ToUnityRect(q.Left, q.Top, q.Width, q.Height);
+                if (MeshBuilder.FootMetadata) // LiveGroundCompare sprite shadow (TEST); false by default
+                {
+                    Vector2 foot = ToUnity(new Vector2(q.FootX, q.FootY));
+                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, new Vector4(foot.x, foot.y, q.FootZ, q.FootKind));
+                }
+                else
+                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight);
             }
 
             foreach (KeyValuePair<(int, bool), MeshBuilder> g in groups)
@@ -450,7 +457,12 @@ namespace UOClient.Unity
                     // Statics are cut away above the floor overhead when indoors; land always draws.
                     CutHeight = it.Kind == DrawKind.Static ? MeshBuilder.CutHeight(it.Z) : MeshBuilder.NeverCut,
                     Unique = unique,
-                    Bitmap = unique ? null : bmp
+                    Bitmap = unique ? null : bmp,
+                    // LiveGroundCompare sprite shadow: the tile centre the sprite stands on (used only while MeshBuilder.FootMetadata).
+                    FootX = (it.X - it.Y) * 22f * _scale,
+                    FootY = ((it.X + it.Y) * 22f + 22f - it.Z * 4f) * _scale,
+                    FootZ = it.Z,
+                    FootKind = it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2 // upright : ground
                 };
                 if (unique)
                     uniques.Add((bmp, build.Quads.Count));
@@ -536,6 +548,7 @@ namespace UOClient.Unity
             public bool Roof, Unique;
             public Bitmap32 Bitmap; // shared art (key into the shared atlas)
             public int U, V;        // unique art position in the chunk texture
+            public float FootX, FootY, FootZ, FootKind; // foot anchor (world-screen pixels, UO Z, kind) for the TEST sprite shadow
         }
 
         private struct SharedSprite

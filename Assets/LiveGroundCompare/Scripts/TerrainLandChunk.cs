@@ -59,9 +59,12 @@ namespace UOClient.LiveGroundCompare
                     builder.AddTile(p.Item, p.Art, p.Texmap, _occlusion ? p.Depth : float.NaN);
                     water?.AddTile(p.Item, p.Art, p.Texmap, WaterTiles.Lookup(_water, p.Item.Graphic));
                 }
-                if (_presenter.SharedLight)
-                    builder.SetOccluders(Occluders(x0, y0));
+                int[,] occluders = _presenter.SharedLight ? Occluders(x0, y0) : null;
+                builder.SetOccluders(occluders);
                 TerrainLandData data = builder.Finish();
+                // Sprite receive: the same heights and columns, as heights below which a point is in shadow.
+                if (_presenter.SpriteCeiling != null && data.TileCount > 0)
+                    data.SunCeiling = LiveGroundLighting.ShadowCeiling(data.CornerZ, occluders);
                 WaterSurfaceData waterData = water != null && water.WaterTileCount > 0 ? water.Finish() : null;
                 DepthProxyData proxy = _occlusion ? TerrainDepthProxy.Build(data, _scale) : null;
                 return data.TileCount == 0 ? null : new TerrainLandChunk(_presenter, data, waterData, proxy);
@@ -97,6 +100,7 @@ namespace UOClient.LiveGroundCompare
         private Material _proxyMaterial;
         private GameObject _proxyGo;
         private int _occluderTiles;
+        private (int X0, int Y0)? _ceiling; // published into the presenter's sprite shadow ceiling
 
         public TerrainLandChunk(TerrainIsoPresenter presenter, TerrainLandData data, WaterSurfaceData water, DepthProxyData proxy)
         {
@@ -165,6 +169,11 @@ namespace UOClient.LiveGroundCompare
                 _occluderTiles = d.OccluderTiles;
                 _presenter.OccluderTileCount += _occluderTiles;
                 _counted = true;
+                if (d.SunCeiling != null && _presenter.SpriteCeiling != null)
+                {
+                    _presenter.SpriteCeiling.Publish(d.ChunkX0, d.ChunkY0, d.SunCeiling, this);
+                    _ceiling = (d.ChunkX0, d.ChunkY0);
+                }
             }
             catch (Exception e)
             {
@@ -272,6 +281,9 @@ namespace UOClient.LiveGroundCompare
             _waterData = null;
             _proxyData = null;
             DisposeProxy();
+            if (_ceiling.HasValue)
+                _presenter.SpriteCeiling?.Remove(_ceiling.Value.X0, _ceiling.Value.Y0, this);
+            _ceiling = null;
             _presenter.OccluderTileCount -= _occluderTiles;
             _occluderTiles = 0;
             if (_water != null)

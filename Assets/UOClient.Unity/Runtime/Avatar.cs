@@ -361,7 +361,15 @@ namespace UOClient.Unity
             LastDepth = view.DepthFor(SortItem);
             LastCut = MeshBuilder.CutHeight(Z);
             // Characters on a floor above us are cut away with it (we ourselves always stand below the cut).
-            MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut);
+            if (MeshBuilder.FootMetadata)
+            {
+                // LiveGroundCompare sprite shadow (TEST): the feet where they are drawn, at the height between the two tiles.
+                Vector2 foot = view.ToUnity(anchor);
+                float footZ = _stepDuration <= 0 ? Z : Mathf.Lerp(_fromZ, Z, _stepTime / _stepDuration);
+                MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut, new Vector4(foot.x, foot.y, footZ, 1f));
+            }
+            else
+                MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut);
             // The frame is every worn layer composited, so its outline is the whole equipped silhouette.
             _outline.Update(ObjectHighlight.OutlinesInWorld(Selected, true, false, ObjectHighlight.HighlightGameObjects),
                 _art, f.Slot, r, mirror, LastDepth, LastCut);

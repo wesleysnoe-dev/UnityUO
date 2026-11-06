@@ -130,7 +130,21 @@ namespace UOClient.LiveGroundCompare
             Debug.Log(DepthShader != null
                 ? "UOClient LiveGround occlusion: on (depth-only proxy per chunk in the main camera, each tile at its land sprite's DepthKey)"
                 : $"UOClient LiveGround occlusion: off ({OcclusionError})");
+
+            // Sprite sun-shadow receive: only with the shared light (the same CPU heights and columns as the terrain mask).
+            string spriteWhy = "light isolated";
+            if (SharedLight)
+                SpriteCeiling = SpriteShadowCeiling.TryCreate(world, scale, out spriteWhy);
+            SpriteShadowError = SpriteCeiling == null ? spriteWhy : null;
+            Debug.Log(SpriteCeiling != null
+                ? $"UOClient LiveGround sprite shadow: on (keyword {SpriteShadowCeiling.Keyword}; per-pixel billboard point vs CPU shadow ceiling, {SpriteShadowCeiling.Size}^2 RHalf over {SpriteShadow.WrapTiles} tiles)"
+                : $"UOClient LiveGround sprite shadow: off ({SpriteShadowError})");
         }
+
+        /// <summary>Sprite sun-shadow receive (TEST); null when off (see <see cref="SpriteShadowError"/>). Read by the worker.</summary>
+        public SpriteShadowCeiling SpriteCeiling { get; private set; }
+
+        public string SpriteShadowError { get; }
 
         /// <summary>The occlusion proxy's shader; null when occlusion is off (see <see cref="OcclusionError"/>).</summary>
         public Shader DepthShader { get; }
@@ -254,6 +268,7 @@ namespace UOClient.LiveGroundCompare
         {
             if (c != _cam || _main == null)
                 return;
+            SpriteCeiling?.Apply(); // chunks attached since the last frame; the main camera's sprites draw after this
             float s = _scale, hz = 1f / TerrainLandBuilder.HeightUnitPerZ, k = DepthPerPixel;
             const float h = LiveGroundProjection.TileHalf, zs = LiveGroundProjection.ZStep;
             Vector3 camPos = _main.transform.position;
@@ -292,6 +307,8 @@ namespace UOClient.LiveGroundCompare
             UnityEngine.Object.Destroy(_root); // camera, light and any terrain chunk not yet disposed
             Water?.Dispose();
             Water = null;
+            SpriteCeiling?.Dispose(); // keyword, globals and MeshBuilder.FootMetadata back as they were
+            SpriteCeiling = null;
             _root = null;
             _cam = null;
             _light = null;

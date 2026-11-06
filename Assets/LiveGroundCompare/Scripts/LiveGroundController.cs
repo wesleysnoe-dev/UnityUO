@@ -81,10 +81,19 @@ namespace UOClient.LiveGroundCompare
             return t.OcclusionChunkError == null ? s : $"{s} (error: {t.OcclusionChunkError})";
         }
 
-        /// <summary>Labelled as what it is: a CPU mask from heights, not a Unity shadow map; sprites do not receive it.</summary>
-        private static string ShadowIndicator(TerrainIsoPresenter t) => t.OccluderError == null
-            ? $"sun shadow CPU mask terrain+static columns ({t.OccluderTileCount} tiles), sprites unshadowed"
-            : $"sun shadow CPU mask terrain-only (statics off: {t.OccluderError}), sprites unshadowed";
+        /// <summary>Labelled as what it is: a CPU mask/ceiling from heights, not a Unity shadow map.</summary>
+        private static string ShadowIndicator(TerrainIsoPresenter t) => (t.OccluderError == null
+            ? $"sun shadow CPU mask terrain+static columns ({t.OccluderTileCount} tiles)"
+            : $"sun shadow CPU mask terrain-only (statics off: {t.OccluderError})") + ", " + SpriteShadowIndicator(t);
+
+        private static string SpriteShadowIndicator(TerrainIsoPresenter t)
+        {
+            SpriteShadowCeiling c = t.SpriteCeiling;
+            if (c == null)
+                return $"sprites unshadowed: {t.SpriteShadowError}";
+            string s = $"sprites receive CPU ceiling ({c.ChunkCount} chunks; mobiles/items do not cast)";
+            return c.Collisions == 0 ? s : $"{s} (wrap collisions {c.Collisions})";
+        }
 
         public bool IsFallback => _switch.IsAttached && LiveGroundStatus.IsFallback(_switch.Requested, _switch.Active, _switch.Reason);
 

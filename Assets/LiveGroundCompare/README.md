@@ -177,8 +177,8 @@ What the Terrain backend now does (`LiveGroundLighting`, Unity-free and tested; 
 - **No Unity light** in the shared path: the presenter's directional light is only created for the fallback.
 - **Fallback:** if the lit shader is missing/unsupported, Legacy Diffuse + the old isolated light, and the indicator
   says `light ISOLATED: <why>` (Player.log: `UOClient LiveGround light: isolated (…)`). Otherwise
-  `light shared (TOD+player), sun shadow CPU mask terrain+static columns (N tiles), sprites unshadowed` and
-  `UOClient LiveGround light: shared (…)`.
+  `light shared (TOD+player), sun shadow CPU mask terrain+static columns (N tiles), sprites receive CPU ceiling (M chunks; mobiles/items do not cast)`
+  and `UOClient LiveGround light: shared (…)`.
 
 Shadow model (**labelled approximation, not a dynamic shadow map**):
 
@@ -196,14 +196,10 @@ Shadow model (**labelled approximation, not a dynamic shadow map**):
   chunk's own statics. If reading them fails, the mask is terrain-only and the indicator says `statics off: …`.
 - **Chunk edges:** a ray that leaves its 16×16 chunk counts as lit (neighbours are not visible to the builder), so a hill
   or building in the west/north neighbour does not shade this chunk (tested and documented).
-- **Not shadowed:** sprites (statics, mobiles, items, roofs) do not receive the shadow, and mobiles/items do not cast;
-  the water does not receive it. The indicator says `sun shadow CPU mask terrain+static columns (N tiles), sprites
-  unshadowed`.
+- **Sprites receive it** (statics, roofs, mobiles, items; see *Sprite sun-shadow receive* below). Mobiles, items and
+  multis do not cast; effects and the hover outline do not receive; the water does not receive it.
 
-Why not Unity shadow maps (checked, not done): the terrain camera's view is the UO projection (sheared, in pixel units,
-~10000 units deep), while the active quality level's `shadowDistance` is 150 (Ultra; Standalone default) — every terrain
-pixel is beyond it, and changing it is a global QualitySettings change (out of scope). Sprites live in the main camera's
-XY plane, not in terrain space, so they could not cast into the same shadow map without proxies.
+Unity shadow maps: see *Route to real dynamic shadows* below (examined, not done).
 
 ## Terrain ↔ sprite occlusion (depth-only proxy)
 
@@ -217,21 +213,85 @@ XY plane, not in terrain space, so they could not cast into the same shadow map 
   depth-origin offset as that chunk's sprites), drawn by the **main** camera with `LiveGroundCompare/DepthKey`
   (`Shaders/Resources/LiveGroundCompareDepthKey.shader`: `ColorMask 0`, `ZWrite On`, queue Geometry, before the
   AlphaTest sprites). Statics, mobiles and items then pass or fail the depth test exactly as against original land.
-- **Default path untouched:** `UOClient/WorldSprite` is not changed (no keyword, no global; source-guarded by a test);
-  the main camera's clear flags are the presenter's as before. Original and Mesh never build a proxy.
+- **Default path untouched:** the proxy needs nothing from `UOClient/WorldSprite` (its default variant has no
+  LiveGround global; source-guarded by a test); the main camera's clear flags are the presenter's as before. Original
+  and Mesh never build a proxy.
 - **Limits:** between samples Unity's terrain triangulation/LOD may differ from the proxy by about a pixel at a
   silhouette. Tiles not diverted (holes, baked HD land) get no proxy, as they are sprites themselves.
 - **Indicator:** `occlusion depthkey N/M chunks` (proxies attached / terrain chunks) or `occlusion off: <why>`;
   Player.log: `UOClient LiveGround occlusion: on (…)` / `off (…)`.
 
-## Still isolated (architecture, not done)
+## Sprite sun-shadow receive (Terrain + shared light only; labelled approximation)
 
-- **Sprites do not receive any shadow.** A sprite pixel only knows its screen position; darkening it by the terrain or
-  building shadow needs each sprite's foot tile in its vertex data (WorldStreamer's quad format and the mobile/item
-  renderers) plus a WorldSprite seam. That is outside this folder's allowlist.
-- **No Unity shadow maps** (unchanged, see above): the ortho UO projection is ~10000 units deep against a 150
-  `shadowDistance`, and billboards have no volume to cast.
-- Original/Mesh land keep the compositor's per-face shade only (no sun shadow).
+A sprite pixel only knows its screen position. The receive puts each pixel back into the world and asks the same CPU
+shadow the terrain uses whether that point is in it.
+
+- **Shadow ceiling** (`LiveGroundLighting.ShadowCeiling`, Unity-free, tested): per ¼-tile texel, the UO Z below which a
+  point standing there is in the sun shadow, `max over the sun ray of (occluder height − rise·distance)` over the
+  chunk's heightfield and static columns. One number answers the visibility of *any* height in O(1); for ground points
+  it gives exactly the terrain mask's answer (tested texel by texel, terrain-only and off column tiles). The column on
+  the point's own tile is skipped, so a wall does not shade itself. Built on the worker next to the mask (~1.2 ms per
+  town chunk vs ~0.4 ms for the mask, measured by `SpriteShadow_CeilingCostPerChunk_IsBoundedOnTheWorker`).
+- **World texture** (`SpriteShadowCeiling`): one 1024² RHalf texture, Repeat + bilinear, tile (x, y) at texel
+  (4x, 4y) mod 1024 (256 tiles wrap; the loaded window is ~144). Chunks write their 64² block on attach and clear it on
+  dispose (owner-checked); unloaded ground reads `NoCeiling` (never shadowed). Uploaded at most once per frame, before
+  the cameras (full 2 MB `Apply` only when a chunk changed). `wrap collisions N` in the indicator if the window ever
+  grows past the wrap.
+- **Foot metadata** (UV3, `MeshBuilder` foot overloads): Unity x, y of the foot anchor, its UO Z, a kind. Statics: the
+  tile centre, upright when tiledata `Height > 1`, else ground (floors, rugs); land sprites that stay sprites (baked
+  HD land): ground. Mobiles: the walking anchor and the Z between the two tiles. Items/corpses: their tile centre,
+  upright. Effects and outlines: none.
+- **Pixel → world** (`SpriteShadow.PixelPoint`, the shader mirrors it line for line; tested): upright = a vertical plane
+  through the foot (4 px per Z above the foot), the pixels below the foot on the ground at the foot's Z (the tile's
+  front half), kept ⅛ tile inside the foot tile; ground = on the ground at the foot's Z. Shade = 0.7 + 0.3 ×
+  visibility (soft over ±1 Z of the ceiling), the terrain's own floor, multiplied before the time-of-day/player light.
+  So a mobile beside a wall can have its feet in shadow and its head in the sun (fixture-verified on a real Britain
+  chunk with a real body frame).
+- **Opt-in and restore:** only `TerrainIsoPresenter` (Terrain backend with the shared light) creates the ceiling. It
+  enables the global keyword `LG_SPRITE_SHADOW` (WorldSprite `multi_compile`), sets `_LGShadowCeil` /
+  `_LGSpriteShadowMap` and `MeshBuilder.FootMetadata`; `Dispose` restores all of them. Without it nothing writes UV3
+  and WorldSprite compiles its default variant, which is the 4aa51a6 shader text exactly (test strips the
+  `#ifdef LG_SPRITE_SHADOW` blocks and compares to `Evidence~/WorldSprite.4aa51a6.shader.txt`) and renders 0 px
+  different from it (evidence below). No QualitySettings, ProjectSettings or material changes.
+- **Indicator:** `sprites receive CPU ceiling (N chunks; mobiles/items do not cast)` or `sprites unshadowed: <why>`;
+  Player.log `UOClient LiveGround sprite shadow: on (…)` / `off (…)`.
+
+Known limits (honest):
+
+- Billboards: a sprite is a vertical plane through its foot tile centre. A long wall made of per-tile sprites gets a
+  per-tile stair-step where its shadow edge crosses it; roof tiles can get a few dark pixels at their bottom edge where
+  the neighbouring roof column toward the sun is higher (the column model has no overhangs).
+- Same as the terrain mask: map statics only (no player houses/multis or server items cast), only the chunk's own
+  statics/heights cast (a ray that leaves the chunk counts as lit), fixed compositor sun.
+- Sprites are not sorted against the shadow (there is nothing to sort): it is a multiplication of their light.
+
+## Route to real dynamic shadows (examined, not done)
+
+What was checked in code, so the next step is not "shadowDistance, impossible":
+
+- `shadowDistance` is compared with the view depth of the camera that renders receivers. The terrain camera's depth
+  row is the presenter's own choice (`TerrainIsoPresenter.OnPreCull`: `camPos.z + DepthCenter (10000) + k·nearness`).
+  The main camera clears depth and the depth proxy carries occlusion, so that row could be re-centred to put the loaded
+  terrain at view depth ~[1, 120) — inside the Ultra 150 — without touching QualitySettings. **shadowDistance alone is
+  not the blocker.**
+- The real work: (1) built-in directional cascades fit the camera frustum from its matrices; the terrain camera's view
+  is sheared and in pixel units, so whether the fit is sane is unproven (needs an experiment); (2) `TerrainLit` has no
+  ShadowCaster pass and does not sample the screen-space shadow mask (no AutoLight); (3) sprites are drawn by the main
+  camera in its XY plane, so they can only receive by sampling an exported shadow map with their reconstructed world
+  point (the reconstruction now exists: `SpriteShadow.PixelPoint`); (4) billboards cannot cast; casters would be proxy
+  volumes in terrain space (boxes from `StaticOccluders`, capsules for mobiles).
+- Options: **B (recommended next, ~0.5–1 day, low risk)** mobiles/items cast into the same CPU path: stamp small
+  columns around them into a per-frame overlay ceiling near the player. **C (~1–2 days, medium)** compute the ceiling
+  on the GPU each frame from a height texture (static columns + dynamic stamps), which also follows a moving sun if the
+  time of day ever drives one. **A (~2–4 days, medium-high)** Unity shadow map on the terrain camera with re-centred
+  depth, a TerrainLit shadow pass, box/capsule caster proxies, and sprites sampling the exported map
+  (LightEvent.AfterShadowMap command buffer + own world→light matrix).
+
+## Still not done
+
+- **No Unity shadow maps** (see the route above).
+- Mobiles/items/multis do not cast; effects and the water do not receive.
+- Original/Mesh land keep the compositor's per-face shade only (no sun shadow, no sprite receive).
 
 ## Evidence stills (Phase C, isolated fixture)
 
@@ -259,6 +319,24 @@ you run by hand, not a live session and not the streaming path. Everything is in
   player-light values are illustrative. Tile colour is the mean classic art, not the baked chunk texture. The chunk has
   no static occluders, so the shadow still shows terrain self-shadow only. Sorting uses geometric depth on the fixture
   camera, not production `DepthKey` values. No FPS figures.
+
+## Evidence stills: sprite shadow receive
+
+- **Fixture:** `Evidence~/shadowRecvChunk.json` + `shadowrecv_ground.png` + `shadowrecv_atlas.png` from
+  `LiveGroundSpriteShadowFixtureTests` (real data): the Britain chunk with the most static columns in a town box
+  (1424, 1712; 235 columns), its statics exactly as `IsoCompositor.BuildDrawList` places them (348 quads, real art), the
+  terrain bake, the sun mask and the shadow ceiling, and a real human body frame (anim body 400, stand) at three tiles
+  picked by the CPU mirror: feet in shadow + head lit, wholly in shadow, wholly lit. The test fails if the builders
+  drift; rewrite with `UOCLIENT_WRITE_LIVEGROUND_EVIDENCE=1` (filter `LiveGroundSpriteShadowFixtureTests`).
+- **Capture:** menu `UOClient/LiveGroundCompare/Capture sprite shadow receive stills (TEST)` or
+  `Evidence~/run-evidence-scratch.ps1 -ShadowRecv` (scratch project, works with the Editor open). One world pixel per
+  output pixel, the shipped WorldSprite and TerrainLit. Writes `stills/shadowrecv_*.png` and `stills/shadowrecv.md`.
+- **Measured (2026-11-06, D3D12, RTX 5080, Gamma):** keyword off vs the 4aa51a6 shader compiled in memory: **0 of
+  1,048,576 px** different; keyword off with vs without UV3: 0 px; keyword on with an empty ceiling: 0 px. Keyword on:
+  53,209 px darker (south/east wall faces, porch furniture under the eave, roof near the chimneys). All six body
+  probes: GPU on/off ratio = CPU `SpriteShadow` shade within 0.008 (0.708/0.702 vs 0.700, 1.000 vs 1.000).
+- **Limits:** one chunk; terrain sorting against sprites is not exercised (the Phase C sort stills cover it); the
+  moving receiver is shown as three placements, not motion; no FPS figures.
 
 ## Build
 

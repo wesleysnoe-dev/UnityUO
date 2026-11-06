@@ -24,6 +24,7 @@ Shader "UOClient/WorldSprite"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile __ LG_SPRITE_SHADOW
             #include "UnityCG.cginc"
 
             sampler2D _MainTex;
@@ -35,6 +36,41 @@ Shader "UOClient/WorldSprite"
             float4 _UOLightPos;    // xy: world position, z: radius
             float _UOCutZ;         // upper-floor cut: hide statics at or above this height (+1000); 0 = no cut
             float _UODead;         // 0..1: how far the world is drained to grey (the player is a ghost)
+            #ifdef LG_SPRITE_SHADOW
+            // LiveGroundCompare (TEST only; LiveGroundLighting.cs, SpriteShadow, mirrors this line for line): sun-shadow
+            // receive. Each pixel is put back into the world from its sprite's foot anchor and tested against the CPU
+            // shadow ceiling (the UO Z below which a point is in the sun shadow). Without the keyword (the default) the
+            // pass compiles to exactly the code outside these blocks.
+            sampler2D _LGShadowCeil;   // world-wrapped shadow ceilings in UO Z (texel = 1/4 tile, SpriteShadow.WrapTiles tiles)
+            float4 _LGSpriteShadowMap; // xy: world pixels = (unity x + x, y - unity y); z: art scale; w: 1 / wrapped tiles
+
+            float LGSpriteSunShade(float2 world, float4 foot)
+            {
+                const float h = 22.0, zs = 4.0;
+                float s = _LGSpriteShadowMap.z;
+                float wx = world.x + _LGSpriteShadowMap.x, wy = _LGSpriteShadowMap.y - world.y;
+                float fx = foot.x + _LGSpriteShadowMap.x, fy = _LGSpriteShadowMap.y - foot.y;
+                float a = wx / (h * s);                                 // x - y
+                // Ground (kind 2): on the ground at the foot's Z.
+                float bg = (wy / s + zs * foot.z) / h;
+                float2 ground = float2(a + bg, bg - a) * 0.5;
+                // Upright (kind 1): above the foot a vertical plane rising 4 px per Z, below it the tile's front half on
+                // the ground; kept 1/8 tile (half a texel) inside the foot tile, so the filter never reads a neighbour's
+                // texel, whose ceiling includes this tile's own column.
+                float af = fx / (h * s), bf = (fy / s + zs * foot.z) / h;
+                float2 tile = floor(float2(af + bf, bf - af) * 0.5);
+                float up = (fy - wy) / s;
+                float b = bf + saturate(-up / h);
+                float2 upright = clamp(float2(a + b, b - a) * 0.5, tile + 0.125, tile + 0.875);
+                bool flat = foot.w > 1.5;
+                float2 p = flat ? ground : upright;
+                float z = foot.z + (flat ? 0.0 : max(up, 0.0) / zs);
+                float ceiling = tex2D(_LGShadowCeil, p * _LGSpriteShadowMap.w).r;
+                float visibility = saturate((z + 0.25 - ceiling) / 2.0 + 0.5);
+                // Kind 0 (no foot: effects, meshes without UV3) is never shaded.
+                return foot.w < 0.5 ? 1.0 : 0.7 + 0.3 * visibility;
+            }
+            #endif
 
             struct appdata
             {
@@ -42,6 +78,9 @@ Shader "UOClient/WorldSprite"
                 float2 uv : TEXCOORD0;
                 float2 height : TEXCOORD1; // x: the sprite's tile height + 1000 (0 = never cut: land, effects)
                 float4 color : COLOR;
+            #ifdef LG_SPRITE_SHADOW
+                float4 foot : TEXCOORD2;   // foot anchor: Unity x, y; UO Z; kind (0 none, 1 upright, 2 ground)
+            #endif
             };
 
             struct v2f
@@ -51,6 +90,9 @@ Shader "UOClient/WorldSprite"
                 float4 color : COLOR;
                 float2 world : TEXCOORD1;
                 float height : TEXCOORD2;
+            #ifdef LG_SPRITE_SHADOW
+                float4 foot : TEXCOORD3;
+            #endif
             };
 
             v2f vert(appdata v)
@@ -61,6 +103,9 @@ Shader "UOClient/WorldSprite"
                 o.color = v.color;
                 o.world = mul(unity_ObjectToWorld, v.vertex).xy;
                 o.height = v.height.x;
+            #ifdef LG_SPRITE_SHADOW
+                o.foot = float4(mul(unity_ObjectToWorld, float4(v.foot.xy, v.vertex.z, 1.0)).xy, v.foot.zw);
+            #endif
                 return o;
             }
 
@@ -78,6 +123,9 @@ Shader "UOClient/WorldSprite"
                 float falloff = saturate(1.0 - d);
                 falloff *= falloff;
 
+            #ifdef LG_SPRITE_SHADOW
+                c.rgb *= LGSpriteSunShade(i.world, i.foot);
+            #endif
                 c.rgb *= _UOAmbient.rgb + _UOLightColor.rgb * falloff;
                 c *= i.color;
                 // As a ghost the classic client draws the world in black and white.

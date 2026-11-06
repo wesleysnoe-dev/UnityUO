@@ -253,6 +253,12 @@ namespace UOClient.LiveGroundCompare
         /// <summary>Sun visibility, <see cref="LiveGroundLighting.ShadowSize"/>² R8 rows bottom-up (null when there is no land).</summary>
         public byte[] SunMask;
 
+        /// <summary>
+        /// Sprite sun-shadow receive (TEST): <see cref="LiveGroundLighting.ShadowCeiling"/> from the same heights and
+        /// columns as <see cref="SunMask"/>; null when the receive is off.
+        /// </summary>
+        public float[] SunCeiling;
+
         /// <summary>Tiles whose static column took part in <see cref="SunMask"/> (0: terrain-only shadow).</summary>
         public int OccluderTiles;
 

@@ -140,6 +140,145 @@ namespace UOClient.LiveGroundCompare
             }
             return mask;
         }
+
+        /// <summary>A <see cref="ShadowCeiling"/> texel no sun ray of this chunk is blocked from (and what unloaded ground reads).</summary>
+        public const float NoCeiling = -1000f;
+
+        /// <summary>
+        /// The shadow ceiling at chunk-local tile point (<paramref name="tx"/>, <paramref name="ty"/>): the UO Z below which
+        /// a point standing there is in the sun shadow. A ray toward the sun from height z is blocked at step s when the
+        /// surface or a column there is above z + rise·s, so the point is shadowed exactly when z is below
+        /// max over s of (occluder height − rise·s). That one number per texel answers the same question as
+        /// <see cref="SunVisibility(int[,], int[,], float, float, int)"/> for any height, so sprites (walls, trees,
+        /// mobiles) can test every pixel against it in O(1). The column on the point's own tile is skipped: a sprite on a
+        /// column tile is that column, and must not shade itself. Rays that leave the chunk count as lit (as the mask).
+        /// </summary>
+        public static float CeilingAt(int[,] cornerZ, int[,] occluderTop, float tx, float ty, int maxZ)
+        {
+            const int t = TerrainLandBuilder.Tiles;
+            float hl = (float)Math.Sqrt(SunX * SunX + SunY * SunY);
+            float ux = SunX / hl, uy = SunY / hl;
+            float risePerTile = SunUp / hl / TerrainLandBuilder.HeightUnitPerZ;
+            int ownI = Math.Min(t - 1, (int)tx), ownJ = Math.Min(t - 1, (int)ty);
+            float ceiling = NoCeiling;
+            for (float s = ShadowStep; ; s += ShadowStep)
+            {
+                float px = tx + ux * s, py = ty + uy * s;
+                if (px < 0f || py < 0f || px > t || py > t)
+                    return ceiling;
+                float drop = risePerTile * s;
+                if (maxZ - drop <= ceiling)
+                    return ceiling; // nothing further along can raise it
+                ceiling = Math.Max(ceiling, TerrainLandBuilder.SampleZ(cornerZ, px, py) - drop);
+                if (occluderTop != null)
+                {
+                    int i = Math.Min(t - 1, (int)px), j = Math.Min(t - 1, (int)py);
+                    if ((i != ownI || j != ownJ) && occluderTop[i, j] != StaticOccluders.None)
+                        ceiling = Math.Max(ceiling, occluderTop[i, j] - drop);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The chunk's shadow ceilings (<see cref="CeilingAt"/>), <see cref="ShadowSize"/>² floats, row r = tile y
+        /// (r + ½) / <see cref="ShadowTexelsPerTile"/> from the chunk's first row (top-down in tile y, unlike the mask),
+        /// column c = tile x likewise. This is the layout of the presenter's world-wrapped ceiling texture.
+        /// </summary>
+        public static float[] ShadowCeiling(int[,] cornerZ, int[,] occluderTop)
+        {
+            const int n = ShadowSize;
+            int maxZ = int.MinValue;
+            foreach (int z in cornerZ)
+                maxZ = Math.Max(maxZ, z);
+            if (occluderTop != null)
+                foreach (int z in occluderTop)
+                    maxZ = Math.Max(maxZ, z);
+            var ceiling = new float[n * n];
+            for (int row = 0; row < n; row++)
+            {
+                float ty = (row + 0.5f) / ShadowTexelsPerTile;
+                for (int col = 0; col < n; col++)
+                    ceiling[row * n + col] = CeilingAt(cornerZ, occluderTop, (col + 0.5f) / ShadowTexelsPerTile, ty, maxZ);
+            }
+            return ceiling;
+        }
+
+        /// <summary>Bilinear read of a <see cref="ShadowCeiling"/> at chunk-local tile point (x, y), as the GPU filters it (edges clamp).</summary>
+        public static float SampleCeiling(float[] ceiling, float x, float y)
+        {
+            const int n = ShadowSize;
+            float fx = x * ShadowTexelsPerTile - 0.5f, fy = y * ShadowTexelsPerTile - 0.5f;
+            int x0 = (int)Math.Floor(fx), y0 = (int)Math.Floor(fy);
+            float ax = fx - x0, ay = fy - y0;
+            float At(int c, int r) => ceiling[Math.Max(0, Math.Min(n - 1, r)) * n + Math.Max(0, Math.Min(n - 1, c))];
+            float top = At(x0, y0) + (At(x0 + 1, y0) - At(x0, y0)) * ax;
+            float bottom = At(x0, y0 + 1) + (At(x0 + 1, y0 + 1) - At(x0, y0 + 1)) * ax;
+            return top + (bottom - top) * ay;
+        }
+    }
+
+    /// <summary>
+    /// TEST-only sun-shadow receive for sprites (UOClient/WorldSprite under the LG_SPRITE_SHADOW keyword). A sprite only
+    /// knows its screen position, so each vertex carries its foot anchor (Unity x, y of the tile centre or the walking
+    /// anchor, the foot's UO Z, and a kind) in UV3. Every pixel is then put back into the world: an upright sprite (walls,
+    /// trees, mobiles, items) as a vertical plane through the foot, each pixel above the foot rising 4 px per Z, and the
+    /// pixels below the foot (the tile's front half) on the ground at the foot's Z; a ground sprite (land, floors) wholly
+    /// on the ground. The point is tested against <see cref="LiveGroundLighting.ShadowCeiling"/>, so a mobile next to a
+    /// wall can have dark feet and a lit head. This mirrors the shader line for line (tested); it is a labelled
+    /// approximation of billboards, not a shadow map.
+    /// </summary>
+    public static class SpriteShadow
+    {
+        /// <summary>UV3.w: no receive (what every mesh without the channel reads), upright, ground.</summary>
+        public const int KindNone = 0, KindUpright = 1, KindGround = 2;
+
+        /// <summary>Upright points stay this far inside the foot tile, so its own (skipped) column's neighbours never read in.</summary>
+        public const float Inset = 0.5f / LiveGroundLighting.ShadowTexelsPerTile;
+
+        /// <summary>Z over which a pixel goes from shadow to lit across the ceiling (soft edge, about ¼ tile of sun travel).</summary>
+        public const float SoftZ = 2f;
+
+        /// <summary>Tiles the presenter's world-wrapped ceiling texture spans (the loaded window must stay narrower).</summary>
+        public const int WrapTiles = 256;
+
+        /// <summary>Kind of a static by its tiledata height: flat ones (floors, rugs) lie on the ground.</summary>
+        public static int StaticKind(int height) => height <= 1 ? KindGround : KindUpright;
+
+        /// <summary>World-screen pixel (at <paramref name="scale"/>, y down) of a tile's centre at height z: the sprites' foot anchor.</summary>
+        public static (float X, float Y) TileAnchor(int x, int y, int z, int scale) =>
+            ((x - y) * LiveGroundProjection.TileHalf * scale,
+             ((x + y) * LiveGroundProjection.TileHalf + LiveGroundProjection.TileHalf - z * LiveGroundProjection.ZStep) * (float)scale);
+
+        /// <summary>
+        /// The world point (tile x, tile y, UO Z) a sprite pixel at world-screen (<paramref name="wx"/>, <paramref name="wy"/>)
+        /// stands for, given its foot anchor (same space) and kind. Tile coordinates are continuous: integers are tile corners.
+        /// </summary>
+        public static (float X, float Y, float Z) PixelPoint(float wx, float wy, float footX, float footY, float footZ, int kind, int scale)
+        {
+            const float h = LiveGroundProjection.TileHalf, zs = LiveGroundProjection.ZStep;
+            float s = scale;
+            float a = wx / (h * s); // x - y
+            if (kind == KindGround)
+            {
+                float bg = (wy / s + zs * footZ) / h; // x + y on the ground at the foot's height
+                return ((a + bg) / 2f, (bg - a) / 2f, footZ);
+            }
+            float af = footX / (h * s), bf = (footY / s + zs * footZ) / h;
+            float tx = (float)Math.Floor((af + bf) / 2f), ty = (float)Math.Floor((bf - af) / 2f);
+            float up = (footY - wy) / s; // unscaled pixels above the foot
+            float z = footZ + Math.Max(up, 0f) / zs;
+            float b = bf + Math.Max(0f, Math.Min(1f, -up / h));
+            float x = Math.Max(tx + Inset, Math.Min(tx + 1f - Inset, (a + b) / 2f));
+            float y = Math.Max(ty + Inset, Math.Min(ty + 1f - Inset, (b - a) / 2f));
+            return (x, y, z);
+        }
+
+        /// <summary>Sun visibility (0 shadow, 1 lit) of a point at UO Z <paramref name="z"/> under a ceiling.</summary>
+        public static float Visibility(float z, float ceiling) =>
+            Math.Max(0f, Math.Min(1f, (z + LiveGroundLighting.ShadowBiasZ - ceiling) / SoftZ + 0.5f));
+
+        /// <summary>The factor the sprite's light is multiplied by: the compositor's flat shade (1) pulled to its floor in shadow, as the terrain.</summary>
+        public static float Shade(float visibility) => LiveGroundLighting.MinShade + (1f - LiveGroundLighting.MinShade) * visibility;
     }
 
     /// <summary>
@@ -148,7 +287,7 @@ namespace UOClient.LiveGroundCompare
     /// solid column from the ground up to Z + Height; the mask's sun rays stop at the highest column per tile. This is
     /// a projected silhouette from known heights, computed on the CPU when the chunk is built: not a Unity shadow map,
     /// no overhangs (a roof shades as a solid block), only the chunk's own map statics (no neighbouring chunks, no
-    /// server items or multis such as player houses), and the sprites themselves are not darkened by it.
+    /// server items or multis such as player houses). Sprites receive it through <see cref="LiveGroundLighting.ShadowCeiling"/>.
     /// </summary>
     public static class StaticOccluders
     {

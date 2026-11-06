@@ -173,7 +173,19 @@ namespace UOClient.Unity
             LastMirror = mirror;
             _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(f.Slot.Page));
             _renderer.enabled = true;
-            MeshBuilder.SetQuad(_mesh, LastRect, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut);
+            SetQuad(world, _art.Atlas.Uv(f.Slot), mirror);
+        }
+
+        private void SetQuad(IWorldSpace world, Vector4 uv, bool mirror)
+        {
+            if (!MeshBuilder.FootMetadata)
+            {
+                MeshBuilder.SetQuad(_mesh, LastRect, uv, LastDepth, mirror, LastCut);
+                return;
+            }
+            // LiveGroundCompare sprite shadow (TEST): stands upright on its tile's centre (Avatar.TileAnchor).
+            Vector2 foot = world.ToUnity(new Vector2((_item.X - _item.Y) * 22, (_item.X + _item.Y) * 22 + 22 - _item.Z * 4) * _scale);
+            MeshBuilder.SetQuad(_mesh, LastRect, uv, LastDepth, mirror, LastCut, new Vector4(foot.x, foot.y, _item.Z, 1f));
         }
 
         private void RenderArt(IWorldSpace world)
@@ -196,7 +208,7 @@ namespace UOClient.Unity
             LastDepth = Depth(world);
             LastSlot = sprite.Slot;
             LastMirror = false;
-            MeshBuilder.SetQuad(_mesh, LastRect, _art.Atlas.Uv(sprite.Slot), LastDepth, false, LastCut);
+            SetQuad(world, _art.Atlas.Uv(sprite.Slot), false);
         }
 
         // DepthKey's tie levels are its last digit: tie t is t steps nearer than tie 0.
