@@ -1,0 +1,16 @@
+{
+    "name": "UOClient.LiveGroundCompare.Editor",
+    "rootNamespace": "UOClient.LiveGroundCompare.Editor",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

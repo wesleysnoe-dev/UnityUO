@@ -233,6 +233,33 @@ XY plane, not in terrain space, so they could not cast into the same shadow map 
   `shadowDistance`, and billboards have no volume to cast.
 - Original/Mesh land keep the compositor's per-face shade only (no sun shadow).
 
+## Evidence stills (Phase C, isolated fixture)
+
+Rendered stills of the shipped shaders on one real chunk, as proof of motion, light and sort behaviour. It is a check
+you run by hand, not a live session and not the streaming path. Everything is in `Evidence~/`, which Unity ignores.
+
+- **Fixture:** `Evidence~/realWaterChunk.json` comes from `LiveGroundEvidenceFixtureTests` (DotNet, real UO data). It
+  holds map 0 chunk (1456, 1456): 129 water tiles (0xA8–0xAB), 29 shoreline corners, and the
+  `LiveGroundLighting.ShadowMask` terrain self-shadow. The water mesh is `WaterSurfaceBuilder`'s own output. The test
+  fails if the builders drift from the saved file. Rewrite it with
+  `$env:UOCLIENT_WRITE_LIVEGROUND_EVIDENCE='1'; dotnet test DotNet/UOClient.Tests --filter "FullyQualifiedName~LiveGroundEvidenceFixtureTests"`.
+- **Capture:** `Editor/LiveGroundEvidenceCapture.cs` is an Editor-only asmdef with no InitializeOnLoad and no Play. It
+  renders off-screen with `LiveGroundCompare/TerrainLit`, `/Water`, `/DepthKey` and `UOClient/WorldSprite`, then writes
+  `Evidence~/stills/*.png` and `evidence.md` with the exact times, sha256s and pixel deltas. Two ways to run it:
+  - Menu `UOClient/LiveGroundCompare/Capture evidence stills (TEST)`, with the project open and not in Play. It puts the
+    shader globals back afterwards.
+  - `Evidence~/run-evidence-scratch.ps1`, which works even while the Editor holds the project lock. It copies only the
+    shaders and the capture into `%TEMP%\UOClient_LGEvidence` and runs `-batchmode -executeMethod
+    UOClient.LiveGroundCompare.Editor.LiveGroundEvidenceCapture.CaptureBatch`, with the GPU and Gamma like this project.
+- **Water time:** the shipped water shader reads `_Time.y` once. The capture compiles an in-memory copy where that read is
+  replaced by `_LGEvidenceTime`, and renders t0 = 10.000 s and t1 = 10.500 s. Rendering t0 twice must differ by 0 px. Inside
+  one `executeMethod` call Unity's own `_Time` does not advance (`realtime_a/b` are identical; Time.time stays 0). Those
+  two stills therefore show that a frozen frame is not motion; they do not show the live `_Time` path.
+- **Limits:** one chunk. The camera is orthographic along `_EyeDir`, not the presenter's oblique matrix. The night and
+  player-light values are illustrative. Tile colour is the mean classic art, not the baked chunk texture. The chunk has
+  no static occluders, so the shadow still shows terrain self-shadow only. Sorting uses geometric depth on the fixture
+  camera, not production `DepthKey` values. No FPS figures.
+
 ## Build
 
 `UOClient/Build Windows Player (GroundCompare TEST)` writes to `Builds/Windows-GroundCompare/Unity UO GroundCompare.exe`

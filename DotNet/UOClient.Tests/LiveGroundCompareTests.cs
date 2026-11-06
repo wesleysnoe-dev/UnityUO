@@ -1328,6 +1328,137 @@ public sealed class LiveGroundWaterDataTests
     }
 }
 
+/// <summary>
+/// The Phase C evidence fixture: one real coastal chunk of map 0 (water mesh, terrain tile colours, corner heights and
+/// the sun mask, all from the production builders) that LiveGroundEvidenceCapture renders in Unity. Rewrite the file
+/// with UOCLIENT_WRITE_LIVEGROUND_EVIDENCE=1; otherwise a present file must equal what the builders make now.
+/// </summary>
+[Collection("UO install")]
+public sealed class LiveGroundEvidenceFixtureTests
+{
+    private const int Tiles = TerrainLandBuilder.Tiles;
+    private readonly UOData _data;
+
+    public LiveGroundEvidenceFixtureTests(UOInstallFixture fixture) => _data = fixture.Data;
+
+    private static string FixturePath()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, "Assets", "LiveGroundCompare")))
+                return Path.Combine(dir.FullName, "Assets", "LiveGroundCompare", "Evidence~", "realWaterChunk.json");
+        throw new DirectoryNotFoundException("repo root");
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions Json = new() { IncludeFields = true };
+
+    /// <summary>Field names are what the Unity side's JsonUtility reads (LiveGroundEvidenceCapture.Fixture).</summary>
+    public sealed class Fixture
+    {
+        public string source = "";
+        public int map, x0, y0, tiles, waterTiles, landTiles, occluderColumns, shadowTexels;
+        public float heightUnitPerZ;
+        public float[] sun = Array.Empty<float>();
+        public int[] waterGraphics = Array.Empty<int>();
+        public int[] graphics = Array.Empty<int>();   // [j * tiles + i]
+        public int[] tileArgb = Array.Empty<int>();   // [j * tiles + i], mean classic land art colour
+        public int[] cornerZ = Array.Empty<int>();    // [j * (tiles + 1) + i]
+        public int[] sunMask = Array.Empty<int>();    // ShadowMask bytes, rows bottom-up as the chunk texture
+        public float[] waterX = Array.Empty<float>(), waterY = Array.Empty<float>(), waterZ = Array.Empty<float>(), waterShore = Array.Empty<float>();
+        public int[] waterTint = Array.Empty<int>();
+        public int[] waterIndices = Array.Empty<int>();
+    }
+
+    /// <summary>The most mixed water/land chunk (ties: one with casting statics, then the first) in a coastal box around Britain.</summary>
+    private (int X0, int Y0) PickCoastalChunk(MapFile map, bool[] water)
+    {
+        int best = -1, bx = 0, by = 0;
+        for (int y0 = 1424; y0 <= 1840; y0 += Tiles)
+            for (int x0 = 1280; x0 <= 1712; x0 += Tiles)
+            {
+                int w = 0;
+                for (int j = 0; j < Tiles; j++)
+                    for (int i = 0; i < Tiles; i++)
+                        if (WaterTiles.Lookup(water, map.ReadLandBlock((x0 + i) >> 3, (y0 + j) >> 3)[(((y0 + j) & 7) << 3) | ((x0 + i) & 7)].Graphic))
+                            w++;
+                int score = Math.Min(w, Tiles * Tiles - w) * 2;
+                if (score > 0 && StaticOccluders.Count(StaticOccluders.FromMap(map, _data.TileData, x0, y0)) > 0)
+                    score++;
+                if (score > best)
+                    (best, bx, by) = (score, x0, y0);
+            }
+        return (bx, by);
+    }
+
+    private Fixture Build()
+    {
+        MapFile map = _data.GetMap(0);
+        bool[] water = WaterTiles.Table(_data.TileData.Land);
+        (int x0, int y0) = PickCoastalChunk(map, water);
+        RealMapPatch patch = RealMapPatch.FromMap(map, x0, y0, Tiles, Tiles);
+        int[,] occluders = StaticOccluders.FromMap(map, _data.TileData, x0, y0);
+
+        var cornerZ = new int[Tiles + 1, Tiles + 1];
+        var f = new Fixture
+        {
+            source = "map0 land/statics + tiledata via UOInstallFixture; tile colour = WaterSurfaceBuilder.MeanColor(classic land art, texmap: false)",
+            map = 0, x0 = x0, y0 = y0, tiles = Tiles, shadowTexels = LiveGroundLighting.ShadowTexelsPerTile,
+            heightUnitPerZ = TerrainLandBuilder.HeightUnitPerZ,
+            sun = new[] { LiveGroundLighting.SunTerrain.X, LiveGroundLighting.SunTerrain.Y, LiveGroundLighting.SunTerrain.Z },
+            occluderColumns = StaticOccluders.Count(occluders),
+            graphics = new int[Tiles * Tiles], tileArgb = new int[Tiles * Tiles], cornerZ = new int[(Tiles + 1) * (Tiles + 1)],
+        };
+        for (int j = 0; j <= Tiles; j++)
+            for (int i = 0; i <= Tiles; i++)
+                f.cornerZ[j * (Tiles + 1) + i] = cornerZ[i, j] = patch.CornerZ(i, j);
+
+        var wb = new WaterSurfaceBuilder(x0, y0);
+        for (int j = 0; j < Tiles; j++)
+            for (int i = 0; i < Tiles; i++)
+            {
+                ushort g = patch.Graphic(i, j);
+                (sbyte t, sbyte r, sbyte b, sbyte l) = patch.Corners(i, j);
+                bool w = WaterTiles.Lookup(water, g);
+                Bitmap32 art = _data.GetLand(g);
+                wb.AddTile(LiveGroundProjection.LandItem(x0 + i, y0 + j, g, t, r, b, l, hasTexmap: false), art, false, w);
+                f.graphics[j * Tiles + i] = g;
+                f.tileArgb[j * Tiles + i] = art == null ? unchecked((int)0xFF000000) : unchecked((int)WaterSurfaceBuilder.MeanColor(art, false));
+                if (w) f.waterTiles++; else f.landTiles++;
+            }
+        f.sunMask = Array.ConvertAll(LiveGroundLighting.ShadowMask(cornerZ, occluders), b => (int)b);
+
+        WaterSurfaceData d = wb.Finish();
+        f.waterGraphics = d.Graphics.ToArray();
+        f.waterX = d.X ?? Array.Empty<float>();
+        f.waterY = d.Y ?? Array.Empty<float>();
+        f.waterZ = d.Z ?? Array.Empty<float>();
+        f.waterShore = d.Shore ?? Array.Empty<float>();
+        f.waterTint = Array.ConvertAll(d.Tint ?? Array.Empty<uint>(), c => unchecked((int)c));
+        f.waterIndices = d.Indices ?? Array.Empty<int>();
+        return f;
+    }
+
+    [Fact]
+    public void Evidence_RealCoastalChunkHasShoreWaterAndSunShadow()
+    {
+        Fixture f = Build();
+        Assert.True(f.waterTiles > 0 && f.landTiles > 0, $"chunk {f.x0},{f.y0}: {f.waterTiles} water / {f.landTiles} land");
+        Assert.All(f.waterGraphics, g => Assert.True(WaterTiles.IsWater(_data.TileData.Land[g]), $"0x{g:X} is not water"));
+        Assert.Contains(0f, f.waterShore);                   // a real shoreline (foam band)
+        Assert.Contains(255, f.sunMask);
+        Assert.Equal(f.waterTiles * 6, f.waterIndices.Length);
+
+        string path = FixturePath();
+        string built = System.Text.Json.JsonSerializer.Serialize(f, Json);
+        if (Environment.GetEnvironmentVariable("UOCLIENT_WRITE_LIVEGROUND_EVIDENCE") == "1")
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, built + "\n");
+        }
+        if (File.Exists(path))
+            Assert.Equal(built, File.ReadAllText(path).TrimEnd('\n'));
+    }
+}
+
 /// <summary>Source guards for the TEST seams: typed data access only, and the default sprite shader untouched.</summary>
 public sealed class LiveGroundSourceTests
 {
@@ -1351,6 +1482,19 @@ public sealed class LiveGroundSourceTests
         Assert.Contains("public UOData Data => _data;", Source("Assets", "UOClient.Unity", "Runtime", "WorldStreamer.cs"));
         foreach (string f in Directory.GetFiles(Path.Combine(RepoRoot(), "Assets", "LiveGroundCompare", "Scripts"), "*.cs"))
             Assert.DoesNotContain("BindingFlags", File.ReadAllText(f));
+    }
+
+    [Fact]
+    public void Evidence_CaptureIsExplicitInvokeEditorOnly()
+    {
+        string dir = Path.Combine(RepoRoot(), "Assets", "LiveGroundCompare", "Editor");
+        Assert.Contains("\"Editor\"", File.ReadAllText(Path.Combine(dir, "UOClient.LiveGroundCompare.Editor.asmdef")));
+        string capture = File.ReadAllText(Path.Combine(dir, "LiveGroundEvidenceCapture.cs"));
+        foreach (string auto in new[] { "InitializeOnLoad", "RuntimeInitializeOnLoadMethod", "DidReloadScripts", "EnterPlaymode", "isPlaying =" })
+            Assert.DoesNotContain(auto, capture);
+        Assert.Contains("[MenuItem(", capture);
+        foreach (string f in Directory.GetFiles(Path.Combine(RepoRoot(), "Assets", "LiveGroundCompare"), "*.cs", SearchOption.AllDirectories))
+            Assert.DoesNotContain("InitializeOnLoad", File.ReadAllText(f));
     }
 
     [Fact]

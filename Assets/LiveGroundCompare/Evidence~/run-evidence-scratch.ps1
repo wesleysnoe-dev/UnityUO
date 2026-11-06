@@ -1,0 +1,36 @@
+# LiveGroundCompare (TEST only) Phase C evidence, for when the main project is open in the Editor (project lock).
+# Copies ONLY the LiveGroundCompare shaders + Editor capture and UOClient/WorldSprite into a throwaway scratch project,
+# runs LiveGroundEvidenceCapture.CaptureBatch there in -batchmode (GPU, no -nographics), and writes the stills back to
+# Assets/LiveGroundCompare/Evidence~/stills. Never touches the main project's Library, scenes, settings or Builds.
+#
+#   powershell -ExecutionPolicy Bypass -File Assets\LiveGroundCompare\Evidence~\run-evidence-scratch.ps1
+#
+# Regenerate the fixture first if the builders changed:
+#   $env:UOCLIENT_WRITE_LIVEGROUND_EVIDENCE='1'; dotnet test DotNet/UOClient.Tests --filter "FullyQualifiedName~LiveGroundEvidenceFixtureTests"
+param(
+    [string]$Scratch = (Join-Path $env:TEMP 'UOClient_LGEvidence'),
+    [string]$Unity = 'C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe'
+)
+$ErrorActionPreference = 'Stop'
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$lg = Join-Path $repo 'Assets\LiveGroundCompare'
+
+foreach ($d in 'Assets\LiveGroundCompare', 'Assets\WorldSprite\Resources', 'Packages') {
+    New-Item -ItemType Directory -Force (Join-Path $Scratch $d) | Out-Null
+}
+Remove-Item -Recurse -Force (Join-Path $Scratch 'Assets\LiveGroundCompare\*') -ErrorAction SilentlyContinue
+Copy-Item -Recurse (Join-Path $lg 'Shaders') (Join-Path $Scratch 'Assets\LiveGroundCompare\Shaders')
+Copy-Item -Recurse (Join-Path $lg 'Editor') (Join-Path $Scratch 'Assets\LiveGroundCompare\Editor')
+Copy-Item (Join-Path $repo 'Assets\UOClient.Unity\Runtime\Resources\WorldSprite.shader*') (Join-Path $Scratch 'Assets\WorldSprite\Resources')
+Set-Content -Encoding ascii (Join-Path $Scratch 'Packages\manifest.json') '{ "dependencies": { "com.unity.modules.imageconversion": "1.0.0" } }'
+
+$log = Join-Path $Scratch 'capture.log'
+$p = Start-Process -FilePath $Unity -Wait -PassThru -ArgumentList @(
+    '-batchmode', '-projectPath', "`"$Scratch`"", '-lgGamma',
+    '-executeMethod', 'UOClient.LiveGroundCompare.Editor.LiveGroundEvidenceCapture.CaptureBatch',
+    '-lgFixture', "`"$(Join-Path $lg 'Evidence~\realWaterChunk.json')`"",
+    '-lgOut', "`"$(Join-Path $lg 'Evidence~\stills')`"",
+    '-logFile', "`"$log`"")
+Select-String -Path $log -Pattern 'LGEVIDENCE|evidence FAILED|error CS' | ForEach-Object { $_.Line }
+Write-Output "unity exit $($p.ExitCode); log $log"
+exit $p.ExitCode
