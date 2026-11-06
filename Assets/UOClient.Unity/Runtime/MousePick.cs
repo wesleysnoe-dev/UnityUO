@@ -157,6 +157,22 @@ namespace UOClient.Unity
             return (-1, 0, 0);
         }
 
+        /// <summary>
+        /// Where a dropped item's top-left lands in a window: the UI pixel the drag cursor shows it on, the cursor's pixel
+        /// less the grab point (<see cref="DragCursor"/>), found as <see cref="UiPixel"/> finds the pick. So a press at a
+        /// point that took the grab point <see cref="WindowItem"/> reports, let go at that same point, puts the item back
+        /// where it was, at every UI scale (an <c>(int)(x - grab)</c> moved it a pixel up-left at fractional scales).
+        /// </summary>
+        public static (int X, int Y) DropOrigin(float x, float y, float grabX, float grabY, float uiScale) =>
+            UiPixel(x, y, grabX, grabY, uiScale);
+
+        /// <summary>
+        /// The grab point for an item lifted by its middle (from the ground or the paperdoll): a whole art pixel, as a
+        /// press in a container gives. A half pixel (<c>width / 2f</c>) let <see cref="DragCursor"/>'s rounding (22.5 to
+        /// 22, 23.5 to 24) and <see cref="DropOrigin"/>'s floor disagree by a pixel on odd-sized art.
+        /// </summary>
+        public static int CentreGrab(int size) => size / 2;
+
         /// <summary>Where a stack's second copy is drawn, down-right of the first (ItemGump.Draw, rect.X/Y += 5).</summary>
         public const int StackOffset = 5;
 

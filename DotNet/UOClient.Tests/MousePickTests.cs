@@ -257,8 +257,58 @@ public sealed class MousePickTests
     public void DragCursor_IsTheArtAtTheUiScale_HeldWhereItWasGrabbed(float scale, int w, int h, int hx, int hy)
     {
         // A 44x22 item grabbed at (20, 10) of its art: the cursor shows it at the windows' size, the hotspot on that pixel,
-        // so a drop at the hotspot puts the art's top-left where the cursor's picture has it (Drop: local - Grab).
+        // so a drop at the hotspot puts the art's top-left where the cursor's picture has it (Drop: DropOrigin).
         Assert.Equal((w, h, hx, hy), MousePick.DragCursor(44, 22, 20, 10, scale));
         Assert.Equal((1, 1, 0, 0), MousePick.DragCursor(1, 1, 5, 5, 0)); // a degenerate scale is 1, the hotspot kept on the art
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.08f)]
+    [InlineData(1.44f)]
+    [InlineData(2f)]
+    [InlineData(0.75f)]
+    public void Drop_WhereItWasPicked_PutsTheItemBackInPlace_AtEveryUiScale(float scale)
+    {
+        // ContainerWindow: press on an item (the grab point is WindowItem's pixel), let go at the same display pixel:
+        // DropOrigin gives the item's own place back. The old (int)(local - grab) moved it a pixel up-left wherever the
+        // pixel's centre and its corner fell in different UI pixels (fractional scales).
+        var window = (X: 300f, Y: 200f);
+        var item = (X: 17, Y: 33);
+        int drops = 0, oldMoved = 0;
+        for (int col = (int)((window.X + item.X) * scale); col < (int)((window.X + item.X + 20) * scale); col++)
+            for (int row = (int)((window.Y + item.Y) * scale); row < (int)((window.Y + item.Y + 12) * scale); row++)
+            {
+                (float lx, float ly) = Local(col, row, scale, window);
+                var (i, gx, gy) = MousePick.WindowItem(1, lx, ly, scale, _ => (item.X, item.Y), _ => false, (_, x, y) => x is >= 0 and < 20 && y is >= 0 and < 12);
+                if (i != 0)
+                    continue;
+                Assert.Equal(item, MousePick.DropOrigin(lx, ly, gx, gy, scale));
+                if (((int)(lx - gx), (int)(ly - gy)) != item)
+                    oldMoved++;
+                drops++;
+            }
+        Assert.True(drops > 100);
+        if (scale != 1f && scale != 2f)
+            Assert.True(oldMoved > 0); // the bug this replaces
+    }
+
+    [Fact]
+    public void CentreGrab_DropsTheArtWhereTheCursorPictureShowsIt_ForOddSizes()
+    {
+        // Lifted from the ground or the paperdoll, an item is held by its middle. Over a window at UI scale 1 the cursor
+        // shows the art's top-left HotX pixels left of the mouse pixel; the drop must put it there.
+        int oldOff = 0;
+        for (int w = 1; w <= 64; w++)
+        {
+            int g = MousePick.CentreGrab(w);
+            int hot = MousePick.DragCursor(w, w, g, g, 1f).HotX;
+            for (int d = 100; d < 103; d++)
+                Assert.Equal(d - hot, MousePick.DropOrigin(d, d, g, g, 1f).X);
+            float half = w / 2f; // the old grab
+            if (MousePick.DropOrigin(100, 100, half, half, 1f).X != 100 - MousePick.DragCursor(w, w, half, half, 1f).HotX)
+                oldOff++;
+        }
+        Assert.True(oldOff > 0); // e.g. 23 wide: grab 11.5, hotspot 12, drop 11
     }
 }

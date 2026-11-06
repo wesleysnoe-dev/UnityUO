@@ -6,18 +6,21 @@ using UOClient.Unity.UI;
 namespace UOClient.Tests;
 
 /// <summary>
-/// <see cref="ObjectHighlight"/>: TazUO's 0x0035 mouse-over hue, for window items always and in the world by
-/// ItemView/MobileView's rules; the pick is the topmost opaque pixel, and nothing under a window is selected.
+/// <see cref="ObjectHighlight"/>: the mouse-over cue is a sprite-edge outline only (Wes 18:58: no 0x0035 fill or tint,
+/// the thing keeps its own hues); the pick is the topmost drawn pixel, never the outline's ring, and nothing under a
+/// window is selected.
 /// </summary>
 public sealed class ObjectHighlightTests
 {
     [Fact]
-    public void WindowItem_IsHuedWhole_OnlyUnderTheMouse()
+    public void Hover_IsOutlineOnly_NoHueRuleIsLeft()
     {
-        Assert.Equal(0x0035 | ObjectHighlight.WholeArt, ObjectHighlight.WindowItemHue(0x0481, mouseOver: true));
-        Assert.True(ObjectHighlight.IsWholeArt(ObjectHighlight.WindowItemHue(0, true)));
-        Assert.Equal(0x0481, ObjectHighlight.WindowItemHue(0x0481, mouseOver: false));
-        Assert.Equal(0x0481, ObjectHighlight.WindowItemHue(0x0481, true, highlightOnMouseOver: false));
+        // TazUO's 0x0035 mouse-over re-hue is gone from every path (world items, mobiles, corpses, containers,
+        // paperdoll, trade): no hue constant or hue rule remains for a call site to apply.
+        string[] gone = { "Hue", "WholeArt", "IsWholeArt", "WindowItemHue", "GroundItemHue", "HighlightsBody" };
+        var members = typeof(ObjectHighlight).GetMembers().Select(m => m.Name).ToHashSet();
+        Assert.DoesNotContain(members, gone.Contains);
+        Assert.DoesNotContain(typeof(MobileLook).GetMethods(), m => m.Name == "Rehued");
     }
 
     [Fact]
@@ -25,19 +28,17 @@ public sealed class ObjectHighlightTests
     {
         // Wes: hover feedback on everything interactable; a code default, no profile written.
         Assert.True(ObjectHighlight.HighlightGameObjects);
-        Assert.True(ObjectHighlight.HighlightsBody(selected: true, ObjectHighlight.HighlightGameObjects));
         Assert.True(ObjectHighlight.OutlinesInWorld(selected: true, body: true, locked: false, ObjectHighlight.HighlightGameObjects));
-        // A fixture (locked furniture, a door) is hued and outlined too.
-        Assert.Equal(0x0035 | ObjectHighlight.WholeArt,
-            ObjectHighlight.GroundItemHue(0x0021, selected: true, locked: true, multi: false, ObjectHighlight.HighlightGameObjects));
+        // A fixture (locked furniture, a door) is outlined too.
+        Assert.True(ObjectHighlight.OutlinesInWorld(selected: true, body: false, locked: true, ObjectHighlight.HighlightGameObjects));
     }
 
     [Fact]
-    public void Outline_InTheWorld_FollowsTheHue()
+    public void Outline_InTheWorld_FollowsTazUOsMouseOverChoice()
     {
         Assert.False(ObjectHighlight.OutlinesInWorld(selected: false, body: true, locked: false, highlightGameObjects: true));
         Assert.True(ObjectHighlight.OutlinesInWorld(true, body: false, locked: true, highlightGameObjects: true));
-        // Without HighlightGameObjects, as TazUO's hue: movable items only, never bodies or fixtures.
+        // Without HighlightGameObjects, as TazUO's mouse-over: movable items only, never bodies or fixtures.
         Assert.True(ObjectHighlight.OutlinesInWorld(true, body: false, locked: false, highlightGameObjects: false));
         Assert.False(ObjectHighlight.OutlinesInWorld(true, body: false, locked: true, highlightGameObjects: false));
         Assert.False(ObjectHighlight.OutlinesInWorld(true, body: true, locked: false, highlightGameObjects: false));
@@ -127,20 +128,80 @@ public sealed class ObjectHighlightTests
     }
 
     [Fact]
-    public void GroundItem_WithoutHighlightGameObjects_OnlyMovableOrLightItemsHighlight()
+    public void Outline_LiesWhollyOutsideTheArt_AndLeavesItsColoursAlone()
     {
-        // ItemView.cs:141-145: !IsLocked && !IsMulti && isSelected, the item's partial flag kept.
-        Assert.Equal(0x0035, ObjectHighlight.GroundItemHue(0x0021, selected: true, locked: false, multi: false, highlightGameObjects: false));
-        Assert.Equal(0x0021, ObjectHighlight.GroundItemHue(0x0021, selected: true, locked: true, multi: false, highlightGameObjects: false));
-        Assert.Equal(0x0021, ObjectHighlight.GroundItemHue(0x0021, selected: true, locked: false, multi: true, highlightGameObjects: false));
-        Assert.Equal(0x0021, ObjectHighlight.GroundItemHue(0x0021, selected: false, locked: false, multi: false, highlightGameObjects: false));
+        // Border only: no outline pixel falls on a drawn art pixel, so the art shows in its own hues under it.
+        var art = new Bitmap32(7, 5);
+        foreach (var (x, y) in new[] { (1, 1), (2, 1), (3, 2), (5, 3), (0, 4), (6, 0) })
+            art.Pixels[y * 7 + x] = 0xFF8040C0;
+        uint[] before = (uint[])art.Pixels.Clone();
+        Bitmap32 o = ObjectHighlight.Outline(art, 1, ObjectHighlight.OutlineArgb);
+        Assert.Equal(before, art.Pixels);
+        for (int y = 0; y < art.Height; y++)
+            for (int x = 0; x < art.Width; x++)
+                if (Opaque(art, x, y))
+                    Assert.False(Lit(o, x + 1, y + 1), $"outline over art pixel ({x},{y})");
+        Assert.All(o.Pixels.Where(p => p != 0), p => Assert.Equal(ObjectHighlight.OutlineArgb, p));
     }
 
     [Fact]
-    public void GroundItem_WithHighlightGameObjects_AnySelectedItemIsHuedWhole()
+    public void Outline_WithTheShadersCutoff_HugsTheDrawnEdge_NotASoftHalo()
     {
-        Assert.Equal(0x0035 | ObjectHighlight.WholeArt, ObjectHighlight.GroundItemHue(0, true, locked: true, multi: false, highlightGameObjects: true));
-        Assert.Equal(0, ObjectHighlight.GroundItemHue(0, false, locked: false, multi: false, highlightGameObjects: true));
+        // HD art: an opaque pixel with a faint (alpha 64) halo pixel beside it. The world shader does not draw the halo,
+        // so the world outline (cutoff 128) rings the opaque pixel and lights the halo's place; without the cutoff it
+        // would ring the invisible halo, a pixel away from what is seen and picked.
+        var art = new Bitmap32(3, 1);
+        art.Pixels[1] = 0xFF808080;
+        art.Pixels[2] = 0x40808080;
+        Bitmap32 world = ObjectHighlight.Outline(art, 1, 0xFFFFFFFF, MousePick.AlphaCutoff);
+        Bitmap32 any = ObjectHighlight.Outline(art, 1, 0xFFFFFFFF);
+        Assert.True(Lit(world, 3, 1));  // on the halo: right against the drawn edge
+        Assert.False(Lit(world, 4, 1)); // nothing a pixel further out
+        Assert.False(Lit(any, 3, 1));
+        Assert.True(Lit(any, 4, 1));
+    }
+
+    [Fact]
+    public void Pick_NeverTakesTheOutlinesPadding_World()
+    {
+        // A one-pixel item over a solid one behind it, both drawn over world (0, 0)-(4, 4); the front item is outlined.
+        // Every world point on its outline ring (the 3x3 around it) picks the item behind, never the outlined one.
+        var dot = new Bitmap32(4, 4);
+        dot.Pixels[1 * 4 + 1] = 0xFFFFFFFF;
+        var arts = new[] { Solid(), dot };
+        var quads = new[] { 5f, 1f }.Select(d => new MousePick.Sprite { Width = 4, Height = 4, SpriteWidth = 4, SpriteHeight = 4, Depth = d }).ToArray();
+        byte Alpha(int i, int x, int y) => (byte)(arts[i].Pixels[y * 4 + x] >> 24);
+        Bitmap32 ring = ObjectHighlight.Outline(dot, 1, 0xFFFFFFFF, MousePick.AlphaCutoff);
+        for (int y = 0; y < 4; y++)
+            for (int x = 0; x < 4; x++)
+            {
+                int picked = MousePick.World(quads, x + 0.5f, 3.5f - y, 0, Alpha);
+                Assert.Equal(x == 1 && y == 1 ? 1 : 0, picked);
+                if (Lit(ring, x + 1, y + 1))
+                    Assert.NotEqual(1, picked);
+            }
+    }
+
+    [Fact]
+    public void Pick_NeverTakesTheOutlinesPadding_Window()
+    {
+        // A window item at (10, 10) with its outline drawn at (9, 9), one pixel wider all round: the ring's pixels,
+        // just left of / above / around the art, are not the item.
+        foreach (Bitmap32 art in new[] { Ring(), Solid() })
+        {
+            Bitmap32 ring = ObjectHighlight.Outline(art, 1, 0xFFFFFFFF);
+            foreach (float scale in new[] { 1f, 1.08f, 1.44f, 2f })
+                for (int y = 0; y < ring.Height; y++)
+                    for (int x = 0; x < ring.Width; x++)
+                    {
+                        if (!Lit(ring, x, y))
+                            continue;
+                        // The display pixel whose centre is in outline pixel (x, y), as IMGUI reports it (its top-left).
+                        float wx = (float)Math.Floor((9 + x + 0.5f) * scale) / scale, wy = (float)Math.Floor((9 + y + 0.5f) * scale) / scale;
+                        int hit = MousePick.WindowItem(1, wx, wy, scale, _ => (10, 10), _ => false, (_, px, py) => Opaque(art, px, py)).Index;
+                        Assert.True(hit == -1, $"scale {scale} ring pixel ({x},{y})");
+                    }
+        }
     }
 
     [Theory]
@@ -150,14 +211,6 @@ public sealed class ObjectHighlightTests
     [InlineData(0x00, 90, false)]  // not movable but light: TazUO still highlights it
     public void IsLocked_IsTazUOsItemIsLocked(byte flags, byte weight, bool locked) =>
         Assert.Equal(locked, ObjectHighlight.IsLocked(flags, weight));
-
-    [Fact]
-    public void Bodies_HighlightOnlyWithHighlightGameObjects()
-    {
-        Assert.False(ObjectHighlight.HighlightsBody(selected: true, highlightGameObjects: false));
-        Assert.True(ObjectHighlight.HighlightsBody(selected: true, highlightGameObjects: true));
-        Assert.False(ObjectHighlight.HighlightsBody(selected: false, highlightGameObjects: true));
-    }
 
     [Fact]
     public void World_IsNotSelectedThroughAWindow()

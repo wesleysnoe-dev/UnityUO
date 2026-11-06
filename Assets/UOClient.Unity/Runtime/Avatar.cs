@@ -77,11 +77,8 @@ namespace UOClient.Unity
         public AtlasSlot LastSlot { get; private set; }
         public bool LastMirror { get; private set; }
 
-        /// <summary>Under the mouse in the world (TazUO's SelectedObject.Object): hued and outlined with HighlightGameObjects.</summary>
+        /// <summary>Under the mouse in the world (TazUO's SelectedObject.Object): outlined with HighlightGameObjects, in its own hues.</summary>
         public bool Selected { get; set; }
-
-        private MobileLook _litFor, _lit;
-        private string _litKey;
 
         /// <summary>The upper-floor cut height the frame was last drawn with (WorldSprite.shader hides it under the cut).</summary>
         public float LastCut { get; private set; }
@@ -253,7 +250,6 @@ namespace UOClient.Unity
             bool moving = _stepDuration > 0 && !Dying;
             MobileFrame[] frames = null;
             bool falling = false;
-            int shown = -1; // the action whose frames were found this time
             if (Dying)
             {
                 MobileFrame[] fall = _art.Get(_look, _lookKey, DeathAction, fileDir, layerDir);
@@ -261,7 +257,6 @@ namespace UOClient.Unity
                 {
                     frames = fall;
                     falling = true;
-                    shown = DeathAction;
                 }
                 else if (fall != null)
                     DeathFinished = true; // no fall for this body: gone at once (TazUO, Mobile.cs:720-724)
@@ -274,9 +269,7 @@ namespace UOClient.Unity
                 var peace = MobileArt.Actions(_look);
                 int action = MobileActions.Pick(MobileArt.Actions(_look, WarMode, Dead), moving, _running);
                 frames = MobileActions.WithFallback(action, MobileActions.Pick(peace, moving, _running), peace.Stand,
-                    a => _art.Get(_look, _lookKey, a, fileDir, layerDir), out int chosen);
-                if (frames != null)
-                    shown = chosen;
+                    a => _art.Get(_look, _lookKey, a, fileDir, layerDir), out _);
             }
 
             if (frames == null)
@@ -294,20 +287,6 @@ namespace UOClient.Unity
             _lastFrames = frames;
             _lastMirror = mirror;
             _renderer.enabled = true;
-
-            // Selected with HighlightGameObjects: the same frames wholly in the highlight hue, once they are built.
-            if (shown >= 0 && ObjectHighlight.HighlightsBody(Selected, ObjectHighlight.HighlightGameObjects))
-            {
-                if (!ReferenceEquals(_litFor, _look))
-                {
-                    _litFor = _look;
-                    _lit = _look.Rehued(ObjectHighlight.Hue);
-                    _litKey = _lit.Key;
-                }
-                MobileFrame[] lit = _art.Get(_lit, _litKey, shown, fileDir, layerDir);
-                if (lit != null && lit.Length == frames.Length)
-                    frames = lit;
-            }
 
             MobileFrame f;
             if (falling)

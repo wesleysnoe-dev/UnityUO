@@ -65,11 +65,10 @@ namespace UOClient.Unity.UI
                 _drawn.Add((item, img, new Rect(item.X, item.Y, img.Width + extra, img.Height + extra)));
             }
             ContainedItem over = MouseIsOver ? ItemAt(Event.current.mousePosition)?.Item : null;
-            foreach (var (item, own, rect) in _drawn)
+            foreach (var (item, img, rect) in _drawn)
             {
-                // ItemGump with HighlightOnMouseOver: the item the mouse is on is drawn wholly in 0x0035, and outlined
-                // (both copies of a stack, under them, so the pair shows one edge).
-                UiImage img = item == over ? Art.Item(item.Graphic, ObjectHighlight.WindowItemHue(item.Hue, true)) ?? own : own;
+                // The item the mouse is on keeps its own hue and is outlined (both copies of a stack, under them, so the
+                // pair shows one edge): the outline alone is the mouse-over cue (ObjectHighlight).
                 if (item == over)
                 {
                     DrawOutline(img, item.X, item.Y);
@@ -213,8 +212,9 @@ namespace UOClient.Unity.UI
             }
             // The item's top-left goes where it was grabbed from relative to the cursor, kept inside the gump.
             UiImage art = Art.Item(item.Graphic, item.Hue);
-            int x = Mathf.Clamp((int)(local.x - item.Grab.x), 0, Mathf.Max(0, (int)Rect.width - (art?.Width ?? 20)));
-            int y = Mathf.Clamp((int)(local.y - item.Grab.y), 0, Mathf.Max(0, (int)Rect.height - (art?.Height ?? 20)));
+            (int dx, int dy) = MousePick.DropOrigin(local.x, local.y, item.Grab.x, item.Grab.y, Ui.Scale);
+            int x = Mathf.Clamp(dx, 0, Mathf.Max(0, (int)Rect.width - (art?.Width ?? 20)));
+            int y = Mathf.Clamp(dy, 0, Mathf.Max(0, (int)Rect.height - (art?.Height ?? 20)));
             Session.DropInto(item.Serial, _serial, x, y);
             return true;
         }

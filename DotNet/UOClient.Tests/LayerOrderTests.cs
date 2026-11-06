@@ -83,14 +83,6 @@ public sealed class LayerOrderTests
     {
         Assert.Equal(new[] { 0, 1, 1, 3, 1, 1, 1, 1 }, Enumerable.Range(0, 8).Select(MobileLook.OrderClass).ToArray());
     }
-
-    [Fact]
-    public void TheHighlightKeepsTheLayersOrdered()
-    {
-        MobileLook lit = Dressed(true).Rehued(0x35);
-        Assert.Equal(Dressed(true).DrawOrder(2).Select(l => l.Slot), lit.DrawOrder(2).Select(l => l.Slot));
-        Assert.Equal(2, IndexOf(lit.DrawOrder(3), Cloak)); // mount, body, cloak
-    }
 }
 
 /// <summary>A worn cloak from the install's tiledata, through <see cref="MobileLook.From"/>.</summary>

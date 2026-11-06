@@ -109,27 +109,22 @@ namespace UOClient.Unity.UI
             return img;
         }
 
-        /// <summary>
-        /// An item's (static) art at its native size, hued as the item is; with <see cref="ObjectHighlight.WholeArt"/> in
-        /// the hue every pixel is hued, whatever the tiledata's partial-hue flag (the mouse-over highlight).
-        /// </summary>
+        /// <summary>An item's (static) art at its native size, hued as the item is (partly, where the tiledata says so).</summary>
         public UiImage Item(int graphic, int hue = 0)
         {
-            bool whole = ObjectHighlight.IsWholeArt(hue);
-            hue = (hue & 0x3FFF) | (whole ? ObjectHighlight.WholeArt : 0);
+            hue &= 0x3FFF;
             if (_items.TryGetValue((graphic, hue), out UiImage img))
                 return img;
             Bitmap32 bmp = _data.GetStatic(graphic);
             Bitmap32 hd = null;
             for (int s = 2; s <= 4 && hd == null && bmp != null; s++)
                 hd = _data.GetStaticHd(graphic, s);
-            int entry = hue & 0x3FFF;
-            if (bmp != null && entry > 0 && entry <= _data.Hues.Entries.Length)
+            if (bmp != null && hue > 0 && hue <= _data.Hues.Entries.Length)
             {
-                bool partial = !whole && (_data.TileData.GetStatic(graphic).Flags & TileFlags.PartialHue) != 0;
-                bmp = HueApplier.Apply(bmp, _data.Hues.Entries[entry - 1], partial);
+                bool partial = (_data.TileData.GetStatic(graphic).Flags & TileFlags.PartialHue) != 0;
+                bmp = HueApplier.Apply(bmp, _data.Hues.Entries[hue - 1], partial);
                 if (hd != null)
-                    hd = HueApplier.Apply(hd, _data.Hues.Entries[entry - 1], partial);
+                    hd = HueApplier.Apply(hd, _data.Hues.Entries[hue - 1], partial);
             }
             img = bmp == null ? null : new UiImage { Bitmap = bmp, Texture = Texture(bmp, hd, $"item 0x{graphic:X4}") };
             _items[(graphic, hue)] = img;

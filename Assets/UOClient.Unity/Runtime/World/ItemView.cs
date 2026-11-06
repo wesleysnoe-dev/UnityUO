@@ -101,12 +101,10 @@ namespace UOClient.Unity
 
         public bool Hidden { get; set; }
 
-        /// <summary>Under the mouse in the world (TazUO's SelectedObject.Object): drawn in the highlight hue (<see cref="ObjectHighlight"/>).</summary>
+        /// <summary>Under the mouse in the world (TazUO's SelectedObject.Object): outlined, in its own hue (<see cref="ObjectHighlight"/>).</summary>
         public bool Selected { get; set; }
 
-        private readonly bool _locked; // TazUO's Item.IsLocked: a fixture, never highlighted without HighlightGameObjects
-        private MobileLook _litCorpse;
-        private string _litCorpseKey;
+        private readonly bool _locked; // TazUO's Item.IsLocked: a fixture, never outlined without HighlightGameObjects
 
         /// <summary>This view draws <paramref name="item"/> as a corpse where it already lies, so a new look can be set in place.</summary>
         public bool IsCorpseOf(WorldItem item) =>
@@ -119,7 +117,6 @@ namespace UOClient.Unity
             _corpseLook = look;
             _corpseKey = look.Key;
             _corpseAction = action;
-            _litCorpse = null;
         }
 
         public void Render(IWorldSpace world)
@@ -135,22 +132,8 @@ namespace UOClient.Unity
 
         private void RenderCorpse(IWorldSpace world)
         {
-            // Selected with HighlightGameObjects, the body lies in the highlight hue once those frames are built.
-            bool lit = ObjectHighlight.HighlightsBody(Selected, ObjectHighlight.HighlightGameObjects);
-            if (lit && _litCorpse == null)
-            {
-                _litCorpse = _corpseLook.Rehued(ObjectHighlight.Hue);
-                _litCorpseKey = _litCorpse.Key;
-            }
             // DrawCorpse indexes LayerOrder.UsedLayers by the file direction (ItemView.cs:191-228), so that is the layer order.
-            MobileFrame[] Frames(int action, int fileDir)
-            {
-                MobileFrame[] own = _art.Get(_corpseLook, _corpseKey, action, fileDir, fileDir);
-                if (!lit || own == null)
-                    return own;
-                MobileFrame[] hued = _art.Get(_litCorpse, _litCorpseKey, action, fileDir, fileDir);
-                return hued != null && hued.Length == own.Length ? hued : own;
-            }
+            MobileFrame[] Frames(int action, int fileDir) => _art.Get(_corpseLook, _corpseKey, action, fileDir, fileDir);
             CorpseDraw.Pick pick = CorpseDraw.Select(_corpse, _corpseAction, Hidden, Frames, out MobileFrame[] frames);
             MobileFrame f;
             bool mirror;
@@ -206,11 +189,8 @@ namespace UOClient.Unity
             _renderer.enabled = !Hidden;
             if (Hidden)
                 return;
-            // Selected: the same art in the highlight hue (built like any other hue; the plain sprite shows until it is ready).
+            // Always the item's own hue: the mouse-over cue is the outline alone (ObjectHighlight).
             ItemSprite sprite = _sprite;
-            int hue = ObjectHighlight.GroundItemHue(_hue, Selected, _locked, false, ObjectHighlight.HighlightGameObjects);
-            if (hue != _hue && _art.GetItem(_graphic, hue) is ItemSprite lit)
-                sprite = lit;
             _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(sprite.Slot.Page));
             LastRect = world.ToUnityRect(_item.Left, _item.Top, _item.Width, _item.Height);
             LastDepth = Depth(world);

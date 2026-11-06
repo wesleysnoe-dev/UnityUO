@@ -253,7 +253,7 @@ namespace UOClient.Unity
                 FromX = item.X,
                 FromY = item.Y,
                 FromZ = item.Z,
-                Grab = art != null ? new Vector2(art.Width / 2f, art.Height / 2f) : Vector2.zero
+                Grab = art != null ? new Vector2(MousePick.CentreGrab(art.Width), MousePick.CentreGrab(art.Height)) : Vector2.zero
             }, split);
         }
 

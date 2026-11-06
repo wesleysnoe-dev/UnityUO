@@ -139,14 +139,16 @@ namespace UOClient.Unity
         /// <summary>
         /// The outline (<see cref="ObjectHighlight.Outline"/>) of a sprite in the atlas, built from its pixels on first
         /// use: a character's frame is all its worn layers composited, so this is the whole equipped silhouette. It is
-        /// <see cref="OutlineThickness"/> larger on each side than <paramref name="slot"/>.
+        /// <see cref="OutlineThickness"/> larger on each side than <paramref name="slot"/>. Built from the texels the world
+        /// shader draws (<see cref="MousePick.AlphaCutoff"/>), the same mask the pick tests, so the ring sits on the edge
+        /// that is seen and clicked.
         /// </summary>
         public AtlasSlot Outline(AtlasSlot slot)
         {
             if (_outlines.TryGetValue((slot.Page, slot.X, slot.Y), out AtlasSlot o))
                 return o;
             Bitmap32 mask = _atlas.Read(slot);
-            o = _atlas.Add(ObjectHighlight.Outline(mask, OutlineThickness, ObjectHighlight.OutlineArgb));
+            o = _atlas.Add(ObjectHighlight.Outline(mask, OutlineThickness, ObjectHighlight.OutlineArgb, MousePick.AlphaCutoff));
             _atlas.Apply();
             _outlines[(slot.Page, slot.X, slot.Y)] = o;
             return o;
@@ -242,8 +244,7 @@ namespace UOClient.Unity
             int hue = job.Hue & 0x3FFF;
             if (hue != 0 && hue <= _data.Hues.Entries.Length)
             {
-                // The highlight hues the whole sprite (ObjectHighlight.WholeArt), whatever the tiledata says.
-                bool partial = !ObjectHighlight.IsWholeArt(job.Hue) && (_data.TileData.GetStatic(job.Graphic).Flags & TileFlags.PartialHue) != 0;
+                bool partial = (_data.TileData.GetStatic(job.Graphic).Flags & TileFlags.PartialHue) != 0;
                 art = HueApplier.Apply(art, _data.Hues.Entries[hue - 1], partial);
             }
             Bitmap32 scaled = hd != null ? art : Resample.Nearest(art, _scale);

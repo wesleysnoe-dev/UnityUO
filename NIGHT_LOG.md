@@ -348,3 +348,18 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
 4. **Not mine, left alone:** at 19:05:09 the Editor added `com.unity.ai.assistant` and `com.unity.ai.inference` to `Packages/manifest.json` and `packages-lock.json`. Not committed, not reverted.
    - Also seen: `_cc_logs/mp_steer_outline_only.txt` (Wes 18:58: "hover = outline only, remove the 0x0035 recolour"). It is addressed to a follow-up run and was not done here. This run's brief said not to re-open the outline scope.
 5. **Not verified:** play mode and live. See the LIVE_PARITY re-test item. The `Input.mousePosition` y convention is an assumption; if hovers are one pixel low, see `MousePick.PixelCenter`.
+## Session: hover = border outline only, mouse-pick follow-up (2026-11-05, ~19:12-19:20)
+
+1. **Outline only, no yellow fill** (Wes 18:58, `_cc_logs/mp_steer_outline_only.txt`; details in LIVE_PARITY "Hover = border outline only").
+   - The `0x0035` re-hue is removed from every hover path: ground items, fixtures, mobiles, the player, corpses, container (both stack copies), paperdoll and secure trade. Vendor icons never had one. Hovered things keep their own hues.
+   - Removed: `ObjectHighlight.Hue`/`WholeArt`/`IsWholeArt`/`WindowItemHue`/`GroundItemHue`/`HighlightsBody` and `MobileLook.Rehued`. `MobileArt`/`GumpArt.Item` no longer build whole-hued copies.
+   - Kept: the white sprite-edge outline. It is the only cue, drawn only outside the art. Who gets it is unchanged. Notoriety and target outlines are separate and were not touched (there is no notoriety outline yet).
+   - The world outline ring is now built from the shader's alpha cutoff (128), the pick's own mask, not alpha > 0. On HD soft edges it sat around an invisible halo.
+   - The pick never takes the outline: the world outline is its own quad, never offered to `PickAt`. Window outlines are only drawn.
+2. **Mouse accuracy gaps (mp1 follow-up):**
+   - `ContainerWindow.Drop` used `(int)(local - Grab)` (pixel corner) while the grab came from `UiPixel` (pixel centre). At UI scale 1.08 / 1.44, an item picked up and dropped in place moved a pixel up-left. Now `MousePick.DropOrigin`. Secure trade drops take the box pixel the same way.
+   - Ground and paperdoll lifts held the item at a half pixel (`w / 2f`). The cursor's rounding and the drop's floor disagreed on odd-sized art. Now a whole pixel (`MousePick.CentreGrab`).
+3. **Verified:** 792 tests pass. New: outline-only guard; ring outside the art, colours untouched; ring hugs the cutoff edge; world and window ring pixels never pick the item; drop round trip at 5 UI scales; centre grab on art 1-64 wide. Removed: 5 hue-rule tests and the hued-copy cape test (cape order tests unchanged). Tests, Cli, EditorCheck (`--no-incremental`, 158 script metas OK) and GumpPreview build with 0 warnings.
+4. **Editor (read only, nothing refreshed by me):** `UOClient.Unity.dll` was 19:04:11 when the edits began. The Editor then recompiled by itself: **19:18:35**, after the last `Assets/` edit (19:18:15). `Editor.log` shows `Tundra build success` and no `error CS`, then a reload for play mode.
+5. **Left alone:** `Packages/manifest.json`, `packages-lock.json` (Editor-added AI packages, see previous session) and the new untracked `ProjectSettings/Packages/`. None of them were committed.
+6. **Not verified:** play mode and live. Vendor body art (`06302cb`) and cape `LayerOrder` (`173be55`) untouched.

@@ -272,7 +272,7 @@ namespace UOClient.Unity
 
         /// <summary>
         /// What the mouse is on in the world (0 for nothing, or while a window covers the world), as TazUO's
-        /// SelectedObject.Object: drawn in the highlight hue where <see cref="ObjectHighlight"/> says so.
+        /// SelectedObject.Object: outlined, in its own hues, where <see cref="ObjectHighlight"/> says so.
         /// </summary>
         public uint Selected { get; set; }
 

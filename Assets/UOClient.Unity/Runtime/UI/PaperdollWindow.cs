@@ -91,14 +91,12 @@ namespace UOClient.Unity.UI
                     continue;
                 _drawn.Add((layer, e, img, gump));
             }
-            // Laid out first, so the worn item under the mouse is drawn wholly in 0x0035, as window items are (ItemGump),
-            // and outlined.
+            // Laid out first, so the worn item under the mouse is known: it keeps its own hue and is outlined (the
+            // outline alone is the mouse-over cue, ObjectHighlight).
             uint over = MouseIsOver ? ItemAt(Event.current.mousePosition)?.Item.Serial ?? 0 : 0;
-            foreach (var (_, e, own, gump) in _drawn)
+            foreach (var (_, e, img, _) in _drawn)
             {
-                bool lit = over != 0 && e.Serial == over;
-                UiImage img = lit ? Art.Gump(gump, ObjectHighlight.Hue) ?? own : own;
-                if (lit)
+                if (over != 0 && e.Serial == over)
                     DrawOutline(img, BodyX, BodyY);
                 DrawImage(img, BodyX, BodyY);
             }
@@ -221,7 +219,7 @@ namespace UOClient.Unity.UI
                             Graphic = item.Graphic,
                             Hue = item.Hue,
                             Amount = 1,
-                            Grab = art != null ? new Vector2(art.Width / 2f, art.Height / 2f) : Vector2.zero
+                            Grab = art != null ? new Vector2(MousePick.CentreGrab(art.Width), MousePick.CentreGrab(art.Height)) : Vector2.zero
                         });
                         _pressed = null;
                     }

@@ -110,12 +110,11 @@ namespace UOClient.Unity.UI
             }
         }
 
-        /// <summary>The placed items; the one under the mouse wholly in 0x0035 (TradingGump's ItemGumps highlight on mouse over).</summary>
+        /// <summary>The placed items; the one under the mouse outlined, in its own hue (the outline alone is the mouse-over cue).</summary>
         private void DrawItems(ContainedItem over)
         {
-            foreach (var (item, own, r, _) in _drawn)
+            foreach (var (item, img, r, _) in _drawn)
             {
-                UiImage img = item == over ? Art.Item(item.Graphic, ObjectHighlight.WindowItemHue(item.Hue, true)) ?? own : own;
                 if (item == over)
                     DrawOutline(img, r.x, r.y);
                 DrawImage(img, r.x, r.y);
@@ -250,9 +249,8 @@ namespace UOClient.Unity.UI
             if (!box.Contains(local))
                 return false;
             UiImage art = Art.Item(item.Graphic, item.Hue);
-            (int x, int y) = art == null
-                ? FitInBox((int)(local.x - box.x), (int)(local.y - box.y), 0, 0)
-                : DropInBox((int)(local.x - box.x), (int)(local.y - box.y), art.Width, art.Height);
+            (int bx, int by) = MousePick.UiPixel(local.x, local.y, box.x, box.y, Ui.Scale); // the box pixel the cursor shows
+            (int x, int y) = art == null ? FitInBox(bx, by, 0, 0) : DropInBox(bx, by, art.Width, art.Height);
             Session.DropInto(item.Serial, _trade.MyContainer, x, y);
             return true;
         }
