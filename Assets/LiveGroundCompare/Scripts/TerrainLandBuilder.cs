@@ -259,6 +259,9 @@ namespace UOClient.LiveGroundCompare
         /// </summary>
         public float[] SunCeiling;
 
+        /// <summary>The static columns <see cref="SunCeiling"/> was built with (null: terrain only); the neighbours' margins read them.</summary>
+        public int[,] OccluderTop;
+
         /// <summary>Tiles whose static column took part in <see cref="SunMask"/> (0: terrain-only shadow).</summary>
         public int OccluderTiles;
 

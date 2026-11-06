@@ -186,6 +186,7 @@ namespace UOClient.Unity
             // LiveGroundCompare sprite shadow (TEST): stands upright on its tile's centre (Avatar.TileAnchor).
             Vector2 foot = world.ToUnity(new Vector2((_item.X - _item.Y) * 22, (_item.X + _item.Y) * 22 + 22 - _item.Z * 4) * _scale);
             MeshBuilder.SetQuad(_mesh, LastRect, uv, LastDepth, mirror, LastCut, new Vector4(foot.x, foot.y, _item.Z, 1f));
+            MeshBuilder.ShadowCasters?.Item(this, _item.X, _item.Y, _item.Z, _graphic);
         }
 
         private void RenderArt(IWorldSpace world)

@@ -1,9 +1,10 @@
 // LiveGroundCompare (TEST only): the Terrain backend's land material, lit like the sprites.
 // Drawn by TerrainIsoPresenter's camera on layer 31 (a Unity Terrain's materialTemplate, drawInstanced off, so the
 // patches carry ordinary positions, normals and the chunk UV). Built-in pipeline, no Unity lights:
-//   colour = chunk art * compositor shade (smooth normal, sun shadow) * (time-of-day ambient + player light), ghost grey
-// with the same globals UOClient/WorldSprite reads (LiveGroundLight.cginc). No emission.
-// _LGShadowTex: the chunk's sun-visibility mask (LiveGroundLighting.ShadowMask), same UV as the chunk art.
+//   colour = chunk art * (ambient * shade(normal, sun shadow) + player light * shade(normal)), ghost grey
+// with the same globals UOClient/WorldSprite reads (LiveGroundLight.cginc). The sun shadow dims only the ambient. No emission.
+// _LGShadowTex: the chunk's sun-visibility mask (LiveGroundLighting.ShadowMask), same UV as the chunk art; with the
+// sprite receive live it is also min'd with the world ceiling (loaded-neighbour margins, mobile/item columns).
 Shader "LiveGroundCompare/TerrainLit"
 {
     Properties
@@ -60,8 +61,9 @@ Shader "LiveGroundCompare/TerrainLit"
             fixed4 frag(v2f i) : SV_Target
             {
                 fixed4 c = tex2D(_MainTex, i.uv);
-                float visibility = tex2D(_LGShadowTex, i.uv).r;
-                float3 rgb = c.rgb * LGShade(i.normal, visibility) * LGSpriteLight(i.world);
+                // The chunk's own mask, and the world ceiling (neighbour margins, mobiles/items) when the receive is live.
+                float visibility = min(tex2D(_LGShadowTex, i.uv).r, LGCeilVisibility(i.world));
+                float3 rgb = c.rgb * LGLitShadowed(i.normal, visibility, i.world);
                 return fixed4(LGGhost(rgb), 1.0);
             }
             ENDCG

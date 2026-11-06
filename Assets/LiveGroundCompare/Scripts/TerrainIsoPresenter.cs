@@ -137,7 +137,8 @@ namespace UOClient.LiveGroundCompare
                 SpriteCeiling = SpriteShadowCeiling.TryCreate(world, scale, out spriteWhy);
             SpriteShadowError = SpriteCeiling == null ? spriteWhy : null;
             Debug.Log(SpriteCeiling != null
-                ? $"UOClient LiveGround sprite shadow: on (keyword {SpriteShadowCeiling.Keyword}; per-pixel billboard point vs CPU shadow ceiling, {SpriteShadowCeiling.Size}^2 RHalf over {SpriteShadow.WrapTiles} tiles)"
+                ? $"UOClient LiveGround sprite shadow: on (keyword {SpriteShadowCeiling.Keyword}; per-pixel billboard point vs CPU shadow ceiling, {SpriteShadowCeiling.Size}^2 RHalf over {SpriteShadow.WrapTiles} tiles; " +
+                  $"loaded-neighbour margins; mobiles/items cast as CPU columns, dynamic moving approximation, not a shadow map)"
                 : $"UOClient LiveGround sprite shadow: off ({SpriteShadowError})");
         }
 
@@ -268,7 +269,8 @@ namespace UOClient.LiveGroundCompare
         {
             if (c != _cam || _main == null)
                 return;
-            SpriteCeiling?.Apply(); // chunks attached since the last frame; the main camera's sprites draw after this
+            // Chunks attached since the last frame, queued margins, casters that moved or went: the main camera's sprites draw after this.
+            SpriteCeiling?.Apply();
             float s = _scale, hz = 1f / TerrainLandBuilder.HeightUnitPerZ, k = DepthPerPixel;
             const float h = LiveGroundProjection.TileHalf, zs = LiveGroundProjection.ZStep;
             Vector3 camPos = _main.transform.position;

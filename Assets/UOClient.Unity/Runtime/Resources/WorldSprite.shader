@@ -124,7 +124,10 @@ Shader "UOClient/WorldSprite"
                 falloff *= falloff;
 
             #ifdef LG_SPRITE_SHADOW
-                c.rgb *= LGSpriteSunShade(i.world, i.foot);
+                // The sun shade dims only the ambient (LiveGroundLighting.Lit): ambient * shade + player light, written
+                // as a factor on the line below so the default path stays as it was.
+                float3 lgLit = _UOAmbient.rgb + _UOLightColor.rgb * falloff;
+                c.rgb *= (_UOAmbient.rgb * LGSpriteSunShade(i.world, i.foot) + _UOLightColor.rgb * falloff) / max(lgLit, 1e-4);
             #endif
                 c.rgb *= _UOAmbient.rgb + _UOLightColor.rgb * falloff;
                 c *= i.color;

@@ -64,7 +64,10 @@ namespace UOClient.LiveGroundCompare
                 TerrainLandData data = builder.Finish();
                 // Sprite receive: the same heights and columns, as heights below which a point is in shadow.
                 if (_presenter.SpriteCeiling != null && data.TileCount > 0)
+                {
                     data.SunCeiling = LiveGroundLighting.ShadowCeiling(data.CornerZ, occluders);
+                    data.OccluderTop = occluders;
+                }
                 WaterSurfaceData waterData = water != null && water.WaterTileCount > 0 ? water.Finish() : null;
                 DepthProxyData proxy = _occlusion ? TerrainDepthProxy.Build(data, _scale) : null;
                 return data.TileCount == 0 ? null : new TerrainLandChunk(_presenter, data, waterData, proxy);
@@ -171,7 +174,7 @@ namespace UOClient.LiveGroundCompare
                 _counted = true;
                 if (d.SunCeiling != null && _presenter.SpriteCeiling != null)
                 {
-                    _presenter.SpriteCeiling.Publish(d.ChunkX0, d.ChunkY0, d.SunCeiling, this);
+                    _presenter.SpriteCeiling.Publish(d.ChunkX0, d.ChunkY0, d.SunCeiling, d.CornerZ, d.OccluderTop, this);
                     _ceiling = (d.ChunkX0, d.ChunkY0);
                 }
             }

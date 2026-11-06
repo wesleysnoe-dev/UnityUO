@@ -367,6 +367,8 @@ namespace UOClient.Unity
                 Vector2 foot = view.ToUnity(anchor);
                 float footZ = _stepDuration <= 0 ? Z : Mathf.Lerp(_fromZ, Z, _stepTime / _stepDuration);
                 MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut, new Vector4(foot.x, foot.y, footZ, 1f));
+                if (!Dead) // a ghost casts no shadow
+                    MeshBuilder.ShadowCasters?.Mobile(this, anchor, footZ);
             }
             else
                 MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut);

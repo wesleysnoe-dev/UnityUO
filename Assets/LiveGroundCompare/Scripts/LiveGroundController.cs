@@ -91,7 +91,9 @@ namespace UOClient.LiveGroundCompare
             SpriteShadowCeiling c = t.SpriteCeiling;
             if (c == null)
                 return $"sprites unshadowed: {t.SpriteShadowError}";
-            string s = $"sprites receive CPU ceiling ({c.ChunkCount} chunks; mobiles/items do not cast)";
+            ShadowCeilingCore k = c.Core;
+            string s = $"sprites receive CPU ceiling ({c.ChunkCount} chunks, margins pending {k.PendingMargins}); " +
+                       $"dynamic cast approx: {k.CastingCount}/{k.CasterCount} mobiles+items casting, {k.LastDirty} chunks redone, {c.MeanApplyMs:0.00} ms";
             return c.Collisions == 0 ? s : $"{s} (wrap collisions {c.Collisions})";
         }
 

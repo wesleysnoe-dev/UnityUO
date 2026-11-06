@@ -45,6 +45,16 @@ namespace UOClient.Unity
             -(chunkDiagonal - originDiagonal) * (float)PerDiagonal * Step;
     }
 
+    /// <summary>LiveGroundCompare (TEST) sun-shadow casters (<see cref="MeshBuilder.ShadowCasters"/>); main thread, once per drawn frame.</summary>
+    public interface IShadowCasterSink
+    {
+        /// <summary>A mobile drawn with its feet at <paramref name="anchorPixels"/> (world-screen pixels at the art scale) and Z <paramref name="footZ"/>.</summary>
+        void Mobile(object key, Vector2 anchorPixels, float footZ);
+
+        /// <summary>A world item of <paramref name="graphic"/> drawn on tile (x, y) at Z <paramref name="z"/>.</summary>
+        void Item(object key, int x, int y, int z, int graphic);
+    }
+
     /// <summary>Accumulates sprite quads into one mesh.</summary>
     public sealed class MeshBuilder
     {
@@ -72,6 +82,13 @@ namespace UOClient.Unity
         }
 
         private static bool _footMetadata, _footEverSet; // the second spares the normal client any check per quad
+
+        /// <summary>
+        /// LiveGroundCompare (TEST) only: where mobiles and items say where they stand each frame they are drawn, so they
+        /// can cast into the CPU sun-shadow ceiling. Null by default (nothing is called); only read inside the
+        /// <see cref="FootMetadata"/> branches. The presenter's ceiling sets it and puts it back on dispose.
+        /// </summary>
+        public static IShadowCasterSink ShadowCasters { get; set; }
 
         /// <summary>
         /// Tile height passed to the shader (second UV channel) for cutting away upper floors, offset by 1000 so a

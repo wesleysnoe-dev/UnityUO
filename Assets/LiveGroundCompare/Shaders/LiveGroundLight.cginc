@@ -13,6 +13,7 @@ float4 _LGSunDir;           // xyz: the compositor's sun in terrain space (not u
 
 #define LG_MIN_SHADE 0.7
 #define LG_MAX_SHADE 1.25
+#define LG_HEIGHT_UNIT_PER_Z 0.12856487 // TerrainLandBuilder.HeightUnitPerZ = 4 / (22 * 1.41421356)
 
 // The compositor's shade (relative to flat ground, clamped) for a normal, pulled to the floor by the sun shadow.
 float LGShade(float3 n, float visibility)
@@ -21,14 +22,44 @@ float LGShade(float3 n, float visibility)
     return LG_MIN_SHADE + (shade - LG_MIN_SHADE) * saturate(visibility);
 }
 
-// Time-of-day ambient plus the player's light, at the Unity position the sprites would use for this terrain point.
-float3 LGSpriteLight(float3 terrainWorld)
+// The player's light alone (no ambient), at the Unity position the sprites would use for this terrain point.
+float3 LGLocalLight(float3 terrainWorld)
 {
     float2 unityXY = mul(_LGTerrainToUnity, float4(terrainWorld, 1.0)).xy;
     float d = distance(unityXY, _UOLightPos.xy) / max(_UOLightPos.z, 1.0);
     float falloff = saturate(1.0 - d);
     falloff *= falloff;
-    return _UOAmbient.rgb + _UOLightColor.rgb * falloff;
+    return _UOLightColor.rgb * falloff;
+}
+
+// Time-of-day ambient plus the player's light, at the Unity position the sprites would use for this terrain point.
+float3 LGSpriteLight(float3 terrainWorld)
+{
+    return _UOAmbient.rgb + LGLocalLight(terrainWorld);
+}
+
+// LiveGroundLighting.Lit: the face shade multiplies all light (the compositor's vertex shade), but the sun shadow only
+// dims the ambient (sun/sky) term; the player's light is local and is not shadowed by the sun.
+float3 LGLitShadowed(float3 n, float visibility, float3 terrainWorld)
+{
+    return _UOAmbient.rgb * LGShade(n, visibility) + LGLocalLight(terrainWorld) * LGShade(n, 1.0);
+}
+
+// The presenter's world-wrapped CPU shadow ceiling (SpriteShadowCeiling: chunk ceilings, loaded-neighbour margins and
+// the mobiles/items columns). _LGCeilOn is 0 unless that texture is live, so without it the terrain reads only its mask.
+sampler2D _LGShadowCeil;
+float4 _LGSpriteShadowMap; // w: 1 / wrapped tiles
+float _LGCeilOn;
+
+// Sun visibility of a terrain-space ground point from the ceiling (SpriteShadow.Visibility), 1 when off.
+float LGCeilVisibility(float3 terrainWorld)
+{
+    if (_LGCeilOn < 0.5)
+        return 1.0;
+    float2 tile = float2(terrainWorld.x, -terrainWorld.z);
+    float z = terrainWorld.y / LG_HEIGHT_UNIT_PER_Z;
+    float ceiling = tex2D(_LGShadowCeil, tile * _LGSpriteShadowMap.w).r;
+    return saturate((z + 0.25 - ceiling) / 2.0 + 0.5);
 }
 
 // As UOClient/WorldSprite: a ghost sees the world in black and white.
