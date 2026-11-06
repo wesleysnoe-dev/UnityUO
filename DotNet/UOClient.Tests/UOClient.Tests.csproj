@@ -43,6 +43,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\PaperdollWindow.Layout.cs" Link="Unity\PaperdollWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\PaperdollBooks.Layout.cs" Link="Unity\PaperdollBooks.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\QuestionWindow.Layout.cs" Link="Unity\QuestionWindow.Layout.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\HouseCustomizeWindow.Layout.cs" Link="Unity\HouseCustomizeWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\TargetCursor.Direction.cs" Link="Unity\TargetCursor.Direction.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\SpellbookWindow.Cast.cs" Link="Unity\SpellbookWindow.Cast.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\SpellbookWindow.Layout.cs" Link="Unity\SpellbookWindow.Layout.cs" />

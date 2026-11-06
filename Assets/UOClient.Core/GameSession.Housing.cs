@@ -152,12 +152,43 @@ namespace UOClient.Core
                         CustomizingHouse = 0;
                     else if (command != 0x05)
                         return true;
+                    _exitAskedAt = double.NegativeInfinity; // the server has answered (or begun again): a new exit may be asked
                     HouseCustomizationChanged?.Invoke(serial, command == 0x04);
                     return true;
                 }
             }
             return false;
         }
+
+        /// <summary>
+        /// The player's Exit in the house designer: 0xD7 (encoded command) with our serial, command 0x0C and 0x0A, as TazUO's
+        /// Send_CustomHouseBuildingExit (OutgoingPackets.cs:3954-3983), which ModernUO takes as Designer_Close
+        /// (HouseFoundation.cs:1025, 1731-1770): it ends the design context without committing, answers 0xBF 0x20 end,
+        /// resends the house as committed, and keeps the unfinished design (DesignState, saved with the house) for the
+        /// next time the owner customizes. Sends nothing outside customize mode or the world, and only once until the
+        /// server answers (another try after <see cref="ExitRetrySeconds"/>). True if it was sent.
+        /// </summary>
+        public bool ExitHouseCustomization()
+        {
+            if (CustomizingHouse == 0 || State != SessionState.InWorld || _conn == null || World.PlayerSerial == 0)
+                return false;
+            if (_now - _exitAskedAt < ExitRetrySeconds)
+                return false;
+            _exitAskedAt = _now;
+            _conn.Send(HouseCustomizationExit(World.PlayerSerial));
+            return true;
+        }
+
+        /// <summary>An exit was asked and the server has not ended customize mode yet.</summary>
+        public bool HouseExitPending => CustomizingHouse != 0 && _now - _exitAskedAt < ExitRetrySeconds;
+
+        public const double ExitRetrySeconds = 5;
+
+        private double _exitAskedAt = double.NegativeInfinity;
+
+        /// <summary>0xD7, length 10: the player's serial, 0x000C (Designer_Close), 0x0A.</summary>
+        public static byte[] HouseCustomizationExit(uint player) =>
+            new PacketWriter(0xD7).UInt32(player).UInt16(0x0C).Byte(0x0A).ToArray();
 
         /// <summary>0xBF 0x1E: asks for a house's design; the server answers with 0xD8.</summary>
         public static byte[] HouseDesignQuery(uint serial) => new PacketWriter(0xBF).UInt16(0x1E).UInt32(serial).ToArray();

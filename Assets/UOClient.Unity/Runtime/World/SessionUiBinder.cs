@@ -99,6 +99,7 @@ namespace UOClient.Unity
             s.MenuOpened += OnMenuOpened;
             s.OpenUrlRequested += OnOpenUrlRequested;
             s.EffectStarted += _effects.Start;
+            s.HouseCustomizationChanged += OnHouseCustomizationChanged;
 
             if (_ctx.Camera.GetComponent<AudioListener>() == null && UnityEngine.Object.FindAnyObjectByType<AudioListener>() == null)
                 _ctx.Camera.gameObject.AddComponent<AudioListener>();
@@ -155,6 +156,7 @@ namespace UOClient.Unity
             s.MenuOpened -= OnMenuOpened;
             s.OpenUrlRequested -= OnOpenUrlRequested;
             s.EffectStarted -= _effects.Start;
+            s.HouseCustomizationChanged -= OnHouseCustomizationChanged;
             s.SoundPlayed -= OnSoundPlayed;
             s.MusicRequested -= OnMusicRequested;
         }
@@ -356,6 +358,18 @@ namespace UOClient.Unity
         /// <summary>A message's body (0x71 2): open it to read.</summary>
         private void OnBulletinPostOpened(BulletinBoardInfo board, BulletinPost post) =>
             Ui.Open(new UI.BulletinPostWindow(board, post)).SetPost(post);
+
+        /// <summary>
+        /// Customize mode (0xBF 0x20): begin opens the exit window (a new begin for another house replaces it), end closes
+        /// it (it also goes by itself once the session no longer customizes that house).
+        /// </summary>
+        private void OnHouseCustomizationChanged(uint house, bool begin)
+        {
+            if (Ui.Find(UI.HouseCustomizeWindow.WindowKey) is UI.HouseCustomizeWindow open && (!begin || open.House != house))
+                Ui.Close(open);
+            if (begin)
+                Ui.Open(new UI.HouseCustomizeWindow(house));
+        }
 
         private void OnMapDisplayed(MapItemDetails map) => Ui.Open(new UI.MapItemWindow(map));
 
