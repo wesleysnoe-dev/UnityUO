@@ -184,3 +184,37 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
     - **Regression audit:** drag-out bars, the last-attack bar, status locks, directional cursors, the skill-change line, the criminal queries and the party round trips all still pass (84 tests in those suites); nothing in them needed fixing.
     - **Verified by tests:** 582 pass (18 new in `PartyHealthBarTests`). Tests, Cli, EditorCheck and GumpPreview build with 0 warnings. **Renderer-only pictures:** `_cc_logs/ux_preview/partybar-*.png` and `healthbar-pet.png`.
     - **Not verified:** Unity play mode (buttons, the rename field's focus and Enter, a bar switching style), the Editor compile (EditorCheck only; Editor.log's old clean reload says nothing about this commit), live.
+31. **Docs: combat UX batch and Editor compile status** (docs only; read-only checks; no Unity process touched, no second Editor, no batchmode, nothing focused or played).
+    - **Combat UX batch since `fidelity-pre-combat` (`e6114ad`), status by item:**
+      - `5caf358` target-cursor criminal question: done offline (551 tests at the time).
+      - `33d613e` Avatar war/dead action selection and the `0xAF` fall: done offline (564).
+      - `213e952` party bars, quick heal/cure, heal target, rename: done offline (582).
+      - None has been compiled by the Unity Editor, seen in play mode, or run live.
+    - **Editor.log, read after `213e952`:**
+      - mtime 15:28:02.
+      - Last `Tundra build success` at line 129740, its `Scripting: successfully reloaded assembly` at line 129763.
+      - **0** `error CS` after it (15 in the whole file, all earlier and stale).
+      - **No** compile or Scripting reload after `fidelity-pre-combat`. The lines after that build are licensing messages and one no-op 0.013 s refresh.
+    - **Correction to items 7, 21, 22, 27:** those dated the last compile by the log's mtime (11:28, 13:28, 14:28). That clock is wrong: the mtime advances every hour at :28 from licensing token refreshes.
+      - The compiler output is the real clock: `Library/ScriptAssemblies/UOClient.Unity.dll` (and its Bee artifact) is 09:53:29, Core/Editor 09:46:21, IO 01:59:03. That last build follows `809ff58` (09:52).
+      - **So `e6114ad` and every commit after it, and in fact all 50 `Assets/` commits from `bad6cce` (10:04) on, remain unverified in the Unity Editor.** EditorCheck type-checks only. LIVE_PARITY's "Editor compile status" paragraph was rewritten to match.
+    - **Non-disruptive refresh: none available from here.** Checked:
+      - **Batchmode / second Editor:** not possible. `Temp/UnityLockfile` is held by Editor PID 26484 (WorldDemo, Unity 6000.6.8f1), and a second instance on the project was ruled out.
+      - **`AssetDatabase.Refresh`:** only runs inside that Editor's domain. The project's two in-Editor request hooks do call it, but `WorldDemoLauncher.PlayIfRequested` enters play mode and `PlayerBuilder.BuildIfRequested` leaves play mode and builds a player. Both are disruptive and off-limits, so neither was used. A refresh-only request hook would itself need one Editor compile before it could run.
+      - **IDE refresh channel:** `com.unity.ide.visualstudio` 2.0.26 has a UDP `MessageType.Refresh` → `AssetDatabase.Refresh` (`Library/PackageCache/com.unity.ide.visualstudio@a99d56dec63f/Editor/VisualStudioIntegration.cs:35-59, 89-92, 156-157, 209-224`). Its listener only binds when Visual Studio is the external script editor, on port 56000 + pid % 1000 + 2 = **56486**. The Editor has no such UDP port (`Get-NetUDPEndpoint`: only 34997), so the channel is not open. The Rider package's channel needs a connected Rider. Nothing was sent to the Editor.
+      - **Auto refresh:** `kAutoRefreshMode` = 1 (Enabled, read from the registry). Under Unity's documented behaviour, that imports changed scripts when the Editor window gets focus again.
+      - **Conclusion:** the only supported path is for Wes to focus the Unity Editor (outside play mode), so Unity auto-reimports and recompiles the changed scripts. Then re-read `Logs/Editor.log` for a new `Tundra build success` and `error CS` after it, and check that the `Library/ScriptAssemblies/UOClient.*.dll` times moved past 15:56.
+    - **User-visible gaps left** (details in LIVE_PARITY "Still missing"):
+      - Editor compile and play mode for all of today's work.
+      - Corpse drawn as the body's last death frame. The fall → `0x2006` item swap is visible.
+      - People's weapon-dependent war stance.
+      - Flying / gargoyle 62/63 and UOP human war groups.
+      - Editable saved skill groups.
+      - Damageable item bars (ModernUO never sends `0xF3` type 3).
+      - HD `.uoanim`.
+      - Live vendor Buy/Sell, prompts, spellbooks, keyword NPC replies.
+      - The fixture-only Taming/Breeding gumps.
+    - **Next bounded priority:**
+      1. Wes focuses the Editor once, then the Editor.log/DLL check above runs read-only. That gates everything else.
+      2. A short play-mode look at the combat batch by Wes: war stance on a UOP creature, a criminal question on a harmful cursor, a party bar's heal button.
+      3. Then code: draw corpses from the last death frame (TazUO `ItemView.DrawCorpse` `:175-260`, `Item.ProcessAnimation` `:583-636`). It is bounded, and it removes the sprite swap that `33d613e` made visible.
