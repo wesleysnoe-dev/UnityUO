@@ -150,7 +150,10 @@ surface there).
   player's light), ghost grey; the Blinn sun highlight is scaled by the ambient. No emission, no Unity light. The water
   does **not** sample the sun shadow mask.
 - **Animation:** four analytic travelling waves perturb the normal, and the foam band drifts, both driven only by
-  `_Time.y`. A screenshot or Player.log cannot prove motion; watch it live (or compare two frames).
+  `_Time.y`. A screenshot or Player.log cannot prove motion. The isolated multi-frame check
+  (`run-evidence-scratch.ps1 -WaterRealtime`, `stills/water_realtime.md`) renders the **shipped** shader on separate
+  Editor frames, with a probe that writes the `_Time.y` each render really got. In two separate batch processes, `_Time.y`
+  rose every frame and the pixels changed on every frame step (see *Evidence stills: dynamic cast* below).
 - **Sorting:** the water is drawn by the terrain camera after the opaque terrain and shares its depth, so hills in front
   hide it. Against sprites its tiles are land like any other: the occlusion proxy carries their `DepthKey`.
 - **Honesty counters:** the indicator adds `water tiles N in M chunks` while Terrain is active. Player.log gets
@@ -175,9 +178,13 @@ What the Terrain backend now does (`LiveGroundLighting`, Unity-free and tested; 
 - **Shade:** the compositor's formula and clamp (`Shade`, tested equal to `LiveGroundProjection.TriangleShade` for the
   same face), on Unity's smooth heightmap normals. Flat ground = 1, as Original.
 - **No Unity light** in the shared path: the presenter's directional light is only created for the fallback.
+- **The sun shadow dims only the ambient** (`LiveGroundLighting.Lit`, `LGLitShadowed`, the WorldSprite keyword block):
+  colour = art × (ambient × shade(normal, sun visibility) + player light × shade(normal)). The player's light is local and
+  is not darkened by a sun shadow; at night under the player's light a shadowed foot reads 0.93 instead of the day's
+  0.70 (measured, `dynacast_capture.md`). In daylight without player light it is the same as before.
 - **Fallback:** if the lit shader is missing/unsupported, Legacy Diffuse + the old isolated light, and the indicator
   says `light ISOLATED: <why>` (Player.log: `UOClient LiveGround light: isolated (…)`). Otherwise
-  `light shared (TOD+player), sun shadow CPU mask terrain+static columns (N tiles), sprites receive CPU ceiling (M chunks; mobiles/items do not cast)`
+  `light shared (TOD+player), sun shadow CPU mask terrain+static columns (N tiles), sprites receive CPU ceiling (M chunks, margins pending P); dynamic cast approx: C/K mobiles+items casting, D chunks redone, X ms`
   and `UOClient LiveGround light: shared (…)`.
 
 Shadow model (**labelled approximation, not a dynamic shadow map**):
@@ -194,10 +201,13 @@ Shadow model (**labelled approximation, not a dynamic shadow map**):
   silhouette from known heights on the CPU**, not a Unity shadow: no overhangs (a roof shades like a solid block), the
   column's own tile is in shade, only map statics (no server items or multis, so no player houses), and only the
   chunk's own statics. If reading them fails, the mask is terrain-only and the indicator says `statics off: …`.
-- **Chunk edges:** a ray that leaves its 16×16 chunk counts as lit (neighbours are not visible to the builder), so a hill
-  or building in the west/north neighbour does not shade this chunk (tested and documented).
-- **Sprites receive it** (statics, roofs, mobiles, items; see *Sprite sun-shadow receive* below). Mobiles, items and
-  multis do not cast; effects and the hover outline do not receive; the water does not receive it.
+- **Chunk edges:** the worker's mask and ceiling still see only their own chunk. With the sprite receive live, the
+  **cross-chunk margin** (below) continues the rays into the **loaded** west/north/north-west neighbours on the main
+  thread, and the terrain also reads that world ceiling (`min(mask, ceiling)`). Without a loaded neighbour those rays
+  count as lit (fail-safe), as before.
+- **Sprites receive it** (statics, roofs, mobiles, items; see *Sprite sun-shadow receive* below). **Mobiles and items
+  cast** as CPU columns (see *Dynamic cast* below); effects and the hover outline do not receive; the water does not
+  receive it.
 
 Unity shadow maps: see *Route to real dynamic shadows* below (examined, not done).
 
@@ -253,17 +263,67 @@ shadow the terrain uses whether that point is in it.
   and WorldSprite compiles its default variant, which is the 4aa51a6 shader text exactly (test strips the
   `#ifdef LG_SPRITE_SHADOW` blocks and compares to `Evidence~/WorldSprite.4aa51a6.shader.txt`) and renders 0 px
   different from it (evidence below). No QualitySettings, ProjectSettings or material changes.
-- **Indicator:** `sprites receive CPU ceiling (N chunks; mobiles/items do not cast)` or `sprites unshadowed: <why>`;
-  Player.log `UOClient LiveGround sprite shadow: on (…)` / `off (…)`.
+- **Indicator:** `sprites receive CPU ceiling (N chunks, margins pending P); dynamic cast approx: C/K mobiles+items casting, D chunks redone, X ms`
+  or `sprites unshadowed: <why>`; Player.log `UOClient LiveGround sprite shadow: on (…)` / `off (…)`.
 
 Known limits (honest):
 
 - Billboards: a sprite is a vertical plane through its foot tile centre. A long wall made of per-tile sprites gets a
   per-tile stair-step where its shadow edge crosses it; roof tiles can get a few dark pixels at their bottom edge where
   the neighbouring roof column toward the sun is higher (the column model has no overhangs).
-- Same as the terrain mask: map statics only (no player houses/multis or server items cast), only the chunk's own
-  statics/heights cast (a ray that leaves the chunk counts as lit), fixed compositor sun.
+- Casters: map statics, and (see *Dynamic cast* below) drawn mobiles and server items as columns. Chunk edges: only
+  loaded neighbours cast across them. Fixed compositor sun.
 - Sprites are not sorted against the shadow (there is nothing to sort): it is a multiplication of their light.
+
+## Dynamic cast: mobiles and items (TEST, labelled dynamic moving approximation, not a shadow map)
+
+The same CPU ceiling, with moving casters stamped in (`DynamicShadow`, `ShadowCeilingCore`: Unity-free and tested;
+`SpriteShadowCeiling` uploads them).
+
+- **What casts:** every mobile that is drawn (not a ghost) is a column `DynamicShadow.MobileHeight` = 16 Z high (TazUO
+  `DEFAULT_CHARACTER_HEIGHT`, ModernUO `PersonHeight`) on the tile its feet are drawn in (`FootTile`, the receive's own
+  foot tile). Every drawn server item is a column of its tiledata `Height` under the map-static rule
+  (`StaticOccluders.Casts`: ≥ 3 and not `Wet`); smaller items are tracked and cast nothing. Multi parts drawn as
+  `ItemView` cast by the same rule, from their real tiledata (nothing is invented for multis).
+- **Exactness:** `Stamp` uses `CeilingAt`'s ray steps and own-tile skip. A stamped column gives exactly the ceiling
+  `ShadowCeiling` would give with a static column there (bit-equal, tested on flat and uneven ground). A mobile never
+  shades its own tile, so it cannot darken itself.
+- **How they report:** `Avatar.Render` / `ItemView` call `MeshBuilder.ShadowCasters?.Mobile/Item(...)` inside their
+  existing `FootMetadata` branch only (null by default, so the production path makes no call). Typed interface
+  `IShadowCasterSink`, no reflection.
+- **Invalidation (bounded):** a caster that keeps its tile costs one dictionary lookup per frame. A caster that moves,
+  appears, or goes away dirties only the chunks its footprint touches (its tile and up to ~2.5 tiles away from the sun
+  for a mobile; at most 2×2 chunks). A caster that was **not drawn** since the last frame is dropped (disposed,
+  hidden, out of range, logout), so no shadow is left behind (tested; GPU still 0 px vs static). Items are stamped into
+  a settled layer, and mobiles are stamped on top of it, so a step never restamps the items (max is order-free; tested
+  equal).
+- **Upload:** only the changed 64² chunk blocks go up (staging texture + `Graphics.CopyTexture`). More than 8 in one
+  frame, or no CopyTexture support, sends one full 2 MB upload.
+- **Cleanup:** detach, logout and backend swap dispose the presenter, which disposes the ceiling. That puts back the
+  keyword, `_LGShadowCeil`, `_LGCeilOn`, `MeshBuilder.FootMetadata` and `MeshBuilder.ShadowCasters`, and drops every
+  caster reference.
+- **Terrain receives it too:** with `_LGCeilOn` (set only while the ceiling lives), `TerrainLit` takes
+  `min(chunk mask, world ceiling at its tile point)`, so the dynamic casts and margins fall on the ground as well as on
+  sprites.
+
+### Cross-chunk margins (loaded neighbours only)
+
+- `DynamicShadow.Margin` continues each texel's sun ray after it leaves its chunk into the west, north and north-west
+  neighbours (the sun is up-left, so rays only go −x/−y), using those chunks' corner heights and static columns as
+  their terrain chunks have them **attached** (no map reads, nothing guessed). A ray stops (lit from there) where it
+  enters a neighbour that is not loaded. Base = max(own ceiling, margin); it equals one world-wide ray over the loaded
+  chunks texel for texel (tested).
+- Attaching a chunk queues its own margin and its east/south/south-east neighbours' margins. Detaching queues those
+  neighbours again, so a shadow goes away with the chunk that cast it (tested: no stale seam). At most
+  `MarginsPerFrame` = 1 is computed per frame (0.6–0.8 ms each on the main thread, measured). Until then the edge reads
+  lit, and the indicator counts `margins pending`.
+
+### Measured (isolated, after warmup; `stills/dynacast.md`)
+
+- CPU (DotNet, `LiveGroundDynCastFixtureTests`, a 3×3 block of real Britain chunks with 1,258 real static graphics as
+  items (893 casting) and 40 walking mobiles, 600 frames after 120 warmup): reports + `Frame()` mean 0.23 ms, p95 0.39
+  ms; 3.4 chunks redone per frame (max 8); **0 bytes allocated**. No FPS figure.
+- Upload (Unity batch, RTX 5080, CPU submit): full 1024² RHalf 0.6–1.2 ms; 4 changed chunks by copy 0.03–0.08 ms; 0 B.
 
 ## Route to real dynamic shadows (examined, not done)
 
@@ -280,8 +340,7 @@ What was checked in code, so the next step is not "shadowDistance, impossible":
   camera in its XY plane, so they can only receive by sampling an exported shadow map with their reconstructed world
   point (the reconstruction now exists: `SpriteShadow.PixelPoint`); (4) billboards cannot cast; casters would be proxy
   volumes in terrain space (boxes from `StaticOccluders`, capsules for mobiles).
-- Options: **B (recommended next, ~0.5–1 day, low risk)** mobiles/items cast into the same CPU path: stamp small
-  columns around them into a per-frame overlay ceiling near the player. **C (~1–2 days, medium)** compute the ceiling
+- Options: **B (done, see *Dynamic cast*)** mobiles/items cast into the same CPU path as columns. **C (~1–2 days, medium)** compute the ceiling
   on the GPU each frame from a height texture (static columns + dynamic stamps), which also follows a moving sun if the
   time of day ever drives one. **A (~2–4 days, medium-high)** Unity shadow map on the terrain camera with re-centred
   depth, a TerrainLit shadow pass, box/capsule caster proxies, and sprites sampling the exported map
@@ -290,7 +349,9 @@ What was checked in code, so the next step is not "shadowDistance, impossible":
 ## Still not done
 
 - **No Unity shadow maps** (see the route above).
-- Mobiles/items/multis do not cast; effects and the water do not receive.
+- Mobiles/items cast only as tile-snapped columns (no silhouette, no self-shadow on their own tile; a moving mobile's
+  shadow jumps a tile at a time). Effects and the water do not receive. The multi placement preview (`MultiPlacementGhost`
+  draws `ItemView`s) casts like real items while it is shown.
 - Original/Mesh land keep the compositor's per-face shade only (no sun shadow, no sprite receive).
 
 ## Evidence stills (Phase C, isolated fixture)
@@ -314,7 +375,8 @@ you run by hand, not a live session and not the streaming path. Everything is in
 - **Water time:** the shipped water shader reads `_Time.y` once. The capture compiles an in-memory copy where that read is
   replaced by `_LGEvidenceTime`, and renders t0 = 10.000 s and t1 = 10.500 s. Rendering t0 twice must differ by 0 px. Inside
   one `executeMethod` call Unity's own `_Time` does not advance (`realtime_a/b` are identical; Time.time stays 0). Those
-  two stills therefore show that a frozen frame is not motion; they do not show the live `_Time` path.
+  two stills therefore show that a frozen frame is not motion; they do not show the live `_Time` path. The separate-frame
+  check below (`water_realtime.md`) does show it.
 - **Limits:** one chunk. The camera is orthographic along `_EyeDir`, not the presenter's oblique matrix. The night and
   player-light values are illustrative. Tile colour is the mean classic art, not the baked chunk texture. The chunk has
   no static occluders, so the shadow still shows terrain self-shadow only. Sorting uses geometric depth on the fixture
@@ -337,6 +399,29 @@ you run by hand, not a live session and not the streaming path. Everything is in
   probes: GPU on/off ratio = CPU `SpriteShadow` shade within 0.008 (0.708/0.702 vs 0.700, 1.000 vs 1.000).
 - **Limits:** one chunk; terrain sorting against sprites is not exercised (the Phase C sort stills cover it); the
   moving receiver is shown as three placements, not motion; no FPS figures.
+
+## Evidence stills: dynamic cast, margins, water across frames
+
+- **Fixture:** `Evidence~/dynCastChunk.json` from `LiveGroundDynCastFixtureTests` (real data; rewrite with
+  `UOCLIENT_WRITE_LIVEGROUND_EVIDENCE=1`). It is the receive fixture's Britain chunk (1424, 1712), with ceilings made
+  by the shipped `ShadowCeilingCore`: static only, a mobile column at A (1435, 1726, 20), moved to B (1435, 1727),
+  swept, and the chunk with its 3 real west/north/north-west neighbours loaded.
+- **Capture:** `run-evidence-scratch.ps1 -DynCast` (or the menu `Capture dynamic cast + margin stills (TEST)`). It
+  writes `stills/dynacast_*.png`, `margin_*.png` and `dynacast_capture.md`. The ground is drawn in terrain space
+  through the presenter's terrain→Unity rows, so `TerrainLit` reads the world ceiling as in the game. That path
+  renders 0 px different from the receive capture's ground.
+- **Measured (2026-11-06, D3D12, RTX 5080, Gamma; not logged in):** the receiver east of A has its foot at ratio
+  **0.708** and its head at 1.000. With the caster at B the same foot is 1.000. After removal: **0 px** vs static (no
+  stale shadow). Night + player light at the receiver: foot 0.931 (only the ambient is shadowed). Margin on vs off:
+  1,649 px darker along the west/north seams. Keyword off with any ceiling bound: 0 px (production path ignores it).
+  The receive capture re-run after this change: keyword off vs 4aa51a6 still **0 of 1,048,576 px**; day probes still
+  match the CPU.
+- **Water `_Time`:** `run-evidence-scratch.ps1 -WaterRealtime` renders the **shipped** water shader (no override) on 5
+  separate Editor update ticks ≥ 0.5 s apart. A probe drawn by the same camera writes the `_Time.y` that render got
+  into a float target. Two separate batch processes: `_Time.y` 0 → 0.316 → 0.326 → 0.659 → 1.267 s and 0 → 0.303 →
+  0.410 → 0.743 → 1.077 s. The pixels changed on every frame step (41k–46k of 369k px), and same-frame repeats were 0
+  px. Editor `_Time` advances with Unity's clamped delta (≤ 0.333 s per frame), not with wall time. These are Editor
+  frames, not a live session's player loop.
 
 ## Build
 

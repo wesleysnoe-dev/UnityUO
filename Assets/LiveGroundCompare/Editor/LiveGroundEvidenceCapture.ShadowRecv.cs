@@ -213,7 +213,7 @@ namespace UOClient.LiveGroundCompare.Editor
                 foreach (var s in shots)
                     md.AppendLine($"- `{s.File}`: {s.What} (sha256 {Sha(Path.Combine(outDir, s.File))})");
                 md.AppendLine();
-                md.AppendLine("Limits: one chunk (rays leaving it count as lit, as the terrain mask); billboard reconstruction (a sprite is a vertical plane through its foot tile centre; overhangs and roofs are not modelled separately); mobiles/items do not cast; terrain sorting against sprites is not exercised here (see Phase C sort stills). Not a Unity shadow map.");
+                md.AppendLine("Limits: one chunk (rays leaving it count as lit, as the terrain mask); billboard reconstruction (a sprite is a vertical plane through its foot tile centre; overhangs and roofs are not modelled separately); mobiles/items casting and cross-chunk margins are not in this capture (see dynacast_capture.md); terrain sorting against sprites is not exercised here (see Phase C sort stills). Not a Unity shadow map.");
                 string report = Path.Combine(outDir, "shadowrecv.md");
                 File.WriteAllText(report, md.ToString().Replace("\r\n", "\n"));
                 Debug.Log($"LGSHADOWRECV eqHead {eqHead}; eqNoFoot {eqNoFoot}; eqEmpty {eqEmpty}; recv {recv}; darker {darker}; probes {(probesOk ? "ok" : "MISMATCH")}; night {night}");

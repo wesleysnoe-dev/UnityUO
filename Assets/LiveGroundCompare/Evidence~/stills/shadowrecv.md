@@ -1,6 +1,6 @@
 # LiveGroundCompare sprite shadow receive evidence (isolated fixture, TEST only)
 
-- Captured: 2026-11-06 03:32:50 -08:00; Unity 6000.6.8f1; Direct3D12 / NVIDIA GeForce RTX 5080; color space Gamma; batch mode True
+- Captured: 2026-11-06 04:03:50 -08:00; Unity 6000.6.8f1; Direct3D12 / NVIDIA GeForce RTX 5080; color space Gamma; batch mode True
 - Fixture: `G:\UOClient\Assets\LiveGroundCompare\Evidence~\shadowRecvChunk.json`: map 0 chunk (1424, 1712): 235 static columns, 348 static quads (322 upright, 26 ground), atlas sha256 bf7c057adb03601a, ground sha256 e31cbc830591e267; map0 land/statics + tiledata + anim body 400 via UOInstallFixture; statics = IsoCompositor.BuildDrawList (production placements, scale 1)
 - Camera: orthographic along +Z over Unity XY, 1 world pixel per output pixel (1024x1024), centre (0, -292). Terrain = TerrainLit on the chunk's corner grid in the sprites' plane (same normals, art, mask); drawn first, sprites over it with depth cleared (no hill occlusion here).
 
@@ -18,7 +18,7 @@
 - lit foot probe world px (-6402, 69484): off (24,24,24) (body art (24,24,24), visible True), on (24,24,24): GPU ratio 1.000, CPU mirror (SpriteShadow) 1.000 -> MATCH
 - lit head probe world px (-6403, 69430): off (181,181,181) (body art (181,181,181), visible True), on (181,181,181): GPU ratio 1.000, CPU mirror (SpriteShadow) 1.000 -> MATCH
 - Probes: all match (tolerance 0.02; 8-bit output, RHalf ceiling)
-- Night + player light, keyword off vs on: 53767/1048576 px changed (17994 by > 8/255), mean |delta| 0.318/255 per channel
+- Night + player light, keyword off vs on: 53766/1048576 px changed (16000 by > 8/255), mean |delta| 0.286/255 per channel
 
 ## Stills
 - `shadowrecv_off.png`: keyword off (production path): terrain CPU mask only, sprites unshadowed (sha256 87a7869e5c24b0d6)
@@ -31,7 +31,7 @@
 - `shadowrecv_mobile_shadow_zoom.png`: x4 crop around the body: left keyword off, right keyword on (sha256 ed93dc0044110f49)
 - `shadowrecv_mobile_lit.png`: body 400 action 4 dir 1 at tile (1435, 1726, 20), keyword on (sha256 880527883d512352)
 - `shadowrecv_mobile_lit_zoom.png`: x4 crop around the body: left keyword off, right keyword on (sha256 5375888bcd172a35)
-- `shadowrecv_night_on.png`: night ambient (0.32, 0.34, 0.48) + player light r=140 px at the partial body, keyword on (sha256 9d046073d08b6de9)
-- `shadowrecv_night_off.png`: same night, keyword off (sha256 d0f96d3a881d8334)
+- `shadowrecv_night_on.png`: night ambient (0.32, 0.34, 0.48) + player light r=140 px at the partial body, keyword on (sha256 51faa742b1b7e7e5)
+- `shadowrecv_night_off.png`: same night, keyword off (sha256 42311cee39a14196)
 
-Limits: one chunk (rays leaving it count as lit, as the terrain mask); billboard reconstruction (a sprite is a vertical plane through its foot tile centre; overhangs and roofs are not modelled separately); mobiles/items do not cast; terrain sorting against sprites is not exercised here (see Phase C sort stills). Not a Unity shadow map.
+Limits: one chunk (rays leaving it count as lit, as the terrain mask); billboard reconstruction (a sprite is a vertical plane through its foot tile centre; overhangs and roofs are not modelled separately); mobiles/items casting and cross-chunk margins are not in this capture (see dynacast_capture.md); terrain sorting against sprites is not exercised here (see Phase C sort stills). Not a Unity shadow map.

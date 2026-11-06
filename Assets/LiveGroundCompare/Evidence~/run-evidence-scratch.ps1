@@ -10,10 +10,15 @@
 #
 # -ShadowRecv runs the sprite shadow receive capture instead (CaptureShadowRecvBatch on shadowRecvChunk.json, from
 # LiveGroundSpriteShadowFixtureTests; it reads the PNGs and WorldSprite.4aa51a6.shader.txt next to the JSON).
+# -DynCast: mobile/item dynamic cast + cross-chunk margin stills (CaptureDynCastBatch on dynCastChunk.json from
+# LiveGroundDynCastFixtureTests, over shadowRecvChunk.json). -WaterRealtime: the shipped water shader on separate Editor
+# frames with a _Time probe (CaptureWaterRealtimeBatch; the Editor stays up for those frames, then exits itself).
 param(
     [string]$Scratch = (Join-Path $env:TEMP 'UOClient_LGEvidence'),
     [string]$Unity = 'C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe',
-    [switch]$ShadowRecv
+    [switch]$ShadowRecv,
+    [switch]$DynCast,
+    [switch]$WaterRealtime
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
@@ -30,6 +35,8 @@ Set-Content -Encoding ascii (Join-Path $Scratch 'Packages\manifest.json') '{ "de
 
 $log = Join-Path $Scratch 'capture.log'
 $method, $fixtureArg, $fixture = if ($ShadowRecv) { 'CaptureShadowRecvBatch', '-lgShadowFixture', 'Evidence~\shadowRecvChunk.json' }
+                                 elseif ($DynCast) { 'CaptureDynCastBatch', '-lgDynFixture', 'Evidence~\dynCastChunk.json' }
+                                 elseif ($WaterRealtime) { 'CaptureWaterRealtimeBatch', '-lgFixture', 'Evidence~\realWaterChunk.json' }
                                  else { 'CaptureBatch', '-lgFixture', 'Evidence~\realWaterChunk.json' }
 $p = Start-Process -FilePath $Unity -Wait -PassThru -ArgumentList @(
     '-batchmode', '-projectPath', "`"$Scratch`"", '-lgGamma',
@@ -37,6 +44,6 @@ $p = Start-Process -FilePath $Unity -Wait -PassThru -ArgumentList @(
     $fixtureArg, "`"$(Join-Path $lg $fixture)`"",
     '-lgOut', "`"$(Join-Path $lg 'Evidence~\stills')`"",
     '-logFile', "`"$log`"")
-Select-String -Path $log -Pattern 'LGEVIDENCE|LGSHADOWRECV|evidence FAILED|error CS' | ForEach-Object { $_.Line }
+Select-String -Path $log -Pattern 'LGEVIDENCE|LGSHADOWRECV|LGDYNCAST|LGWATERTIME|evidence FAILED|error CS' | ForEach-Object { $_.Line }
 Write-Output "unity exit $($p.ExitCode); log $log"
 exit $p.ExitCode
