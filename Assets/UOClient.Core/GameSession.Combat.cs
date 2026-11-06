@@ -517,8 +517,10 @@ namespace UOClient.Core
         /// <summary>Uses a skill by 0-based id (e.g. 21 Hiding, 46 Meditation); targeted skills then send a cursor.</summary>
         public void UseSkill(int skillId)
         {
-            if (State == SessionState.InWorld)
-                Macros.Note($"skill {skillId}");
+            if (State != SessionState.InWorld)
+                return;
+            Macros.Note($"skill {skillId}");
+            LastSkill = skillId;
             TextCommand(0x24, $"{skillId} 0");
         }
 
@@ -528,6 +530,7 @@ namespace UOClient.Core
             if (State != SessionState.InWorld)
                 return;
             Macros.Note($"cast {spellId}");
+            LastSpell = spellId;
             _conn.Send(CastSpellRequest(spellId, Version));
         }
 
@@ -547,6 +550,7 @@ namespace UOClient.Core
             if (State != SessionState.InWorld)
                 return;
             Macros.Note($"cast {spellId}");
+            LastSpell = spellId;
             _conn.Send(CastSpellFromBookRequest(spellId, bookSerial));
         }
 

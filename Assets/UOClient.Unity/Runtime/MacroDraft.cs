@@ -27,12 +27,13 @@ namespace UOClient.Unity
             "cast", "skill", "say", "emote", "whisper", "yell", "spellbook", "war", "peace", "togglewar", "lasttarget",
             "targetself", "bandageself", "use", "target", "useobject", "lastobject", "record", "playmacro", "cancel",
             "backpack", "paperdoll", "skills", "status", "journal", "options", "help", "party", "worldmap", "minimap",
-            "worldchat", "logout",
+            "worldchat", "logout", "attacklast", "targetnext", "targetnearest", "lastspell", "lastskill", "ability", "bow",
+            "salute", "opendoor", "delay", "wait",
         };
 
-        /// <summary>The actions that need something after them (<c>cast Heal</c>, <c>use 0x0E21</c>).</summary>
+        /// <summary>The actions that need something after them (<c>cast Heal</c>, <c>use 0x0E21</c>, <c>ability primary</c>, <c>delay 500</c>).</summary>
         public static readonly string[] VerbsWithArgument =
-            { "cast", "skill", "say", "emote", "whisper", "yell", "use", "target", "useobject" };
+            { "cast", "skill", "say", "emote", "whisper", "yell", "use", "target", "useobject", "ability", "delay", "wait" };
 
         private readonly Func<IReadOnlyList<Row>> _read;
         private readonly Action<IReadOnlyList<Row>> _apply;

@@ -992,7 +992,10 @@ namespace UOClient.Core
         {
             State = state;
             if (state == SessionState.Disconnected)
+            {
                 ClearActiveSpells();
+                ClearMacroMemory();
+            }
             SetStatus(status);
         }
 
@@ -1014,6 +1017,7 @@ namespace UOClient.Core
         public void Dispose()
         {
             IsDisposed = true;
+            ClearMacroMemory();
             _conn?.Dispose();
             _conn = null;
         }

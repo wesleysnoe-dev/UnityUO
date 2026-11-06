@@ -15,9 +15,12 @@ namespace UOClient.Unity
     /// <c>lasttarget</c>, <c>targetself</c>, <c>target 0x...</c>, <c>bandageself</c>, <c>use 0x0E21</c> (first item of
     /// that graphic in the backpack), <c>useobject 0x...</c> (that serial), <c>lastobject</c>, <c>backpack</c>,
     /// <c>paperdoll</c>, <c>skills</c>, <c>status</c>, <c>journal</c>, <c>party</c>, <c>worldmap</c>, <c>minimap</c>,
-    /// <c>worldchat</c>, <c>logout</c> (asks first), <c>cancel</c>, and <c>record</c> (start/stop
+    /// <c>worldchat</c>, <c>logout</c> (asks first), <c>cancel</c>, <c>attacklast</c>, <c>targetnext</c>,
+    /// <c>targetnearest</c> (nearest hostile), <c>lastspell</c>, <c>lastskill</c>, <c>ability primary</c> / <c>secondary</c>
+    /// (or 1 / 2), <c>bow</c>, <c>salute</c>, <c>opendoor</c>, <c>delay 500</c> / <c>wait 500</c> (milliseconds; pauses a
+    /// played-back macro only, alone on a key it does nothing), and <c>record</c> (start/stop
     /// recording what you do, kept in the file as <c>recorded</c>) and <c>playmacro</c> (play it back; each target
-    /// step waits for the next cursor). The options window's Macros page edits the bindings (<see cref="SetBindings"/> on
+    /// step waits for the next cursor). None of the newer actions has a default key. The options window's Macros page edits the bindings (<see cref="SetBindings"/> on
     /// Apply, <see cref="SaveBindings"/> on Okay; MacroDraft).
     /// </summary>
     public sealed class Hotkeys
@@ -63,6 +66,8 @@ namespace UOClient.Unity
         private readonly Queue<string> _playback = new Queue<string>();
         private TargetRequest _playbackSkip;
         private float _playbackWaitUntil;
+        private float _playbackDelayUntil; // a played-back "delay" holds the next step until then
+        private GameSession _session;      // a new session (another login) drops whatever the last one left queued
 
         /// <summary>The recorded macro <c>playmacro</c> plays.</summary>
         public IReadOnlyList<string> Recorded => _data.recorded;
@@ -162,6 +167,13 @@ namespace UOClient.Unity
         {
             if (session == null || session.State != SessionState.InWorld)
                 return;
+            if (!ReferenceEquals(session, _session))
+            {
+                _session = session;
+                _playback.Clear();
+                _playbackDelayUntil = 0;
+                _autoTarget = 0;
+            }
             bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
             bool alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
@@ -253,6 +265,41 @@ namespace UOClient.Unity
                     if (!session.UseLastObject())
                         Log?.Invoke("You have not used anything yet.");
                     break;
+                case "attacklast":
+                    if (!session.AttackLast())
+                        Log?.Invoke("You have no last target to attack.");
+                    break;
+                case "targetnext":
+                    if (session.TargetNext() == 0)
+                        Log?.Invoke("No one to target.");
+                    break;
+                case "targetnearest":
+                    if (session.TargetNearest() == 0)
+                        Log?.Invoke("No hostile nearby.");
+                    break;
+                case "lastspell":
+                    if (!session.CastLastSpell())
+                        Log?.Invoke("You have not cast a spell yet.");
+                    break;
+                case "lastskill":
+                    if (!session.UseLastSkill())
+                        Log?.Invoke("You have not used a skill yet.");
+                    break;
+                case "ability":
+                    if (!MacroArgs.TryParseAbility(arg, out bool secondary))
+                        Log?.Invoke($"Unknown ability \"{arg}\" (primary or secondary).");
+                    else if (!session.UseWeaponAbilitySlot(secondary))
+                        Log?.Invoke("Weapon abilities are not available here.");
+                    break;
+                case "bow": session.Bow(); break;
+                case "salute": session.Salute(); break;
+                case "opendoor": session.OpenDoor(); break;
+                // Pauses only a played-back macro (Pump takes the line before it reaches here); bound to a key alone it does nothing.
+                case "delay":
+                case "wait":
+                    if (!MacroArgs.TryParseDelay(arg, out _))
+                        Log?.Invoke($"Bad delay \"{arg}\" (milliseconds, up to {MacroArgs.MaxDelayMs}).");
+                    break;
                 case "record": ToggleRecording(session); break;
                 case "playmacro": Play(session); break;
                 case "cancel": session.CancelTarget(); break;
@@ -323,6 +370,7 @@ namespace UOClient.Unity
                 if (!IsMacroControl(a))
                     _playback.Enqueue(a);
             _playbackSkip = session.Target;
+            _playbackDelayUntil = 0;
             _playbackWaitUntil = Time.realtimeSinceStartup + PlaybackTargetWait;
         }
 
@@ -340,7 +388,19 @@ namespace UOClient.Unity
         {
             while (_playback.Count > 0)
             {
+                if (Time.realtimeSinceStartup < _playbackDelayUntil)
+                    return;
                 string next = _playback.Peek();
+                if (MacroArgs.IsDelay(next, out string delayArg))
+                {
+                    _playback.Dequeue();
+                    if (MacroArgs.TryParseDelay(delayArg, out int ms))
+                        _playbackDelayUntil = Time.realtimeSinceStartup + ms / 1000f;
+                    else
+                        Log?.Invoke($"Bad delay \"{delayArg}\" skipped.");
+                    _playbackWaitUntil = Math.Max(_playbackDelayUntil, Time.realtimeSinceStartup) + PlaybackTargetWait;
+                    continue;
+                }
                 if (MacroRecorder.IsTargetAction(next) && (session.Target == null || ReferenceEquals(session.Target, _playbackSkip)))
                 {
                     if (Time.realtimeSinceStartup > _playbackWaitUntil)
