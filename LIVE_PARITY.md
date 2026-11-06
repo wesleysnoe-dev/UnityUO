@@ -511,10 +511,11 @@ Backup tag `fidelity-pre-login-media` = `c49d109`. `LoginMedia.cs` (Unity side),
 - **Volume:** Apply / Okay on the login screen's Options set the login music volume at once (`WorldDemo.ApplyAudioOptions`); Okay also saves (as everywhere). A saved volume is used from startup.
 - **Gaps:** the video plays in the Editor and Windows player only as far as Unity's H.264 decoder does (Windows Media Foundation); not seen in play mode. No fade in/out of the login music on enter-world (stops at once). No music on/off option.
 - **Editor (read only, nothing refreshed): not compiled at the time of writing.** See the session log.
+  - **Checked after `bfcb4c9`: Unity HAS compiled this batch.** `UOClient.Unity.dll` / `UOClient.Editor.dll` are **20:39:52**, after the last `Assets/` edit (`Audio.cs` 20:34:54); `Logs/Editor.log` shows `Tundra build success` (2.22 s) and a domain reload, no `error CS` after it. The play-mode run in the log before that (~20:31) used the old 20:26:31 DLL (its stack lines are pre-batch `WorldDemo.cs`), so it says nothing about login media. Play mode with the new DLL: not run.
 
 ## Re-test checklist
 
-0. **Login video + music** (focus the Editor first; the DLL must be newer than the last `Assets/` edit)
+0. **Login video + music** (DLL 20:39:52 has it; a later `Assets/` edit needs a recompile first)
    - [ ] Start → the login screen shows the looping video behind the panel, whole (bars at the sides on 16:9, top/bottom on tall windows), caption bottom right readable, panel readable. LoginLoop plays; let it run past several video loops → the music never restarts or dips. Console: no `login video off` warning.
    - [ ] Rename `Assets/StreamingAssets/Login/login-bg-loop-0.5s-xfade.mp4` aside (outside play mode), start → one `login video off` warning, the old backdrop, login works. Put it back.
    - [ ] Login screen Options → Sound: Sound volume greyed with the reason, Music volume live. Drag Music, Apply → the login music changes at once; `unity-uo-options.json` unchanged. Okay → saved. Hover each button → its hint.
