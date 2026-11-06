@@ -219,12 +219,69 @@ public sealed class AvatarActionInstallTests
         Assert.Equal((21, 22), look.DeathActions);
     }
 
-    [Fact]
-    public void HumansKeepPeaceActionsInWarModeForNow()
+    /// <summary>What Avatar.Render plays for a look: the chosen set's stand, walk and run.</summary>
+    private static (int Stand, int Walk, int Run) Played(MobileLook look, bool war, bool dead = false)
     {
-        // AnimationLibrary.Actions leaves people unchanged in war mode (their war stance depends on the weapon held).
+        var set = MobileActions.Select(look.Mounted, look.BodyActions, look.WarActions, war, dead);
+        return (MobileActions.Pick(set, false, false), MobileActions.Pick(set, true, false), MobileActions.Pick(set, true, true));
+    }
+
+    [Fact]
+    public void UnarmedHumanTakesTheWarStanceInWarMode()
+    {
+        // MobileAnimation.cs:1166-1268, 1288, 1432: peace 4/0/2; war stands 7, walks 15, runs 2.
         MobileLook look = MobileLook.From(_data, 400, 0, Naked);
-        Assert.Equal((0, 2, 4), look.WarActions);
+        Assert.Equal((4, 0, 2), Played(look, war: false));
+        Assert.Equal((7, 15, 2), Played(look, war: true));
+        Assert.Equal((4, 0, 2), Played(look, war: true, dead: true));
         Assert.Equal((21, 22), look.DeathActions);
+        foreach (int action in new[] { 0, 1, 2, 3, 4, 7, 8, 15 })
+            Assert.NotEmpty(_data.AnimationLibrary.Read(400, action, 1));
+    }
+
+    [Theory]
+    // Katana (layer 1, AnimId 0x273): war stand 7, run unarmed.
+    [InlineData(1, 0x13FF, 0, 2, 4, 7)]
+    // Halberd (layer 2, AnimId 0x270, in HANDS_BASE_ANIMID): armed walk/run, war stand 8.
+    [InlineData(2, 0x143E, 1, 3, 4, 8)]
+    // Bow (layer 2, 0x289) likewise.
+    [InlineData(2, 0x13B2, 1, 3, 4, 8)]
+    // Heater shield (layer 2, 0x246, not a two-handed stance): armed walk/run, war stand 7.
+    [InlineData(2, 0x1B76, 1, 3, 4, 7)]
+    public void HumanWarStanceFollowsTheWeaponHeld(byte layer, int graphic, int walk, int run, int stand, int warStand)
+    {
+        MobileLook look = MobileLook.From(_data, 400, 0, new (byte, int, int)[] { (layer, graphic, 0) });
+        Assert.Equal((stand, walk, run), Played(look, war: false));
+        Assert.Equal((warStand, 15, run), Played(look, war: true));
+    }
+
+    [Fact]
+    public void AOneHandedItemKeepsTheOneHandedWarStand()
+    {
+        // :1199-1212: a halberd with anything in layer 1 stands 7, not 8.
+        MobileLook look = MobileLook.From(_data, 400, 0, new (byte, int, int)[] { (1, 0x13FF, 0), (2, 0x143E, 0) });
+        Assert.Equal((7, 15, 3), Played(look, war: true));
+    }
+
+    [Fact]
+    public void ArmedRiderKeepsTheMountedActions()
+    {
+        MobileLook look = MobileLook.From(_data, 400, 0, new (byte, int, int)[] { (2, 0x143E, 0), (25, 0x3EA2, 0) });
+        Assert.True(look.Mounted);
+        Assert.Equal((25, 23, 24), Played(look, war: true));
+    }
+}
+
+public sealed class PeopleActionTests
+{
+    [Fact]
+    public void PeopleActionsFollowTheTwoHandedLayer()
+    {
+        Assert.Equal((0, 2, 4), AnimationLibrary.PeopleActions(false, false, false, 0));
+        Assert.Equal((1, 3, 4), AnimationLibrary.PeopleActions(false, false, true, 0x0246));
+        Assert.Equal((15, 2, 7), AnimationLibrary.PeopleActions(true, true, false, 0));
+        Assert.Equal((15, 3, 8), AnimationLibrary.PeopleActions(true, false, true, 0x0264));
+        Assert.Equal((15, 3, 7), AnimationLibrary.PeopleActions(true, true, true, 0x0264));
+        Assert.Equal((15, 3, 7), AnimationLibrary.PeopleActions(true, false, true, 0x0285));
     }
 }

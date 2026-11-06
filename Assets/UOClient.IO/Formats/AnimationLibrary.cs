@@ -198,6 +198,34 @@ namespace UOClient.IO.Formats
             }
         }
 
+        // MobileAnimation.cs:14-36: two-handed weapon animations that stand with action 8 in war mode.
+        private static readonly int[] HandsBaseAnimIds =
+        {
+            0x0263, 0x0264, 0x0265, 0x0266, 0x0267, 0x0268, 0x0269, 0x026D, 0x0270, 0x0272,
+            0x0274, 0x027A, 0x027C, 0x027F, 0x0281, 0x0286, 0x0288, 0x0289, 0x028B
+        };
+
+        /// <summary>
+        /// Walk, run and stand of an unmounted, living MUL human (no UseUopAnimation flag, not a gargoyle) by what it holds,
+        /// as TazUO's People branch of <c>MobileAnimation.GetGroupForAnimation</c> picks them (MobileAnimation.cs:1131-1433):
+        /// anything in the two-handed layer walks and runs armed (1/3); war stands 7, or 8 with only a two-handed weapon
+        /// of <c>HANDS_BASE_ANIMID</c>, and walks 15. <paramref name="twoHandedAnim"/> is that item's tiledata AnimId.
+        /// The light-in-hand stands (:1139-1142) need an AnimId equal to the body, which no human item has.
+        /// </summary>
+        public static (int Walk, int Run, int Stand) PeopleActions(bool warMode, bool oneHanded, bool twoHanded, int twoHandedAnim)
+        {
+            int run = twoHanded ? 3 : 2;                          // :1352-1354, :1362-1389
+            if (!warMode)
+                return (twoHanded ? 1 : 0, run, 4);               // :1356-1358, :1185
+            bool twoHandStand = !oneHanded && twoHanded && Array.IndexOf(HandsBaseAnimIds, twoHandedAnim) >= 0;
+            return (15, run, twoHandStand ? 8 : 7);               // :1432; :1212-1268
+        }
+
+        /// <summary>Whether <see cref="PeopleActions"/> applies: a human layout without UOP actions, and not a gargoyle (Mobile.cs:1142-1144).</summary>
+        public bool UsesPeopleActions(int body) =>
+            GroupOf(body) == AnimGroup.Human && body != 666 && body != 667 && body != 0x02B6 && body != 0x02B7
+            && !(_mobTypes.TryGetValue(body, out var m) && (m.Flags & UseUopAnimation) != 0);
+
         /// <summary>Walk, run and stand of a classic action layout.</summary>
         public static (int Walk, int Run, int Stand) DefaultActions(AnimGroup group)
         {

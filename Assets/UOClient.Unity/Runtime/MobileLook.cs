@@ -34,7 +34,7 @@ namespace UOClient.Unity
         public (int Walk, int Run, int Stand) BodyActions = AnimationLibrary.DefaultActions(AnimGroup.Human);
         public (int Walk, int Run, int Stand) MountActions = AnimationLibrary.DefaultActions(AnimGroup.Animal);
 
-        /// <summary>The body's walk/run/stand in war mode (only UOP creatures differ from <see cref="BodyActions"/>).</summary>
+        /// <summary>The body's walk/run/stand in war mode (UOP creatures, and MUL humans by the weapon held).</summary>
         public (int Walk, int Run, int Stand) WarActions = AnimationLibrary.DefaultActions(AnimGroup.Human);
 
         /// <summary>
@@ -90,6 +90,15 @@ namespace UOClient.Unity
             var byLayer = new Dictionary<byte, (int Graphic, int Hue)>();
             foreach (var e in equipment)
                 byLayer[e.Layer] = (e.Graphic, e.Hue);
+
+            // People walk, run and stand by what they hold: layer 1 (one-handed) and 2 (two-handed or shield).
+            if (anims.UsesPeopleActions(body))
+            {
+                bool one = byLayer.ContainsKey(1), two = byLayer.TryGetValue(2, out var hand2);
+                int twoAnim = two ? data.TileData.GetStatic(hand2.Graphic).AnimId : 0;
+                look.BodyActions = AnimationLibrary.PeopleActions(false, one, two, twoAnim);
+                look.WarActions = AnimationLibrary.PeopleActions(true, one, two, twoAnim);
+            }
 
             // The mount goes first, so the rider is drawn over it.
             if (look.Group == AnimGroup.Human && byLayer.TryGetValue(25, out var mount))
