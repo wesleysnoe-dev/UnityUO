@@ -26,6 +26,7 @@ namespace UOClient.LiveGroundCompare
         private readonly LiveGroundOverlay _overlay;
         private WorldStreamer _world;
         private TerrainIsoPresenter _terrain;
+        private bool _awaitingChunks; // an experimental backend was applied; log once when its first chunks attach
 
         [Preserve]
         public LiveGroundController(bool optIn, string groundBackend, int scale)
@@ -46,14 +47,16 @@ namespace UOClient.LiveGroundCompare
 
         public GroundBackendKind Active => _switch.Active;
 
+        /// <summary>Land chunks the active backend has attached right now (0 for Original).</summary>
+        private int ActiveChunks => _switch.Active == GroundBackendKind.Mesh ? _mesh.Chunks.Value
+            : _switch.Active == GroundBackendKind.Terrain && _terrain != null ? _terrain.ChunkCount : 0;
+
         /// <summary>The indicator line (also what Player.log gets).</summary>
         public string Indicator
         {
             get
             {
-                int objects = _switch.Active == GroundBackendKind.Mesh ? _mesh.Chunks.Value
-                    : _switch.Active == GroundBackendKind.Terrain && _terrain != null ? _terrain.ChunkCount : 0;
-                string line = LiveGroundStatus.Indicator(_switch.Requested, _switch.Active, _switch.Reason, _switch.Host, _switch.IsAttached, objects);
+                string line = LiveGroundStatus.Indicator(_switch.Requested, _switch.Active, _switch.Reason, _switch.Host, _switch.IsAttached, ActiveChunks);
                 return _parseWarning == null ? line : $"{line} | {_parseWarning}";
             }
         }
@@ -85,6 +88,11 @@ namespace UOClient.LiveGroundCompare
                 Report("terrain failed");
                 return status;
             }
+            if (_awaitingChunks && ActiveChunks > 0)
+            {
+                _awaitingChunks = false; // the attach/toggle line was logged before the streamer rebuilt anything
+                Report("chunks attached");
+            }
             if (!Input.GetKeyDown(KeyCode.G))
                 return null;
             bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
@@ -99,6 +107,7 @@ namespace UOClient.LiveGroundCompare
         /// <summary>Returns null when applied, else why not (the switch then applies Original and shows the reason).</summary>
         private string Apply(GroundBackendKind kind)
         {
+            _awaitingChunks = false;
             if (_world == null)
                 return null;
             if (kind == GroundBackendKind.Terrain)
@@ -110,10 +119,12 @@ namespace UOClient.LiveGroundCompare
                         return error;
                 }
                 _world.LandEmitter = new TerrainLandEmitter(_terrain, _scale);
+                _awaitingChunks = true;
                 return null;
             }
             _world.LandEmitter = kind == GroundBackendKind.Mesh ? _mesh : null; // disposes any terrain chunks first
             DisposeTerrain();
+            _awaitingChunks = kind == GroundBackendKind.Mesh;
             return null;
         }
 

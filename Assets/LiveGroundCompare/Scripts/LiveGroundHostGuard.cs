@@ -187,12 +187,14 @@ namespace UOClient.LiveGroundCompare
 
         /// <summary>
         /// The persistent on-screen indicator / Player.log line: requested, active, fallback cause (or "ok"), host and
-        /// how many land objects the active backend has built (0 for Original, which draws sprites).
+        /// how many land objects the active backend has built (0 for Original, which draws sprites). Right after a swap the
+        /// streamer rebuilds every chunk on later frames, so an attached experimental backend at 0 says "(streaming)".
         /// </summary>
         public static string Indicator(GroundBackendKind requested, GroundBackendKind active, string reason, string host, bool attached, int landObjects)
         {
             string state = !attached ? "no world" : IsFallback(requested, active, reason) ? $"FALLBACK: {reason ?? "refused"}" : "ok";
-            string objects = active == GroundBackendKind.Original ? "" : $" | {active.ToString().ToLowerInvariant()} chunks {landObjects}";
+            string streaming = attached && landObjects == 0 ? " (streaming)" : "";
+            string objects = active == GroundBackendKind.Original ? "" : $" | {active.ToString().ToLowerInvariant()} chunks {landObjects}{streaming}";
             return $"LiveGround TEST | requested {requested} | active {active} | {state} | host {host ?? "-"}{objects} | Ctrl+Shift+G cycles";
         }
     }

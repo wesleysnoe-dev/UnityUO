@@ -577,6 +577,22 @@ public class LiveGroundCompareTests
         Assert.Equal("Terrain failed: unknown error; using Original", LiveGroundStatus.FailureReason(GroundBackendKind.Terrain, " "));
     }
 
+    [Fact]
+    public void Status_ZeroChunksRightAfterASwapSaysStreaming()
+    {
+        // The streamer rebuilds on later frames, so the toggle-instant line has 0 chunks; it must not read as "broken".
+        string swapped = LiveGroundStatus.Indicator(GroundBackendKind.Terrain, GroundBackendKind.Terrain, null, "127.0.0.1", true, 0);
+        Assert.Contains("| terrain chunks 0 (streaming) |", swapped);
+        Assert.Contains("| ok |", swapped);
+
+        string attached = LiveGroundStatus.Indicator(GroundBackendKind.Terrain, GroundBackendKind.Terrain, null, "127.0.0.1", true, 9);
+        Assert.Contains("| terrain chunks 9 |", attached);
+        Assert.DoesNotContain("streaming", attached);
+
+        Assert.DoesNotContain("streaming", LiveGroundStatus.Indicator(GroundBackendKind.Original, GroundBackendKind.Original, null, "127.0.0.1", true, 0));
+        Assert.DoesNotContain("streaming", LiveGroundStatus.Indicator(GroundBackendKind.Mesh, GroundBackendKind.Mesh, null, null, false, 0));
+    }
+
     // ---- terrain land ----
 
     private const int Chunk = TerrainLandBuilder.Tiles, S = TerrainLandBuilder.SamplesPerTile;

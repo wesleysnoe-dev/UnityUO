@@ -33,9 +33,12 @@ LiveGround TEST | requested Mesh | active Mesh | ok | host 127.0.0.1 | mesh chun
   the world yet.
 - **host**: the server the guard checked, which is the one you actually logged in to.
 - **mesh/terrain chunks N**: how many land chunks that backend has built and attached right now. If this is above 0, the
-  backend is really drawing.
-- The same line goes to `Player.log` as `UOClient LiveGround (created|attach|toggle|terrain failed): …`. It is a warning
-  when it is a fallback. The journal still gets the short `Ground: …` line.
+  backend is really drawing. A swap makes the streamer rebuild every chunk over the next frames, so right after an
+  attach or toggle it reads `chunks 0 (streaming)`; that is expected, not a failure.
+- The same line goes to `Player.log` as `UOClient LiveGround (created|attach|toggle|chunks attached|terrain failed): …`.
+  The `attach`/`toggle` line is written at the swap instant (so it shows 0); `chunks attached` follows once, when the
+  first chunk of the new backend is really attached. It is a warning when it is a fallback. The journal still gets the
+  short `Ground: …` line.
 
 ## Opt-in
 
@@ -98,13 +101,24 @@ LiveGround TEST | requested Mesh | active Mesh | ok | host 127.0.0.1 | mesh chun
   Unity's cell diagonal happens to agree.
 - **Flat-drawn sloped tiles:** sloped tiles without a texmap are drawn flat at Z by Original and Mesh. A heightfield
   cannot step, so Terrain slopes them using the map's corners.
-- **Lighting:** Lambert from the compositor's light direction, scaled so that flat ground ≈ 1 after the scene's ambient.
-  It has no 0.7/1.25 clamp and uses smooth heightmap normals instead of per-face normals. It does not follow the
-  time-of-day ambient or the player's light (sprites do).
+- **Brightness / lighting:** the terrain is lit by the presenter's **own** directional light (layer 31 only, Lambert
+  from the compositor's light direction, scaled so that flat ground ≈ 1 after the scene's ambient). It is isolated from
+  the time-of-day ambient and the player's light, which still darken the sprites, so Terrain usually reads **brighter**
+  than Original/Mesh, most of all at night. That is presenter isolation, not unified dynamic lighting: there is no
+  shared lighting model between terrain and sprites and no unified shadows (terrain neither casts nor receives them).
+  It has no 0.7/1.25 clamp and uses smooth heightmap normals instead of per-face normals. The brighter look was reviewed
+  and kept on purpose; do not "fix" it by darkening.
+- **Smooth elevation:** Unity interpolates the heightmap, so the hard per-tile edges of the diamond sprites are gone.
+  This was reviewed and kept on purpose; do not restore hard tile edges.
+- **Sprites show through hills:** see Sorting. Statics, mobiles and items behind a rise stay visible over it.
 - **Holes:** they are set in TerrainData and the collider. The Legacy Diffuse material does not cut them visually, so they
   show black. Baked (HD) land, the only land that is not diverted, draws over them as sprites.
-- **Not yet seen in the player:** this was compiled in the Editor and the math is unit-tested. Nobody has looked at it
-  in a TEST build yet. If the shader, camera or a chunk fails, the switch goes back to **Original** and shows
+- **Chunk seams under LOD:** neighbouring chunk terrains share identical edge samples (unit-tested), but they are not
+  connected with `SetNeighbors` (`allowAutoConnect` off), so Unity does not stitch LOD across chunk borders. With
+  `heightmapPixelError` 1 no cracks have been reported; if hairline gaps ever show at 16-tile borders, connect them.
+- **Status:** seen working in the GroundCompare TEST build (toggle to Terrain logged `ok`). It is the preferred
+  direction for further work, **not** the production default: Original stays the default and Original/Mesh stay as
+  fallbacks. If the shader, camera or a chunk fails, the switch goes back to **Original** and shows
   `FALLBACK: Terrain failed: …` in red. It never fails silently.
 
 ## Build
