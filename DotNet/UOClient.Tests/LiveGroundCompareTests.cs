@@ -169,4 +169,305 @@ public class LiveGroundCompareTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => Synthetic(x0, y0, w, h));
     }
+
+    // ---- mesh land ----
+
+    private static Bitmap32 Solid(int size, uint argb)
+    {
+        var b = new Bitmap32(size, size);
+        Array.Fill(b.Pixels, argb);
+        return b;
+    }
+
+    [Fact]
+    public void Mesh_StretchedTileUsesExactCornersAndTriangles()
+    {
+        DrawItem it = LiveGroundProjection.LandItem(100, 200, 3, 10, -5, 20, 7, hasTexmap: true);
+        var mb = new MeshLandBuilder(2);
+        mb.AddTile(it, Solid(64, 0xFF336699), texmap: true, depth: -3.5f);
+        LandMeshData d = mb.Finish();
+
+        Assert.Equal(6, d.VertexCount);
+        int[] z = { 10, -5, 20, 7 };
+        for (int v = 0; v < 6; v++)
+        {
+            int c = LiveGroundProjection.Triangles[v];
+            (float x, float y) = LiveGroundProjection.Corner(100, 200, c, z[c], 2);
+            Assert.Equal(x, d.X[v]);
+            Assert.Equal(y, d.Y[v]);
+            Assert.Equal(-3.5f, d.Depth[v]); // the tile's production depth: sorting unchanged
+        }
+        Assert.Equal(LiveGroundProjection.TriangleShade(z, 0), d.Shade[0]);
+        Assert.Equal(LiveGroundProjection.TriangleShade(z, 1), d.Shade[3]);
+    }
+
+    [Fact]
+    public void Mesh_UnstretchedTileIsFlatAtTopZ()
+    {
+        // Sloped but without a texmap: the compositor draws the flat sprite at Z, so the mesh does too.
+        DrawItem it = LiveGroundProjection.LandItem(4, 4, 3, 10, 0, 30, 0, hasTexmap: false);
+        Assert.False(it.Stretched);
+        var mb = new MeshLandBuilder(1);
+        mb.AddTile(it, Solid(44, 0xFF00FF00), texmap: false, depth: 0f);
+        LandMeshData d = mb.Finish();
+        for (int v = 0; v < 6; v++)
+        {
+            int c = LiveGroundProjection.Triangles[v];
+            Assert.Equal(LiveGroundProjection.Corner(4, 4, c, 10, 1).Y, d.Y[v]);
+            Assert.Equal(1f, d.Shade[v]);
+        }
+    }
+
+    [Fact]
+    public void Mesh_NeighborTilesShareCornerPositions()
+    {
+        var p = Synthetic(10, 10, 2, 1);
+        var mb = new MeshLandBuilder(1);
+        var tex = Solid(64, 0xFFFFFFFF);
+        for (int tx = 0; tx < 2; tx++)
+        {
+            (sbyte t, sbyte r, sbyte b, sbyte l) = p.Corners(tx, 0);
+            mb.AddTile(LiveGroundProjection.LandItem(10 + tx, 10, 3, t, r, b, l, hasTexmap: true), tex, true, 0f);
+        }
+        LandMeshData d = mb.Finish();
+        // Tile 0's right corner (vertex 1) is tile 1's top corner (vertex 6); tile 0's bottom (4) is tile 1's left (8).
+        Assert.Equal((d.X[1], d.Y[1]), (d.X[6], d.Y[6]));
+        Assert.Equal((d.X[4], d.Y[4]), (d.X[8], d.Y[8]));
+    }
+
+    [Fact]
+    public void Mesh_AtlasUvsStayInsideArtAndDedupe()
+    {
+        var tex = Solid(64, 0xFF112233);
+        var mb = new MeshLandBuilder(1);
+        mb.AddTile(LiveGroundProjection.LandItem(0, 0, 3, 0, 4, 8, 4, true), tex, true, 0f);
+        mb.AddTile(LiveGroundProjection.LandItem(1, 0, 3, 4, 8, 12, 8, true), tex, true, 0f);
+        LandMeshData d = mb.Finish();
+        Assert.Equal(MeshLandBuilder.AtlasWidth, d.AtlasWidth);
+        Assert.Equal(128, d.AtlasHeight); // one 64px texmap + 2px gutter, packed once, rounded up to 64 rows
+        foreach (float u in d.U) Assert.InRange(u, 1f / 1024, 65f / 1024);
+        foreach (float v in d.V) Assert.InRange(v, 0f, 1f);
+        // Top-left texel of the atlas art is the art's pixel (RGBA, rows bottom-up).
+        int o = ((d.AtlasHeight - 1 - 1) * d.AtlasWidth + 1) * 4;
+        Assert.Equal(new byte[] { 0x11, 0x22, 0x33, 0xFF }, d.AtlasRgba.AsSpan(o, 4).ToArray());
+    }
+
+    [Fact]
+    public void Mesh_RejectsNonLand()
+    {
+        var it = new DrawItem { Kind = DrawKind.Static, X = 1, Y = 1 };
+        Assert.Throws<ArgumentException>(() => new MeshLandBuilder(1).AddTile(it, Solid(44, 0), false, 0f));
+    }
+
+    [Fact]
+    public void Mesh_EmptyFinishHasNoGeometry()
+    {
+        LandMeshData d = new MeshLandBuilder(1).Finish();
+        Assert.Equal(0, d.VertexCount);
+        Assert.Null(d.AtlasRgba);
+    }
+
+    // ---- backend choice, toggle and guard ----
+
+    [Theory]
+    [InlineData("original", GroundBackendKind.Original)]
+    [InlineData("MESH", GroundBackendKind.Mesh)]
+    [InlineData(" terrain ", GroundBackendKind.Terrain)]
+    public void Backend_Parses(string text, GroundBackendKind expected)
+    {
+        Assert.True(GroundBackend.TryParse(text, out GroundBackendKind k));
+        Assert.Equal(expected, k);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("meshy")]
+    [InlineData("1")]
+    [InlineData("-server")]
+    public void Backend_MalformedIsOriginal(string? text)
+    {
+        Assert.False(GroundBackend.TryParse(text, out GroundBackendKind k));
+        Assert.Equal(GroundBackendKind.Original, k);
+    }
+
+    [Fact]
+    public void Toggle_CyclesAvailableBackendsOnly()
+    {
+        Assert.Equal(GroundBackendKind.Mesh, GroundBackend.Next(GroundBackendKind.Original));
+        Assert.Equal(GroundBackendKind.Original, GroundBackend.Next(GroundBackendKind.Mesh));
+        Assert.Equal(GroundBackendKind.Original, GroundBackend.Next(GroundBackendKind.Terrain));
+    }
+
+    [Fact]
+    public void Toggle_DivertsOnlyUnbakedLand_EntitiesUntouched()
+    {
+        var land = new DrawItem { Kind = DrawKind.Land, X = 5, Y = 5, Z = 0 };
+        var stat = new DrawItem { Kind = DrawKind.Static, X = 5, Y = 5, Z = 0, Graphic = 0x0FA0 };
+        var mobile = new DrawItem { Kind = DrawKind.Mobile, X = 5, Y = 6, Z = 0 };
+        DrawItem[] before = { stat, mobile };
+
+        foreach (GroundBackendKind k in Enum.GetValues<GroundBackendKind>())
+        {
+            Assert.False(GroundBackend.Diverts(k, stat, false));
+            Assert.False(GroundBackend.Diverts(k, mobile, false));
+            Assert.False(GroundBackend.Diverts(k, land, baked: true));
+        }
+        Assert.False(GroundBackend.Diverts(GroundBackendKind.Original, land, false));
+        Assert.True(GroundBackend.Diverts(GroundBackendKind.Mesh, land, false));
+        Assert.False(GroundBackend.Diverts(GroundBackendKind.Terrain, land, false)); // not wired: stays original
+
+        // Cycling the backend never touches entity placements (Diverts takes them by readonly reference).
+        GroundBackendKind cur = GroundBackendKind.Original;
+        for (int i = 0; i < 5; i++)
+        {
+            cur = GroundBackend.Next(cur);
+            GroundBackend.Diverts(cur, stat, false);
+            GroundBackend.Diverts(cur, mobile, false);
+        }
+        Assert.Equal(before, new[] { stat, mobile });
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1", true)]
+    [InlineData("localhost", true)]
+    [InlineData("LOCALHOST", true)]
+    [InlineData("::1", true)]
+    [InlineData("[::1]", true)]
+    [InlineData("uosmallz.duckdns.org", false)]
+    [InlineData("uosmallz", false)]
+    [InlineData("127.0.0.2", false)]
+    [InlineData("192.168.1.10", false)]
+    [InlineData("localhost.uosmallz.example", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Guard_LocalHosts(string? host, bool local)
+    {
+        Assert.Equal(local, LiveGroundHostGuard.IsLocalHost(host));
+    }
+
+    [Fact]
+    public void Guard_AgreesWithClientSettingsIsLocal()
+    {
+        foreach (string h in new[] { "127.0.0.1", "localhost", "::1", "uosmallz.duckdns.org", "10.0.0.1" })
+            Assert.Equal(new ClientSettings { host = h }.IsLocal, LiveGroundHostGuard.IsLocalHost(h));
+    }
+
+    [Fact]
+    public void Guard_FailsClosed()
+    {
+        Assert.Equal(GroundBackendKind.Mesh, LiveGroundHostGuard.Resolve(true, "127.0.0.1", GroundBackendKind.Mesh, out string ok));
+        Assert.Null(ok);
+
+        Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(true, "uosmallz.duckdns.org", GroundBackendKind.Mesh, out string live));
+        Assert.Contains("non-local", live);
+        Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(false, "127.0.0.1", GroundBackendKind.Mesh, out string noFlag));
+        Assert.Contains("-liveground", noFlag);
+        Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(true, "127.0.0.1", GroundBackendKind.Terrain, out string terrain));
+        Assert.Contains("not wired", terrain);
+        Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(false, "uosmallz.duckdns.org", GroundBackendKind.Original, out string orig));
+        Assert.Null(orig);
+    }
+
+    // ---- switch: toggle, host re-check, cleanup ----
+
+    [Fact]
+    public void Switch_AppliesGuardedChoiceOnAttachAndToggle()
+    {
+        var applied = new List<GroundBackendKind>();
+        var sw = new LiveGroundSwitch(true, GroundBackendKind.Mesh, applied.Add);
+        Assert.Null(sw.Toggle()); // nothing attached yet
+        Assert.Empty(applied);
+
+        Assert.Equal("Ground: Mesh", sw.Attach("127.0.0.1"));
+        Assert.Equal(GroundBackendKind.Mesh, sw.Active);
+        sw.Toggle();
+        Assert.Equal(GroundBackendKind.Original, sw.Active);
+        sw.Toggle();
+        Assert.Equal(GroundBackendKind.Mesh, sw.Active);
+        Assert.Equal(new[] { GroundBackendKind.Mesh, GroundBackendKind.Original, GroundBackendKind.Mesh }, applied);
+    }
+
+    [Fact]
+    public void Switch_LiveHostAttachRefusesAndTogglesStayOriginal()
+    {
+        var applied = new List<GroundBackendKind>();
+        var sw = new LiveGroundSwitch(true, GroundBackendKind.Mesh, applied.Add);
+        sw.Attach("127.0.0.1");
+        string status = sw.Attach("uosmallz.duckdns.org"); // logged in elsewhere from the login screen
+        Assert.Contains("non-local", status);
+        Assert.Equal(GroundBackendKind.Original, sw.Active);
+        sw.Toggle();
+        Assert.Equal(GroundBackendKind.Original, sw.Active);
+        Assert.Equal(GroundBackendKind.Original, applied[^1]);
+    }
+
+    [Fact]
+    public void Switch_DisposeRestoresOriginalOnceAndIgnoresLaterCalls()
+    {
+        var applied = new List<GroundBackendKind>();
+        var sw = new LiveGroundSwitch(true, GroundBackendKind.Mesh, applied.Add);
+        sw.Attach("localhost");
+        sw.Dispose();
+        sw.Dispose();
+        Assert.True(sw.IsDisposed);
+        Assert.Equal(new[] { GroundBackendKind.Mesh, GroundBackendKind.Original }, applied);
+        Assert.Null(sw.Attach("127.0.0.1"));
+        Assert.Null(sw.Toggle());
+        Assert.Equal(2, applied.Count);
+    }
+
+    [Fact]
+    public void Switch_DetachedDisposeAppliesNothing()
+    {
+        var applied = new List<GroundBackendKind>();
+        var sw = new LiveGroundSwitch(true, GroundBackendKind.Mesh, applied.Add);
+        sw.Attach("127.0.0.1");
+        sw.Detach(); // world already torn down: no emitter to remove
+        sw.Dispose();
+        Assert.Equal(new[] { GroundBackendKind.Mesh }, applied);
+    }
+
+    // ---- launch arguments ----
+
+    [Fact]
+    public void Launch_DefaultIsOriginal()
+    {
+        LaunchOptions o = LaunchOptions.Parse(new[] { "Unity UO.exe", "-server", "uosmallz.duckdns.org:2593" });
+        Assert.False(o.LiveGround);
+        Assert.Null(o.GroundBackend);
+        GroundBackend.TryParse(o.GroundBackend, out GroundBackendKind k);
+        Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(o.LiveGround, "uosmallz.duckdns.org", k, out _));
+    }
+
+    [Fact]
+    public void Launch_OptInWithBackend()
+    {
+        LaunchOptions o = LaunchOptions.Parse(new[] { "x.exe", "-server", "127.0.0.1:2593", "-liveground", "-groundbackend", "mesh" });
+        Assert.True(o.LiveGround);
+        Assert.Equal("mesh", o.GroundBackend);
+        Assert.True(o.ServerFromArguments);
+    }
+
+    [Theory]
+    [InlineData(new[] { "x.exe", "-liveground", "-groundbackend" }, "")]
+    [InlineData(new[] { "x.exe", "-groundbackend", "-liveground" }, "")]
+    [InlineData(new[] { "x.exe", "-liveground", "-groundbackend", "bogus" }, "bogus")]
+    public void Launch_MalformedBackendFallsBackToOriginal(string[] args, string raw)
+    {
+        LaunchOptions o = LaunchOptions.Parse(args);
+        Assert.True(o.LiveGround);
+        Assert.Equal(raw, o.GroundBackend);
+        Assert.False(GroundBackend.TryParse(o.GroundBackend, out GroundBackendKind k));
+        Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(o.LiveGround, "127.0.0.1", k, out _));
+    }
+
+    [Fact]
+    public void Launch_BackendWithoutOptInIsRefused()
+    {
+        LaunchOptions o = LaunchOptions.Parse(new[] { "x.exe", "-groundbackend", "mesh" });
+        Assert.False(o.LiveGround);
+        GroundBackend.TryParse(o.GroundBackend, out GroundBackendKind k);
+        Assert.Equal(GroundBackendKind.Original, LiveGroundHostGuard.Resolve(o.LiveGround, "127.0.0.1", k, out _));
+    }
 }

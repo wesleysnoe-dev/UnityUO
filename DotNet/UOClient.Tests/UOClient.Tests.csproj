@@ -54,8 +54,11 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\ShopWindow.Icon.cs" Link="Unity\ShopWindow.Icon.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\GridContainerWindow.Layout.cs" Link="Unity\GridContainerWindow.Layout.cs" />
     <!-- LiveGroundCompare's Unity-free core (the Unity upload and controller are not compiled here). -->
+    <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\GroundBackendKind.cs" Link="LiveGroundCompare\GroundBackendKind.cs" />
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\LiveGroundProjection.cs" Link="LiveGroundCompare\LiveGroundProjection.cs" />
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\RealMapPatch.cs" Link="LiveGroundCompare\RealMapPatch.cs" />
+    <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\MeshLandBuilder.cs" Link="LiveGroundCompare\MeshLandBuilder.cs" />
+    <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\LiveGroundHostGuard.cs" Link="LiveGroundCompare\LiveGroundHostGuard.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />

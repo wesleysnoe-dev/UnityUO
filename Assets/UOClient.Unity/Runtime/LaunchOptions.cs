@@ -19,12 +19,21 @@ namespace UOClient.Unity
         /// <summary>-offline &lt;map&gt; &lt;x&gt; &lt;y&gt;: the offline demo at an exact spot (indoors included), e.g. to check a building.</summary>
         public readonly (int map, int x, int y)? OfflineAt;
 
-        private LaunchOptions(bool captureFromCommandLine, bool autoLogin, bool serverFromArguments, (int map, int x, int y)? offlineAt)
+        /// <summary>-liveground: opt in to the LiveGroundCompare land backends (TEST host only; see LiveGroundHostGuard).</summary>
+        public readonly bool LiveGround;
+
+        /// <summary>-groundbackend &lt;original|mesh|terrain&gt; as typed (null when absent, "" without a value); parsed by LiveGroundCompare.</summary>
+        public readonly string GroundBackend;
+
+        private LaunchOptions(bool captureFromCommandLine, bool autoLogin, bool serverFromArguments, (int map, int x, int y)? offlineAt,
+                              bool liveGround, string groundBackend)
         {
             CaptureFromCommandLine = captureFromCommandLine;
             AutoLogin = autoLogin;
             ServerFromArguments = serverFromArguments;
             OfflineAt = offlineAt;
+            LiveGround = liveGround;
+            GroundBackend = groundBackend;
         }
 
         public static LaunchOptions FromCommandLine() => Parse(Environment.GetCommandLineArgs());
@@ -35,11 +44,17 @@ namespace UOClient.Unity
             int at = Array.IndexOf(cl, "-offline");
             if (at >= 0 && at + 3 < cl.Length && int.TryParse(cl[at + 1], out int om) && int.TryParse(cl[at + 2], out int ox) && int.TryParse(cl[at + 3], out int oy))
                 offlineAt = (om, ox, oy);
+            string groundBackend = null;
+            int gb = Array.FindIndex(cl, a => a.Equals("-groundbackend", StringComparison.OrdinalIgnoreCase));
+            if (gb >= 0)
+                groundBackend = gb + 1 < cl.Length && !cl[gb + 1].StartsWith("-") ? cl[gb + 1] : "";
             return new LaunchOptions(
                 cl.Contains("-uoclient-capture"),
                 cl.Contains("-uoclient-autologin"),
                 cl.Any(a => a.TrimStart('-').Equals("server", StringComparison.OrdinalIgnoreCase)),
-                offlineAt);
+                offlineAt,
+                cl.Any(a => a.Equals("-liveground", StringComparison.OrdinalIgnoreCase)),
+                groundBackend);
         }
     }
 }
