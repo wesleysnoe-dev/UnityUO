@@ -14,6 +14,8 @@ namespace UOClient.Unity.UI
     /// take them off, drop items onto it to put them on. Double-click the scroll for the character's profile;
     /// double-click the virtue gem for the virtue gump, and (our own) the party scroll for the party window.
     /// The button column is PaperdollWindow.Layout's (TazUO's PaperDollGump for our client version).
+    /// Our own paperdoll also has TazUO's equipment slot columns (each worn piece's item art in a 19x20 slot, picked,
+    /// used and dragged as the piece on the body) and, when 0xA9 says so, the combat and racial book icons.
     /// </summary>
     public sealed partial class PaperdollWindow : UiWindow
     {
@@ -27,6 +29,11 @@ namespace UOClient.Unity.UI
         private string _title;
         private GUIStyle _titleStyle;
         private readonly List<(byte Layer, EquippedItem Item, UiImage Image, int Gump)> _drawn = new List<(byte, EquippedItem, UiImage, int)>();
+        // Our own slots this frame: the piece worn on each (if any), its item art and the art's real bounds.
+        private readonly List<(Slot Slot, EquippedItem? Item, UiImage Art, (int X, int Y, int W, int H) Bounds)> _slots =
+            new List<(Slot, EquippedItem?, UiImage, (int, int, int, int))>();
+        private readonly Dictionary<UiImage, (int, int, int, int)> _bounds = new Dictionary<UiImage, (int, int, int, int)>();
+        private UiImage _combatBook, _racialBook;
         private Vector2 _pressAt;
         private (byte Layer, EquippedItem Item)? _pressed;
         private float _lastClick;
@@ -60,15 +67,30 @@ namespace UOClient.Unity.UI
             if (!Session.World.Mobiles.TryGetValue(_serial, out Mobile m))
                 return;
 
-            DrawImage(Art.Gump(_serial == Session.World.PlayerSerial ? BackgroundPlayer : BackgroundOther) ?? Art.Gump(BackgroundPlayer), 0, 0);
+            bool self = _serial == Session.World.PlayerSerial;
+            DrawImage(Art.Gump(self ? BackgroundPlayer : BackgroundOther) ?? Art.Gump(BackgroundPlayer), 0, 0);
 
             // The virtue gem on every paperdoll, under the body (TazUO adds its PaperDollInteractable after the gem).
             UiImage virtue = Art.Gump(VirtueGem);
             DrawImage(virtue, VirtueX, VirtueY);
 
-            bool female = IsFemale(m.Body);
-            DrawImage(Art.Gump(female ? 0x000D : 0x000C, m.Hue), BodyX, BodyY);
+            // The books sit above the body (added after PaperDollInteractable); laid out now so the pick knows them.
+            bool books = self && ShowsPaperdollBooks(true, Session.CharacterListFlags);
+            bool racial = books && ShowsRacialBook(true, Session.CharacterListFlags, Session.Version);
+            _combatBook = books ? Art.Gump(CombatBookIcon) : null;
+            _racialBook = racial ? Art.Gump(RacialBookIcon) : null;
 
+            // Our own slot columns, under the body as AddEquipSlot comes before the PaperDollInteractable.
+            _slots.Clear();
+            if (self)
+                foreach (Slot s in Slots)
+                {
+                    EquippedItem? worn = m.Equipment.TryGetValue(s.Layer, out EquippedItem e) ? e : (EquippedItem?)null;
+                    UiImage art = worn != null ? Art.Item(worn.Value.Graphic, worn.Value.Hue) : null;
+                    _slots.Add((s, worn, art, art != null ? BoundsOf(art) : default));
+                }
+
+            bool female = IsFemale(m.Body);
             _drawn.Clear();
             foreach (byte layer in PaperdollOrder)
             {
@@ -87,11 +109,19 @@ namespace UOClient.Unity.UI
                 _drawn.Add((layer, e, img, gump));
             }
             // Laid out first, so the worn item under the mouse is known: it keeps its own hue and is outlined (the
-            // outline alone is the mouse-over cue, ObjectHighlight).
-            uint over = MouseIsOver ? ItemAt(Event.current.mousePosition)?.Item.Serial ?? 0 : 0;
+            // outline alone is the mouse-over cue, ObjectHighlight). Only what is hit is outlined: the piece on the
+            // body, or its slot's picture.
+            (int Slot, byte Layer, EquippedItem? Item) hit = MouseIsOver ? HitAt(Event.current.mousePosition) : (-1, (byte)0, null);
+            uint over = hit.Item?.Serial ?? 0;
+            HoveredText = hit.Slot >= 0 && hit.Item == null ? SlotName(_slots[hit.Slot].Slot.Layer) : null;
+
+            for (int i = 0; i < _slots.Count; i++)
+                DrawSlot(_slots[i], over != 0 && hit.Slot == i);
+
+            DrawImage(Art.Gump(female ? 0x000D : 0x000C, m.Hue), BodyX, BodyY);
             foreach (var (_, e, img, _) in _drawn)
             {
-                if (over != 0 && e.Serial == over)
+                if (over != 0 && hit.Slot < 0 && e.Serial == over)
                     DrawOutline(img, BodyX, BodyY);
                 DrawImage(img, BodyX, BodyY);
             }
@@ -104,20 +134,24 @@ namespace UOClient.Unity.UI
             GUI.Label(new Rect(TitleX, TitleY, TitleWidth, 40), _title ?? m.Name ?? "", _titleStyle);
 
             // The profile scroll (where ClassicUO puts it): a double-click asks for this character's profile (0xB8).
+            // With the racial book it moves right to make room (Racial_Abilities_Width).
             UiImage profile = Art.Gump(ScrollGump);
-            DrawImage(profile, ProfileX, ProfileY);
+            int profileX = ProfileXFor(racial);
+            DrawImage(profile, profileX, ProfileY);
 
             // Our own paperdoll's party manifest: the same scroll, 4 pixels into the profile's right edge.
             UiImage party = null;
             float partyX = 0;
-            if (_serial == Session.World.PlayerSerial && (party = Art.Gump(ScrollGump)) != null)
+            if (self && (party = Art.Gump(ScrollGump)) != null)
             {
-                partyX = PartyX(party.Width);
+                partyX = PartyX(party.Width, racial);
                 DrawImage(party, partyX, ProfileY);
             }
 
+            DrawImage(_racialBook, RacialBookX, RacialBookY);
+            DrawImage(_combatBook, CombatBookX, CombatBookY);
+
             // The button column: ours in full (Quests and Guild from CV_500A), anyone else's Status alone.
-            bool self = _serial == Session.World.PlayerSerial;
             foreach (Button b in Buttons(Session.Version, self, Session.WarMode))
             {
                 if (!GumpButton(b.Normal, b.Pressed, b.X, b.Y))
@@ -130,6 +164,13 @@ namespace UOClient.Unity.UI
 
             if (Event.current.type == EventType.Repaint)
                 Hovered = over;
+
+            // The books are above the worn items, so they take their double-clicks first (HitAt skips their pixels).
+            if (DoubleClicked(_combatBook, CombatBookX, CombatBookY))
+                Ui.Open(new CombatBookWindow()); // GameActions.OpenAbilitiesBook: one at a time
+            else if (DoubleClicked(_racialBook, RacialBookX, RacialBookY))
+                Ui.Open(new RacialAbilitiesWindow());
+
             HandleMouse();
 
             // After the worn items, which sit on top and take their clicks first.
@@ -138,8 +179,44 @@ namespace UOClient.Unity.UI
             else if (DoubleClicked(party, partyX, ProfileY))
                 Ui.Open(new PartyWindow()); // opens it, or brings the open one forward
             // The party scroll overlaps the profile's right edge by 4px and sits above it, so it's tested first.
-            else if (DoubleClicked(profile, ProfileX, ProfileY))
+            else if (DoubleClicked(profile, profileX, ProfileY))
                 Session.RequestProfile(_serial);
+        }
+
+        /// <summary>
+        /// One slot (EquipmentSlot): the 0x243A stone tiled to 19x20, the 0x2344 frame, and the worn piece's item art,
+        /// its real bounds squeezed into 18x18 or centred if smaller (ItemGumpFixed), in its own hue. Under the mouse it
+        /// gets the outline, scaled with the art.
+        /// </summary>
+        private void DrawSlot((Slot Slot, EquippedItem? Item, UiImage Art, (int X, int Y, int W, int H) Bounds) s, bool outlined)
+        {
+            DrawTiled(Art.Gump(SlotBackground), s.Slot.X, s.Slot.Y, SlotWidth, SlotHeight);
+            DrawImage(Art.Gump(SlotBorder), s.Slot.X, s.Slot.Y);
+            UiImage art = s.Art;
+            var (bx, by, bw, bh) = s.Bounds;
+            if (art == null || bw <= 0 || bh <= 0)
+                return;
+            var (rx, ry, rw, rh) = SlotItemRect(bw, bh);
+            var dest = new Rect(s.Slot.X + rx, s.Slot.Y + ry, rw, rh);
+            if (outlined && Art.Outline(art) is UiImage o)
+            {
+                // The outline is the art one pixel larger each way: the same bounds, one more pixel round, scaled alike.
+                float sx = rw / (float)bw, sy = rh / (float)bh;
+                GUI.DrawTextureWithTexCoords(new Rect(dest.x - sx, dest.y - sy, dest.width + 2 * sx, dest.height + 2 * sy), o.Texture,
+                    TexCoords(o, bx, by, bw + 2, bh + 2));
+            }
+            GUI.DrawTextureWithTexCoords(dest, art.Texture, TexCoords(art, bx, by, bw, bh));
+        }
+
+        /// <summary>A pixel rectangle of a picture as texture coordinates (textures are stored bottom row first).</summary>
+        private static Rect TexCoords(UiImage img, int x, int y, int w, int h) =>
+            new Rect(x / (float)img.Width, 1f - (y + h) / (float)img.Height, w / (float)img.Width, h / (float)img.Height);
+
+        private (int, int, int, int) BoundsOf(UiImage art)
+        {
+            if (!_bounds.TryGetValue(art, out var b))
+                _bounds[art] = b = ArtBounds(art.Bitmap.Pixels, art.Width, art.Height);
+            return b;
         }
 
         /// <summary>Someone else's Status button: their health bar under the mouse, unless they already have one.</summary>
@@ -166,15 +243,39 @@ namespace UOClient.Unity.UI
             return true;
         }
 
-        /// <summary>Topmost worn item under a local point (hair and beard can't be picked).</summary>
+        /// <summary>Topmost worn item under a local point, on the body or in its slot (hair and beard can't be picked).</summary>
         private (byte Layer, EquippedItem Item)? ItemAt(Vector2 local)
         {
+            var (_, layer, item) = HitAt(local);
+            return item == null ? ((byte, EquippedItem)?)null : (layer, item.Value);
+        }
+
+        /// <summary>
+        /// What a local point is on, top first as TazUO stacks the controls: a book icon's pixels (nothing here: the
+        /// book takes it), a worn piece's pixels on the body (Slot −1), else a slot's 19x20 box (ItemGumpFixed.Contains
+        /// is the whole box), with the piece worn there or none. Nothing: (−1, 0, null).
+        /// </summary>
+        private (int Slot, byte Layer, EquippedItem? Item) HitAt(Vector2 local)
+        {
+            if (OnPicture(_combatBook, CombatBookX, CombatBookY, local) || OnPicture(_racialBook, RacialBookX, RacialBookY, local))
+                return (-1, 0, null);
             var (i, _, _) = MousePick.WindowItem(_drawn.Count, local.x, local.y, Ui.Scale, _ => (BodyX, BodyY),
                 _ => false, (k, x, y) => _drawn[k].Image.HitTest(x, y));
-            if (i < 0)
-                return null;
-            var (layer, item, _, _) = _drawn[i];
-            return layer == 11 || layer == 16 ? ((byte, EquippedItem)?)null : (layer, item);
+            if (i >= 0)
+            {
+                var (layer, item, _, _) = _drawn[i];
+                return layer == 11 || layer == 16 ? (-1, (byte)0, (EquippedItem?)null) : (-1, layer, item);
+            }
+            int slot = SlotAt(_slots.Count, k => _slots[k].Slot, local.x, local.y, Ui.Scale);
+            return slot < 0 ? (-1, (byte)0, (EquippedItem?)null) : (slot, _slots[slot].Slot.Layer, _slots[slot].Item);
+        }
+
+        private bool OnPicture(UiImage img, float x, float y, Vector2 local)
+        {
+            if (img == null)
+                return false;
+            var (px, py) = MousePick.UiPixel(local.x, local.y, x, y, Ui.Scale);
+            return img.HitTest(px, py);
         }
 
         private void HandleMouse()
@@ -237,7 +338,8 @@ namespace UOClient.Unity.UI
         {
             if (_serial != Session.World.PlayerSerial)
                 return false;
-            // Onto the backpack icon: put it in the pack. Anywhere else: wear it.
+            // Onto the backpack icon: put it in the pack. Anywhere else, a slot included (empty or not): wear it. The
+            // layer sent is the item's own; ModernUO's EquipReq skips that byte and equips by the item's layer anyway.
             var under = ItemAt(local);
             uint pack = Session.World.Worn(Session.World.Player, 21);
             if (under != null && under.Value.Layer == 21 && pack != 0)

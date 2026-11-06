@@ -40,7 +40,14 @@ namespace UOClient.Core
             return true;
         }
 
-        /// <summary>World.Clear (World.cs:1054) empties the set: here on a new login (0x1B) and on disconnect.</summary>
-        private void ClearActiveSpells() => _activeSpells.Clear();
+        /// <summary>
+        /// World.Clear (World.cs:1054) empties the set: here on a new login (0x1B) and on disconnect. The weapon ability
+        /// toggled on goes with it (a new PlayerMobile starts with neither flag).
+        /// </summary>
+        private void ClearActiveSpells()
+        {
+            _activeSpells.Clear();
+            _weaponAbilityOn = 0;
+        }
     }
 }

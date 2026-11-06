@@ -74,7 +74,7 @@ namespace UOClient.Core
             _handlers[0x53] = PopupMessage;
             _handlers[0xA8] = ServerList;
             _handlers[0x8C] = Relay;
-            _handlers[0xB9] = _ => { };
+            _handlers[0xB9] = SupportedFeature;
             _handlers[0xA9] = CharacterList;
             _handlers[0x86] = CharacterListUpdate;
             _handlers[0x85] = DeleteRefused;
@@ -942,7 +942,7 @@ namespace UOClient.Core
         {
             int sub = r.ReadUInt16();
             if (TradeExtended(sub, r) || HousingExtended(sub, r) || PartyExtended(sub, r) || ExtendedStats(sub, r)
-                || ActiveSpellExtended(sub, r))
+                || ActiveSpellExtended(sub, r) || WeaponAbilityExtended(sub))
                 return;
             if (sub == 0x08) // set map
                 World.Map = r.ReadByte();

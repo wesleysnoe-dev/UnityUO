@@ -17,6 +17,9 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\HealthBarWindow.Layout.cs" Link="Unity\HealthBarWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\StatusWindow.Layout.cs" Link="Unity\StatusWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\PaperdollWindow.Layout.cs" Link="Unity\PaperdollWindow.Layout.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\PaperdollBooks.Layout.cs" Link="Unity\PaperdollBooks.Layout.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MousePick.cs" Link="Unity\MousePick.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\ObjectHighlight.cs" Link="Unity\ObjectHighlight.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\QuestionWindow.Layout.cs" Link="Unity\QuestionWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\SpellbookWindow.Layout.cs" Link="Unity\SpellbookWindow.Layout.cs" />
   </ItemGroup>

@@ -6,6 +6,7 @@ using UOClient.IO;
 using UOClient.IO.Files;
 using UOClient.IO.Formats;
 using UOClient.Net;
+using UOClient.Unity;
 using UOClient.Unity.UI;
 
 /// <summary>
@@ -53,6 +54,16 @@ internal static class UxPreview
         Write(outDir, "paperdoll-self-aos", Paperdoll(data, hues, ClientVersion.Default, self: true, war: false));
         Write(outDir, "paperdoll-self-aos-war", Paperdoll(data, hues, ClientVersion.Default, self: true, war: true));
         Write(outDir, "paperdoll-other", Paperdoll(data, hues, ClientVersion.Default, self: false, war: false));
+        Write(outDir, "paperdoll-slots-books", PaperdollSlots(data, text, hues, Armour, books: true, outlineLayer: 0));
+        Write(outDir, "paperdoll-slots-hover-katana", PaperdollSlots(data, text, hues, Armour, books: true, outlineLayer: 1));
+        Write(outDir, "paperdoll-slots-naked-nobooks", PaperdollSlots(data, text, hues, new (ushort, ushort)[] { (0x0E75, 0) }, books: false, outlineLayer: 0));
+        Write(outDir, "combatbook-index-primary-on", CombatBook(data, text, hues, 1, weapon: 0x13FF, primaryOn: true));
+        Write(outDir, "combatbook-index-p3-bare", CombatBook(data, text, hues, 3, weapon: 0, primaryOn: false));
+        Write(outDir, "combatbook-armor-ignore", CombatBook(data, text, hues, CombatBookWindow.PageOf(WeaponAbilities.ArmorIgnore), 0, false));
+        Write(outDir, "combatbook-mystic-arc", CombatBook(data, text, hues, CombatBookWindow.PageOf(WeaponAbilities.MysticArc), 0, false));
+        Write(outDir, "racialbook-human-index", RacialBook(data, text, hues, RacialAbilitiesWindow.Race.Human, 1));
+        Write(outDir, "racialbook-human-p2", RacialBook(data, text, hues, RacialAbilitiesWindow.Race.Human, 2));
+        Write(outDir, "racialbook-elf-p3", RacialBook(data, text, hues, RacialAbilitiesWindow.Race.Elf, 3));
         Write(outDir, "question-criminal", Question(data, text, hues, QuestionWindow.CriminalText));
         return 0;
     }
@@ -183,6 +194,181 @@ internal static class UxPreview
         return canvas;
     }
 
+    // ---- PaperdollWindow.Draw for our own, with slots, body, worn art and books (made-up gear; no title) -----------
+
+    /// <summary>A plate fighter with a katana, ring, cloak, boots and pack: (graphic, hue).</summary>
+    private static readonly (ushort, ushort)[] Armour =
+    {
+        (0x1412, 0), (0x1413, 0), (0x1415, 0), (0x1410, 0), (0x1414, 0), (0x1411, 0), (0x13FF, 0), (0x108A, 0),
+        (0x1515, 0x0021), (0x170B, 0), (0x0E75, 0)
+    };
+
+    /// <summary>PaperdollWindow.PaperdollOrder (back to front).</summary>
+    private static readonly byte[] PaperdollOrder = { 20, 5, 4, 3, 24, 19, 13, 17, 8, 14, 7, 23, 22, 12, 10, 11, 16, 18, 6, 1, 2, 9, 21 };
+
+    private static Bitmap32 PaperdollSlots(UOData data, UniText text, HueEntry[] hues, (ushort Graphic, ushort Hue)[] gear, bool books, byte outlineLayer)
+    {
+        var worn = new Dictionary<byte, (ushort Graphic, ushort Hue)>();
+        foreach (var g in gear)
+            worn[data.TileData.GetStatic(g.Graphic).Layer] = g;
+
+        bool racial = books; // 7.0.23.1 is CV_7000+, so the racial book comes with the combat book
+        Bitmap32 bg = Gump(data, hues, PaperdollWindow.BackgroundPlayer);
+        var canvas = Canvas(bg?.Width ?? 262, bg?.Height ?? 324);
+        Blit(canvas, bg, 0, 0, canvas.Width);
+        Blit(canvas, Gump(data, hues, PaperdollWindow.VirtueGem), PaperdollWindow.VirtueX, PaperdollWindow.VirtueY, canvas.Width);
+
+        foreach (PaperdollWindow.Slot s in PaperdollWindow.Slots)
+        {
+            Bitmap32 stone = Gump(data, hues, PaperdollWindow.SlotBackground);
+            if (stone != null)
+                Blit(canvas, stone, s.X, s.Y, s.X + PaperdollWindow.SlotWidth, PaperdollWindow.SlotWidth, PaperdollWindow.SlotHeight);
+            Blit(canvas, Gump(data, hues, PaperdollWindow.SlotBorder), s.X, s.Y, canvas.Width);
+            if (!worn.TryGetValue(s.Layer, out var item) || ItemArt(data, hues, item.Graphic, item.Hue) is not Bitmap32 art)
+                continue;
+            var (bx, by, bw, bh) = PaperdollWindow.ArtBounds(art.Pixels, art.Width, art.Height);
+            var (rx, ry, rw, rh) = PaperdollWindow.SlotItemRect(bw, bh);
+            if (s.Layer == outlineLayer)
+            {
+                Bitmap32 o = ObjectHighlight.Outline(art, 1, ObjectHighlight.OutlineArgb);
+                float sx = rw / (float)bw, sy = rh / (float)bh;
+                BlitScaled(canvas, o, bx, by, bw + 2, bh + 2, s.X + rx - sx, s.Y + ry - sy, rw + 2 * sx, rh + 2 * sy);
+            }
+            BlitScaled(canvas, art, bx, by, bw, bh, s.X + rx, s.Y + ry, rw, rh);
+        }
+
+        Blit(canvas, Gump(data, hues, 0x000C), PaperdollWindow.BodyX, PaperdollWindow.BodyY, canvas.Width);
+        foreach (byte layer in PaperdollOrder)
+        {
+            if (!worn.TryGetValue(layer, out var item))
+                continue;
+            int anim = data.TileData.GetStatic(item.Graphic).AnimId;
+            if (anim != 0)
+                Blit(canvas, Gump(data, hues, anim + 50000, item.Hue), PaperdollWindow.BodyX, PaperdollWindow.BodyY, canvas.Width);
+        }
+
+        Bitmap32 scroll = Gump(data, hues, PaperdollWindow.ScrollGump);
+        Blit(canvas, scroll, PaperdollWindow.ProfileXFor(racial), PaperdollWindow.ProfileY, canvas.Width);
+        if (scroll != null)
+            Blit(canvas, scroll, PaperdollWindow.PartyX(scroll.Width, racial), PaperdollWindow.ProfileY, canvas.Width);
+        if (racial)
+            Blit(canvas, Gump(data, hues, PaperdollWindow.RacialBookIcon), PaperdollWindow.RacialBookX, PaperdollWindow.RacialBookY, canvas.Width);
+        if (books)
+            Blit(canvas, Gump(data, hues, PaperdollWindow.CombatBookIcon), PaperdollWindow.CombatBookX, PaperdollWindow.CombatBookY, canvas.Width);
+        foreach (PaperdollWindow.Button b in PaperdollWindow.Buttons(ClientVersion.Default, true, false))
+            Blit(canvas, Gump(data, hues, b.Normal), b.X, b.Y, canvas.Width);
+        Blit(canvas, Label(text, hues, "Wes the Warrior", 0x0386), PaperdollWindow.TitleX, PaperdollWindow.TitleY,
+            PaperdollWindow.TitleX + PaperdollWindow.TitleWidth);
+        return canvas;
+    }
+
+    // ---- CombatBookWindow.DrawPage / RacialAbilitiesWindow.DrawPage -------------------------------------------------
+
+    private const int Ink = 0x0288;
+
+    private static Bitmap32 Book(UOData data, HueEntry[] hues, int background, int page, int maxPage)
+    {
+        Bitmap32 bg = Gump(data, hues, background);
+        var canvas = Canvas(bg?.Width ?? 406, bg?.Height ?? 229);
+        Blit(canvas, bg, 0, 0, canvas.Width);
+        if (page != 1)
+            Blit(canvas, Gump(data, hues, 0x08BB), 50, 8, canvas.Width);
+        if (page != maxPage)
+            Blit(canvas, Gump(data, hues, 0x08BC), 321, 8, canvas.Width);
+        return canvas;
+    }
+
+    private static Bitmap32 CombatBook(UOData data, UniText text, HueEntry[] hues, int page, int weapon, bool primaryOn)
+    {
+        var canvas = Book(data, hues, CombatBookWindow.Background, page, CombatBookWindow.MaxPage);
+        void L(string s, int x, int y) => Blit(canvas, Label(text, hues, s, Ink), x, y, canvas.Width);
+        if (CombatBookWindow.ShowsAbilityIcons(page))
+        {
+            L("INDEX", CombatBookWindow.IndexTitleLeftX, CombatBookWindow.IndexTitleY);
+            L("INDEX", CombatBookWindow.IndexTitleRightX, CombatBookWindow.IndexTitleY);
+            foreach (CombatBookWindow.IndexEntry e in CombatBookWindow.Index)
+                if (e.Page == page)
+                    L(WeaponAbilities.Names[e.Ability], e.X, e.Y);
+            var (p, s) = WeaponAbilities.Of(weapon, g => data.TileData.GetStatic(g).AnimId);
+            Blit(canvas, Gump(data, hues, WeaponAbilities.Icon(p), primaryOn ? CombatBookWindow.ActiveHue : 0), CombatBookWindow.AbilityIconX, CombatBookWindow.PrimaryIconY, canvas.Width);
+            Blit(canvas, Gump(data, hues, WeaponAbilities.Icon(s)), CombatBookWindow.AbilityIconX, CombatBookWindow.SecondaryIconY, canvas.Width);
+            L(CombatBookWindow.PrimaryText, CombatBookWindow.IconLabelX, CombatBookWindow.PrimaryIconY);
+            L(CombatBookWindow.SecondaryText, CombatBookWindow.IconLabelX, CombatBookWindow.SecondaryIconY);
+            return canvas;
+        }
+        int a = page - CombatBookWindow.IndexPages;
+        Blit(canvas, Gump(data, hues, WeaponAbilities.Icon(a)), CombatBookWindow.DetailIconX, CombatBookWindow.DetailIconY, canvas.Width);
+        L(CombatBookWindow.CapitalizeAllWords(WeaponAbilities.Names[a]), CombatBookWindow.DetailNameX, CombatBookWindow.DetailNameY);
+        Tiled(canvas, Gump(data, hues, CombatBookWindow.Rule), CombatBookWindow.RuleX, CombatBookWindow.RuleY, CombatBookWindow.RuleWidth);
+        int[] items = CombatBookWindow.Items[a - 1];
+        for (int j = 0; j < items.Length; j++)
+        {
+            var (x, y) = CombatBookWindow.ItemLine(j);
+            L(CombatBookWindow.CapitalizeAllWords(data.TileData.GetStatic(items[j]).Name), x, y);
+        }
+        return canvas;
+    }
+
+    private static Bitmap32 RacialBook(UOData data, UniText text, HueEntry[] hues, RacialAbilitiesWindow.Race race, int page)
+    {
+        RacialAbilitiesWindow.Book book = RacialAbilitiesWindow.BookOf(race);
+        var canvas = Book(data, hues, RacialAbilitiesWindow.Background, page, book.MaxPage);
+        void L(string s, int x, int y) => Blit(canvas, Label(text, hues, s, Ink), x, y, canvas.Width);
+        if (page <= RacialAbilitiesWindow.IndexPages)
+        {
+            L("INDEX", RacialAbilitiesWindow.IndexTitleLeftX, RacialAbilitiesWindow.IndexTitleY);
+            L("INDEX", RacialAbilitiesWindow.IndexTitleRightX, RacialAbilitiesWindow.IndexTitleY);
+            for (int i = 0; i < book.Count; i++)
+            {
+                var (p, x, y) = RacialAbilitiesWindow.IndexLine(i);
+                if (p == page)
+                    L(book.Names[i], x, y);
+            }
+        }
+        for (int i = 0; i < book.Count; i++)
+        {
+            if (RacialAbilitiesWindow.PageOf(i) != page)
+                continue;
+            var (iconX, textX) = RacialAbilitiesWindow.DetailX(i);
+            L(book.Names[i], textX, RacialAbilitiesWindow.NameY);
+            if (RacialAbilitiesWindow.IsPassive(race, i))
+                L(RacialAbilitiesWindow.PassiveText, textX, RacialAbilitiesWindow.PassiveY);
+            Blit(canvas, Gump(data, hues, book.FirstIcon + i), iconX, RacialAbilitiesWindow.IconY, canvas.Width);
+            Tiled(canvas, Gump(data, hues, RacialAbilitiesWindow.Rule), iconX, RacialAbilitiesWindow.RuleY, RacialAbilitiesWindow.RuleWidth);
+        }
+        return canvas;
+    }
+
+    /// <summary>GumpArt.Item: the static art, hued (partly where the tiledata says so).</summary>
+    private static Bitmap32 ItemArt(UOData data, HueEntry[] hues, int graphic, int hue)
+    {
+        Bitmap32 bmp = data.GetStatic(graphic);
+        hue &= 0x3FFF;
+        if (bmp != null && hue > 0 && hue <= hues.Length)
+            bmp = HueApplier.Apply(bmp, hues[hue - 1], (data.TileData.GetStatic(graphic).Flags & TileFlags.PartialHue) != 0);
+        return bmp;
+    }
+
+    /// <summary>GUI.DrawTextureWithTexCoords with point sampling: the source rectangle stretched over the destination.</summary>
+    private static void BlitScaled(Bitmap32 canvas, Bitmap32 src, int sx, int sy, int sw, int sh, float dx, float dy, float dw, float dh)
+    {
+        if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0)
+            return;
+        for (int y = (int)Math.Floor(dy); y < Math.Ceiling(dy + dh); y++)
+            for (int x = (int)Math.Floor(dx); x < Math.Ceiling(dx + dw); x++)
+            {
+                float u = (x + 0.5f - dx) / dw, v = (y + 0.5f - dy) / dh;
+                if (u < 0 || v < 0 || u >= 1 || v >= 1 || x < 0 || y < 0 || x >= canvas.Width || y >= canvas.Height)
+                    continue;
+                int px = sx + (int)(u * sw), py = sy + (int)(v * sh);
+                if (px < 0 || py < 0 || px >= src.Width || py >= src.Height)
+                    continue;
+                var one = new Bitmap32(1, 1);
+                one.Pixels[0] = src.Pixels[py * src.Width + px];
+                Blit(canvas, one, x, y, canvas.Width);
+            }
+    }
+
     // ---- art and a small software canvas (as Program.cs's) ---------------------------------------------------------
 
     private static readonly Dictionary<(int, int), Bitmap32> GumpCache = new Dictionary<(int, int), Bitmap32>();
@@ -213,11 +399,11 @@ internal static class UxPreview
     }
 
     /// <summary>Source-over, clipped to the canvas and to x &lt; clipRight.</summary>
-    private static void Blit(Bitmap32 canvas, Bitmap32 src, int x, int y, int clipRight, int width = int.MaxValue)
+    private static void Blit(Bitmap32 canvas, Bitmap32 src, int x, int y, int clipRight, int width = int.MaxValue, int height = int.MaxValue)
     {
         if (src == null)
             return;
-        for (int py = 0; py < src.Height; py++)
+        for (int py = 0; py < Math.Min(src.Height, height); py++)
             for (int px = 0; px < Math.Min(src.Width, width); px++)
             {
                 int dx = x + px, dy = y + py;
