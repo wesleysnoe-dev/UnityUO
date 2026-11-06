@@ -44,10 +44,15 @@ namespace UOClient.Editor
             EditorUtility.DisplayDialog(GroundCompareProductName, result, "OK");
         }
 
-        /// <summary>Builds the same scene as "Unity UO.exe" under a distinct product name and folder, then puts the project's product name back.</summary>
+        /// <summary>
+        /// Builds the same scene as "Unity UO.exe" under a distinct product name and folder, then puts the project's product
+        /// name back, in memory and on disk (BuildPlayer saves ProjectSettings.asset with the temporary name).
+        /// </summary>
         public static string BuildGroundCompare()
         {
             string productName = PlayerSettings.productName;
+            string settingsFile = Path.Combine(ProjectRoot, "ProjectSettings", "ProjectSettings.asset");
+            byte[] settingsBefore = File.Exists(settingsFile) ? File.ReadAllBytes(settingsFile) : null;
             try
             {
                 return Build(GroundCompareProductName, GroundCompareOutputFolder);
@@ -55,6 +60,8 @@ namespace UOClient.Editor
             finally
             {
                 PlayerSettings.productName = productName;
+                if (settingsBefore != null)
+                    File.WriteAllBytes(settingsFile, settingsBefore);
             }
         }
 
