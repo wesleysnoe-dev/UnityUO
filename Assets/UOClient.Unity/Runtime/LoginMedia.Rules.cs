@@ -25,6 +25,28 @@ namespace UOClient.Unity
         /// <summary>How dark the scrim over the video is, so the login panel and its status line stay readable.</summary>
         public const float VideoScrim = 0.35f;
 
+        /// <summary>Ornamental login art under StreamingAssets (logo, account/password panels, login button).</summary>
+        public const string LogoRelativePath = "Login/logo.png";
+        public const string AccountPanelRelativePath = "Login/account_panel.png";
+        public const string PasswordPanelRelativePath = "Login/password_panel.png";
+        public const string LoginButtonRelativePath = "Login/login_button.png";
+
+        /// <summary>
+        /// Inner editable slot inside <see cref="AccountPanelRelativePath"/>, as fractions of the panel (provisional
+        /// from edge detection on the shipped PNG; replace if ornament-manifest.json gains official rects).
+        /// </summary>
+        public static readonly (float X, float Y, float W, float H) AccountInputFrac = (0.0453f, 0.5556f, 0.9081f, 0.1884f);
+
+        /// <summary>Inner editable slot inside <see cref="PasswordPanelRelativePath"/>.</summary>
+        public static readonly (float X, float Y, float W, float H) PasswordInputFrac = (0.0454f, 0.5473f, 0.9067f, 0.1891f);
+
+        /// <summary>Native pixel size of the logo PNG (for aspect when the texture is not loaded yet).</summary>
+        public const float LogoNativeW = 1521f, LogoNativeH = 985f;
+        public const float AccountNativeW = 816f, AccountNativeH = 207f;
+        public const float PasswordNativeW = 815f, PasswordNativeH = 201f;
+        public const float LoginNativeW = 617f, LoginNativeH = 146f;
+
+
         /// <summary>The video file on disk (desktop and Editor: StreamingAssets is a plain folder).</summary>
         public static string VideoPath(string streamingAssetsPath) =>
             Path.Combine(streamingAssetsPath, VideoRelativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -94,6 +116,120 @@ namespace UOClient.Unity
         /// </summary>
         public static string MusicFile(string folder, string name) =>
             Path.Combine(folder, name.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ? name : name + ".mp3");
+
+        /// <summary>StreamingAssets-relative path joined the same way as the video.</summary>
+        public static string OrnamentPath(string streamingAssetsPath, string relative) =>
+            Path.Combine(streamingAssetsPath, relative.Replace('/', Path.DirectorySeparatorChar));
+
+        /// <summary>
+        /// Places the ornamental logo above the account / password / login stack with no overlap. Coordinates are in
+        /// the login screen's scaled GUI space (Screen / UiScale). Aspects are width/height. The baked labels stay in
+        /// the art; <see cref="LoginOrnamentLayout.AccountInput"/> / PasswordInput are where the real fields go.
+        /// </summary>
+        public static LoginOrnamentLayout LayoutOrnament(
+            float screenW, float screenH,
+            float logoAspect, float accountAspect, float passwordAspect, float loginAspect)
+        {
+            if (screenW <= 1f || screenH <= 1f || logoAspect <= 0f || accountAspect <= 0f || passwordAspect <= 0f || loginAspect <= 0f)
+                return default;
+
+            float bottomMargin = Math.Max(14f, screenH * 0.035f);
+            float topMargin = Math.Max(10f, screenH * 0.025f);
+            float gapControls = Math.Max(8f, screenH * 0.012f);
+            float gapLogo = Math.Max(14f, screenH * 0.02f);
+            float secondaryH = Math.Max(52f, screenH * 0.08f); // host/port + remember/quit under the art
+
+            float width = Math.Min(screenW * 0.46f, 780f);
+            LoginOrnamentLayout best = default;
+            for (int attempt = 0; attempt < 12; attempt++)
+            {
+                float accountH = width / accountAspect;
+                float passwordH = width / passwordAspect;
+                float loginW = Math.Min(width * 0.78f, width);
+                float loginH = loginW / loginAspect;
+                float stackH = accountH + passwordH + loginH + 2f * gapControls;
+                float usedBottom = bottomMargin + secondaryH + stackH;
+                if (usedBottom > screenH * 0.72f && width > screenW * 0.28f)
+                {
+                    width *= 0.92f;
+                    continue;
+                }
+
+                float loginY = screenH - bottomMargin - secondaryH - loginH;
+                float passwordY = loginY - gapControls - passwordH;
+                float accountY = passwordY - gapControls - accountH;
+                float cx = screenW * 0.5f;
+                var account = new LoginRect(cx - width * 0.5f, accountY, width, accountH);
+                var password = new LoginRect(cx - width * 0.5f, passwordY, width, passwordH);
+                var login = new LoginRect(cx - loginW * 0.5f, loginY, loginW, loginH);
+
+                float availTop = accountY - gapLogo - topMargin;
+                if (availTop < 24f && width > screenW * 0.28f)
+                {
+                    width *= 0.9f;
+                    continue;
+                }
+
+                float logoW = Math.Min(Math.Min(screenW * 0.36f, Math.Max(8f, availTop) * logoAspect), width * 1.05f);
+                float logoH = logoW / logoAspect;
+                if (logoH > availTop && availTop > 0f)
+                {
+                    logoH = availTop;
+                    logoW = logoH * logoAspect;
+                }
+                float logoY = topMargin + Math.Max(0f, (availTop - logoH) * 0.15f);
+                var logo = new LoginRect(cx - logoW * 0.5f, logoY, logoW, logoH);
+
+                // No overlap: logo bottom must stay above account top.
+                if (logo.Y + logo.H > account.Y - gapLogo * 0.5f && width > screenW * 0.28f)
+                {
+                    width *= 0.9f;
+                    continue;
+                }
+
+                best = new LoginOrnamentLayout(
+                    logo, account, password, login,
+                    SubRect(account, AccountInputFrac),
+                    SubRect(password, PasswordInputFrac));
+                break;
+            }
+            return best;
+        }
+
+        /// <summary>A slot rectangle inside a panel, from fractions of that panel.</summary>
+        public static LoginRect SubRect(LoginRect panel, (float X, float Y, float W, float H) frac) =>
+            new LoginRect(
+                panel.X + panel.W * frac.X,
+                panel.Y + panel.H * frac.Y,
+                panel.W * frac.W,
+                panel.H * frac.H);
+    }
+
+    /// <summary>Axis-aligned rect in login GUI space (no UnityEngine dependency for the test project).</summary>
+    public readonly struct LoginRect
+    {
+        public readonly float X, Y, W, H;
+        public LoginRect(float x, float y, float w, float h) { X = x; Y = y; W = w; H = h; }
+        public float XMax => X + W;
+        public float YMax => Y + H;
+        public bool Overlaps(LoginRect o) => X < o.XMax && XMax > o.X && Y < o.YMax && YMax > o.Y;
+        public bool InBounds(float screenW, float screenH) =>
+            X >= -0.5f && Y >= -0.5f && XMax <= screenW + 0.5f && YMax <= screenH + 0.5f;
+    }
+
+    /// <summary>Where the ornamental logo and controls draw; inputs sit in the panel slots (baked labels stay in art).</summary>
+    public readonly struct LoginOrnamentLayout
+    {
+        public readonly LoginRect Logo, Account, Password, Login, AccountInput, PasswordInput;
+        public readonly bool Valid;
+        public LoginOrnamentLayout(
+            LoginRect logo, LoginRect account, LoginRect password, LoginRect login,
+            LoginRect accountInput, LoginRect passwordInput)
+        {
+            Logo = logo; Account = account; Password = password; Login = login;
+            AccountInput = accountInput; PasswordInput = passwordInput;
+            Valid = logo.W > 1f && account.W > 1f && login.W > 1f;
+        }
     }
 
     /// <summary>

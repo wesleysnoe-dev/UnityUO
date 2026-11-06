@@ -37,6 +37,9 @@ namespace UOClient.Unity.UI
         private readonly GumpArt _art;
         private GameSession _session;
         private Texture2D _backdrop, _shade;
+        private Texture2D _logo, _accountPanel, _passwordPanel, _loginButton;
+        private GUIStyle _ornamentField;
+        private bool _ornamentLoaded;
         private GUIStyle _title, _label, _small, _field, _toggle;
         private string _portText = "2593";
         private NewCharacter _new = new NewCharacter();
@@ -57,7 +60,38 @@ namespace UOClient.Unity.UI
             _shade = new Texture2D(1, 1);
             _shade.SetPixel(0, 0, Color.white);
             _shade.Apply();
+            LoadOrnamentArt();
         }
+
+        private void LoadOrnamentArt()
+        {
+            if (_ornamentLoaded)
+                return;
+            _ornamentLoaded = true;
+            string root = Application.streamingAssetsPath;
+            _logo = LoadPng(LoginMediaRules.OrnamentPath(root, LoginMediaRules.LogoRelativePath));
+            _accountPanel = LoadPng(LoginMediaRules.OrnamentPath(root, LoginMediaRules.AccountPanelRelativePath));
+            _passwordPanel = LoadPng(LoginMediaRules.OrnamentPath(root, LoginMediaRules.PasswordPanelRelativePath));
+            _loginButton = LoadPng(LoginMediaRules.OrnamentPath(root, LoginMediaRules.LoginButtonRelativePath));
+        }
+
+        private static Texture2D LoadPng(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return null;
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            if (!tex.LoadImage(File.ReadAllBytes(path)))
+            {
+                UnityEngine.Object.Destroy(tex);
+                return null;
+            }
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+            return tex;
+        }
+
+        private bool HasOrnament =>
+            _logo != null && _accountPanel != null && _passwordPanel != null && _loginButton != null;
 
         /// <summary>Follows a session through login: shard list, character list, or a failure back to the form.</summary>
         public void Attach(GameSession session)
@@ -114,7 +148,8 @@ namespace UOClient.Unity.UI
 
             Matrix4x4 saved = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1));
-            GUI.Label(new Rect(0, h * 0.08f, w, 60), "Unity UO", _title);
+            if (!HasOrnament)
+                GUI.Label(new Rect(0, h * 0.08f, w, 60), "Unity UO", _title);
             // Top right, clear of the panel and of the video's bottom-right caption.
             if (OptionsPressed != null && GUI.Button(new Rect(w - 110, 16, 94, 28), "Options"))
                 OptionsPressed();
@@ -139,6 +174,14 @@ namespace UOClient.Unity.UI
 
         private void DrawLogin(float w, float h)
         {
+            if (HasOrnament)
+                DrawOrnamentLogin(w, h);
+            else
+                DrawPlainLogin(w, h);
+        }
+
+        private void DrawPlainLogin(float w, float h)
+        {
             Rect p = Panel(w, h, 420, 330);
             float x = p.x + 30, y = p.y + 28, fw = p.width - 60;
             GUI.Label(new Rect(x, y, fw, 20), "Account", _label);
@@ -146,6 +189,7 @@ namespace UOClient.Unity.UI
             Account = GUI.TextField(new Rect(x, y + 20, fw, 26), Account, 30, _field);
             y += 56;
             GUI.Label(new Rect(x, y, fw, 20), "Password", _label);
+            GUI.SetNextControlName("login-password");
             Password = GUI.PasswordField(new Rect(x, y + 20, fw, 26), Password, '*', 30, _field);
             y += 56;
             GUI.Label(new Rect(x, y, fw, 20), "Server", _label);
@@ -181,6 +225,80 @@ namespace UOClient.Unity.UI
                 if (Account.Length == 0)
                     GUI.FocusControl("login-account");
             }
+        }
+
+        private void DrawOrnamentLogin(float w, float h)
+        {
+            EnsureStyles();
+            float logoAspect = _logo.width / (float)_logo.height;
+            float accountAspect = _accountPanel.width / (float)_accountPanel.height;
+            float passwordAspect = _passwordPanel.width / (float)_passwordPanel.height;
+            float loginAspect = _loginButton.width / (float)_loginButton.height;
+            var layout = LoginMediaRules.LayoutOrnament(w, h, logoAspect, accountAspect, passwordAspect, loginAspect);
+            if (!layout.Valid)
+            {
+                // Tiny window: keep the video, use the plain panel form for this frame only.
+                DrawPlainLogin(w, h);
+                return;
+            }
+
+            GUI.color = Color.white;
+            GUI.DrawTexture(ToRect(layout.Logo), _logo, ScaleMode.StretchToFill);
+            GUI.DrawTexture(ToRect(layout.Account), _accountPanel, ScaleMode.StretchToFill);
+            GUI.DrawTexture(ToRect(layout.Password), _passwordPanel, ScaleMode.StretchToFill);
+
+            // Baked labels stay in the art — only the editable slots are real controls.
+            GUI.SetNextControlName("login-account");
+            Account = GUI.TextField(ToRect(layout.AccountInput), Account, 30, _ornamentField);
+            GUI.SetNextControlName("login-password");
+            Password = GUI.PasswordField(ToRect(layout.PasswordInput), Password, '*', 30, _ornamentField);
+
+            bool loginClicked = OrnamentButton(ToRect(layout.Login), _loginButton);
+            bool enter = Event.current.type == EventType.KeyDown &&
+                         (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
+            if ((loginClicked || enter) && Account.Length > 0)
+            {
+                _port = int.TryParse(_portText, out int port) ? port : 2593;
+                LoginPressed?.Invoke(this);
+            }
+
+            // Compact server / remember / quit under the art so existing login behaviour stays.
+            float secondaryY = layout.Login.YMax + 8f;
+            float secondaryW = layout.Account.W;
+            float sx = layout.Account.X;
+            GUI.Label(new Rect(sx, secondaryY, 50, 22), "Server", _small);
+            string typedHost = GUI.TextField(new Rect(sx + 52, secondaryY, secondaryW - 140, 24), Host, 64, _field);
+            if (typedHost != Host)
+            {
+                Host = typedHost;
+                (string account, string password) = RememberedFor?.Invoke(Host.Trim()) ?? ("", "");
+                Account = account;
+                Password = password;
+                RememberPassword = password.Length > 0;
+            }
+            _portText = GUI.TextField(new Rect(sx + secondaryW - 80, secondaryY, 80, 24), _portText, 5, _field);
+            RememberPassword = GUI.Toggle(new Rect(sx, secondaryY + 28, secondaryW - 130, 22), RememberPassword, " Remember password", _toggle);
+            if (GUI.Button(new Rect(sx + secondaryW - 120, secondaryY + 26, 120, 26), "Quit"))
+                QuitPressed?.Invoke();
+
+            if (!string.IsNullOrEmpty(Status))
+                GUI.Label(new Rect(sx, Math.Min(h - 36f, secondaryY + 54f), secondaryW, 36), Status, _small);
+
+            if (!_focusedOnce && Event.current.type == EventType.Repaint)
+            {
+                _focusedOnce = true;
+                if (Account.Length == 0)
+                    GUI.FocusControl("login-account");
+            }
+        }
+
+        private static Rect ToRect(LoginRect r) => new Rect(r.X, r.Y, r.W, r.H);
+
+        private static bool OrnamentButton(Rect r, Texture2D tex)
+        {
+            if (Event.current.type == EventType.Repaint && tex != null)
+                GUI.DrawTexture(r, tex, ScaleMode.StretchToFill);
+            return GUI.Button(r, GUIContent.none, GUIStyle.none);
         }
 
         private void DrawConnecting(float w, float h)
@@ -472,6 +590,25 @@ namespace UOClient.Unity.UI
             _toggle = new GUIStyle(GUI.skin.toggle) { fontSize = 15 };
             _toggle.normal.textColor = _toggle.onNormal.textColor = _toggle.hover.textColor = _toggle.onHover.textColor = new Color(0.95f, 0.92f, 0.84f);
             _field = new GUIStyle(GUI.skin.textField) { fontSize = 15, alignment = TextAnchor.MiddleLeft, padding = new RectOffset(6, 6, 3, 3) };
+            _ornamentField = new GUIStyle(_field)
+            {
+                fontSize = 16,
+                alignment = TextAnchor.MiddleLeft,
+                padding = new RectOffset(8, 8, 4, 4),
+            };
+            var ink = new Color(0.95f, 0.92f, 0.84f, 1f);
+            _ornamentField.normal.textColor = ink;
+            _ornamentField.active.textColor = ink;
+            _ornamentField.focused.textColor = ink;
+            _ornamentField.hover.textColor = ink;
+            // Flat near-black chrome so the recessed gold slot stays the visible frame.
+            var dark = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            dark.SetPixel(0, 0, new Color(0.02f, 0.02f, 0.03f, 0.92f));
+            dark.Apply();
+            _ornamentField.normal.background = dark;
+            _ornamentField.active.background = dark;
+            _ornamentField.focused.background = dark;
+            _ornamentField.hover.background = dark;
         }
     }
 }

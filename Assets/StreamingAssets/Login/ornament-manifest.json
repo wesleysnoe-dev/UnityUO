@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "note": "Provisional from edge detection pending official art-worker manifest",
+  "assets": {
+    "logo": {
+      "file": "logo.png",
+      "width": 1521,
+      "height": 985
+    },
+    "account_panel": {
+      "file": "account_panel.png",
+      "w": 816,
+      "h": 207,
+      "px": {
+        "x": 37,
+        "y": 115,
+        "w": 741,
+        "h": 39
+      },
+      "frac": {
+        "x": 0.0453,
+        "y": 0.5556,
+        "w": 0.9081,
+        "h": 0.1884
+      },
+      "edges": {
+        "top": 106,
+        "bottom": 162,
+        "left": 27,
+        "right": 788
+      }
+    },
+    "password_panel": {
+      "file": "password_panel.png",
+      "w": 815,
+      "h": 201,
+      "px": {
+        "x": 37,
+        "y": 110,
+        "w": 739,
+        "h": 38
+      },
+      "frac": {
+        "x": 0.0454,
+        "y": 0.5473,
+        "w": 0.9067,
+        "h": 0.1891
+      },
+      "edges": {
+        "top": 101,
+        "bottom": 156,
+        "left": 27,
+        "right": 786
+      }
+    },
+    "login_button": {
+      "file": "login_button.png",
+      "width": 617,
+      "height": 146
+    }
+  },
+  "layout": {
+    "logo_max_width_frac": 0.42,
+    "controls_max_width_frac": 0.42,
+    "bottom_stack_anchor_y_frac": 0.92,
+    "gap_logo_to_controls_min_px": 16,
+    "gap_between_controls_px_at_ref": 10
+  }
+}

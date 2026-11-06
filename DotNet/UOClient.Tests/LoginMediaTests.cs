@@ -184,7 +184,74 @@ public sealed class LoginMediaTests
         Assert.Contains("_loginMedia.MusicVolume = _musicVolume;", demo);
     }
 
-    private static string RepoRoot()
+    [Theory]
+    [InlineData(1920, 1080)]
+    [InlineData(1280, 720)]
+    [InlineData(1024, 768)]  // 4:3
+    [InlineData(800, 600)]
+    public void LayoutOrnament_NoOverlap_InBounds_Centered(float w, float h)
+    {
+        float logoA = LoginMediaRules.LogoNativeW / LoginMediaRules.LogoNativeH;
+        float accountA = LoginMediaRules.AccountNativeW / LoginMediaRules.AccountNativeH;
+        float passwordA = LoginMediaRules.PasswordNativeW / LoginMediaRules.PasswordNativeH;
+        float loginA = LoginMediaRules.LoginNativeW / LoginMediaRules.LoginNativeH;
+        var L = LoginMediaRules.LayoutOrnament(w, h, logoA, accountA, passwordA, loginA);
+        Assert.True(L.Valid);
+        Assert.True(L.Logo.InBounds(w, h));
+        Assert.True(L.Account.InBounds(w, h));
+        Assert.True(L.Password.InBounds(w, h));
+        Assert.True(L.Login.InBounds(w, h));
+        Assert.False(L.Logo.Overlaps(L.Account));
+        Assert.False(L.Logo.Overlaps(L.Password));
+        Assert.False(L.Logo.Overlaps(L.Login));
+        Assert.False(L.Account.Overlaps(L.Password));
+        Assert.False(L.Password.Overlaps(L.Login));
+        Assert.True(L.Logo.YMax <= L.Account.Y);
+        Assert.True(L.Account.YMax <= L.Password.Y);
+        Assert.True(L.Password.YMax <= L.Login.Y);
+        Assert.Equal(w / 2f, L.Logo.X + L.Logo.W / 2f, 1);
+        Assert.Equal(w / 2f, L.Account.X + L.Account.W / 2f, 1);
+        Assert.Equal(w / 2f, L.Login.X + L.Login.W / 2f, 1);
+        // Inputs sit inside their panels.
+        Assert.True(L.AccountInput.X >= L.Account.X && L.AccountInput.XMax <= L.Account.XMax);
+        Assert.True(L.AccountInput.Y >= L.Account.Y && L.AccountInput.YMax <= L.Account.YMax);
+        Assert.True(L.PasswordInput.X >= L.Password.X && L.PasswordInput.XMax <= L.Password.XMax);
+        Assert.True(L.PasswordInput.Y >= L.Password.Y && L.PasswordInput.YMax <= L.Password.YMax);
+        // Aspects preserved within a pixel.
+        Assert.Equal(logoA, L.Logo.W / L.Logo.H, 2);
+        Assert.Equal(accountA, L.Account.W / L.Account.H, 2);
+        Assert.Equal(loginA, L.Login.W / L.Login.H, 2);
+    }
+
+    [Fact]
+    public void OrnamentArt_IsInStreamingAssetsLogin()
+    {
+        string root = Path.Combine(RepoRoot(), "Assets", "StreamingAssets");
+        Assert.True(File.Exists(LoginMediaRules.OrnamentPath(root, LoginMediaRules.LogoRelativePath)));
+        Assert.True(File.Exists(LoginMediaRules.OrnamentPath(root, LoginMediaRules.AccountPanelRelativePath)));
+        Assert.True(File.Exists(LoginMediaRules.OrnamentPath(root, LoginMediaRules.PasswordPanelRelativePath)));
+        Assert.True(File.Exists(LoginMediaRules.OrnamentPath(root, LoginMediaRules.LoginButtonRelativePath)));
+    }
+
+    [Fact]
+    public void UnitySide_OrnamentLogin_UsesLayoutAndNoDuplicateLabels()
+    {
+        string screen = File.ReadAllText(Path.Combine(RepoRoot(), "Assets", "UOClient.Unity", "Runtime", "UI", "LoginScreen.cs"));
+        Assert.Contains("LayoutOrnament(", screen);
+        Assert.Contains("DrawOrnamentLogin", screen);
+        Assert.Contains("HasOrnament", screen);
+        // Ornament path must not redraw baked Account Name / Password / Login captions.
+        int orn = screen.IndexOf("private void DrawOrnamentLogin", StringComparison.Ordinal);
+        Assert.True(orn > 0);
+        string body = screen.Substring(orn, screen.IndexOf("private static Rect ToRect", orn, StringComparison.Ordinal) - orn);
+        Assert.DoesNotContain("\"Account Name\"", body);
+        Assert.DoesNotContain("\"Password:\"", body);
+        Assert.DoesNotContain("\"Login\"", body);
+        Assert.Contains("GUI.PasswordField", body);
+        Assert.Contains("login-account", body);
+    }
+
+        private static string RepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
             if (Directory.Exists(Path.Combine(dir.FullName, "Assets", "UOClient.Unity")))
