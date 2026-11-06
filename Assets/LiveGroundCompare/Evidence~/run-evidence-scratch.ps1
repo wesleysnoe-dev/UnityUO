@@ -7,9 +7,13 @@
 #
 # Regenerate the fixture first if the builders changed:
 #   $env:UOCLIENT_WRITE_LIVEGROUND_EVIDENCE='1'; dotnet test DotNet/UOClient.Tests --filter "FullyQualifiedName~LiveGroundEvidenceFixtureTests"
+#
+# -ShadowRecv runs the sprite shadow receive capture instead (CaptureShadowRecvBatch on shadowRecvChunk.json, from
+# LiveGroundSpriteShadowFixtureTests; it reads the PNGs and WorldSprite.4aa51a6.shader.txt next to the JSON).
 param(
     [string]$Scratch = (Join-Path $env:TEMP 'UOClient_LGEvidence'),
-    [string]$Unity = 'C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe'
+    [string]$Unity = 'C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe',
+    [switch]$ShadowRecv
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
@@ -25,12 +29,14 @@ Copy-Item (Join-Path $repo 'Assets\UOClient.Unity\Runtime\Resources\WorldSprite.
 Set-Content -Encoding ascii (Join-Path $Scratch 'Packages\manifest.json') '{ "dependencies": { "com.unity.modules.imageconversion": "1.0.0" } }'
 
 $log = Join-Path $Scratch 'capture.log'
+$method, $fixtureArg, $fixture = if ($ShadowRecv) { 'CaptureShadowRecvBatch', '-lgShadowFixture', 'Evidence~\shadowRecvChunk.json' }
+                                 else { 'CaptureBatch', '-lgFixture', 'Evidence~\realWaterChunk.json' }
 $p = Start-Process -FilePath $Unity -Wait -PassThru -ArgumentList @(
     '-batchmode', '-projectPath', "`"$Scratch`"", '-lgGamma',
-    '-executeMethod', 'UOClient.LiveGroundCompare.Editor.LiveGroundEvidenceCapture.CaptureBatch',
-    '-lgFixture', "`"$(Join-Path $lg 'Evidence~\realWaterChunk.json')`"",
+    '-executeMethod', "UOClient.LiveGroundCompare.Editor.LiveGroundEvidenceCapture.$method",
+    $fixtureArg, "`"$(Join-Path $lg $fixture)`"",
     '-lgOut', "`"$(Join-Path $lg 'Evidence~\stills')`"",
     '-logFile', "`"$log`"")
-Select-String -Path $log -Pattern 'LGEVIDENCE|evidence FAILED|error CS' | ForEach-Object { $_.Line }
+Select-String -Path $log -Pattern 'LGEVIDENCE|LGSHADOWRECV|evidence FAILED|error CS' | ForEach-Object { $_.Line }
 Write-Output "unity exit $($p.ExitCode); log $log"
 exit $p.ExitCode

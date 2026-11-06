@@ -1500,13 +1500,633 @@ public sealed class LiveGroundSourceTests
     [Fact]
     public void Occlusion_NeedsNoChangeToTheDefaultSpriteShader()
     {
-        // The proxy is its own depth-only shader; UOClient/WorldSprite has no LiveGround keyword or global.
-        string sprite = Source("Assets", "UOClient.Unity", "Runtime", "Resources", "WorldSprite.shader");
+        // The proxy is its own depth-only shader; UOClient/WorldSprite's default variant has no LiveGround global (the
+        // sprite shadow's are only under LG_SPRITE_SHADOW: LiveGroundSpriteShadowSourceTests).
+        string sprite = LiveGroundSpriteShadowSourceTests.DefaultVariant(
+            Source("Assets", "UOClient.Unity", "Runtime", "Resources", "WorldSprite.shader").Replace("\r\n", "\n"));
         Assert.DoesNotContain("_LG", sprite);
         Assert.DoesNotContain("multi_compile", sprite);
         string depth = Source("Assets", "LiveGroundCompare", "Shaders", "Resources", "LiveGroundCompareDepthKey.shader");
         Assert.Contains("ColorMask 0", depth);
         Assert.Contains("ZWrite On", depth);
         Assert.True(File.Exists(Path.Combine(RepoRoot(), "Assets", "LiveGroundCompare", "Shaders", "Resources", "LiveGroundCompareDepthKey.shader.meta")));
+    }
+}
+
+/// <summary>
+/// Sprite sun-shadow receive (TEST): the shadow ceiling (<see cref="LiveGroundLighting.ShadowCeiling"/>) and the
+/// pixel-to-world mapping (<see cref="SpriteShadow"/>) that UOClient/WorldSprite mirrors under LG_SPRITE_SHADOW.
+/// </summary>
+public sealed class LiveGroundSpriteShadowTests
+{
+    private const int N = TerrainLandBuilder.Tiles;
+
+    /// <summary>Deterministic rolling hills with a ridge.</summary>
+    private static int[,] Hills()
+    {
+        var z = new int[N + 1, N + 1];
+        for (int i = 0; i <= N; i++)
+            for (int j = 0; j <= N; j++)
+                z[i, j] = (int)Math.Round(12 * Math.Sin(i * 0.7) * Math.Cos(j * 0.45) + (i == 6 ? 25 : 0) + (i + j) % 3);
+        return z;
+    }
+
+    private static int[,] Flat(int h)
+    {
+        var z = new int[N + 1, N + 1];
+        for (int i = 0; i <= N; i++)
+            for (int j = 0; j <= N; j++)
+                z[i, j] = h;
+        return z;
+    }
+
+    private static int MaxZ(int[,] cornerZ, int[,] top)
+    {
+        int m = int.MinValue;
+        foreach (int z in cornerZ) m = Math.Max(m, z);
+        if (top != null) foreach (int z in top) m = Math.Max(m, z);
+        return m;
+    }
+
+    [Fact]
+    public void Ceiling_TerrainOnly_AnswersTheSunMaskForEveryTexel()
+    {
+        int[,] z = Hills();
+        byte[] mask = LiveGroundLighting.ShadowMask(z);
+        float[] ceiling = LiveGroundLighting.ShadowCeiling(z, null);
+        const int n = LiveGroundLighting.ShadowSize;
+        int shadowed = 0;
+        for (int row = 0; row < n; row++)
+            for (int col = 0; col < n; col++)
+            {
+                float tx = (col + 0.5f) / LiveGroundLighting.ShadowTexelsPerTile, ty = (row + 0.5f) / LiveGroundLighting.ShadowTexelsPerTile;
+                float ground = TerrainLandBuilder.SampleZ(z, tx, ty) + LiveGroundLighting.ShadowBiasZ;
+                bool inShadow = ground < ceiling[row * n + col];
+                // The mask's rows are bottom-up (row 0 = tile y max); the ceiling's are top-down.
+                Assert.Equal(mask[(n - 1 - row) * n + col] == 0, inShadow);
+                if (inShadow) shadowed++;
+            }
+        Assert.True(shadowed > 50 && shadowed < n * n / 2, $"{shadowed} shadowed texels");
+    }
+
+    [Fact]
+    public void Ceiling_WithColumns_AnswersTheMaskOffColumnTiles_AndSkipsTheOwnColumn()
+    {
+        int[,] z = Hills(), top = StaticOccluders.Empty();
+        top[5, 8] = 60;
+        top[11, 3] = 35;
+        top[12, 3] = 35;
+        int maxZ = MaxZ(z, top);
+        float[] ceiling = LiveGroundLighting.ShadowCeiling(z, top);
+        const int n = LiveGroundLighting.ShadowSize, k = LiveGroundLighting.ShadowTexelsPerTile;
+        for (int row = 0; row < n; row++)
+            for (int col = 0; col < n; col++)
+            {
+                if (top[col / k, row / k] != StaticOccluders.None)
+                    continue;
+                float tx = (col + 0.5f) / k, ty = (row + 0.5f) / k;
+                float ground = TerrainLandBuilder.SampleZ(z, tx, ty) + LiveGroundLighting.ShadowBiasZ;
+                Assert.Equal(LiveGroundLighting.SunVisibility(z, top, tx, ty, maxZ) == 0f, ground < ceiling[row * n + col]);
+            }
+        // On the column's own tile the ceiling ignores it (a wall must not shade itself) but not its neighbours.
+        int[,] flat = Flat(0), one = StaticOccluders.Empty();
+        one[5, 8] = 60;
+        Assert.True(LiveGroundLighting.CeilingAt(flat, one, 5.5f, 8.5f, 60) < 0f);
+        Assert.True(LiveGroundLighting.CeilingAt(flat, one, 6.5f, 8.5f, 60) > 40f, "one tile away from the sun: deep in the shadow");
+        Assert.True(LiveGroundLighting.CeilingAt(flat, one, 4.5f, 8.5f, 60) < 0f, "on the sun side: lit");
+    }
+
+    [Fact]
+    public void Ceiling_FallsWithDistanceFromTheCaster_AtTheSunsRise()
+    {
+        int[,] flat = Flat(0), top = StaticOccluders.Empty();
+        for (int j = 2; j <= 12; j++)
+            top[2, j] = 50; // a wall along tile y, so the slightly slanted rays all meet it
+        float near = LiveGroundLighting.CeilingAt(flat, top, 4.5f, 8.5f, 50), far = LiveGroundLighting.CeilingAt(flat, top, 7.5f, 8.5f, 50);
+        Assert.True(near > far && far > 0f, $"near {near}, far {far}");
+        // The sun climbs SunUp/|sun xy| terrain units per tile along its own direction, ~9.5 Z per tile.
+        float hl = (float)Math.Sqrt(LiveGroundLighting.SunX * LiveGroundLighting.SunX + LiveGroundLighting.SunY * LiveGroundLighting.SunY);
+        float rise = LiveGroundLighting.SunUp / hl / TerrainLandBuilder.HeightUnitPerZ;
+        // 3 tiles along +x is 3 / |ux| tiles along the ray (0.25-tile ray steps: allow a step either way).
+        Assert.InRange((near - far) * Math.Abs(LiveGroundLighting.SunX) / hl / 3f, rise * 0.75f, rise * 1.25f);
+        Assert.Equal(LiveGroundLighting.NoCeiling, LiveGroundLighting.CeilingAt(flat, null, 0.01f, 8.5f, 0));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void PixelPoint_UprightRisesFourPixelsPerZ_AndItsFrontHalfLiesOnTheGround(int scale)
+    {
+        (float fx, float fy) = SpriteShadow.TileAnchor(100, 200, 10, scale);
+        // The foot pixel is the tile centre at its Z.
+        (float x, float y, float z) = SpriteShadow.PixelPoint(fx, fy, fx, fy, 10, SpriteShadow.KindUpright, scale);
+        Assert.Equal(100.5f, x, 3);
+        Assert.Equal(200.5f, y, 3);
+        Assert.Equal(10f, z, 3);
+        // 40 unscaled pixels straight up: 10 Z higher, same spot.
+        (x, y, z) = SpriteShadow.PixelPoint(fx, fy - 40 * scale, fx, fy, 10, SpriteShadow.KindUpright, scale);
+        Assert.Equal(20f, z, 3);
+        Assert.Equal(100.5f, x, 3);
+        Assert.Equal(200.5f, y, 3);
+        // Below the foot: the tile's front half on the ground, at the foot's Z, clamped inside the tile.
+        (x, y, z) = SpriteShadow.PixelPoint(fx, fy + 22 * scale, fx, fy, 10, SpriteShadow.KindUpright, scale);
+        Assert.Equal(10f, z, 3);
+        Assert.Equal(101f - SpriteShadow.Inset, x, 3);
+        Assert.Equal(201f - SpriteShadow.Inset, y, 3);
+        // Sideways stays inside the foot tile (its own column's neighbours never read in).
+        (x, y, _) = SpriteShadow.PixelPoint(fx + 30 * scale, fy - 60 * scale, fx, fy, 10, SpriteShadow.KindUpright, scale);
+        Assert.InRange(x, 100f + SpriteShadow.Inset - 1e-4f, 101f - SpriteShadow.Inset + 1e-4f);
+        Assert.InRange(y, 200f + SpriteShadow.Inset - 1e-4f, 201f - SpriteShadow.Inset + 1e-4f);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public void PixelPoint_GroundInvertsTheLandProjection(int scale)
+    {
+        // Every land corner (the compositor's Corner) maps back to its tile corner at the foot's Z.
+        foreach (int c in new[] { LiveGroundProjection.Top, LiveGroundProjection.Right, LiveGroundProjection.Bottom, LiveGroundProjection.Left })
+        {
+            (float wx, float wy) = LiveGroundProjection.Corner(1500, 1700, c, 7, scale);
+            (float x, float y, float z) = SpriteShadow.PixelPoint(wx, wy, 0, 0, 7, SpriteShadow.KindGround, scale);
+            Assert.Equal(1500 + LiveGroundProjection.TexmapU[c], x, 2);
+            Assert.Equal(1700 + LiveGroundProjection.TexmapV[c], y, 2);
+            Assert.Equal(7f, z);
+        }
+    }
+
+    [Fact]
+    public void Visibility_IsSoftAroundTheCeiling_AndShadeMatchesTheTerrainFloor()
+    {
+        Assert.Equal(0f, SpriteShadow.Visibility(0f, 10f));
+        Assert.Equal(1f, SpriteShadow.Visibility(20f, 10f));
+        Assert.Equal(0.5f, SpriteShadow.Visibility(10f - LiveGroundLighting.ShadowBiasZ, 10f), 4);
+        Assert.Equal(1f, SpriteShadow.Visibility(-127f, LiveGroundLighting.NoCeiling));
+        Assert.Equal(LiveGroundLighting.MinShade, SpriteShadow.Shade(0f));
+        Assert.Equal(1f, SpriteShadow.Shade(1f));
+        // A lit sprite gets the terrain's flat lit shade, a shadowed one the terrain's shadow floor.
+        Assert.Equal(LiveGroundLighting.Shade(0, 1, 0, 1f), SpriteShadow.Shade(1f), 4);
+        Assert.Equal(LiveGroundLighting.Shade(0, 1, 0, 0f), SpriteShadow.Shade(0f), 4);
+        Assert.Equal(SpriteShadow.KindGround, SpriteShadow.StaticKind(0));
+        Assert.Equal(SpriteShadow.KindUpright, SpriteShadow.StaticKind(20));
+    }
+
+    [Fact]
+    public void SampleCeiling_IsExactAtTexelCentres_AndBilinearBetween()
+    {
+        float[] c = LiveGroundLighting.ShadowCeiling(Hills(), null);
+        const int n = LiveGroundLighting.ShadowSize;
+        Assert.Equal(c[5 * n + 9], LiveGroundLighting.SampleCeiling(c, 9.5f / 4, 5.5f / 4), 4);
+        Assert.Equal((c[5 * n + 9] + c[5 * n + 10]) / 2, LiveGroundLighting.SampleCeiling(c, 10f / 4, 5.5f / 4), 3);
+    }
+}
+
+/// <summary>
+/// Sprite shadow receive against the real map and art, and the evidence fixture LiveGroundEvidenceCapture.CaptureShadowRecv
+/// renders: one Britain chunk (map statics drawn by IsoCompositor.BuildDrawList, the production placements), its corner
+/// heights, static columns, sun mask and shadow ceiling, and a real human body frame (anim body 400) at three tiles.
+/// Rewrite with UOCLIENT_WRITE_LIVEGROUND_EVIDENCE=1 (also writes the two PNGs); otherwise a present JSON must equal
+/// what the builders make now.
+/// </summary>
+[Collection("UO install")]
+public sealed class LiveGroundSpriteShadowFixtureTests
+{
+    private const int Tiles = TerrainLandBuilder.Tiles, GroundTexels = 16, AtlasWidth = 1024;
+    private readonly UOData _data;
+
+    public LiveGroundSpriteShadowFixtureTests(UOInstallFixture fixture) => _data = fixture.Data;
+
+    private static string EvidenceDir()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, "Assets", "LiveGroundCompare")))
+                return Path.Combine(dir.FullName, "Assets", "LiveGroundCompare", "Evidence~");
+        throw new DirectoryNotFoundException("repo root");
+    }
+
+    /// <summary>Field names are what LiveGroundEvidenceCapture.ShadowFixture reads (JsonUtility: flat arrays only).</summary>
+    public sealed class Fixture
+    {
+        public string source = "";
+        public int map, x0, y0, tiles, scale, originX, originY, shadowTexels, wrapTiles, occluderColumns, groundTexels;
+        public float heightUnitPerZ, noCeiling, minShade, softZ, biasZ;
+        public float[] sun = Array.Empty<float>();
+        public int[] cornerZ = Array.Empty<int>();   // [j * (tiles + 1) + i]
+        public int[] sunMask = Array.Empty<int>();   // terrain mask, rows bottom-up
+        public float[] ceiling = Array.Empty<float>(); // ShadowCeiling, rows top-down in tile y
+        public string groundPng = "", atlasPng = "", groundSha = "", atlasSha = "";
+        public int atlasWidth, atlasHeight, quadCount, uprightQuads, groundQuads;
+        // Per static quad (draw order): world-screen rect, atlas rect (top-down px), foot (wx, wy, z, kind).
+        public int[] qRect = Array.Empty<int>(), qAtlas = Array.Empty<int>(), qTile = Array.Empty<int>();
+        public float[] qFoot = Array.Empty<float>();
+        // The body frame: atlas rect, anchor offsets (left = anchor x - ax, top = anchor y - ay).
+        public int[] mobAtlas = Array.Empty<int>();
+        public int mobAnchorX, mobAnchorY, mobBody, mobAction, mobDir;
+        // Three placements: 0 partial (feet in shadow, head lit), 1 wholly in shadow, 2 wholly lit. Per placement:
+        // tile x, y, z; foot probe and head probe world-screen pixel; the CPU shade expected there.
+        public int[] mobTiles = Array.Empty<int>(), mobFootProbe = Array.Empty<int>(), mobHeadProbe = Array.Empty<int>();
+        public float[] mobFootShade = Array.Empty<float>(), mobHeadShade = Array.Empty<float>();
+    }
+
+    private (int X0, int Y0) PickTownChunk(MapFile map)
+    {
+        int best = -1, bx = 0, by = 0;
+        for (int y0 = 1600; y0 <= 1744; y0 += Tiles)
+            for (int x0 = 1376; x0 <= 1520; x0 += Tiles)
+            {
+                int n = StaticOccluders.Count(StaticOccluders.FromMap(map, _data.TileData, x0, y0));
+                if (n > best)
+                    (best, bx, by) = (n, x0, y0);
+            }
+        return (bx, by);
+    }
+
+    /// <summary>The CPU shade at a world-screen pixel of an upright sprite standing on chunk-local data.</summary>
+    private static float ShadeAt(float[] ceiling, int x0, int y0, float wx, float wy, float footX, float footY, float footZ, int kind)
+    {
+        (float x, float y, float z) = SpriteShadow.PixelPoint(wx, wy, footX, footY, footZ, kind, 1);
+        return SpriteShadow.Shade(SpriteShadow.Visibility(z, LiveGroundLighting.SampleCeiling(ceiling, x - x0, y - y0)));
+    }
+
+    private sealed class Atlas
+    {
+        public readonly List<uint> Pixels = new();
+        public int Height, X, Y, Shelf;
+        private readonly Dictionary<Bitmap32, (int, int)> _placed = new(ReferenceEqualityComparer.Instance);
+
+        public (int U, int V) Add(Bitmap32 b)
+        {
+            if (_placed.TryGetValue(b, out (int, int) at))
+                return at;
+            if (X + b.Width + 1 > AtlasWidth) { X = 0; Y += Shelf; Shelf = 0; }
+            at = (X, Y);
+            X += b.Width + 1;
+            Shelf = Math.Max(Shelf, b.Height + 1);
+            int need = (Y + Shelf) * AtlasWidth;
+            while (Pixels.Count < need) Pixels.Add(0);
+            for (int r = 0; r < b.Height; r++)
+                for (int c = 0; c < b.Width; c++)
+                    Pixels[(at.Item2 + r) * AtlasWidth + at.Item1 + c] = b.Pixels[r * b.Width + c];
+            _placed[b] = at;
+            Height = Math.Max(Height, Y + Shelf);
+            return at;
+        }
+    }
+
+    private (Fixture F, byte[] GroundRgba, byte[] AtlasRgba) Build()
+    {
+        MapFile map = _data.GetMap(0);
+        (int x0, int y0) = PickTownChunk(map);
+        RealMapPatch patch = RealMapPatch.FromMap(map, x0, y0, Tiles, Tiles);
+        int[,] occluders = StaticOccluders.FromMap(map, _data.TileData, x0, y0);
+        var cornerZ = new int[Tiles + 1, Tiles + 1];
+        for (int j = 0; j <= Tiles; j++)
+            for (int i = 0; i <= Tiles; i++)
+                cornerZ[i, j] = patch.CornerZ(i, j);
+        float[] ceiling = LiveGroundLighting.ShadowCeiling(cornerZ, occluders);
+        (float ox, float oy) = SpriteShadow.TileAnchor(x0, y0, 0, 1);
+
+        // Ground: the terrain backend's own bake (flat land sprites unrotated into the tile), 16 texels per tile.
+        var tb = new TerrainLandBuilder(x0, y0, GroundTexels);
+        for (int j = 0; j < Tiles; j++)
+            for (int i = 0; i < Tiles; i++)
+            {
+                (sbyte t, sbyte r, sbyte b, sbyte l) = patch.Corners(i, j);
+                ushort g = patch.Graphic(i, j);
+                tb.AddTile(LiveGroundProjection.LandItem(x0 + i, y0 + j, g, t, r, b, l, hasTexmap: false), _data.GetLand(g), false);
+            }
+        tb.SetOccluders(occluders);
+        TerrainLandData land = tb.Finish();
+
+        var f = new Fixture
+        {
+            source = "map0 land/statics + tiledata + anim body 400 via UOInstallFixture; statics = IsoCompositor.BuildDrawList (production placements, scale 1)",
+            map = 0, x0 = x0, y0 = y0, tiles = Tiles, scale = 1, originX = (int)ox, originY = (int)oy,
+            shadowTexels = LiveGroundLighting.ShadowTexelsPerTile, wrapTiles = SpriteShadow.WrapTiles,
+            occluderColumns = StaticOccluders.Count(occluders), groundTexels = GroundTexels,
+            heightUnitPerZ = TerrainLandBuilder.HeightUnitPerZ, noCeiling = LiveGroundLighting.NoCeiling, minShade = LiveGroundLighting.MinShade,
+            softZ = SpriteShadow.SoftZ, biasZ = LiveGroundLighting.ShadowBiasZ,
+            sun = new[] { LiveGroundLighting.SunTerrain.X, LiveGroundLighting.SunTerrain.Y, LiveGroundLighting.SunTerrain.Z },
+            cornerZ = new int[(Tiles + 1) * (Tiles + 1)],
+            sunMask = Array.ConvertAll(land.SunMask, b => (int)b),
+            ceiling = Array.ConvertAll(ceiling, c => (float)Math.Round(c, 3)),
+            groundPng = "shadowrecv_ground.png", atlasPng = "shadowrecv_atlas.png",
+        };
+        for (int j = 0; j <= Tiles; j++)
+            for (int i = 0; i <= Tiles; i++)
+                f.cornerZ[j * (Tiles + 1) + i] = cornerZ[i, j];
+
+        // Statics, in the compositor's draw order, as the streamer would quad them.
+        var atlas = new Atlas();
+        var rect = new List<int>(); var at = new List<int>(); var tile = new List<int>(); var foot = new List<float>();
+        foreach (IsoCompositor.DrawEntry e in new IsoCompositor(_data).BuildDrawList(0, x0, y0, Tiles, Tiles))
+        {
+            DrawItem it = e.Item;
+            if (e.Sprite == null || it.Kind != DrawKind.Static)
+                continue;
+            (int u, int v) = atlas.Add(e.Sprite);
+            int kind = SpriteShadow.StaticKind(_data.TileData.GetStatic(it.Graphic).Height);
+            (float fx, float fy) = SpriteShadow.TileAnchor(it.X, it.Y, it.Z, 1);
+            rect.AddRange(new[] { it.Left, it.Top, it.Width, it.Height });
+            at.AddRange(new[] { u, v, e.Sprite.Width, e.Sprite.Height });
+            tile.AddRange(new[] { it.X, it.Y, it.Z });
+            foot.AddRange(new[] { fx, fy, it.Z, kind });
+            if (kind == SpriteShadow.KindUpright) f.uprightQuads++; else f.groundQuads++;
+        }
+        f.qRect = rect.ToArray(); f.qAtlas = at.ToArray(); f.qTile = tile.ToArray(); f.qFoot = foot.ToArray();
+        f.quadCount = rect.Count / 4;
+
+        // A real human body frame (stand), anchored as MobileArt does: left = -CenterX, top = -(CenterY + height).
+        (f.mobBody, f.mobAction, f.mobDir) = (400, 4, 1);
+        AnimationFrame frame = _data.Animations.Read(f.mobBody, f.mobAction, f.mobDir)[0];
+        Bitmap32 body = frame.Image;
+        (int mu, int mv) = atlas.Add(body);
+        f.mobAtlas = new[] { mu, mv, body.Width, body.Height };
+        f.mobAnchorX = frame.CenterX;
+        f.mobAnchorY = frame.CenterY + body.Height;
+        // Probes: an opaque pixel nearest the middle, three rows inside the frame's lowest (feet) and highest (head) opaque row.
+        bool Opaque(int c, int r) => c >= 0 && c < body.Width && r >= 0 && r < body.Height && (body.Pixels[r * body.Width + c] >> 24) != 0;
+        (int Col, int Row) Probe(bool low)
+        {
+            int edge = -1;
+            for (int k = 0; k < body.Height && edge < 0; k++)
+                for (int c = 0; c < body.Width; c++)
+                    if (Opaque(c, low ? body.Height - 1 - k : k)) { edge = low ? body.Height - 1 - k : k; break; }
+            int row = low ? edge - 3 : edge + 3;
+            for (int d = 0; d < body.Width; d++)
+                foreach (int c in new[] { body.Width / 2 - d, body.Width / 2 + d })
+                    if (Opaque(c, row))
+                        return (c, row);
+            throw new InvalidOperationException("empty frame");
+        }
+        (int fc, int fr) = Probe(true);
+        (int hc, int hr) = Probe(false);
+
+        int[] found = { -1, -1, -1 };
+        var picks = new (int X, int Y, int Z, int Fx, int Fy, int Hx, int Hy, float Fs, float Hs)[3];
+        for (int j = 1; j < Tiles - 1; j++)
+            for (int i = 1; i < Tiles - 1; i++)
+            {
+                if (occluders[i, j] != StaticOccluders.None)
+                    continue;
+                int z = (int)Math.Round(TerrainLandBuilder.SampleZ(cornerZ, i + 0.5f, j + 0.5f));
+                (float ax, float ay) = SpriteShadow.TileAnchor(x0 + i, y0 + j, z, 1);
+                int left = (int)ax - f.mobAnchorX, top = (int)ay - f.mobAnchorY;
+                (int px, int py, int qx, int qy) = (left + fc, top + fr, left + hc, top + hr);
+                float fs = ShadeAt(ceiling, x0, y0, px + 0.5f, py + 0.5f, ax, ay, z, SpriteShadow.KindUpright);
+                float hs = ShadeAt(ceiling, x0, y0, qx + 0.5f, qy + 0.5f, ax, ay, z, SpriteShadow.KindUpright);
+                int which = fs <= LiveGroundLighting.MinShade + 1e-4f && hs >= 1f - 1e-4f ? 0
+                    : fs <= LiveGroundLighting.MinShade + 1e-4f && hs <= LiveGroundLighting.MinShade + 1e-4f ? 1
+                    : fs >= 1f - 1e-4f && hs >= 1f - 1e-4f ? 2 : -1;
+                if (which >= 0 && found[which] < 0)
+                {
+                    found[which] = 1;
+                    picks[which] = (x0 + i, y0 + j, z, px, py, qx, qy, fs, hs);
+                }
+            }
+        Assert.True(found.All(v => v > 0), $"chunk {x0},{y0}: partial/shadow/lit placements found: {string.Join(",", found)}");
+        f.mobTiles = picks.SelectMany(p => new[] { p.X, p.Y, p.Z }).ToArray();
+        f.mobFootProbe = picks.SelectMany(p => new[] { p.Fx, p.Fy }).ToArray();
+        f.mobHeadProbe = picks.SelectMany(p => new[] { p.Hx, p.Hy }).ToArray();
+        f.mobFootShade = picks.Select(p => p.Fs).ToArray();
+        f.mobHeadShade = picks.Select(p => p.Hs).ToArray();
+
+        f.atlasWidth = AtlasWidth;
+        f.atlasHeight = (atlas.Height + 63) / 64 * 64;
+        var atlasRgba = new byte[AtlasWidth * f.atlasHeight * 4];
+        for (int k = 0; k < atlas.Pixels.Count; k++)
+        {
+            uint p = atlas.Pixels[k];
+            (atlasRgba[k * 4], atlasRgba[k * 4 + 1], atlasRgba[k * 4 + 2], atlasRgba[k * 4 + 3]) = ((byte)(p >> 16), (byte)(p >> 8), (byte)p, (byte)(p >> 24));
+        }
+        // The bake is Unity rows bottom-up; the PNG is top-down, so LoadImage gives the bake's layout back.
+        int gs = land.TextureSize;
+        var groundRgba = new byte[gs * gs * 4];
+        for (int r = 0; r < gs; r++)
+            Array.Copy(land.Rgba, (gs - 1 - r) * gs * 4, groundRgba, r * gs * 4, gs * 4);
+        f.groundSha = Sha(groundRgba);
+        f.atlasSha = Sha(atlasRgba);
+        return (f, groundRgba, atlasRgba);
+    }
+
+    private static string Sha(byte[] b) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(b)).ToLowerInvariant();
+
+    [Fact]
+    public void SpriteShadow_RealTownChunk_ShadesPerPixel_FeetDarkHeadLit()
+    {
+        (Fixture f, byte[] ground, byte[] atlas) = Build();
+        Assert.True(f.occluderColumns > 10, $"{f.occluderColumns} columns");
+        Assert.True(f.uprightQuads > 20 && f.groundQuads > 0, $"{f.uprightQuads} upright / {f.groundQuads} ground statics");
+        // Partial: the same sprite, same frame, is in the shadow at its feet and in the sun at its head.
+        Assert.Equal(LiveGroundLighting.MinShade, f.mobFootShade[0], 3);
+        Assert.Equal(1f, f.mobHeadShade[0], 3);
+        // Statics receive too: some upright static pixel of this town chunk is in shadow and some is lit.
+        float[] ceiling = LiveGroundLighting.ShadowCeiling(ToGrid(f.cornerZ), StaticOccluders.FromMap(_data.GetMap(0), _data.TileData, f.x0, f.y0));
+        int dark = 0, lit = 0;
+        for (int q = 0; q < f.quadCount; q++)
+        {
+            if ((int)f.qFoot[q * 4 + 3] != SpriteShadow.KindUpright)
+                continue;
+            float s = ShadeAt(ceiling, f.x0, f.y0, f.qRect[q * 4] + f.qRect[q * 4 + 2] / 2f, f.qRect[q * 4 + 1] + f.qRect[q * 4 + 3] - 4f,
+                f.qFoot[q * 4], f.qFoot[q * 4 + 1], f.qFoot[q * 4 + 2], SpriteShadow.KindUpright);
+            if (s < 0.75f) dark++; else if (s > 0.99f) lit++;
+        }
+        Assert.True(dark > 0 && lit > 0, $"upright statics at their base: {dark} in shadow, {lit} lit");
+
+        string dir = EvidenceDir(), path = Path.Combine(dir, "shadowRecvChunk.json");
+        string built = System.Text.Json.JsonSerializer.Serialize(f, new System.Text.Json.JsonSerializerOptions { IncludeFields = true });
+        if (Environment.GetEnvironmentVariable("UOCLIENT_WRITE_LIVEGROUND_EVIDENCE") == "1")
+        {
+            File.WriteAllText(path, built + "\n");
+            File.WriteAllBytes(Path.Combine(dir, f.groundPng), Png.Encode(ground, (int)Math.Sqrt(ground.Length / 4), (int)Math.Sqrt(ground.Length / 4)));
+            File.WriteAllBytes(Path.Combine(dir, f.atlasPng), Png.Encode(atlas, f.atlasWidth, f.atlasHeight));
+        }
+        if (File.Exists(path))
+            Assert.Equal(built, File.ReadAllText(path).TrimEnd('\n'));
+    }
+
+    [Fact]
+    public void SpriteShadow_CeilingCostPerChunk_IsBoundedOnTheWorker()
+    {
+        MapFile map = _data.GetMap(0);
+        (int x0, int y0) = PickTownChunk(map);
+        RealMapPatch patch = RealMapPatch.FromMap(map, x0, y0, Tiles, Tiles);
+        var cornerZ = new int[Tiles + 1, Tiles + 1];
+        for (int j = 0; j <= Tiles; j++)
+            for (int i = 0; i <= Tiles; i++)
+                cornerZ[i, j] = patch.CornerZ(i, j);
+        int[,] occ = StaticOccluders.FromMap(map, _data.TileData, x0, y0);
+        LiveGroundLighting.ShadowCeiling(cornerZ, occ); // JIT
+        LiveGroundLighting.ShadowMask(cornerZ, occ);
+        const int runs = 20;
+        var w = System.Diagnostics.Stopwatch.StartNew();
+        for (int k = 0; k < runs; k++) LiveGroundLighting.ShadowCeiling(cornerZ, occ);
+        double ceilingMs = w.Elapsed.TotalMilliseconds / runs;
+        w.Restart();
+        for (int k = 0; k < runs; k++) LiveGroundLighting.ShadowMask(cornerZ, occ);
+        double maskMs = w.Elapsed.TotalMilliseconds / runs;
+        // Worker thread, once per chunk build (the mask already costs the same order); generous bound for CI noise.
+        Assert.True(ceilingMs < 25, $"ceiling {ceilingMs:0.00} ms/chunk, mask {maskMs:0.00} ms/chunk (town chunk {x0},{y0})");
+        File.WriteAllText(Path.Combine(Path.GetTempPath(), "uoclient_lg_ceiling_cost.txt"), $"ceiling {ceilingMs:0.000} ms/chunk, mask {maskMs:0.000} ms/chunk, chunk {x0},{y0}\n");
+    }
+
+    private static int[,] ToGrid(int[] flat)
+    {
+        var g = new int[Tiles + 1, Tiles + 1];
+        for (int j = 0; j <= Tiles; j++)
+            for (int i = 0; i <= Tiles; i++)
+                g[i, j] = flat[j * (Tiles + 1) + i];
+        return g;
+    }
+
+    /// <summary>Minimal RGBA8 PNG writer (zlib via System.IO.Compression) for the fixture art.</summary>
+    private static class Png
+    {
+        private static readonly uint[] Crc = Enumerable.Range(0, 256).Select(n =>
+        {
+            uint c = (uint)n;
+            for (int k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            return c;
+        }).ToArray();
+
+        public static byte[] Encode(byte[] rgba, int w, int h)
+        {
+            using var raw = new MemoryStream();
+            using (var z = new System.IO.Compression.ZLibStream(raw, System.IO.Compression.CompressionLevel.Optimal, true))
+                for (int r = 0; r < h; r++)
+                {
+                    z.WriteByte(0);
+                    z.Write(rgba, r * w * 4, w * 4);
+                }
+            using var png = new MemoryStream();
+            png.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+            var ihdr = new byte[13];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(ihdr, w);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(ihdr.AsSpan(4), h);
+            ihdr[8] = 8; ihdr[9] = 6; // 8-bit RGBA
+            Chunk(png, "IHDR", ihdr);
+            Chunk(png, "IDAT", raw.ToArray());
+            Chunk(png, "IEND", Array.Empty<byte>());
+            return png.ToArray();
+        }
+
+        private static void Chunk(Stream s, string type, byte[] data)
+        {
+            var len = new byte[4];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(len, data.Length);
+            s.Write(len);
+            byte[] t = System.Text.Encoding.ASCII.GetBytes(type);
+            s.Write(t);
+            s.Write(data);
+            uint c = 0xFFFFFFFFu;
+            foreach (byte b in t.Concat(data)) c = Crc[(c ^ b) & 0xFF] ^ (c >> 8);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(len, c ^ 0xFFFFFFFFu);
+            s.Write(len);
+        }
+    }
+}
+
+/// <summary>
+/// Sprite shadow receive source guards: the default WorldSprite variant (no LG_SPRITE_SHADOW) is the 4aa51a6 shader
+/// text exactly, the shader's constants are SpriteShadow's, and every seam is behind MeshBuilder.FootMetadata.
+/// </summary>
+public sealed class LiveGroundSpriteShadowSourceTests
+{
+    private static string RepoRoot()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, "Assets", "LiveGroundCompare")))
+                return dir.FullName;
+        throw new DirectoryNotFoundException("repo root");
+    }
+
+    private static string Source(params string[] path) =>
+        File.ReadAllText(Path.Combine(new[] { RepoRoot() }.Concat(path).ToArray())).Replace("\r\n", "\n");
+
+    private static string Shader() => Source("Assets", "UOClient.Unity", "Runtime", "Resources", "WorldSprite.shader");
+
+    /// <summary>The shader as the compiler sees it without the keyword: every #ifdef LG_SPRITE_SHADOW block and the pragma removed.</summary>
+    public static string DefaultVariant(string shader)
+    {
+        var kept = new List<string>();
+        int depth = 0;
+        foreach (string line in shader.Split('\n'))
+        {
+            string t = line.Trim();
+            if (depth == 0 && t == "#ifdef LG_SPRITE_SHADOW") { depth = 1; continue; }
+            if (depth > 0)
+            {
+                if (t.StartsWith("#if")) depth++;
+                else if (t == "#endif") depth--;
+                Assert.False(depth > 0 && t.StartsWith("#else"), "no #else in a LG_SPRITE_SHADOW block: the default path must not change");
+                continue;
+            }
+            if (t == "#pragma multi_compile __ LG_SPRITE_SHADOW")
+                continue;
+            kept.Add(line);
+        }
+        Assert.Equal(0, depth);
+        return string.Join("\n", kept);
+    }
+
+    [Fact]
+    public void DefaultVariant_IsTheHeadShaderByteForByte()
+    {
+        string head = Source("Assets", "LiveGroundCompare", "Evidence~", "WorldSprite.4aa51a6.shader.txt");
+        string now = Shader();
+        Assert.NotEqual(head, now); // the TEST path is there
+        Assert.Equal(head, DefaultVariant(now));
+        Assert.DoesNotContain("_LG", DefaultVariant(now));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(now, "multi_compile"));
+    }
+
+    [Fact]
+    public void Shader_UsesSpriteShadowsConstants()
+    {
+        string s = Shader();
+        Assert.Contains($"tile + {SpriteShadow.Inset.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)}, tile + {(1f - SpriteShadow.Inset).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)}", s);
+        Assert.Contains($"(z + {LiveGroundLighting.ShadowBiasZ.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} - ceiling) / {SpriteShadow.SoftZ:0.0} + 0.5", s);
+        Assert.Contains($"{LiveGroundLighting.MinShade:0.0} + {1f - LiveGroundLighting.MinShade:0.0} * visibility", s);
+        Assert.Contains("const float h = 22.0, zs = 4.0;", s);
+        Assert.Equal(22, LiveGroundProjection.TileHalf);
+        Assert.Equal(4, LiveGroundProjection.ZStep);
+        Assert.Contains("foot : TEXCOORD2", s); // UV3, unused by every other sprite mesh
+    }
+
+    [Fact]
+    public void Seams_AreAllBehindFootMetadata_AndThePresenterRestoresThem()
+    {
+        string streamer = Source("Assets", "UOClient.Unity", "Runtime", "WorldStreamer.cs");
+        Assert.Contains("if (MeshBuilder.FootMetadata)", streamer);
+        Assert.Contains("mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight);", streamer); // today's call, kept for the default
+        foreach (string f in new[] { Path.Combine("Runtime", "Avatar.cs"), Path.Combine("Runtime", "World", "ItemView.cs") })
+        {
+            string s = Source("Assets", "UOClient.Unity", f);
+            Assert.Contains("MeshBuilder.FootMetadata", s);
+        }
+        string mb = Source("Assets", "UOClient.Unity", "Runtime", "WorldView.cs");
+        Assert.Contains("if (!FootMetadata)", mb);
+        Assert.Contains("if (_feet != null)", mb);
+        // Only the presenter's ceiling turns the keyword and the flag on, and its Dispose puts them back.
+        string ceiling = Source("Assets", "LiveGroundCompare", "Scripts", "SpriteShadowCeiling.cs");
+        Assert.Contains("Shader.EnableKeyword(Keyword);", ceiling);
+        Assert.Contains("Shader.DisableKeyword(Keyword);", ceiling);
+        Assert.Contains("MeshBuilder.FootMetadata = _footWas;", ceiling);
+        Assert.DoesNotContain("QualitySettings.", ceiling);
+        foreach (string f in Directory.GetFiles(Path.Combine(RepoRoot(), "Assets"), "*.cs", SearchOption.AllDirectories))
+        {
+            string s = File.ReadAllText(f);
+            if (s.Contains("EnableKeyword(") && s.Contains("LG_SPRITE_SHADOW"))
+                Assert.True(f.EndsWith("SpriteShadowCeiling.cs") || Path.GetFileName(f).StartsWith("LiveGroundEvidenceCapture."), f); // the harness restores it too
+            if (s.Contains("FootMetadata = true"))
+                Assert.EndsWith("SpriteShadowCeiling.cs", f);
+        }
+        Assert.Contains("SpriteCeiling?.Dispose();", Source("Assets", "LiveGroundCompare", "Scripts", "TerrainIsoPresenter.cs"));
+        // The receive harness is explicit-invoke only, and puts the keyword back.
+        string harness = Source("Assets", "LiveGroundCompare", "Editor", "LiveGroundEvidenceCapture.ShadowRecv.cs");
+        foreach (string auto in new[] { "InitializeOnLoad", "RuntimeInitializeOnLoadMethod", "DidReloadScripts", "EnterPlaymode", "isPlaying =" })
+            Assert.DoesNotContain(auto, harness);
+        Assert.Contains("[MenuItem(", harness);
+        Assert.Contains("if (keywordWas) Shader.EnableKeyword(SpriteKeyword); else Shader.DisableKeyword(SpriteKeyword);", harness);
     }
 }

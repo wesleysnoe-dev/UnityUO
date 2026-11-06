@@ -23,7 +23,7 @@ namespace UOClient.LiveGroundCompare.Editor
     /// inlined; everything else is the shipped text. A second pair renders the shipped shader itself at two measured
     /// wall-clock moments (whatever _Time Unity supplies in the Editor; the report says if the pixels changed).
     /// </summary>
-    public static class LiveGroundEvidenceCapture
+    public static partial class LiveGroundEvidenceCapture
     {
         public const float T0 = 10f, T1 = 10.5f;
         private const int Width = 768, Height = 480, GroundLayer = 31, SpriteLayer = 30;
