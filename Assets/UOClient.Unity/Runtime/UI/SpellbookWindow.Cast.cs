@@ -57,6 +57,9 @@ namespace UOClient.Unity.UI
     /// <summary>What the book does for a mouse event: nothing, cast the spell (0xBF 0x1C), or drag its icon out.</summary>
     public enum BookAction { None, Cast, DragOut }
 
+    /// <summary>The IMGUI left-button event SpellbookWindow.Pointer was handed.</summary>
+    public enum PointerEvent { Down, Drag, Up }
+
     /// <summary>
     /// A classic book's left button as TazUO delivers it (GameController.cs:1122-1172, :1209-1218): a press within 350 ms
     /// of the last counted one is a double-click instead of a press (the next press starts over), and a handled
@@ -76,6 +79,39 @@ namespace UOClient.Unity.UI
 
         /// <summary>The spell (0-based in its school) the last press was on.</summary>
         public int Spell { get; private set; } = -1;
+
+        /// <summary>True while an icon press holds the pointer: the window keeps IMGUI's hotControl, so the drags are the book's.</summary>
+        public bool HoldingIcon => _pressed && _target == BookTarget.Icon;
+
+        /// <summary>
+        /// SpellbookWindow.Pointer's whole decision for one left-button event, here so the tests run the window's own
+        /// routing: the book action, and whether the event is used. A used press keeps GUI.DragWindow (drawn last) from
+        /// moving the book: an icon press (held until its release or drag-out) and a double-click's cast. An index name's
+        /// press is not used, so it drags the book as TazUO's CanMove label does. The window holds hotControl exactly
+        /// while HoldingIcon. <paramref name="target"/>, <paramref name="spell"/> and <paramref name="toPage"/> are read on Down only.
+        /// </summary>
+        public (BookAction Action, bool Use) Route(PointerEvent kind, BookTarget target, int spell, int toPage, float x, float y, double now)
+        {
+            switch (kind)
+            {
+                case PointerEvent.Down:
+                    BookAction pressed = Press(target, spell, toPage, x, y, now);
+                    return (pressed, pressed == BookAction.Cast || HoldingIcon);
+                case PointerEvent.Drag:
+                    return HoldingIcon ? (Drag(x, y), true) : (BookAction.None, false);
+                default:
+                    bool held = HoldingIcon;
+                    Release(x, y);
+                    return (BookAction.None, held);
+            }
+        }
+
+        /// <summary>The press is lost without its release (the window closed, or the button was seen up with no MouseUp): drop it.</summary>
+        public void Cancel()
+        {
+            _pressed = false;
+            _swallowRelease = false;
+        }
 
         /// <summary>
         /// A left press on <paramref name="target"/>: Cast when it is the second of a double-click on an icon or name

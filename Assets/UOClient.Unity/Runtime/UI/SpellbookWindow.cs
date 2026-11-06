@@ -23,6 +23,7 @@ namespace UOClient.Unity.UI
         private Vector2 _scroll;
         private float _lastCornerClick;
         private int _lastCorner;
+        private int _pressId;
 
         public SpellbookWindow(uint book, int first, ulong bits)
         {
@@ -40,6 +41,10 @@ namespace UOClient.Unity.UI
 
         public override void OnClosed()
         {
+            // Closed mid-press (the server re-sent or closed the book): no Up will come to give the hot control back.
+            if (_clicks.HoldingIcon)
+                ReleaseHot(_pressId);
+            _clicks.Cancel();
             foreach (UiImage img in _labels.Values)
                 GumpArt.Release(img);
             _labels.Clear();
@@ -47,7 +52,7 @@ namespace UOClient.Unity.UI
 
         public override void Draw()
         {
-            int pressId = GUIUtility.GetControlID(FocusType.Passive); // every event, so the id holds while an icon is pressed
+            _pressId = GUIUtility.GetControlID(FocusType.Passive); // every event, so the id holds while an icon is pressed
             UiImage bg =_s.Classic ? Art.Gump(_minimized ? _s.Info.MinimizedGraphic : _s.Info.BookGraphic) : null;
             if (bg == null)
             {
@@ -70,7 +75,7 @@ namespace UOClient.Unity.UI
             }
 
             // Before every button, so each left press is counted toward a double-click as TazUO's one click clock does.
-            Pointer(e, pressId);
+            Pointer(e, _pressId);
             int queued = _clicks.Tick(Time.realtimeSinceStartupAsDouble);
             if (queued >= 0)
                 _s.GoTo(queued);
@@ -164,51 +169,52 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>
-        /// The left button on the classic book, through SpellbookClicks. An icon press takes the window's hot control
-        /// itself (no GUI.Button, which would hold the press and keep its drags from us; and not left to GUI.DragWindow,
-        /// so the book stays put): at 5 px it lets go and the floating icon rides the mouse (UiManager.BeginWindowDrag,
-        /// as a health bar dragged out of the world). An index name's press is left alone, so it drags the book as
-        /// TazUO's CanMove label does, and its release queues the page only if the book did not move.
+        /// The left button on the classic book, decided by SpellbookClicks.Route. An icon press takes the window's hot
+        /// control itself (no GUI.Button, which would hold the press and keep its drags from us; and not left to
+        /// GUI.DragWindow, so the book stays put): at 5 px it lets go and the floating icon rides the mouse
+        /// (UiManager.BeginWindowDrag, as a health bar dragged out of the world). An index name's press is left alone, so
+        /// it drags the book as TazUO's CanMove label does, and its release queues the page only if the book did not move.
         /// </summary>
         private void Pointer(Event e, int id)
         {
-            if (e.button != 0)
+            // A held icon whose MouseUp never reached us (let go where IMGUI gave it to no window of ours): the button is
+            // up, so drop the press and the hot control rather than leave every other control locked out. Polled as
+            // UiManager.FollowWindowDrag does; not on mouse events, whose own Up does this.
+            if (_clicks.HoldingIcon && !e.isMouse && !Input.GetMouseButton(0))
+            {
+                _clicks.Cancel();
+                ReleaseHot(id);
                 return;
-            Vector2 at = Rect.position + e.mousePosition;
+            }
+            if (!e.isMouse || e.button != 0)
+                return;
+            PointerEvent kind;
             switch (e.type)
             {
-                case EventType.MouseDown:
-                    (BookTarget target, int spell, int toPage) = HitTest(e.mousePosition);
-                    if (_clicks.Press(target, spell, toPage, at.x, at.y, Time.realtimeSinceStartupAsDouble) == BookAction.Cast)
-                    {
-                        CastBookSpell(Session, _s.Info.First, spell);
-                        e.Use();
-                    }
-                    else if (target == BookTarget.Icon)
-                    {
-                        GUIUtility.hotControl = id;
-                        e.Use();
-                    }
-                    break;
-                case EventType.MouseDrag:
-                    if (GUIUtility.hotControl != id)
-                        break;
-                    if (_clicks.Drag(at.x, at.y) == BookAction.DragOut)
-                    {
-                        GUIUtility.hotControl = 0;
-                        DragIconOut(_clicks.Spell, e.mousePosition);
-                    }
-                    e.Use();
-                    break;
-                case EventType.MouseUp:
-                    _clicks.Release(at.x, at.y);
-                    if (GUIUtility.hotControl == id)
-                    {
-                        GUIUtility.hotControl = 0;
-                        e.Use();
-                    }
-                    break;
+                case EventType.MouseDown: kind = PointerEvent.Down; break;
+                case EventType.MouseDrag: kind = PointerEvent.Drag; break;
+                case EventType.MouseUp: kind = PointerEvent.Up; break;
+                default: return;
             }
+            Vector2 at = Rect.position + e.mousePosition;
+            (BookTarget target, int spell, int toPage) = kind == PointerEvent.Down ? HitTest(e.mousePosition) : (BookTarget.None, -1, 0);
+            (BookAction action, bool use) = _clicks.Route(kind, target, spell, toPage, at.x, at.y, Time.realtimeSinceStartupAsDouble);
+            if (_clicks.HoldingIcon)
+                GUIUtility.hotControl = id;
+            else
+                ReleaseHot(id);
+            if (action == BookAction.Cast)
+                CastBookSpell(Session, _s.Info.First, _clicks.Spell);
+            else if (action == BookAction.DragOut)
+                DragIconOut(_clicks.Spell, e.mousePosition);
+            if (use)
+                e.Use();
+        }
+
+        private static void ReleaseHot(int id)
+        {
+            if (GUIUtility.hotControl == id)
+                GUIUtility.hotControl = 0;
         }
 
         private void DrawDetails()

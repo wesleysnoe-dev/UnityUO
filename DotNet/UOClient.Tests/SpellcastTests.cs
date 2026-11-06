@@ -121,8 +121,10 @@ public sealed class SpellcastTests
     }
 
     /// <summary>
-    /// What SpellbookWindow.Pointer and Draw do with SpellbookClicks' answers, minus IMGUI: a Cast sends CastBookSpell,
-    /// a DragOut counts a floating icon, a Tick's page opens. The window's own event plumbing needs play mode.
+    /// SpellbookWindow.Pointer and Draw minus IMGUI: each event goes through SpellbookClicks.Route, the call Pointer
+    /// makes; a Cast sends CastBookSpell for Clicks.Spell, a DragOut counts a floating icon, a Tick's page opens. Used
+    /// records whether Pointer would e.Use() the event (a used press is one GUI.DragWindow does not see), Hot whether
+    /// the window holds hotControl after it. That IMGUI delivers these events as assumed needs play mode.
     /// </summary>
     private sealed class BookDriver
     {
@@ -130,6 +132,7 @@ public sealed class SpellcastTests
         public readonly SpellbookState State;
         public readonly SpellbookClicks Clicks = new SpellbookClicks();
         public int DraggedOut;
+        public bool Used, Hot;
 
         public BookDriver(GameSession session, SpellbookState state)
         {
@@ -137,19 +140,29 @@ public sealed class SpellcastTests
             State = state;
         }
 
-        public void Press(BookTarget target, int spell, int toPage, float x, float y, double now)
+        private void Route(PointerEvent kind, BookTarget target, int spell, int toPage, float x, float y, double now)
         {
-            if (Clicks.Press(target, spell, toPage, x, y, now) == BookAction.Cast)
-                SpellbookWindow.CastBookSpell(_session, State.Info.First, spell);
-        }
-
-        public void Drag(float x, float y)
-        {
-            if (Clicks.Drag(x, y) == BookAction.DragOut)
+            (BookAction action, Used) = Clicks.Route(kind, target, spell, toPage, x, y, now);
+            Hot = Clicks.HoldingIcon;
+            if (action == BookAction.Cast)
+                SpellbookWindow.CastBookSpell(_session, State.Info.First, Clicks.Spell);
+            else if (action == BookAction.DragOut)
                 DraggedOut++;
         }
 
-        public void Release(float x, float y) => Clicks.Release(x, y);
+        public void Press(BookTarget target, int spell, int toPage, float x, float y, double now) =>
+            Route(PointerEvent.Down, target, spell, toPage, x, y, now);
+
+        public void Drag(float x, float y) => Route(PointerEvent.Drag, BookTarget.None, -1, 0, x, y, 0);
+
+        public void Release(float x, float y) => Route(PointerEvent.Up, BookTarget.None, -1, 0, x, y, 0);
+
+        // Pointer's guard: a Repaint with the button up while an icon is held.
+        public void LoseRelease()
+        {
+            Clicks.Cancel();
+            Hot = Clicks.HoldingIcon;
+        }
 
         public void Tick(double now)
         {
@@ -320,6 +333,100 @@ public sealed class SpellcastTests
         Assert.Equal(Extended(202), Assert.Single(NoPings(sent)));
         Press(3.00);
         Assert.Single(NoPings(sent));
+    }
+
+    [Fact]
+    public void AnIconPressHoldsThePointerUntilItsReleaseAndTheBookStaysPut()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out _);
+        b.State.GoTo(6);
+
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.00);
+        Assert.True(b.Used && b.Hot); // GUI.DragWindow never sees it
+        b.Drag(82, 61);
+        Assert.True(b.Used && b.Hot);
+        b.Release(82, 61);
+        Assert.True(b.Used);
+        Assert.False(b.Hot);
+
+        // The double-click's press is used (the cast) but not held; its release is swallowed and left alone.
+        b.Press(BookTarget.Icon, 3, 0, 82, 61, 0.20);
+        Assert.True(b.Used);
+        Assert.False(b.Hot);
+        b.Release(82, 61);
+        Assert.False(b.Used || b.Hot);
+        Assert.Equal(Extended(4), Assert.Single(NoPings(sent)));
+    }
+
+    [Fact]
+    public void AnIndexPressIsLeftToTheBookDragAndItsDoubleClickIsUsed()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out SpellbookWindow.IndexEntry heal);
+
+        b.Press(BookTarget.Index, heal.Spell, heal.ToPage, 470, 160, 10.00);
+        Assert.False(b.Used || b.Hot); // GUI.DragWindow takes it, as TazUO's CanMove label
+        b.Drag(480, 160);
+        Assert.False(b.Used || b.Hot);
+        b.Release(480, 160);
+        Assert.False(b.Used);
+        Assert.Equal(-1, b.Clicks.EnqueuedPage); // the book moved
+
+        b.Press(BookTarget.Index, heal.Spell, heal.ToPage, 480, 160, 10.10);
+        Assert.True(b.Used); // the cast: the book does not also start a move
+        Assert.False(b.Hot);
+        Assert.Equal(Extended(4), Assert.Single(NoPings(sent)));
+
+        // A press on the book's art is the book's own drag too.
+        b.Press(BookTarget.None, -1, 0, 10, 10, 20.00);
+        Assert.False(b.Used || b.Hot);
+    }
+
+    [Fact]
+    public void AfterTheDragOutTheBookLetsGoAndNothingCasts()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out _);
+        b.State.GoTo(6);
+
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.00);
+        b.Drag(80, 65);
+        Assert.Equal(1, b.DraggedOut);
+        Assert.True(b.Used); // that drag event is the book's
+        Assert.False(b.Hot); // hotControl handed back; UiManager.BeginWindowDrag carries the icon
+        b.Drag(120, 90);
+        Assert.False(b.Used || b.Hot); // later drags are no longer ours
+        Assert.Equal(1, b.DraggedOut);
+        b.Release(120, 90);
+        Assert.False(b.Used || b.Hot);
+        b.Tick(1.00);
+
+        Assert.Empty(NoPings(sent));
+        Assert.Equal(6, b.State.Page);
+    }
+
+    [Fact]
+    public void AnIconPressWhoseReleaseIsLostLetsGoAndCastsNothing()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out _);
+        b.State.GoTo(6);
+
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.00);
+        Assert.True(b.Hot);
+        b.LoseRelease(); // no MouseUp reached the book; the button is up
+        Assert.False(b.Hot);
+        b.Drag(140, 90);
+        Assert.Equal(0, b.DraggedOut); // a spent press does not drag out
+        b.Release(140, 90);
+        Assert.False(b.Used);
+        Assert.Empty(NoPings(sent));
+
+        // The next press past the double-click time is a fresh single click.
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 1.00);
+        Assert.True(b.Hot);
+        Assert.Empty(NoPings(sent));
     }
 
     // ModernUO's SendNewSpellbookContent (OutgoingContainerPackets.cs:46-69) byte for byte: 0xBF, length 23, sub 0x1B,
