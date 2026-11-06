@@ -210,7 +210,7 @@ namespace UOClient.Unity
         public void Draw(string characterName, Vector2 headScreen)
         {
             EnsureResources();
-            float s = Mathf.Clamp(Screen.height / 1000f, 0.75f, 2.5f);
+            float s = UI.UiScale.Current;
             float w = Screen.width / s, h = Screen.height / s;
 
             DrawWeather(s);

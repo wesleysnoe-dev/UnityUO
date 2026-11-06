@@ -101,6 +101,9 @@ namespace UOClient.Unity
             _cameraRig = new CameraRig(_ctx.Camera);
             _ctx.Hud = new DemoHud();
             Lighting.ApplyDefault();
+            // The options saved from the options window (read only; with none the code defaults stand).
+            if (GameOptionsStore.TryLoad() is GameOptions saved)
+                ApplyOptions(saved);
 
             try
             {
@@ -263,6 +266,8 @@ namespace UOClient.Unity
             _binder = new SessionUiBinder(_ctx, this, _gumpArt, _input, _cursor, _overheads, _effects, _chatLine, Sound);
             _binder.LogoutConfirmed += () => _quitAfterLogout = true;
             _binder.Attach(_ctx.Session);
+            ApplyAudioOptions(); // the session's Audio exists from here
+            ApplyCombatOptions();
         }
 
         /// <summary>Sound effects and music (null until online).</summary>
@@ -292,7 +297,68 @@ namespace UOClient.Unity
         public bool ShowHud { get => _ctx.Hud.Visible; set => _ctx.Hud.Visible = value; }
         public bool ShowJournal { get => _ctx.Hud.JournalVisible; set => _ctx.Hud.JournalVisible = value; }
         public bool AutoRoofs { get => _roofs.AutoRoofs; set => _roofs.AutoRoofs = value; }
-        public float Zoom { get => zoom; set => zoom = Mathf.Clamp(value, 0.25f, 4f); }
+        public float Zoom { get => zoom; set => zoom = Mathf.Clamp(value, GameOptions.MinZoom, GameOptions.MaxZoom); }
+
+        // Kept here until the session's Audio exists, then pushed to it (SetUpUi).
+        private float _soundVolume = GameOptions.Defaults().soundVolume, _musicVolume = GameOptions.Defaults().musicVolume;
+
+        // Kept here until a session exists, then pushed to it (SetUpUi): each login makes a new GameSession.
+        private bool _criminalActionQuery = GameOptions.Defaults().criminalActionQuery;
+        private bool _beneficialCriminalActionQuery = GameOptions.Defaults().beneficialCriminalActionQuery;
+
+        public GameOptions CurrentOptions() => new GameOptions
+        {
+            showNames = ShowNames,
+            showJournal = ShowJournal,
+            showHud = ShowHud,
+            autoRoofs = AutoRoofs,
+            zoom = Zoom,
+            uiScale = UI.UiScale.Setting,
+            highlightGameObjects = ObjectHighlight.HighlightGameObjects,
+            tooltipDelay = _tooltip.Delay,
+            soundVolume = Sound != null ? Sound.SoundVolume : _soundVolume,
+            musicVolume = Sound != null ? Sound.MusicVolume : _musicVolume,
+            criminalActionQuery = _ctx.Session != null ? _ctx.Session.CriminalActionQuery : _criminalActionQuery,
+            beneficialCriminalActionQuery = _ctx.Session != null ? _ctx.Session.BeneficialCriminalActionQuery : _beneficialCriminalActionQuery,
+        };
+
+        public void ApplyOptions(GameOptions options)
+        {
+            GameOptions o = options.Clone().Clamp();
+            ShowNames = o.showNames;
+            ShowJournal = o.showJournal;
+            ShowHud = o.showHud;
+            if (AutoRoofs != o.autoRoofs) // setting it also drops an R-key roof choice: only when it changes
+                AutoRoofs = o.autoRoofs;
+            Zoom = o.zoom;
+            UI.UiScale.Setting = o.uiScale;
+            ObjectHighlight.HighlightGameObjects = o.highlightGameObjects;
+            _tooltip.Delay = o.tooltipDelay;
+            _soundVolume = o.soundVolume;
+            _musicVolume = o.musicVolume;
+            ApplyAudioOptions();
+            _criminalActionQuery = o.criminalActionQuery;
+            _beneficialCriminalActionQuery = o.beneficialCriminalActionQuery;
+            ApplyCombatOptions();
+        }
+
+        public void SaveOptions(GameOptions options) => GameOptionsStore.Save(options);
+
+        private void ApplyAudioOptions()
+        {
+            if (Sound == null)
+                return;
+            Sound.SoundVolume = _soundVolume;
+            Sound.MusicVolume = _musicVolume;
+        }
+
+        private void ApplyCombatOptions()
+        {
+            if (_ctx.Session == null)
+                return;
+            _ctx.Session.CriminalActionQuery = _criminalActionQuery;
+            _ctx.Session.BeneficialCriminalActionQuery = _beneficialCriminalActionQuery;
+        }
 
         // ---- cursor ----
 
@@ -486,7 +552,7 @@ namespace UOClient.Unity
             _ctx.Hud.Draw(characterName, new Vector2(head.x, Screen.height - head.y));
             if (_ui != null)
             {
-                _ui.Scale = Mathf.Clamp(Screen.height / 1000f, 0.75f, 2.5f);
+                _ui.Scale = UI.UiScale.Current;
                 _ui.OnGUI();
                 _tooltip.OnGUI(_ctx.Session, _ui);
             }

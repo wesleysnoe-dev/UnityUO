@@ -56,7 +56,7 @@ namespace UOClient.Unity
 
             float wheel = Input.mouseScrollDelta.y;
             if (Mathf.Abs(wheel) > 0.01f && (ui == null || !ui.IsOverUi(Input.mousePosition))) // windows (chat, world map) scroll themselves
-                zoom =Mathf.Clamp(zoom * (wheel > 0 ? 1.12f : 1f / 1.12f), 0.25f, 4f);
+                zoom = Mathf.Clamp(zoom * (wheel > 0 ? 1.12f : 1f / 1.12f), GameOptions.MinZoom, GameOptions.MaxZoom);
         }
 
         /// <summary>The map tile under the mouse with its surface z near the player, or null over a window.</summary>

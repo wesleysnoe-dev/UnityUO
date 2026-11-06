@@ -68,7 +68,7 @@ namespace UOClient.Unity.UI
         public PartyInviteWindow(uint leader)
         {
             _leader = leader;
-            Rect = new Rect(Screen.width / 2f / Mathf.Max(0.75f, Screen.height / 1000f) - 150, 220, 300, 110);
+            Rect = new Rect(Screen.width / 2f / UiScale.Current - 150, 220, 300, 110);
         }
 
         public override string Key => "partyinvite";

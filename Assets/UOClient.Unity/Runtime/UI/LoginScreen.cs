@@ -79,7 +79,7 @@ namespace UOClient.Unity.UI
         public void Draw()
         {
             EnsureStyles();
-            float s = Mathf.Clamp(Screen.height / 1000f, 0.75f, 2.5f);
+            float s = UiScale.Current;
             float w = Screen.width / s, h = Screen.height / s;
 
             // Backdrop: the art-direction mockup, cropped to fill, darkened toward the bottom.

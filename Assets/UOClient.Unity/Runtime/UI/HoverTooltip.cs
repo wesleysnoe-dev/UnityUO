@@ -26,6 +26,9 @@ namespace UOClient.Unity.UI
 
         public void ClearForced() => _forcedHover = 0;
 
+        /// <summary>Seconds the mouse rests before the tooltip shows (the options' tooltip delay).</summary>
+        public float Delay { get; set; } = 0.4f;
+
         /// <summary>What the mouse rests on: an item in a window, else whatever <paramref name="pick"/> finds under it in the world.</summary>
         public void UpdateHover(UiManager ui, Func<Vector2, uint> pick)
         {
@@ -65,7 +68,7 @@ namespace UOClient.Unity.UI
         public void OnGUI(GameSession session, UiManager ui)
         {
             if (session == null || (_hoverSerial == 0 && string.IsNullOrEmpty(_hoverText))
-                || Time.realtimeSinceStartup - _hoverSince < 0.4f || ui.Dragging != null)
+                || Time.realtimeSinceStartup - _hoverSince < Delay || ui.Dragging != null)
                 return;
             PropertyList props = _hoverSerial != 0 ? session.GetProperties(_hoverSerial) : null;
             if (_hoverSerial != 0 && (props == null || props.Lines.Count == 0))

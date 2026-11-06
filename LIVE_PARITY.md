@@ -480,6 +480,21 @@ Still missing:
 - [ ] Classic spellbook (Magery, Necromancy, Chivalry): layout, model and click path checked offline, and drawn by the offline renderer only (`_cc_logs/spellbook_preview/`, above); never drawn in Unity play mode. Dragging a spell out makes a session-only floating icon (offline-tested parts only); there is no saved hotbar.
 - [ ] **Unity Editor compile of everything since `bad6cce` (10:04).** Gates every play-mode item above (see "Editor compile status").
 
+## Options window (TazUO ModernOptionsGump pages, 2026-11-05)
+
+Backup tag `fidelity-pre-options` = `f562d5b`. `UI/OptionsWindow.cs` + `OptionsWindow.Pages.cs`, `GameOptions.cs`, `GameOptionsStore.cs`, `UI/UiScale.cs`.
+
+- **How it saves (differs from TazUO on purpose):** TazUO's `ModernOptionsGump` writes the profile as each control changes. Ours edits an `OptionsDraft`: **Apply** puts it into the game now and writes nothing; **Okay** applies and writes `UserSettings/unity-uo-options.json`; **Cancel** or closing the window drops the draft; **Defaults** resets only the draft to the code defaults. That file is the only one written, keys it doesn't know are kept, and every value is clamped on load and before it is applied. With no file the code defaults stand and nothing is created. Startup reads it (`WorldDemo.Start`, `GameOptionsStore.TryLoad`). `unity-uo-settings.json` is never touched.
+- **Working pages (each control drives real code at runtime and from the saved file at startup):**
+  - **General:** show names, show the journal, show the HUD (H), hide roofs indoors (R still overrides), **Highlight game objects** (TazUO `HighlightGameObjects`; on by default here, outline only, no fill).
+  - **Sound:** sound and music volume (`Audio`; held until the session's audio exists, then pushed).
+  - **Video:** zoom (0.25-4, the wheel too); UI scale: auto (screen height / 1000) or fixed 0.75-2.5, used by every window, the HUD, the chat line and the login screen (`UiScale.Current`).
+  - **Macros:** the bindings list and **Reload** (`Hotkeys.Load`). No in-window editor: edit `UserSettings/unity-uo-hotkeys.json`, then Reload.
+  - **Tooltip:** delay 0-2 s (`HoverTooltip.Delay`, default 0.4).
+  - **Combat & Spells:** TazUO's "query before attacking an innocent" (`GameSession.CriminalActionQuery`, default on) and "query before beneficial acts on criminals/grays" (`BeneficialCriminalActionQuery`, default off). Held in `WorldDemo` and pushed into each new session at login (`SetUpUi`).
+- **Gaps (listed greyed as "unavailable" in the side menu, no controls):** Speech, Counters, Info Bar, Containers, Ignore List, Nameplates, Cooldowns, Experimental, TazUO. Also not offered, as we have no system for them: pathfinding, auto-open corpses, mobile HP bars overhead, HD/art options, status-bar mutual exclusion (hard-coded on), journal styling. Music on/off and footsteps/combat-music toggles are not offered (volume only).
+- **Known:** the draft is taken when the window opens; Apply/Okay then set zoom, HUD and roofs to the draft even if the wheel, H or R changed them while it was open.
+
 ## Re-test checklist
 
 **First:** focus the Unity Editor (outside play mode) so it reimports and compiles. Then check that `Library/ScriptAssemblies/UOClient.Unity.dll` has moved past 09:53:29 and that `Logs/Editor.log` has a new `Tundra build success` with no `error CS` after it. Until then nothing from `bad6cce` onward is in the Editor, so none of the items below can be tested. Each item works on local or live.
@@ -510,6 +525,7 @@ Still missing:
    - [ ] Text entry (rename in the stable, auction price) → typing, cursor keys, the length limit, and the reply carries the text.
    - [ ] Status window (C, the paperdoll's Status, or double-click our own bar) is the AoS `0x2A6C` "Character Status", looking like `Temp/unity-previews/aos-status/status-aos.png` (renderer-only reference): name centred; str/dex/int; hits/stam/mana over their maxima; stat cap, luck, weight, damage, gold, followers and the five resists beside their icons, matching the server (`[props` / equip a resist item and watch it change). A stat-lock click cycles up/down/locked and the server keeps it. The small buff button opens the buff bar; a click on the bottom-right corner icon swaps it for our health bar.
    - [ ] Our paperdoll's column reads Help, Options, Log Out, **Quests**, Skills, **Guild**, Peace/War, Status. Quests and Guild send `0xD7` and (AoS shard) nothing comes back; no error, no disconnect. Someone else's paperdoll has a Status button that opens their health bar under the mouse.
+   - [ ] Options (paperdoll Options): side menu General / Sound / Video / Macros / Tooltip / Combat & Spells, unavailable pages greyed. Change things → nothing happens until **Apply** ("Not applied yet" shows); Apply → names/journal/HUD/roofs/zoom/UI scale/volumes/tooltip delay change at once, and `UserSettings/unity-uo-options.json` still does not exist. Cancel or right-click → the edits are gone. Defaults → the draft returns to defaults (highlight on, attack query on, beneficial query off) but the game is unchanged until Apply. **Okay** → applied and the file appears; restart → the options are back. Turn the attack query off, Okay, attack an Innocent → no question. Macros → Reload picks up an edit to the hotkeys file. `unity-uo-settings.json` unchanged throughout.
    - [ ] Drag from a mobile → its health bar comes out under the mouse; attacking opens or retargets the last-attack bar.
    - [ ] Skills window groups: New Group adds one at the bottom; double-click its name, type, Enter → renamed (Esc keeps the old name); drag a skill by its name onto it → it moves and the group opens; a drag released on a usable skill's own name does not use it; x on the group → its skills go to Miscellaneous (the first has no x); close and reopen K → edits still there; Reset groups → Okay restores the defaults. Afterwards, `UserSettings/unity-uo-settings.json` and the hotkeys file are unchanged (nothing is saved).
 3. **Combat**
@@ -532,3 +548,4 @@ Still missing:
 
 - The server is a setting. It's 127.0.0.1:2593 unless `UserSettings/unity-uo-settings.json` or `-server` says otherwise.
 - The CLI's online test prints "NOT the local test server" when pointed anywhere else.
+- The options window's choices live in `UserSettings/unity-uo-options.json`, written only by its Okay.

@@ -14,5 +14,14 @@ namespace UOClient.Unity
 
         /// <summary>Keyboard macros (null until online).</summary>
         Hotkeys Hotkeys { get; }
+
+        /// <summary>The options as the game uses them now (keys like R, H and the wheel change some of them).</summary>
+        GameOptions CurrentOptions();
+
+        /// <summary>Puts the options into the game now; writes nothing.</summary>
+        void ApplyOptions(GameOptions options);
+
+        /// <summary>Writes the options to UserSettings/unity-uo-options.json (the options window's Okay only).</summary>
+        void SaveOptions(GameOptions options);
     }
 }

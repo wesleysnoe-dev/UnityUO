@@ -44,7 +44,7 @@ namespace UOClient.Unity
 
             if (!Typing)
                 return;
-            float s = Mathf.Clamp(Screen.height / 1000f, 0.75f, 2.5f);
+            float s = UI.UiScale.Current;
             GUI.SetNextControlName("uo-chat");
             _chat = GUI.TextField(new Rect(Screen.width * 0.5f - 300 * s, Screen.height - 250 * s, 600 * s, 26 * s), _chat, 200);
             GUI.FocusControl("uo-chat");
