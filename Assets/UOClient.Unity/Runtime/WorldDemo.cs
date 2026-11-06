@@ -450,7 +450,8 @@ namespace UOClient.Unity
             UI.GridContainerWindow.DefaultToOldStyleView = o.gridContainersDefaultToOldStyleView;
             UI.GridContainerWindow.Opacity = o.containerOpacity;
             UI.GridContainerWindow.ScalePercent = o.gridContainersScale;
-            UI.GridContainerWindow.ScaleItems = o.gridContainerScaleItems;        }
+            UI.GridContainerWindow.ScaleItems = o.gridContainerScaleItems;
+        }
 
         // The options' AutoOpenCorpses: kept across logins, each new session starts with nothing opened (Tick).
         private readonly Core.CorpseAutoOpen _corpseAutoOpen = new Core.CorpseAutoOpen();
