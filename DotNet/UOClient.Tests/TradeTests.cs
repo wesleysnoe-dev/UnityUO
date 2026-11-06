@@ -151,6 +151,185 @@ public sealed class TradeTests
         Assert.Equal(tooltips, session.TooltipsEnabled);
     }
 
+    // ---- offline round trips: what ModernUO sends in, what its incoming handlers read back out ----
+
+    private const uint Me = 0x00000042, Vendor = 0x00001234, BuyPack = 0x40000010;
+
+    private static GameSession InWorld(List<byte[]> sent)
+    {
+        var session = new GameSession(new LoginSettings { AnnounceChatLinks = false });
+        session.StartOffline(sent.Add);
+        session.Inject(new PacketWriter(0x1B, 37).UInt32(Me).UInt32(0).UInt16(0x190).UInt16(1495).UInt16(1629).UInt16(0)
+            .Byte(0).Zero(9).UInt16(7168).UInt16(4096).Zero(6).ToArray(), false);
+        session.Inject(new byte[] { 0x55 }, false);
+        Assert.Equal(SessionState.InWorld, session.State);
+        sent.Clear();
+        return session;
+    }
+
+    /// <summary>
+    /// ModernUO's BaseVendor.VendorBuy: SendVendorBuyContent (0x3C, last to first, x = list index + 1, grid byte),
+    /// SendVendorBuyList (0x74, first to last, Latin-1 names with the terminator counted), SendDisplayBuyList
+    /// (0x24 gump 0x30, High Seas 9 bytes).
+    /// </summary>
+    private static void OpenBuy(GameSession session, params (uint Serial, ushort Graphic, int Amount, int Price, string Name)[] stock)
+    {
+        var contents = new PacketWriter(0x3C).UInt16(stock.Length);
+        for (int i = stock.Length - 1; i >= 0; i--)
+            contents.UInt32(stock[i].Serial).UInt16(stock[i].Graphic).Byte(0).UInt16(stock[i].Amount)
+                .UInt16(i + 1).UInt16(1).Byte(0).UInt32(BuyPack).UInt16(0);
+        session.Inject(contents.ToArray(), true);
+        var prices = new PacketWriter(0x74).UInt32(BuyPack).Byte(stock.Length);
+        foreach (var s in stock)
+            prices.UInt32((uint)s.Price).Byte(s.Name.Length + 1).Ascii(s.Name, s.Name.Length).Byte(0);
+        session.Inject(prices.ToArray(), true);
+        session.Inject(new PacketWriter(0x24, 9).UInt32(Vendor).UInt16(0x30).UInt16(0).ToArray(), false);
+    }
+
+    [Fact]
+    public void BuyOrderGoesOutAsModernUoVendorBuyReplyReadsIt()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        ShopList? shop = null;
+        uint closed = 0;
+        session.ShopOpened += s => shop = s;
+        session.ShopClosed += v => closed = v;
+
+        OpenBuy(session, (0x40000001, 0x13B2, 5, 35, "bow"), (0x40000002, 0x0F3F, 20, 2, "arrow"));
+        Assert.Equal(Vendor, shop!.Vendor);
+        Assert.Equal(new[] { "Bow", "Arrow" }, shop.Items.Select(i => i.Name));
+
+        // ShopWindow's Accept: the chosen (serial, amount) lines of the list.
+        session.Buy(shop.Vendor, new[] { (shop.Items[0].Serial, 2), (shop.Items[1].Serial, 20) });
+        byte[] p = Assert.Single(sent);
+        // VendorBuyReply: vendor, flag 0x02, then (layer, serial, int16 amount) per 7 remaining bytes.
+        Assert.Equal(new byte[]
+        {
+            0x3B, 0x00, 0x16, 0x00, 0x00, 0x12, 0x34, 0x02,
+            0x1A, 0x40, 0x00, 0x00, 0x01, 0x00, 0x02,
+            0x1A, 0x40, 0x00, 0x00, 0x02, 0x00, 0x14
+        }, p);
+        Assert.Equal(0, (p.Length - 8) % 7);
+
+        // SendEndVendorBuy (0x3B, 8 bytes) closes the list.
+        session.Inject(new PacketWriter(0x3B).UInt32(Vendor).Byte(0).ToArray(), true);
+        Assert.Equal(Vendor, closed);
+    }
+
+    [Fact]
+    public void EmptyBuyOrderSendsTheCloseFlag()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        session.Buy(Vendor, Array.Empty<(uint, int)>());
+        // Flag 0: VendorBuyReply buys nothing and answers with SendEndVendorBuy.
+        Assert.Equal(new byte[] { 0x3B, 0x00, 0x08, 0x00, 0x00, 0x12, 0x34, 0x00 }, Assert.Single(sent));
+    }
+
+    [Fact]
+    public void ReopenedBuyListDropsSoldOutStock()
+    {
+        // ModernUO skips a sold-out line (BaseVendor.VendorBuy, Amount <= 0) and numbers the rest x = 1..; its display
+        // item is never deleted. TazUO's UpdateContainedItems empties the container before the new 0x3C, so the old
+        // line can't keep x = 1 and take the next line's price.
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        ShopList? shop = null;
+        session.ShopOpened += s => shop = s;
+
+        OpenBuy(session, (0x40000001, 0x13B2, 1, 35, "bow"), (0x40000002, 0x0F3F, 20, 2, "arrow"), (0x40000003, 0x1BFB, 20, 3, "bolt"));
+        Assert.Equal(3, shop!.Items.Count);
+
+        OpenBuy(session, (0x40000002, 0x0F3F, 20, 2, "arrow"), (0x40000003, 0x1BFB, 20, 3, "bolt"));
+        Assert.Equal(new[] { 0x40000002u, 0x40000003u }, shop!.Items.Select(i => i.Serial));
+        Assert.Equal(new[] { "Arrow", "Bolt" }, shop.Items.Select(i => i.Name));
+        Assert.Equal(new[] { 2, 3 }, shop.Items.Select(i => i.Price));
+        Assert.Equal(2, session.World.ItemsIn(BuyPack).Count());
+
+        session.Buy(shop.Vendor, new[] { (shop.Items[0].Serial, 1) });
+        Assert.Equal(new byte[] { 0x3B, 0x00, 0x0F, 0x00, 0x00, 0x12, 0x34, 0x02, 0x1A, 0x40, 0x00, 0x00, 0x02, 0x00, 0x01 }, Assert.Single(sent));
+    }
+
+    [Fact]
+    public void SellOrderGoesOutAsModernUoVendorSellReplyReadsIt()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        ShopList? shop = null;
+        session.ShopOpened += s => shop = s;
+
+        // SendVendorSellList: vendor, u16 count, (serial, graphic, hue, amount, price, u16 name length, Latin-1 name).
+        session.Inject(new PacketWriter(0x9E).UInt32(Vendor).UInt16(2)
+            .UInt32(0x40000005).UInt16(0x1BF2).UInt16(0).UInt16(12).UInt16(3).UInt16(5).Ascii("ingot", 5)
+            .UInt32(0x40000006).UInt16(0x0F7A).UInt16(0).UInt16(4).UInt16(1).UInt16(11).Ascii("black pearl", 11).ToArray(), true);
+        Assert.True(shop!.Selling);
+        Assert.Equal(Vendor, shop.Vendor);
+
+        session.Sell(shop.Vendor, new[] { (shop.Items[0].Serial, 12), (shop.Items[1].Serial, 1) });
+        byte[] p = Assert.Single(sent);
+        // VendorSellReply: vendor, u16 count, and exactly count * 6 bytes of (serial, int16 amount) after it.
+        Assert.Equal(new byte[]
+        {
+            0x9F, 0x00, 0x15, 0x00, 0x00, 0x12, 0x34, 0x00, 0x02,
+            0x40, 0x00, 0x00, 0x05, 0x00, 0x0C,
+            0x40, 0x00, 0x00, 0x06, 0x00, 0x01
+        }, p);
+        Assert.Equal(2 * 6, p.Length - 9);
+    }
+
+    [Fact]
+    public void SkillUseAndLockSendTheZeroBasedSkillIndex()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+
+        // SendSkillsUpdate (type 0x02): SkillID + 1, value, base, lock, cap; 0 ends the list.
+        session.Inject(new PacketWriter(0x3A).Byte(0x02)
+            .UInt16(22).UInt16(500).UInt16(500).Byte(0).UInt16(1000)
+            .UInt16(47).UInt16(800).UInt16(800).Byte(1).UInt16(1000)
+            .UInt16(0).ToArray(), true);
+        SkillEntry hiding = session.Skills[21];
+        Assert.Equal(0, hiding.Lock);
+        Assert.Equal(1, session.Skills[46].Lock);
+
+        // ChangeSkillLock: Skills[int16 index] (0-based), lock byte (0 up, 1 down, 2 locked).
+        session.SetSkillLock(hiding.Id, 2);
+        Assert.Equal(new byte[] { 0x3A, 0x00, 0x06, 0x00, 0x15, 0x02 }, Assert.Single(sent));
+        sent.Clear();
+
+        // TextCommand 0x24: the first token is the 0-based skill index (TazUO's Send_UseSkill "{idx} 0").
+        session.UseSkill(hiding.Id);
+        Assert.Equal(new byte[] { 0x12, 0x00, 0x09, 0x24, (byte)'2', (byte)'1', (byte)' ', (byte)'0', 0x00 }, Assert.Single(sent));
+    }
+
+    [Fact]
+    public void ContextChoiceSendsTheEntryIndexNotItsPosition()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent);
+        ContextMenu? menu = null;
+        session.ContextMenuOpened += m => menu = m;
+
+        session.RequestContextMenu(Vendor);
+        Assert.Equal(new byte[] { 0xBF, 0x00, 0x09, 0x00, 0x13, 0x00, 0x00, 0x12, 0x34 }, Assert.Single(sent));
+        sent.Clear();
+
+        // Classic (type 1) entries: index, cliloc - 3000000, flags, hue when flags has 0x20. Indices out of list order.
+        session.Inject(new PacketWriter(0xBF).UInt16(0x14).UInt16(1).UInt32(Vendor).Byte(3)
+            .UInt16(4).UInt16(6103).UInt16(0x20).UInt16(0x0481) // Buy, coloured
+            .UInt16(7).UInt16(6106).UInt16(0)                    // Sell
+            .UInt16(2).UInt16(6098).UInt16(0)                    // Train
+            .ToArray(), true);
+        Assert.Equal(new[] { 3006103, 3006106, 3006098 }, menu!.Entries.Select(e => e.Cliloc));
+        Assert.Equal(new[] { 4, 7, 2 }, menu.Entries.Select(e => e.Index));
+
+        // ContextMenuWindow and CaptureTour choose with entry.Index; ModernUO's ContextMenuResponse indexes its menu by it.
+        ContextMenuEntry train = menu.Entries[2];
+        session.ChooseContextMenu(menu.Serial, train.Index);
+        Assert.Equal(new byte[] { 0xBF, 0x00, 0x0B, 0x00, 0x15, 0x00, 0x00, 0x12, 0x34, 0x00, 0x02 }, Assert.Single(sent));
+    }
+
     [Fact]
     public void ContextMenuChoiceEchoesSerialAndIndex()
     {

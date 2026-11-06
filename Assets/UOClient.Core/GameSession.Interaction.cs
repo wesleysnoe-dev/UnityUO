@@ -343,11 +343,29 @@ namespace UOClient.Core
             for (int i = 0; i < count; i++)
             {
                 ContainedItem item = ReadContained(ref r);
+                if (i == 0)
+                    ClearContainerExcept(item);
                 changed.Add(item.Container);
                 NoteBulletinItem(item);
             }
             foreach (uint c in changed)
                 World.RaiseContainerChanged(c);
+        }
+
+        /// <summary>
+        /// 0x3C is the container's whole contents: TazUO's UpdateContainedItems (UpdateContainedItems.cs:31-37) empties
+        /// the container named by the first entry before adding them. Without it a vendor's sold-out stock, which
+        /// ModernUO's VendorBuy leaves out while renumbering the rest x = 1.. (BaseVendor.cs:881, OutgoingVendorBuyPackets
+        /// SendVendorBuyContent), keeps its old x and pairs with another line's price in the next 0x74.
+        /// </summary>
+        private void ClearContainerExcept(ContainedItem first)
+        {
+            var stale = new List<uint>();
+            foreach (ContainedItem c in World.ItemsIn(first.Container))
+                if (c.Serial != first.Serial)
+                    stale.Add(c.Serial);
+            foreach (uint serial in stale)
+                World.Contained.Remove(serial);
         }
 
         private void ContainerContentUpdate(PacketReader r)
