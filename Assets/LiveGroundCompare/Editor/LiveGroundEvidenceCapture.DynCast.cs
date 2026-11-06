@@ -445,6 +445,8 @@ namespace UOClient.LiveGroundCompare.Editor
             public RenderTexture Rt, ProbeRt;
             public GameObject Sea, Probe, Ground;
             public double Start, Next;
+            public string Prefix = "water_realtime", Receive; // Receive: the bound ceiling (-lgWaterRecv), for the report
+            public CeilingGlobals SavedCeiling;
             public readonly List<(int Frame, double Wall, float Time, float TimeX, float Delta, float Rt, Texture2D Tex, Diff Same)> Frames =
                 new List<(int, double, float, float, float, float, Texture2D, Diff)>();
         }
@@ -463,6 +465,8 @@ namespace UOClient.LiveGroundCompare.Editor
                 if (Array.IndexOf(Environment.GetCommandLineArgs(), "-lgGamma") >= 0 && PlayerSettings.colorSpace != ColorSpace.Gamma)
                     PlayerSettings.colorSpace = ColorSpace.Gamma;
                 _water = WaterSetup(Arg("-lgFixture") ?? Path.Combine(EvidenceDir, "realWaterChunk.json"), Arg("-lgOut") ?? Path.Combine(EvidenceDir, "stills"));
+                if (Arg("-lgWaterRecv") is string recv)
+                    WaterRealtimeReceive(_water, recv); // the shipped water with the cast ceiling live (_LGCeilOn 1)
                 EditorApplication.update += WaterTick;
                 Debug.Log("UOClient LiveGround water realtime: armed; frames render on later Editor update ticks");
             }
@@ -602,7 +606,7 @@ namespace UOClient.LiveGroundCompare.Editor
             for (int k = 0; k < w.Frames.Count; k++)
             {
                 var fr = w.Frames[k];
-                string file = $"water_realtime_{k}.png";
+                string file = $"{w.Prefix}_{k}.png";
                 File.WriteAllBytes(Path.Combine(w.OutDir, file), fr.Tex.EncodeToPNG());
                 string vs = "-";
                 if (k > 0)
@@ -614,15 +618,17 @@ namespace UOClient.LiveGroundCompare.Editor
                 }
                 md.AppendLine($"| {k} (`{file}`, sha256 {Sha(Path.Combine(w.OutDir, file))}) | {fr.Frame} | {fr.Wall:0.000} | {fr.Time:0.0000} | {fr.TimeX:0.0000} | {fr.Delta:0.0000} | {fr.Rt:0.000} | {fr.Same.Changed} px | {vs} |");
             }
-            File.WriteAllBytes(Path.Combine(w.OutDir, "water_realtime_first_last_diff_x8.png"), DiffImage(w.Frames[0].Tex, w.Frames[w.Frames.Count - 1].Tex, 8).EncodeToPNG());
+            File.WriteAllBytes(Path.Combine(w.OutDir, $"{w.Prefix}_first_last_diff_x8.png"), DiffImage(w.Frames[0].Tex, w.Frames[w.Frames.Count - 1].Tex, 8).EncodeToPNG());
             md.AppendLine();
             string verdict = timeAdvanced && moved == w.Frames.Count - 1
                 ? $"_Time.y advanced on every frame ({w.Frames[0].Time:0.000} -> {w.Frames[w.Frames.Count - 1].Time:0.000} s) and the shipped water's pixels changed on all {moved} frame steps"
                 : $"NOT shown: _Time.y advanced on every frame = {timeAdvanced}; frame steps with changed pixels {moved}/{w.Frames.Count - 1}";
             md.AppendLine($"- Verdict: {verdict}.");
-            md.AppendLine("- `water_realtime_first_last_diff_x8.png`: |last - first| x8.");
+            md.AppendLine($"- `{w.Prefix}_first_last_diff_x8.png`: |last - first| x8.");
+            if (w.Receive != null)
+                md.AppendLine($"- Sun-ceiling receive live during every frame: {w.Receive}.");
             md.AppendLine("- Limits: Editor batch frames (EditorApplication.update), not the player loop of a live session; one chunk; the probe proves the value Unity bound for _Time on each render, the pixel deltas that the shipped shader responds to it.");
-            string report = Path.Combine(w.OutDir, "water_realtime.md");
+            string report = Path.Combine(w.OutDir, w.Prefix + ".md");
             File.WriteAllText(report, md.ToString().Replace("\r\n", "\n"));
             Debug.Log($"LGWATERTIME frames {w.Frames.Count}; times {string.Join(", ", w.Frames.Select(x => x.Time.ToString("0.0000")))}; frameCounts {string.Join(", ", w.Frames.Select(x => x.Frame))}; moved {moved}; same-frame {string.Join(", ", w.Frames.Select(x => x.Same.Changed))}; {verdict}");
             return report;
@@ -635,6 +641,7 @@ namespace UOClient.LiveGroundCompare.Editor
             if (w == null)
                 return;
             w.Saved?.Restore();
+            w.SavedCeiling?.Restore();
             RenderTexture.active = null;
             foreach (RenderTexture r in new[] { w.Rt, w.ProbeRt })
                 if (r != null)

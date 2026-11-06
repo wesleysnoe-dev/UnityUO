@@ -13,12 +13,17 @@
 # -DynCast: mobile/item dynamic cast + cross-chunk margin stills (CaptureDynCastBatch on dynCastChunk.json from
 # LiveGroundDynCastFixtureTests, over shadowRecvChunk.json). -WaterRealtime: the shipped water shader on separate Editor
 # frames with a _Time probe (CaptureWaterRealtimeBatch; the Editor stays up for those frames, then exits itself).
+#
+# -WaterRecv: water sun-ceiling receive stills (CaptureWaterRecvBatch on waterRecvChunk.json from
+# LiveGroundWaterRecvFixtureTests, over realWaterChunk.json; equivalence against LiveGroundCompareWater.83c0a85.shader.txt).
+# -WaterRealtime -WaterRecv: the multi-frame _Time run with that cast ceiling live (waterrecv_realtime_*).
 param(
     [string]$Scratch = (Join-Path $env:TEMP 'UOClient_LGEvidence'),
     [string]$Unity = 'C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe',
     [switch]$ShadowRecv,
     [switch]$DynCast,
-    [switch]$WaterRealtime
+    [switch]$WaterRealtime,
+    [switch]$WaterRecv
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
@@ -37,13 +42,15 @@ $log = Join-Path $Scratch 'capture.log'
 $method, $fixtureArg, $fixture = if ($ShadowRecv) { 'CaptureShadowRecvBatch', '-lgShadowFixture', 'Evidence~\shadowRecvChunk.json' }
                                  elseif ($DynCast) { 'CaptureDynCastBatch', '-lgDynFixture', 'Evidence~\dynCastChunk.json' }
                                  elseif ($WaterRealtime) { 'CaptureWaterRealtimeBatch', '-lgFixture', 'Evidence~\realWaterChunk.json' }
+                                 elseif ($WaterRecv) { 'CaptureWaterRecvBatch', '-lgWaterRecv', 'Evidence~\waterRecvChunk.json' }
                                  else { 'CaptureBatch', '-lgFixture', 'Evidence~\realWaterChunk.json' }
-$p = Start-Process -FilePath $Unity -Wait -PassThru -ArgumentList @(
+$extra = if ($WaterRealtime -and $WaterRecv) { @('-lgWaterRecv', "`"$(Join-Path $lg 'Evidence~\waterRecvChunk.json')`"") } else { @() }
+$p = Start-Process -FilePath $Unity -Wait -PassThru -ArgumentList (@(
     '-batchmode', '-projectPath', "`"$Scratch`"", '-lgGamma',
     '-executeMethod', "UOClient.LiveGroundCompare.Editor.LiveGroundEvidenceCapture.$method",
     $fixtureArg, "`"$(Join-Path $lg $fixture)`"",
     '-lgOut', "`"$(Join-Path $lg 'Evidence~\stills')`"",
-    '-logFile', "`"$log`"")
-Select-String -Path $log -Pattern 'LGEVIDENCE|LGSHADOWRECV|LGDYNCAST|LGWATERTIME|evidence FAILED|error CS' | ForEach-Object { $_.Line }
+    '-logFile', "`"$log`"") + $extra)
+Select-String -Path $log -Pattern 'LGEVIDENCE|LGSHADOWRECV|LGDYNCAST|LGWATERTIME|LGWATERRECV|evidence FAILED|error CS' | ForEach-Object { $_.Line }
 Write-Output "unity exit $($p.ExitCode); log $log"
 exit $p.ExitCode

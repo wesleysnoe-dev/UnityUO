@@ -263,15 +263,23 @@ namespace UOClient.LiveGroundCompare.Editor
         private static Shader TimedWater(Shader shipped)
         {
             string path = AssetDatabase.GetAssetPath(shipped);
-            string src = File.ReadAllText(Path.Combine(ProjectRoot, path));
-            string include = File.ReadAllText(Path.GetFullPath(Path.Combine(ProjectRoot, Path.GetDirectoryName(path), "..", "LiveGroundLight.cginc")));
+            return TimedWater(File.ReadAllText(Path.Combine(ProjectRoot, path)), WaterInclude(shipped), "Hidden/LiveGroundCompare/WaterEvidenceTime");
+        }
+
+        /// <summary>LiveGroundLight.cginc next to the shipped water shader's Resources folder.</summary>
+        private static string WaterInclude(Shader shipped) =>
+            File.ReadAllText(Path.GetFullPath(Path.Combine(ProjectRoot, Path.GetDirectoryName(AssetDatabase.GetAssetPath(shipped)), "..", "LiveGroundLight.cginc")));
+
+        /// <summary>Water shader text <paramref name="src"/> with _Time.y as a uniform, the include inlined, under <paramref name="hidden"/>.</summary>
+        private static Shader TimedWater(string src, string include, string hidden)
+        {
             const string time = "_Time.y", inc = "#include \"../LiveGroundLight.cginc\"", name = "Shader \"LiveGroundCompare/Water\"";
             int program = src.IndexOf("CGPROGRAM", StringComparison.Ordinal);
             string head = program < 0 ? src : src.Substring(0, program), code = program < 0 ? "" : src.Substring(program);
             int uses = (code.Length - code.Replace(time, "").Length) / time.Length; // the header comment may name it too
             if (uses != 1 || !code.Contains(inc) || !head.Contains(name))
                 throw new InvalidOperationException($"water shader changed shape ({uses} uses of {time} in code); update the evidence patch");
-            src = head.Replace(name, "Shader \"Hidden/LiveGroundCompare/WaterEvidenceTime\"") +
+            src = head.Replace(name, $"Shader \"{hidden}\"") +
                   code.Replace(inc, include + "\nfloat _LGEvidenceTime; // evidence fixture only: stands in for _Time.y\n")
                       .Replace(time, "_LGEvidenceTime");
             Shader s = ShaderUtil.CreateShaderAsset(src);
