@@ -75,7 +75,7 @@ public sealed class SpellcastTests
     }
 
     [Fact]
-    public void ClickingASpellInTheBookCastsFromThatBook()
+    public void ClickingAListRowCastsFromThatBook()
     {
         var sent = new List<byte[]>();
         GameSession session = InWorld(sent, ClientVersion.Default);
@@ -88,13 +88,14 @@ public sealed class SpellcastTests
         (uint book, int first, ulong bits) = Assert.Single(opened);
         Assert.Equal((Book, 101, 0x05UL), (book, first, bits));
 
-        SpellbookWindow.CastFromBook(session, book, first, 2); // the window's third row: Corpse Skin, spell 103
+        // The plain list (the schools not drawn classic) keeps the book-serial cast; spell 103 is its third row.
+        SpellbookWindow.CastFromBook(session, book, first, 2);
 
         Assert.Equal(GameSession.CastSpellFromBookRequest(103, Book), Assert.Single(NoPings(sent)));
     }
 
     [Fact]
-    public void TheClassicBooksSpellCastsFromThatBook()
+    public void TheClassicBooksIconDoubleClickCastsWithoutTheBook()
     {
         var sent = new List<byte[]>();
         GameSession session = InWorld(sent, ClientVersion.Default);
@@ -107,12 +108,218 @@ public sealed class SpellcastTests
         (uint book, int first, ulong bits) = Assert.Single(opened);
         Assert.True(SpellbookWindow.TryGetBookInfo(first, out SpellbookInfo info));
 
-        // The first detail spread's right page is Dispel Evil; its icon or name click casts it from this book.
+        // The first detail spread's right page is Dispel Evil; its icon's double-click is GameActions.CastSpell(204).
         SpellbookWindow.DetailEntry right = SpellbookWindow.DetailEntries(info, bits)[1];
         Assert.Equal((2, true, 3), (right.Page, right.Right, right.Spell));
-        SpellbookWindow.CastFromBook(session, book, info.First, right.Spell);
+        var b = new BookDriver(session, new SpellbookState(book, first, bits));
+        b.Press(BookTarget.Icon, right.Spell, 0, 240, 60, 0.00);
+        b.Release(240, 60);
+        b.Press(BookTarget.Icon, right.Spell, 0, 240, 60, 0.20);
+        b.Release(240, 60);
 
-        Assert.Equal(GameSession.CastSpellFromBookRequest(204, Book), Assert.Single(NoPings(sent)));
+        Assert.Equal(Extended(204), Assert.Single(NoPings(sent)));
+    }
+
+    /// <summary>
+    /// What SpellbookWindow.Pointer and Draw do with SpellbookClicks' answers, minus IMGUI: a Cast sends CastBookSpell,
+    /// a DragOut counts a floating icon, a Tick's page opens. The window's own event plumbing needs play mode.
+    /// </summary>
+    private sealed class BookDriver
+    {
+        private readonly GameSession _session;
+        public readonly SpellbookState State;
+        public readonly SpellbookClicks Clicks = new SpellbookClicks();
+        public int DraggedOut;
+
+        public BookDriver(GameSession session, SpellbookState state)
+        {
+            _session = session;
+            State = state;
+        }
+
+        public void Press(BookTarget target, int spell, int toPage, float x, float y, double now)
+        {
+            if (Clicks.Press(target, spell, toPage, x, y, now) == BookAction.Cast)
+                SpellbookWindow.CastBookSpell(_session, State.Info.First, spell);
+        }
+
+        public void Drag(float x, float y)
+        {
+            if (Clicks.Drag(x, y) == BookAction.DragOut)
+                DraggedOut++;
+        }
+
+        public void Release(float x, float y) => Clicks.Release(x, y);
+
+        public void Tick(double now)
+        {
+            int page = Clicks.Tick(now);
+            if (page >= 0)
+                State.GoTo(page);
+        }
+    }
+
+    // A full magery book: Heal (index 3) is on index spread 1, and its name opens detail spread 6.
+    private static BookDriver Magery(List<byte[]> sent, out SpellbookWindow.IndexEntry heal)
+    {
+        GameSession session = InWorld(sent, ClientVersion.Default);
+        var driver = new BookDriver(session, new SpellbookState(Book, 1, ulong.MaxValue));
+        heal = driver.State.Index.Single(i => i.Spell == 3);
+        Assert.Equal((1, 6), (heal.Page, heal.ToPage));
+        return driver;
+    }
+
+    [Fact]
+    public void AnIconsSingleClickSendsNothing()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out _);
+        b.State.GoTo(6);
+
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.00);
+        b.Release(80, 60);
+        b.Tick(1.00);
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 2.00); // long after: a fresh single click, not a double
+        b.Release(80, 60);
+        b.Tick(3.00);
+
+        Assert.Empty(NoPings(sent));
+        Assert.Equal(6, b.State.Page);
+    }
+
+    [Fact]
+    public void AnIconsDoubleClickIsTheExtendedCastOnce()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out _);
+        b.State.GoTo(6);
+
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.00);
+        b.Release(80, 60);
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.35); // MOUSE_DELAY_DOUBLE_CLICK: lastClickTime + 350 >= ticks
+        b.Release(80, 60);
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.40); // a third press starts over
+        b.Release(80, 60);
+
+        Assert.Equal(Extended(4), Assert.Single(NoPings(sent)));
+        Assert.DoesNotContain(NoPings(sent), p => p[0] == 0x12);
+    }
+
+    [Fact]
+    public void ASecondPressPastTheDoubleClickTimeIsNotADoubleClick()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out _);
+        b.State.GoTo(6);
+
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.00);
+        b.Release(80, 60);
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.36);
+        b.Release(80, 60);
+
+        Assert.Empty(NoPings(sent));
+    }
+
+    [Fact]
+    public void AnIndexNamesClickOpensItsSpreadAfterTheDoubleClickTime()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out SpellbookWindow.IndexEntry heal);
+
+        b.Press(BookTarget.Index, heal.Spell, heal.ToPage, heal.X + 400, heal.Y + 100, 10.00);
+        b.Release(heal.X + 400, heal.Y + 100);
+        Assert.Equal(heal.ToPage, b.Clicks.EnqueuedPage);
+        b.Tick(10.20);
+        Assert.Equal(1, b.State.Page); // still waiting for a possible second click
+        b.Tick(10.36);
+
+        Assert.Equal(heal.ToPage, b.State.Page);
+        Assert.Equal(-1, b.Clicks.EnqueuedPage);
+        Assert.Empty(NoPings(sent));
+    }
+
+    [Fact]
+    public void AnIndexNamesDoubleClickCastsAndKeepsTheSpread()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out SpellbookWindow.IndexEntry heal);
+
+        b.Press(BookTarget.Index, heal.Spell, heal.ToPage, 470, 160, 10.00);
+        b.Release(470, 160); // queues the page
+        b.Press(BookTarget.Index, heal.Spell, heal.ToPage, 470, 160, 10.15);
+        Assert.Equal(-1, b.Clicks.EnqueuedPage);
+        b.Release(470, 160); // the double-click's release is swallowed: no page queued again
+        b.Tick(11.00);
+
+        Assert.Equal(Extended(4), Assert.Single(NoPings(sent)));
+        Assert.Equal(1, b.State.Page);
+    }
+
+    [Fact]
+    public void AnIndexNamePressThatDragsTheBookQueuesNothing()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out SpellbookWindow.IndexEntry heal);
+
+        // The name is CanMove: the press drags the book, so the release is somewhere else on screen.
+        b.Press(BookTarget.Index, heal.Spell, heal.ToPage, 470, 160, 10.00);
+        b.Drag(480, 160);
+        b.Release(510, 175);
+        b.Tick(11.00);
+
+        Assert.Equal(-1, b.Clicks.EnqueuedPage);
+        Assert.Equal(1, b.State.Page);
+        Assert.Equal(0, b.DraggedOut); // only an icon drags out
+        Assert.Empty(NoPings(sent));
+    }
+
+    [Fact]
+    public void DraggingAnIconOutCastsNothing()
+    {
+        var sent = new List<byte[]>();
+        BookDriver b = Magery(sent, out _);
+        b.State.GoTo(6);
+
+        b.Press(BookTarget.Icon, 3, 0, 80, 60, 0.00);
+        b.Drag(83, 57);
+        Assert.Equal(0, b.DraggedOut); // under 5 px
+        b.Drag(85, 60);
+        b.Drag(140, 90);
+        b.Release(140, 90);
+        b.Tick(1.00);
+
+        Assert.Equal(1, b.DraggedOut); // once per press
+        Assert.Equal(3, b.Clicks.Spell);
+        Assert.Empty(NoPings(sent));
+
+        // A press on nothing (the book's art) is counted but never casts, alone or as a double-click.
+        b.Press(BookTarget.None, -1, 0, 10, 10, 5.00);
+        b.Release(10, 10);
+        b.Press(BookTarget.None, -1, 0, 10, 10, 5.10);
+        b.Release(10, 10);
+        Assert.Empty(NoPings(sent));
+    }
+
+    [Fact]
+    public void TheFloatingIconCastsOnlyOnItsDoubleClick()
+    {
+        var sent = new List<byte[]>();
+        GameSession session = InWorld(sent, ClientVersion.Default);
+        var clicks = new SpellbookClicks(); // SpellIconWindow's clock: SingleClickIconUse off
+
+        void Press(double now)
+        {
+            if (clicks.Press(BookTarget.Icon, 202, 0, 20, 20, now) == BookAction.Cast)
+                SpellbookWindow.CastIcon(session, 202);
+            clicks.Release(20, 20);
+        }
+
+        Press(0.00);
+        Assert.Empty(NoPings(sent));
+        Press(0.25);
+        Assert.Equal(Extended(202), Assert.Single(NoPings(sent)));
+        Press(3.00);
+        Assert.Single(NoPings(sent));
     }
 
     // ModernUO's SendNewSpellbookContent (OutgoingContainerPackets.cs:46-69) byte for byte: 0xBF, length 23, sub 0x1B,
@@ -258,6 +465,8 @@ public sealed class SpellcastTests
         session.CastSpell(1);
         session.CastSpellFromBook(1, Book);
         SpellbookWindow.CastFromBook(null, Book, 1, 0);
+        SpellbookWindow.CastBookSpell(null, 1, 0);
+        SpellbookWindow.CastBookSpell(session, 1, 0); // offline, not in world
         Assert.Empty(sent);
     }
 }
