@@ -150,6 +150,94 @@ namespace UOClient.Unity
         public static bool JournalShowsLine(bool showSystemMessages, uint serial) =>
             showSystemMessages || (serial != 0 && serial != 0xFFFFFFFF);
 
+        // ---- grid containers (TazUO's GridContainer, GridItem, OpenContainer.cs) ----
+
+        /// <summary>
+        /// Container gumps TazUO never opens as a grid (OpenContainer.cs, the 0x24 handler's <c>canuse</c> and
+        /// <c>isvendor</c> lists, and its 0x091A chessboard check): game boards and vendor / large-container gumps.
+        /// </summary>
+        public static bool GridNeverOpens(ushort gump)
+        {
+            int g = gump;
+            bool canUse = g == 1009 || g == 1081 || g == 1278 || g == 2417 || (g >= 1060 && g <= 1068) || (g >= 1071 && g <= 1079)
+                          || (g >= 1258 && g <= 1270) || (g >= 1282 && g <= 1291);
+            bool isVendor = g == 10009 || g == 2330 || (g >= 10060 && g <= 10081) || (g >= 10258 && g <= 10291) || g == 11000
+                            || g == 11156 || g == 11415 || g == 11417 || g == 11422 || (g >= 11747 && g <= 11750)
+                            || (g >= 11765 && g <= 11770) || (g >= 19800 && g <= 19835) || g == 29724 || g == 40558 || g == 40560
+                            || g == 40562 || g == 40586 || g == 49922 || g == 49934 || g == 50138 || (g >= 50153 && g <= 50167)
+                            || g == 50250 || g == 50300; // TazUO's "(g >= 50246 && g == 50250)" and "(g >= 50298 && g == 50300)"
+            return canUse || isVendor || gump == 0x091A;
+        }
+
+        /// <summary>
+        /// Whether a container opens as a grid window: TazUO's ContainerStyle.Grid with
+        /// GridContainer.ShouldUseOldContainerStyle, which with no per-container choice falls back to
+        /// GridContainersDefaultToOldStyleView; corpses follow it too (CorpseContainerStyle's default). Never for
+        /// <see cref="GridNeverOpens"/>.
+        /// </summary>
+        public static bool OpensGrid(bool defaultToOldStyleView, ushort gump) => !defaultToOldStyleView && !GridNeverOpens(gump);
+
+        /// <summary>TazUO's GridItemSize: a cell is <c>round(50 x scale / 100)</c> pixels square (the scale clamped 50-200).</summary>
+        public static int GridItemSize(int gridContainersScale) =>
+            (int)Math.Round(50 * (Math.Max(MinGridContainersScale, Math.Min(MaxGridContainersScale, gridContainersScale)) / 100f));
+
+        /// <summary>
+        /// One side of an item's art in its cell: GridItem.CalculateCenteredDimension. Art (its opaque bounds,
+        /// <paramref name="artSize"/>) smaller than the cell keeps its size, or times the scale with ScaleItems; larger, it
+        /// is squeezed to the cell, or the cell times the scale with ScaleItems; equal, it fills the cell. Centred: the
+        /// offset is half the cell less half the size (both halved first, as TazUO's shifts). Each side on its own.
+        /// </summary>
+        public static (int Size, int Offset) GridArtSize(int artSize, int cellSize, bool scaleItems, int gridContainersScale)
+        {
+            float scale = Math.Max(MinGridContainersScale, Math.Min(MaxGridContainersScale, gridContainersScale)) / 100f;
+            if (artSize == cellSize)
+                return (cellSize, 0);
+            int size = artSize < cellSize
+                ? (scaleItems ? (int)(artSize * scale) : artSize)
+                : (scaleItems ? (int)(cellSize * scale) : cellSize);
+            return (size, (cellSize >> 1) - (size >> 1));
+        }
+
+        /// <summary>The grid window's background and border alpha: TazUO's <c>ContainerOpacity / 100f</c>, clamped 0-100.</summary>
+        public static float GridBackgroundAlpha(int containerOpacity) =>
+            Math.Max(MinContainerOpacity, Math.Min(MaxContainerOpacity, containerOpacity)) / 100f;
+
+        /// <summary>TazUO's layers Hair (11), Face (15) and Beard (16): never lootable (Item.IsLootable).</summary>
+        public static bool IsBodyPartLayer(int layer) => layer == 11 || layer == 15 || layer == 16;
+
+        /// <summary>
+        /// Whether a double-click in a grid window loots the item into the backpack: TazUO's GridItem.OnMouseDoubleClick,
+        /// DoubleClickToLootInsideContainers in a corpse only, the item not a container and lootable (not hair, face or
+        /// beard), the window not the player's own backpack. Else the item is used.
+        /// </summary>
+        public static bool GridLootsOnDoubleClick(bool option, bool containerIsCorpse, bool containerIsBackpack, bool itemIsContainer,
+                                                  int itemTileLayer, bool haveBackpack) =>
+            option && containerIsCorpse && !containerIsBackpack && !itemIsContainer && !IsBodyPartLayer(itemTileLayer) && haveBackpack;
+
+        // TazUO's Constants.BAD_CONTAINER_LAYERS (GameObjects layers 0-31).
+        private static readonly bool[] BadContainerLayers =
+        {
+            false,
+            true, true, true, true, true, true, true, true,
+            true, true, false, true, true, true, false, false,
+            true, true, true, true,
+            false,
+            true, true, true, false, false, false, false, false,
+            false, false,
+        };
+
+        /// <summary>
+        /// Whether an item is listed in a grid window: GridSlotManager.GetItemsInContainer. In a corpse, what it wears on a
+        /// layer outside BAD_CONTAINER_LAYERS (hair, face, beard, the backpack, the mount) is left out
+        /// (<paramref name="wornLayer"/>, 0 for none); anywhere, wearable hair, face and beard are.
+        /// </summary>
+        public static bool GridListsItem(bool containerIsCorpse, int wornLayer, bool wearable, int tileLayer)
+        {
+            if (containerIsCorpse && wornLayer > 0 && (wornLayer >= BadContainerLayers.Length || !BadContainerLayers[wornLayer]))
+                return false;
+            return !(wearable && IsBodyPartLayer(tileLayer));
+        }
+
         /// <summary>TazUO's journal log name (JournalManager.CreateWriter): <c>yyyy_MM_dd_HH_mm_ss_{name}_journal.txt</c>, the name made safe.</summary>
         public static string JournalFileName(DateTime opened, string characterName)
         {

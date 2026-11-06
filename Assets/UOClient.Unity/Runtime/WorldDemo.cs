@@ -390,6 +390,10 @@ namespace UOClient.Unity
             holdDownKeyTab = _input.HoldDownKeyTab,
             autoOpenDoors = _doorAutoOpen.Enabled,
             autoOpenDoorsIfHidden = _doorAutoOpen.IfHidden,
+            gridContainersDefaultToOldStyleView = UI.GridContainerWindow.DefaultToOldStyleView,
+            containerOpacity = UI.GridContainerWindow.Opacity,
+            gridContainersScale = UI.GridContainerWindow.ScalePercent,
+            gridContainerScaleItems = UI.GridContainerWindow.ScaleItems,
         };
 
         public void ApplyOptions(GameOptions options)
@@ -443,6 +447,10 @@ namespace UOClient.Unity
             _input.HoldDownKeyTab = o.holdDownKeyTab;
             _doorAutoOpen.Enabled = o.autoOpenDoors;
             _doorAutoOpen.IfHidden = o.autoOpenDoorsIfHidden;
+            UI.GridContainerWindow.DefaultToOldStyleView = o.gridContainersDefaultToOldStyleView;
+            UI.GridContainerWindow.Opacity = o.containerOpacity;
+            UI.GridContainerWindow.ScalePercent = o.gridContainersScale;
+            UI.GridContainerWindow.ScaleItems = o.gridContainerScaleItems;
         }
 
         // The options' AutoOpenCorpses: kept across logins, each new session starts with nothing opened (Tick).

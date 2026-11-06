@@ -51,6 +51,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\ObjectHighlight.cs" Link="Unity\ObjectHighlight.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MousePick.cs" Link="Unity\MousePick.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\ShopWindow.Icon.cs" Link="Unity\ShopWindow.Icon.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\GridContainerWindow.Layout.cs" Link="Unity\GridContainerWindow.Layout.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />

@@ -45,7 +45,9 @@ namespace UOClient.Unity.UI
             (Page.Speech, "Guild / alliance hues: this client sends no guild chat (AoS)."),
             (Page.Speech, "Override party hue: TazUO's recolours members' bodies, not chat."),
             (Page.CombatSpells, "Spell hues, cursor spell names, HP colours: not drawn."),
-            (Page.Containers, "Container opacity and grid containers: classic gumps only."),
+            (Page.Containers, "Grid search, sort, quick loot, auto loot, lock slots, bands: not in the grid yet."),
+            (Page.Containers, "Grid borders, colours, columns and rows, list view, highlights: default look only."),
+            (Page.Containers, "Corpse style, grid loot, nearby loot: corpses follow the original-view option."),
         };
 
         /// <summary>What Defaults, Cancel, Apply and Okay do, shown while the mouse is on each (in that order).</summary>

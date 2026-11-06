@@ -49,6 +49,12 @@ namespace UOClient.Unity
         /// <summary>TazUO's HealthLineSizeMultiplier slider range (ModernOptionsGump.BuildTazUO, 1-5).</summary>
         public const int MinHealthLineSize = 1, MaxHealthLineSize = 5;
 
+        /// <summary>TazUO's ContainerOpacity slider (ModernOptionsGump.BuildContainers, 0-100).</summary>
+        public const int MinContainerOpacity = 0, MaxContainerOpacity = 100;
+
+        /// <summary>TazUO's GridContainersScale slider (ModernOptionsGump.BuildContainers, 50-200 %).</summary>
+        public const int MinGridContainersScale = 50, MaxGridContainersScale = 200;
+
         public bool showNames = true;
         public bool showJournal = true;
         public bool showHud = true;
@@ -143,8 +149,11 @@ namespace UOClient.Unity
         /// </summary>
         public bool showTargetIndicator = false;
 
-        /// <summary>TazUO's AutoOpenCorpses (Core.CorpseAutoOpen): corpses in range open once each. On, as TazUO.</summary>
-        public bool autoOpenCorpses = true;
+        /// <summary>
+        /// TazUO's AutoOpenCorpses (Core.CorpseAutoOpen): corpses in range open once each. Off by default here (TazUO: on):
+        /// it acts on the world for the player, so only when the player turns it on.
+        /// </summary>
+        public bool autoOpenCorpses = false;
 
         /// <summary>TazUO's AutoOpenCorpseRange (0-5 tiles). 2, as TazUO.</summary>
         public int autoOpenCorpseRange = 2;
@@ -152,10 +161,13 @@ namespace UOClient.Unity
         /// <summary>TazUO's CorpseOpenOptions (<see cref="CorpseOpenNotTargetingOrHiding"/>, as TazUO).</summary>
         public int corpseOpenOptions = CorpseOpenNotTargetingOrHiding;
 
-        /// <summary>TazUO's AutoOpenDoors (Core.DoorAutoOpen): stepping or turning to face a closed door opens it. On, as TazUO.</summary>
-        public bool autoOpenDoors = true;
+        /// <summary>
+        /// TazUO's AutoOpenDoors (Core.DoorAutoOpen): stepping or turning to face a closed door opens it. Off by default
+        /// here (TazUO: on): it acts on the world for the player, so only when the player turns it on.
+        /// </summary>
+        public bool autoOpenDoors = false;
 
-        /// <summary>TazUO's AutoOpenDoorsIfHidden: doors open for a hidden player too. On, as TazUO.</summary>
+        /// <summary>TazUO's AutoOpenDoorsIfHidden: with <see cref="autoOpenDoors"/> on, doors open for a hidden player too. On, as TazUO.</summary>
         public bool autoOpenDoorsIfHidden = true;
 
         /// <summary>TazUO's HueContainerGumps (ContainerGump): a container's gump takes the container's hue. On, as TazUO.</summary>
@@ -197,6 +209,22 @@ namespace UOClient.Unity
         /// </summary>
         public bool highlightContainerWhenSelected = false;
 
+        /// <summary>
+        /// TazUO's GridContainersDefaultToOldStyleView (GridContainer.ShouldUseOldContainerStyle): containers open as the
+        /// classic gump. On by default here (TazUO: off, grid first), so containers open as they always did until the
+        /// player turns it off; off, new opens are grid windows (<see cref="OpensGrid"/>, GridContainerWindow).
+        /// </summary>
+        public bool gridContainersDefaultToOldStyleView = true;
+
+        /// <summary>TazUO's ContainerOpacity (0-100): the grid window's background and border alpha. 50, as TazUO. Classic gumps never use it.</summary>
+        public int containerOpacity = 50;
+
+        /// <summary>TazUO's GridContainersScale (50-200 %): a grid cell is <see cref="GridItemSize"/> pixels. 100, as TazUO.</summary>
+        public int gridContainersScale = 100;
+
+        /// <summary>TazUO's GridContainerScaleItems: the item art in a grid cell scales with it (<see cref="GridArtSize"/>). On, as TazUO.</summary>
+        public bool gridContainerScaleItems = true;
+
         public static GameOptions Defaults() => new GameOptions();
 
         public GameOptions Clone() => (GameOptions)MemberwiseClone();
@@ -222,6 +250,8 @@ namespace UOClient.Unity
             emoteHue = ClampHue(emoteHue);
             yellHue = ClampHue(yellHue);
             partyMessageHue = ClampHue(partyMessageHue);
+            containerOpacity = Math.Max(MinContainerOpacity, Math.Min(MaxContainerOpacity, containerOpacity));
+            gridContainersScale = Math.Max(MinGridContainersScale, Math.Min(MaxGridContainersScale, gridContainersScale));
             return this;
         }
 
@@ -256,7 +286,10 @@ namespace UOClient.Unity
             && autoOpenCorpses == o.autoOpenCorpses && autoOpenCorpseRange == o.autoOpenCorpseRange
             && corpseOpenOptions == o.corpseOpenOptions && hueContainerGumps == o.hueContainerGumps
             && holdDownKeyTab == o.holdDownKeyTab
-            && autoOpenDoors == o.autoOpenDoors && autoOpenDoorsIfHidden == o.autoOpenDoorsIfHidden;
+            && autoOpenDoors == o.autoOpenDoors && autoOpenDoorsIfHidden == o.autoOpenDoorsIfHidden
+            && gridContainersDefaultToOldStyleView == o.gridContainersDefaultToOldStyleView
+            && containerOpacity == o.containerOpacity && gridContainersScale == o.gridContainersScale
+            && gridContainerScaleItems == o.gridContainerScaleItems;
 
         // ---- the file: a flat JSON object; keys this version doesn't know are kept as they were ----
 
@@ -318,6 +351,10 @@ namespace UOClient.Unity
                     case "holdDownKeyTab": Bool(raw, ref o.holdDownKeyTab); break;
                     case "autoOpenDoors": Bool(raw, ref o.autoOpenDoors); break;
                     case "autoOpenDoorsIfHidden": Bool(raw, ref o.autoOpenDoorsIfHidden); break;
+                    case "gridContainersDefaultToOldStyleView": Bool(raw, ref o.gridContainersDefaultToOldStyleView); break;
+                    case "containerOpacity": Integer(raw, ref o.containerOpacity); break;
+                    case "gridContainersScale": Integer(raw, ref o.gridContainersScale); break;
+                    case "gridContainerScaleItems": Bool(raw, ref o.gridContainerScaleItems); break;
                     default: unknown.Add(new KeyValuePair<string, string>(key, raw)); break;
                 }
             }
@@ -396,6 +433,10 @@ namespace UOClient.Unity
             Add("holdDownKeyTab", B(holdDownKeyTab));
             Add("autoOpenDoors", B(autoOpenDoors));
             Add("autoOpenDoorsIfHidden", B(autoOpenDoorsIfHidden));
+            Add("gridContainersDefaultToOldStyleView", B(gridContainersDefaultToOldStyleView));
+            Add("containerOpacity", I(containerOpacity));
+            Add("gridContainersScale", I(gridContainersScale));
+            Add("gridContainerScaleItems", B(gridContainerScaleItems));
             if (unknown != null)
                 foreach (var kv in unknown)
                     Add(FlatJson.Escape(kv.Key), kv.Value);

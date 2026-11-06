@@ -234,7 +234,7 @@ namespace UOClient.Unity.UI
             _indent = 20;
             GUI.enabled = d.autoOpenDoors;
             d.autoOpenDoorsIfHidden = Toggle("Also while hidden", d.autoOpenDoorsIfHidden);
-            Line("Stepping or turning to face a closed door opens it (the server's open-door\nmacro); open doors are left alone, and nothing opens for a ghost.", 34);
+            Line("Off until you turn it on. Facing a closed door sends the server's open-door\nmacro; open doors are left alone, and nothing opens for a ghost.", 34);
             GUI.enabled = true;
             _indent = 0;
 
@@ -243,7 +243,7 @@ namespace UOClient.Unity.UI
             GUI.enabled = d.autoOpenCorpses;
             d.autoOpenCorpseRange = IntSlider("Distance", d.autoOpenCorpseRange, 0, GameOptions.MaxAutoOpenCorpseRange, " tiles");
             d.corpseOpenOptions = Choice("Unless", d.corpseOpenOptions, 76, "(none)", "Targeting", "Hidden", "Both");
-            Line("Each corpse within the distance opens once, after any use of yours queued;\nheld off while a target cursor is up and/or while you are hidden.", 34);
+            Line("Off until you turn it on. Each corpse within the distance opens once, after\nyour own queued uses; held off while targeting and/or hidden.", 34);
             GUI.enabled = true;
             _indent = 0;
         }
@@ -346,6 +346,20 @@ namespace UOClient.Unity.UI
             Line("Outlined on the ground, or in the window of the bag it sits in.");
             d.hueContainerGumps = Toggle("Hue container gumps", d.hueContainerGumps);
             Line("A dyed bag or chest draws its window in its own colour (corpses never).");
+
+            d.gridContainersDefaultToOldStyleView = Toggle("Open containers in the original (classic) view", d.gridContainersDefaultToOldStyleView);
+            Line(d.gridContainersDefaultToOldStyleView
+                ? "Off: containers and corpses open as grid windows (game boards stay classic).\nWindows already open keep their view."
+                : "Containers and corpses open as grid windows (game boards stay classic).\nWindows already open keep their view.", 34);
+            _indent = 20;
+            GUI.enabled = !d.gridContainersDefaultToOldStyleView;
+            d.gridContainersScale = IntSlider("Grid scale", d.gridContainersScale,
+                GameOptions.MinGridContainersScale, GameOptions.MaxGridContainersScale, "%");
+            d.gridContainerScaleItems = Toggle("Also scale items", d.gridContainerScaleItems);
+            d.containerOpacity = IntSlider("Opacity", d.containerOpacity, GameOptions.MinContainerOpacity, GameOptions.MaxContainerOpacity, "%");
+            Line($"Grid windows only: {GameOptions.GridItemSize(d.gridContainersScale)}-pixel cells; the background and border\nat this opacity, items always solid. Classic gumps use Container scale.", 34);
+            GUI.enabled = true;
+            _indent = 0;
         }
 
         private void DrawMacros(Rect area)

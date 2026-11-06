@@ -156,7 +156,14 @@ namespace UOClient.Unity
             w.SetTitle(title);
         }
 
-        private void OnContainerOpened(OpenContainer c) => Ui.Open(new UI.ContainerWindow(c.Serial, c.Gump));
+        // A container already open (in either style) is brought forward as it is: both use the same window key.
+        private void OnContainerOpened(OpenContainer c)
+        {
+            if (GameOptions.OpensGrid(UI.GridContainerWindow.DefaultToOldStyleView, c.Gump))
+                Ui.Open(new UI.GridContainerWindow(c.Serial, c.Gump));
+            else
+                Ui.Open(new UI.ContainerWindow(c.Serial, c.Gump));
+        }
 
         private void OnGumpOpened(ServerGump g) => Ui.Open(new UI.ServerGumpWindow(g));
 

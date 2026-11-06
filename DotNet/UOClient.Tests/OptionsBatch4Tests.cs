@@ -164,7 +164,7 @@ public sealed class OptionsBatch4Tests
         GroundItem(session, 0x40000001, WorldItem.CorpseGraphic, MeX + 2, MeY - 1); // 2 tiles
         GroundItem(session, 0x40000002, WorldItem.CorpseGraphic, MeX + 3, MeY);     // 3 tiles: out of the default range
         GroundItem(session, 0x40000003, 0x0E75, MeX, MeY);                          // a backpack underfoot: not a corpse
-        var open = new CorpseAutoOpen();
+        var open = new CorpseAutoOpen { Enabled = true }; // off by default (batch 5)
 
         Assert.Equal(0x40000001u, open.Tick(session, MeX, MeY));
         Assert.Equal(UseOf(0x40000001), Assert.Single(sent));
@@ -200,7 +200,7 @@ public sealed class OptionsBatch4Tests
         var sent = new List<byte[]>();
         GameSession session = InWorld(sent);
         GroundItem(session, 0x40000001, WorldItem.CorpseGraphic, MeX + 1, MeY);
-        var open = new CorpseAutoOpen { Options = CorpseAutoOpen.NotTargetingOrHiding };
+        var open = new CorpseAutoOpen { Enabled = true, Options = CorpseAutoOpen.NotTargetingOrHiding };
 
         session.Inject(new PacketWriter(0x6C, 19).Byte(0).UInt32(7).Byte(0).Zero(12).ToArray(), false); // a target cursor
         Assert.NotNull(session.Target);
@@ -250,7 +250,7 @@ public sealed class OptionsBatch4Tests
         GameSession session = InWorld(sent);
         GroundItem(session, 0x40000010, 0x0675, MeX, MeY - 1); // closed, north of us
         GroundItem(session, 0x40000011, 0x0676, MeX + 1, MeY); // open, east of us
-        var doors = new DoorAutoOpen();
+        var doors = new DoorAutoOpen { Enabled = true }; // off by default (batch 5)
 
         Assert.False(doors.Tick(session, MeX, MeY, 0, 4, IsDoor)); // a new session: where it starts is no turn
         Assert.False(doors.Tick(session, MeX, MeY, 0, 2, IsDoor)); // turn east: the door there is open
@@ -291,13 +291,13 @@ public sealed class OptionsBatch4Tests
     public void Batch4_Defaults_FollowTazUO_OrKeepThisClientsBehaviour()
     {
         var d = GameOptions.Defaults();
-        // As TazUO's Profile.cs.
-        Assert.True(d.autoOpenCorpses);
+        // As TazUO's Profile.cs, except the two that act on the world: off until the player turns them on (batch 5).
+        Assert.False(d.autoOpenCorpses);
         Assert.Equal(2, d.autoOpenCorpseRange);
         Assert.Equal(GameOptions.CorpseOpenNotTargetingOrHiding, d.corpseOpenOptions);
         Assert.True(d.hueContainerGumps);
         Assert.False(d.holdDownKeyTab);
-        Assert.True(d.autoOpenDoors);
+        Assert.False(d.autoOpenDoors);
         Assert.True(d.autoOpenDoorsIfHidden);
         var doors = new DoorAutoOpen();
         Assert.Equal((d.autoOpenDoors, d.autoOpenDoorsIfHidden), (doors.Enabled, doors.IfHidden));
@@ -316,8 +316,8 @@ public sealed class OptionsBatch4Tests
         var o = new GameOptions
         {
             mobileHPType = GameOptions.MobileHPBoth, mobileHPShowWhen = GameOptions.MobileHPSmart, showTargetIndicator = true,
-            autoOpenCorpses = false, autoOpenCorpseRange = 5, corpseOpenOptions = GameOptions.CorpseOpenNotHiding,
-            hueContainerGumps = false, holdDownKeyTab = true, autoOpenDoors = false, autoOpenDoorsIfHidden = false,
+            autoOpenCorpses = true, autoOpenCorpseRange = 5, corpseOpenOptions = GameOptions.CorpseOpenNotHiding,
+            hueContainerGumps = false, holdDownKeyTab = true, autoOpenDoors = true, autoOpenDoorsIfHidden = false,
         };
         string json = o.ToJson();
         Assert.Contains("\"mobileHPType\": 2,", json);
@@ -327,9 +327,9 @@ public sealed class OptionsBatch4Tests
         Assert.True(again.SameAs(o));
         Assert.False(again.SameAs(GameOptions.Defaults()));
 
-        foreach (string key in new[] { "showTargetIndicator", "holdDownKeyTab" })
+        foreach (string key in new[] { "showTargetIndicator", "holdDownKeyTab", "autoOpenCorpses", "autoOpenDoors" })
             Assert.False(GameOptions.Parse("{\"" + key + "\": true}").SameAs(GameOptions.Defaults()), key);
-        foreach (string key in new[] { "autoOpenCorpses", "hueContainerGumps", "autoOpenDoors", "autoOpenDoorsIfHidden" })
+        foreach (string key in new[] { "hueContainerGumps", "autoOpenDoorsIfHidden" })
             Assert.False(GameOptions.Parse("{\"" + key + "\": false}").SameAs(GameOptions.Defaults()), key);
         foreach (string key in new[] { "mobileHPType", "autoOpenCorpseRange", "corpseOpenOptions" })
             Assert.False(GameOptions.Parse("{\"" + key + "\": 0}").SameAs(GameOptions.Defaults()), key);
@@ -354,10 +354,10 @@ public sealed class OptionsBatch4Tests
         GameOptions live = GameOptions.Defaults();
         int applies = 0, saves = 0;
         var draft = new OptionsDraft(() => live.Clone(), o => { applies++; live = o.Clone(); }, _ => saves++);
-        draft.Draft.autoOpenCorpses = false;
+        draft.Draft.autoOpenCorpses = true;
         draft.Draft.mobileHPType = GameOptions.MobileHPPercent;
         draft.Cancel(); // dropped
-        Assert.True(draft.Draft.autoOpenCorpses);
+        Assert.False(draft.Draft.autoOpenCorpses);
         Assert.Equal((0, 0), (applies, saves));
 
         draft.Draft.hueContainerGumps = false;

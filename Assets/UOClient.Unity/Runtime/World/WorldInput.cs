@@ -101,8 +101,12 @@ namespace UOClient.Unity
             // or the journal covers the world there, since the UI takes the mouse first. With HighlightContainerWhenSelected,
             // a container window under the mouse selects its container instead (outlined on the ground, or in its parent bag).
             bool overUi = OverWindowOrJournal(ui);
-            uint hoveredContainer = UI.ContainerWindow.HighlightWhenSelected && ui.TopWindowAtScreen(Input.mousePosition) is UI.ContainerWindow cw
-                ? cw.Serial : 0;
+            uint hoveredContainer = !UI.ContainerWindow.HighlightWhenSelected ? 0 : ui.TopWindowAtScreen(Input.mousePosition) switch
+            {
+                UI.ContainerWindow cw => cw.Serial,
+                UI.GridContainerWindow gw => gw.Serial,
+                _ => 0u,
+            };
             UI.ContainerWindow.SelectedContainer = hoveredContainer;
             _entities.Selected = ObjectHighlight.WorldSelection(overUi, overUi ? 0 : _entities.PickAt(Input.mousePosition), hoveredContainer);
             if (!UI.UiRouting.WorldTakesKeys(_chat.Typing, ui.HasKeyboardFocus))

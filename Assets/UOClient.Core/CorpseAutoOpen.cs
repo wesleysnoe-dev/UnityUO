@@ -24,10 +24,13 @@ namespace UOClient.Core
         private GameSession _session;
         private int _lastX = int.MinValue, _lastY = int.MinValue, _lastCount = -1;
         private bool _retry;
-        private bool _enabled = true;
+        private bool _enabled;
         private int _range = 2, _options = NotTargetingOrHiding;
 
-        /// <summary>TazUO's AutoOpenCorpses (on by default there and here).</summary>
+        /// <summary>
+        /// TazUO's AutoOpenCorpses. Off by default here (TazUO: on): it sends uses to the server, so it waits until the
+        /// player turns it on.
+        /// </summary>
         public bool Enabled { get => _enabled; set { _enabled = value; _retry = true; } }
 
         /// <summary>TazUO's AutoOpenCorpseRange, 0-5 tiles (2 by default).</summary>

@@ -15,10 +15,13 @@ namespace UOClient.Core
         private GameSession _session;
         private int _lastX = int.MinValue, _lastY = int.MinValue, _lastDirection = -1;
 
-        /// <summary>TazUO's AutoOpenDoors (on by default there and here).</summary>
-        public bool Enabled { get; set; } = true;
+        /// <summary>
+        /// TazUO's AutoOpenDoors. Off by default here (TazUO: on): it sends the open-door macro to the server, so it waits
+        /// until the player turns it on.
+        /// </summary>
+        public bool Enabled { get; set; }
 
-        /// <summary>TazUO's AutoOpenDoorsIfHidden (on by default there and here).</summary>
+        /// <summary>TazUO's AutoOpenDoorsIfHidden (on by default there and here); only matters with <see cref="Enabled"/> on.</summary>
         public bool IfHidden { get; set; } = true;
 
         /// <summary>The tile one step from (x, y) in a UO direction (0 north, clockwise; TazUO's Pathfinder.GetNewXY).</summary>
