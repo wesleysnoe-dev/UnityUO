@@ -233,3 +233,10 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
       - The Unity Editor compile. `Library/ScriptAssemblies/UOClient.Unity.dll` is still 09:53:29. Editor.log's mtime was not used as evidence.
       - Play mode: no fall-to-corpse hand-off has been seen.
       - Live: no `0x89` has been seen from the shard.
+33. **Human war stance from the weapon, and the re-test checklist** (`acd68e0`; backup tag `fidelity-pre-corpse` = `2214538`). Details in LIVE_PARITY, "human war stance from the weapon" and "Re-test checklist".
+    - **Decision: done, for a bounded subset.** TazUO's People branch (`MobileAnimation.cs:1131-1433`) maps cleanly onto what `MobileLook` already has (layers 1 and 2 and their tiledata AnimIds), and body 400 has frames for every action it picks. For unmounted, living MUL humans: war stand 7, or 8 with only a `HANDS_BASE_ANIMID` two-hander; war walk 15; walk/run 1/3 with anything in layer 2, else 0/2. UOP-flagged humans, gargoyles (flying 62-65), and the light-in-hand stands are skipped. It applies to every human through `MobileLook.From` → `Avatar.Render`, not only the player.
+    - **Verified by tests:** 601 pass (9 new, including install looks for unarmed, katana, halberd, bow, shield, katana + halberd, and a mounted rider). Tests, Cli and EditorCheck build with 0 errors.
+    - **Corpse (item 32) and heal:** the corpse commit is `44c13fd`, offline only. No separate heal fix commit exists after `213e952` (`git log --grep heal` finds only `213e952` and earlier). The party heal target is unchanged and is still unverified in Unity.
+    - **Docs:** LIVE_PARITY gets a short "Re-test checklist" (Wes's complaints, gumps, combat), gated on the Editor compile.
+    - **Editor status (read only):** unchanged. `Library/ScriptAssemblies/UOClient.Unity.dll` is still 09:53:29, Core/Editor 09:46:21, IO 01:59:03, Net 23:50:27 (11-04). So `bad6cce` onward, including `44c13fd` and `acd68e0`, is still not compiled by Unity. Editor.log was not used.
+    - **Not verified:** Unity Editor compile, play mode, live.
