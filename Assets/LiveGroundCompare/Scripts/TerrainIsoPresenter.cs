@@ -11,9 +11,12 @@ namespace UOClient.LiveGroundCompare
     /// camera's view. The main camera then clears depth only and draws statics, mobiles and roofs on top.
     ///
     /// Caveats (measured by design, not hidden): all diverted land sorts BEHIND every sprite (the original sorts land
-    /// per diagonal against statics, so a static behind a hill now shows through it); the terrain is lit by its own
-    /// directional light (the compositor's shade direction and flat = 1) and not by the time-of-day ambient or the
-    /// player's light; Unity's heightmap triangulation/LOD decides the surface between samples.
+    /// per diagonal against statics, so a static behind a hill now shows through it); Unity's heightmap
+    /// triangulation/LOD decides the surface between samples.
+    /// Light: with the lit shader (<see cref="SharedLight"/>) terrain and water read the sprites' own globals
+    /// (time-of-day ambient, player light, ghost) at each point's Unity x, y, times the compositor's shade and the
+    /// chunk's sun shadow (<see cref="LiveGroundLighting"/>); no Unity light is used. Without it the terrain falls back to
+    /// Legacy Diffuse and its own isolated directional light, and the indicator says so.
     /// Water (<see cref="TerrainWaterSupport"/>) is a transparent mesh per chunk on the same layer, drawn after the
     /// terrain by this camera, so it shares the terrain's depth and sorts behind every sprite as well.
     /// Owns everything it changes and puts the main camera back on <see cref="Dispose"/>.
@@ -23,8 +26,18 @@ namespace UOClient.LiveGroundCompare
         /// <summary>Unused by the project; the terrain camera sees only this layer and the main camera stops seeing it.</summary>
         public const int Layer = 31;
 
-        /// <summary>A built-in shader the player always includes (GraphicsSettings), so the TEST build can draw it.</summary>
+        /// <summary>The land material lit like the sprites (Shaders/Resources/LiveGroundCompareTerrain.shader; Resources ship in the player).</summary>
+        public const string LitShaderResource = "LiveGroundCompareTerrain";
+        public const string LitShaderName = "LiveGroundCompare/TerrainLit";
+
+        /// <summary>Fallback: a built-in shader the player always includes (GraphicsSettings), lit by the presenter's own light.</summary>
         public const string ShaderName = "Legacy Shaders/Diffuse";
+
+        /// <summary>The terrain material's sun-visibility mask (LiveGroundLighting.ShadowMask).</summary>
+        public const string SunMaskProperty = "_LGShadowTex";
+
+        private static readonly int TerrainToUnityId = Shader.PropertyToID("_LGTerrainToUnity");
+        private static readonly int SunDirId = Shader.PropertyToID("_LGSunDir");
 
         private const float DepthCenter = 10000f; // main camera: z -10000, near 0.1, far 20000
         private const float DepthPerPixel = 0.5f;
@@ -39,12 +52,14 @@ namespace UOClient.LiveGroundCompare
         private GameObject _root;
         private volatile string _failure;
 
-        private TerrainIsoPresenter(WorldStreamer world, int scale, Camera main, Shader shader)
+        private TerrainIsoPresenter(WorldStreamer world, int scale, Camera main, Shader shader, string isolatedWhy)
         {
             _world = world;
             _scale = scale;
             _main = main;
             Shader = shader;
+            SharedLight = isolatedWhy == null;
+            LightIsolatedWhy = isolatedWhy;
             _savedMask = main.cullingMask;
             _savedClear = main.clearFlags;
 
@@ -67,20 +82,29 @@ namespace UOClient.LiveGroundCompare
             _cam.farClipPlane = main.farClipPlane;
 
             // The compositor's light (from the screen's upper left) in terrain space: u = +X, v = tile y = -Z, up = +Y.
-            Vector3 toLight = new Vector3(-0.6f, 0.77f, 0.2f).normalized;
-            _light = new GameObject("LiveGround terrain light");
-            _light.transform.SetParent(_root.transform, false);
-            _light.transform.rotation = Quaternion.LookRotation(-toLight);
-            var light = _light.AddComponent<Light>();
-            light.type = LightType.Directional;
-            light.cullingMask = 1 << Layer;
-            light.shadows = LightShadows.None;
-            light.color = Color.white;
-            light.intensity = Mathf.Max(0.1f, (1f - AmbientUp()) / toLight.y); // flat ground ≈ 1, as the compositor
+            (float lx, float ly, float lz) = LiveGroundLighting.SunTerrain;
+            Shader.SetGlobalVector(SunDirId, new Vector4(lx, ly, lz, 0f));
+            if (!SharedLight)
+            {
+                // Fallback (no lit shader): Legacy Diffuse needs a Unity light; it is isolated from the sprites' light.
+                Vector3 toLight = new Vector3(lx, ly, lz).normalized;
+                _light = new GameObject("LiveGround terrain light");
+                _light.transform.SetParent(_root.transform, false);
+                _light.transform.rotation = Quaternion.LookRotation(-toLight);
+                var light = _light.AddComponent<Light>();
+                light.type = LightType.Directional;
+                light.cullingMask = 1 << Layer;
+                light.shadows = LightShadows.None;
+                light.color = Color.white;
+                light.intensity = Mathf.Max(0.1f, (1f - AmbientUp()) / toLight.y); // flat ground ≈ 1, as the compositor
+            }
 
             main.cullingMask &= ~(1 << Layer);
             main.clearFlags = CameraClearFlags.Depth;
             Camera.onPreCull += OnPreCull;
+            Debug.Log(SharedLight
+                ? "UOClient LiveGround light: shared (terrain and water read the sprites' time-of-day, player light and ghost globals; terrain sun shadow from map heights)"
+                : $"UOClient LiveGround light: isolated ({isolatedWhy})");
 
             // Water is optional: without tiledata or its shader the terrain still draws, and the indicator says why.
             Water = TerrainWaterSupport.TryCreate(world, out string waterError);
@@ -91,6 +115,12 @@ namespace UOClient.LiveGroundCompare
         }
 
         public Shader Shader { get; }
+
+        /// <summary>True when the land material is the lit shader that reads the sprites' light globals.</summary>
+        public bool SharedLight { get; }
+
+        /// <summary>Why the terrain fell back to its own isolated light (null when shared).</summary>
+        public string LightIsolatedWhy { get; }
 
         /// <summary>Null when water is off (see <see cref="WaterError"/>).</summary>
         public TerrainWaterSupport Water { get; private set; }
@@ -145,13 +175,19 @@ namespace UOClient.LiveGroundCompare
                     error = "no world or main camera";
                     return null;
                 }
+                Shader lit = Resources.Load<Shader>(LitShaderResource);
+                if (lit == null)
+                    lit = Shader.Find(LitShaderName);
+                if (lit != null && lit.isSupported)
+                    return new TerrainIsoPresenter(world, scale, main, lit, null);
+
                 Shader shader = Shader.Find(ShaderName);
                 if (shader == null || !shader.isSupported)
                 {
                     error = $"shader '{ShaderName}' is not in this build or not supported";
                     return null;
                 }
-                return new TerrainIsoPresenter(world, scale, main, shader);
+                return new TerrainIsoPresenter(world, scale, main, shader, $"shader '{LitShaderName}' is not in this build or not supported");
             }
             catch (Exception e)
             {
@@ -181,11 +217,14 @@ namespace UOClient.LiveGroundCompare
 
             // Terrain space → main camera's world: x, y = ToUnity(ToWorldScreen(p)); z = a depth in front of the main
             // camera that grows away from the viewer (TerrainLandBuilder.Nearness), so hills hide what is behind them.
+            (float[] rx, float[] ry) = LiveGroundLighting.TerrainToUnityRows(_scale, t.x, t.y);
             var a = Matrix4x4.zero;
-            a.SetRow(0, new Vector4(h * s, 0f, h * s, t.x));
-            a.SetRow(1, new Vector4(-h * s, zs * hz * s, h * s, t.y));
-            a.SetRow(2, new Vector4(-h * k, -zs * hz * k, h * k, camPos.z + DepthCenter + k * nearCenter));
+            a.SetRow(0, new Vector4(rx[0], rx[1], rx[2], rx[3]));
+            a.SetRow(1, new Vector4(ry[0], ry[1], ry[2], ry[3]));
             a.SetRow(3, new Vector4(0f, 0f, 0f, 1f));
+            // The terrain and water shaders light each point at its Unity x, y, as the sprites (the player light's distance).
+            Shader.SetGlobalMatrix(TerrainToUnityId, a);
+            a.SetRow(2, new Vector4(-h * k, -zs * hz * k, h * k, camPos.z + DepthCenter + k * nearCenter));
             _cam.worldToCameraMatrix = _main.worldToCameraMatrix * a;
             _cam.projectionMatrix = _main.projectionMatrix;
 

@@ -115,6 +115,7 @@ namespace UOClient.LiveGroundCompare
                     d.Solid[row, col] = _present[col / SamplesPerTile, Tiles - 1 - row / SamplesPerTile];
 
             d.Rgba = BakeTexture(d.TextureSize);
+            d.SunMask = LiveGroundLighting.ShadowMask(d.CornerZ);
             return d;
         }
 
@@ -219,6 +220,9 @@ namespace UOClient.LiveGroundCompare
 
         public byte[] Rgba;
         public int TextureSize;
+
+        /// <summary>Sun visibility, <see cref="LiveGroundLighting.ShadowSize"/>² R8 rows bottom-up (null when there is no land).</summary>
+        public byte[] SunMask;
 
         /// <summary>Terrain size in terrain-space units (tiles, Z range, tiles).</summary>
         public (float X, float Y, float Z) Size =>

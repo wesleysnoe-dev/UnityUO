@@ -1,7 +1,8 @@
 // LiveGroundCompare (TEST only): the Terrain backend's water surface over real-map water land tiles.
 // Drawn by TerrainIsoPresenter's camera on layer 31 after the opaque terrain, alpha-blended over the classic water art
-// the terrain already shows. Built-in pipeline, ForwardBase: lit by the presenter's directional light
-// (_WorldSpaceLightPos0/_LightColor0) plus the scene's SH ambient. No emission.
+// the terrain already shows. Built-in pipeline, no Unity lights: lit like the sprites and the terrain
+// (LiveGroundLight.cginc): the compositor's sun shade on the wave normal, times the time-of-day ambient and the player's
+// light, ghost grey; the sun highlight is scaled by the ambient. No emission; no sun shadow on the water.
 //
 // Mesh contract (TerrainWater): world space = terrain space (1 unit per tile, +Y up, tile y along -Z);
 // vertex colour rgb = mean colour of that tile's classic art; uv.x = shore distance / MaxShore (0 shoreline, 1 open).
@@ -26,7 +27,6 @@ Shader "LiveGroundCompare/Water"
 
         Pass
         {
-            Tags { "LightMode" = "ForwardBase" }
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
             ZTest LEqual
@@ -38,7 +38,7 @@ Shader "LiveGroundCompare/Water"
             #pragma fragment frag
             #pragma target 3.0
             #include "UnityCG.cginc"
-            #include "Lighting.cginc"
+            #include "../LiveGroundLight.cginc"
 
             float4 _EyeDir;
             float _WaveAmp, _WaveSpeed, _ShoreAlpha, _OpenAlpha, _DeepShade, _Foam, _Gloss;
@@ -88,10 +88,9 @@ Shader "LiveGroundCompare/Water"
                 g += 0.012 * Wave(p, normalize(float2(-1.0, -0.2)), 0.55, 0.18, t);
                 float3 n = normalize(float3(-g.x * _WaveAmp * 6.0, 1.0, -g.y * _WaveAmp * 6.0));
 
-                float3 l = normalize(_WorldSpaceLightPos0.xyz);
+                float3 l = normalize(_LGSunDir.xyz);
                 float3 v = normalize(_EyeDir.xyz);
-                float3 ambient = ShadeSH9(float4(n, 1.0));
-                float diffuse = saturate(dot(n, l));
+                float3 light = LGSpriteLight(i.world);
                 float spec = pow(saturate(dot(n, normalize(l + v))), 48.0) * _Gloss;
 
                 // The map's own water colour, slightly darker away from the shore (shore distance, not real depth).
@@ -103,10 +102,10 @@ Shader "LiveGroundCompare/Water"
                 float breakup = saturate(0.5 + (g.x + g.y) * 4.0);
                 float foam = _Foam * saturate(1.0 - open * 2.5) * smoothstep(0.55, 0.95, band * breakup + (1.0 - open) * 0.35);
 
-                float3 lit = lerp(baseCol, float3(0.92, 0.95, 0.97), foam) * (ambient + diffuse * _LightColor0.rgb);
-                lit += spec * _LightColor0.rgb;
+                float3 lit = lerp(baseCol, float3(0.92, 0.95, 0.97), foam) * LGShade(n, 1.0) * light;
+                lit += spec * _UOAmbient.rgb; // the sun's highlight dims with the time of day; the player light adds none
                 float alpha = saturate(lerp(_ShoreAlpha, _OpenAlpha, open) + foam * 0.5 + spec * 0.3);
-                return fixed4(lit, alpha);
+                return fixed4(LGGhost(lit), alpha);
             }
             ENDCG
         }

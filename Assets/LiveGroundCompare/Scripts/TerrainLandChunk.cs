@@ -48,7 +48,7 @@ namespace UOClient.LiveGroundCompare
 
     /// <summary>
     /// Main-thread upload of one chunk as a real UnityEngine.Terrain (TerrainData heightmap + holes, TerrainCollider)
-    /// under the presenter's root and layer. Owns its TerrainData, texture, material and object. Never a mesh stand-in:
+    /// under the presenter's root and layer. Owns its TerrainData, textures (art, sun mask), material and object. Never a mesh stand-in:
     /// if the Terrain cannot be made it reports the failure and the controller returns to Original.
     /// </summary>
     internal sealed class TerrainLandChunk : ILandChunk
@@ -57,6 +57,7 @@ namespace UOClient.LiveGroundCompare
         private TerrainLandData _data;
         private TerrainData _terrainData;
         private Texture2D _texture;
+        private Texture2D _sunMask;
         private Material _material;
         private GameObject _go;
         private bool _counted;
@@ -96,6 +97,18 @@ namespace UOClient.LiveGroundCompare
                 _texture.SetPixelData(d.Rgba, 0);
                 _texture.Apply(false, true);
                 _material = new Material(_presenter.Shader) { mainTexture = _texture, name = $"UO land terrain {name}" };
+                if (_presenter.SharedLight && d.SunMask != null)
+                {
+                    _sunMask = new Texture2D(LiveGroundLighting.ShadowSize, LiveGroundLighting.ShadowSize, TextureFormat.R8, false, true)
+                    {
+                        name = $"UO land sun mask {name}",
+                        filterMode = FilterMode.Bilinear, // soft ¼-tile shadow edge
+                        wrapMode = TextureWrapMode.Clamp
+                    };
+                    _sunMask.SetPixelData(d.SunMask, 0);
+                    _sunMask.Apply(false, true);
+                    _material.SetTexture(TerrainIsoPresenter.SunMaskProperty, _sunMask);
+                }
 
                 _go = Terrain.CreateTerrainGameObject(_terrainData); // Terrain + TerrainCollider
                 _go.name = "Land (LiveGround terrain)";
@@ -176,7 +189,9 @@ namespace UOClient.LiveGroundCompare
             if (_terrainData != null) UnityEngine.Object.Destroy(_terrainData);
             if (_material != null) UnityEngine.Object.Destroy(_material);
             if (_texture != null) UnityEngine.Object.Destroy(_texture);
+            if (_sunMask != null) UnityEngine.Object.Destroy(_sunMask);
             _go = null;
+            _sunMask = null;
             _terrainData = null;
             _material = null;
             _texture = null;

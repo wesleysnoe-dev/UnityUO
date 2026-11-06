@@ -62,6 +62,7 @@
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\LiveGroundHostGuard.cs" Link="LiveGroundCompare\LiveGroundHostGuard.cs" />
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\TerrainLandBuilder.cs" Link="LiveGroundCompare\TerrainLandBuilder.cs" />
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\LiveGroundWater.cs" Link="LiveGroundCompare\LiveGroundWater.cs" />
+    <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\LiveGroundLighting.cs" Link="LiveGroundCompare\LiveGroundLighting.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UOClient.IO\UOClient.IO.csproj" />

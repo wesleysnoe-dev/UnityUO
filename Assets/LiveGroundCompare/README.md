@@ -87,10 +87,11 @@ LiveGround TEST | requested Mesh | active Mesh | ok | host 127.0.0.1 | mesh chun
   the chunk unloads, it destroys the TerrainData, texture, material and object.
 - `TerrainIsoPresenter` adds a second camera that draws only layer 31, before the main camera. Its view matrix maps
   terrain space through the exact UO projection into the main camera's view, so the grid corners land on the same
-  pixels as the original corners. It also adds a directional light for that layer only. While Terrain is active, the
-  main camera skips layer 31 and clears depth only. On dispose it gets its old mask and clear flags back.
-- Material: `Legacy Shaders/Diffuse` with the baked chunk texture. This is not a splat/alphamap terrain shader, because
-  the player only always-includes that built-in shader (GraphicsSettings) and splat blending would smear per-tile art.
+  pixels as the original corners. Only in the fallback does it add a directional light for that layer. While Terrain is
+  active, the main camera skips layer 31 and clears depth only. On dispose it gets its old mask and clear flags back.
+- Material: `LiveGroundCompare/TerrainLit` (Resources, so it ships) with the baked chunk texture and the chunk's sun
+  mask; fallback `Legacy Shaders/Diffuse` (always included by GraphicsSettings). Neither is a splat/alphamap terrain
+  shader: splat blending would smear per-tile art.
 
 ## Terrain caveats (honest; do not read corner matches as parity)
 
@@ -101,13 +102,10 @@ LiveGround TEST | requested Mesh | active Mesh | ok | host 127.0.0.1 | mesh chun
   Unity's cell diagonal happens to agree.
 - **Flat-drawn sloped tiles:** sloped tiles without a texmap are drawn flat at Z by Original and Mesh. A heightfield
   cannot step, so Terrain slopes them using the map's corners.
-- **Brightness / lighting:** the terrain is lit by the presenter's **own** directional light (layer 31 only, Lambert
-  from the compositor's light direction, scaled so that flat ground ≈ 1 after the scene's ambient). It is isolated from
-  the time-of-day ambient and the player's light, which still darken the sprites, so Terrain usually reads **brighter**
-  than Original/Mesh, most of all at night. That is presenter isolation, not unified dynamic lighting: there is no
-  shared lighting model between terrain and sprites and no unified shadows (terrain neither casts nor receives them).
-  It has no 0.7/1.25 clamp and uses smooth heightmap normals instead of per-face normals. The brighter look was reviewed
-  and kept on purpose; do not "fix" it by darkening.
+- **Brightness / lighting:** see *Terrain lighting and shadows* below. With the lit shader, flat ground in daylight is
+  the same brightness as before (shade 1 × ambient 1); at dusk/night it now darkens with the sprites instead of staying
+  bright. That follows the shared time of day; it is not a darkening "fix". Only the fallback (Legacy Diffuse) keeps the
+  old isolated, brighter light.
 - **Smooth elevation:** Unity interpolates the heightmap, so the hard per-tile edges of the diamond sprites are gone.
   This was reviewed and kept on purpose; do not restore hard tile edges.
 - **Sprites show through hills:** see Sorting. Statics, mobiles and items behind a rise stay visible over it.
@@ -146,8 +144,9 @@ surface there).
 - **Shader:** `Shaders/Resources/LiveGroundCompareWater.shader` (`LiveGroundCompare/Water`, built-in pipeline,
   ForwardBase, alpha-blended, `ZWrite Off`, `Offset -1,-1`). Loaded with `Resources.Load`, so it ships in every player
   built from this project (unused unless Terrain is active). One runtime material for all chunks.
-- **Lighting:** the presenter's own directional light (Lambert + Blinn specular) plus SH ambient, as the terrain. No
-  emission. Same isolation caveat as the terrain: not the time-of-day or player light.
+- **Lighting:** the shared light (below): the compositor's sun shade on the wave normal × (time-of-day ambient + the
+  player's light), ghost grey; the Blinn sun highlight is scaled by the ambient. No emission, no Unity light. The water
+  does **not** sample the sun shadow mask.
 - **Animation:** four analytic travelling waves perturb the normal, and the foam band drifts, both driven only by
   `_Time.y`. A screenshot or Player.log cannot prove motion; watch it live (or compare two frames).
 - **Sorting:** the water is drawn by the terrain camera after the opaque terrain and shares its depth, so hills in front
@@ -156,6 +155,50 @@ surface there).
   `UOClient LiveGround water: on (water land rows with Wet: 6)` (or `off (…)`) when the presenter is made, and one line
   for the first chunk with water (tile count, vertices, graphics).
 - Nothing here comes from P2 GroundPrototype (no StylizedWater/FluidSurfaceBuilder art or rects).
+
+## Terrain lighting and shadows (shared light path)
+
+How the sprites are lit (read-only, `UOClient.Unity.Lighting` + `UOClient/WorldSprite`): globals only. `_UOAmbient`
+(time of day, season tint) + `_UOLightColor` × (1 − d/r)² around `_UOLightPos` (the player, in Unity world XY), then
+`_UODead` drains to grey. There is no directional light and no shadow for sprites. Original land adds the compositor's
+per-face shade (sun from the screen's upper left, clamp 0.7–1.25) as vertex colour.
+
+What the Terrain backend now does (`LiveGroundLighting`, Unity-free and tested; `Shaders/LiveGroundLight.cginc`):
+
+- **Shared:** the terrain material `LiveGroundCompare/TerrainLit` (`Shaders/Resources/LiveGroundCompareTerrain.shader`)
+  and the water read the **same globals** as the sprites. Each terrain pixel finds its Unity x, y through
+  `_LGTerrainToUnity` (the same rows as the presenter's view matrix, `TerrainToUnityRows`, tested against
+  `ToWorldScreen`/`Corner`), so the player light falls on the terrain exactly where it falls on sprites. Time of day,
+  season, `T` overrides and the ghost grey all follow.
+- **Shade:** the compositor's formula and clamp (`Shade`, tested equal to `LiveGroundProjection.TriangleShade` for the
+  same face), on Unity's smooth heightmap normals. Flat ground = 1, as Original.
+- **No Unity light** in the shared path: the presenter's directional light is only created for the fallback.
+- **Fallback:** if the lit shader is missing/unsupported, Legacy Diffuse + the old isolated light, and the indicator
+  says `light ISOLATED: <why>` (Player.log: `UOClient LiveGround light: isolated (…)`). Otherwise
+  `light shared (TOD+player), sun shadow terrain-only` and `UOClient LiveGround light: shared (…)`.
+
+Shadow model (**labelled approximation, not a dynamic shadow map**):
+
+- **Terrain sun shadow:** per chunk, `ShadowMask` ray-casts from 4×4 points per tile toward the compositor's sun over the
+  chunk's own heightfield (the same RIGHT–LEFT surface, `SampleZ`) and stores a 64×64 R8 visibility mask (bilinear,
+  ¼-tile soft edge). The shader pulls the shade toward the 0.7 floor where the sun is blocked. It is computed from the
+  map's heights every time the chunk is built (nothing painted), for the fixed sun direction this client has; it is not
+  a per-frame shadow map and does not follow a moving light (there is none).
+- **Chunk edges:** a ray that leaves its 16×16 chunk counts as lit (neighbours are not visible to the builder), so a hill
+  in the west/north neighbour does not shade this chunk (tested and documented).
+- **Not shadowed / not casting:** sprites (statics, mobiles, items, roofs) neither cast onto the terrain nor receive the
+  terrain's shadow; the water does not receive it.
+
+Why not Unity shadow maps (checked, not done): the terrain camera's view is the UO projection (sheared, in pixel units,
+~10000 units deep), while the active quality level's `shadowDistance` is 150 (Ultra; Standalone default) — every terrain
+pixel is beyond it, and changing it is a global QualitySettings change (out of scope). Sprites live in the main camera's
+XY plane, not in terrain space, so they could not cast into the same shadow map without proxies.
+
+Still isolated (needs files outside this folder → scope exception):
+
+- Terrain still draws behind every sprite (separate camera, depth cleared between); hills do not occlude sprites.
+- Sprites standing in a terrain shadow are not darkened (that would need WorldSprite to read the mask).
+- Original/Mesh land keep the compositor's per-face shade only (no sun shadow).
 
 ## Build
 

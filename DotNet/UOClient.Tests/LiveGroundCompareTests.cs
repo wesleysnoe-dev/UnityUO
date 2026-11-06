@@ -911,6 +911,153 @@ public class LiveGroundCompareTests
         stat.Kind = DrawKind.Static;
         Assert.Throws<ArgumentException>(() => wb.AddTile(stat, Solid(44, WaterArgb), false, true));
     }
+
+    // ---- Shared light and sun shadow (LiveGroundLighting) ----
+
+    /// <summary>Terrain-space normal of a tile triangle (corner indices into top/right/bottom/left), pointing up.</summary>
+    private static (float X, float Y, float Z) TerrainNormal(int[] z, int a, int b, int c)
+    {
+        (float X, float Y, float Z) P(int k) =>
+            TerrainLandBuilder.TerrainPoint(LiveGroundProjection.TexmapU[k], LiveGroundProjection.TexmapV[k], z[k]);
+        var (ax, ay, az) = P(a);
+        var (bx, by, bz) = P(b);
+        var (cx, cy, cz) = P(c);
+        float ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
+        float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        return ny < 0 ? (-nx, -ny, -nz) : (nx, ny, nz);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0, 0)]
+    [InlineData(10, 0, -10, 0)]
+    [InlineData(0, 12, 0, -12)]
+    [InlineData(-8, 4, 20, 4)]
+    [InlineData(30, -20, 0, 5)]
+    public void Light_TerrainShadeIsTheCompositorsShadeForTheSameFace(int zt, int zr, int zb, int zl)
+    {
+        int[] z = { zt, zr, zb, zl };
+        for (int tri = 0; tri < 2; tri++)
+        {
+            int[] t = LiveGroundProjection.Triangles;
+            var (nx, ny, nz) = TerrainNormal(z, t[tri * 3], t[tri * 3 + 1], t[tri * 3 + 2]);
+            Assert.Equal(LiveGroundProjection.TriangleShade(z, tri), LiveGroundLighting.Shade(nx, ny, nz, 1f), 4);
+        }
+    }
+
+    [Fact]
+    public void Light_FlatIsOneAndFullShadowIsTheCompositorsFloor()
+    {
+        Assert.Equal(1f, LiveGroundLighting.Shade(0, 1, 0, 1f), 5);
+        Assert.Equal(LiveGroundLighting.MinShade, LiveGroundLighting.Shade(0, 1, 0, 0f), 5);
+        Assert.Equal(0.85f, LiveGroundLighting.Shade(0, 1, 0, 0.5f), 5);
+        // A face turned away from the sun is already at the floor: shadow cannot take it lower.
+        Assert.Equal(LiveGroundLighting.MinShade, LiveGroundLighting.Shade(0.6f, 0.2f, -0.2f, 0f), 5);
+        Assert.Equal(LiveGroundLighting.MinShade, LiveGroundLighting.Shade(0.6f, 0.2f, -0.2f, 1f), 5);
+        (float x, float y, float zz) = LiveGroundLighting.SunTerrain;
+        Assert.Equal((LiveGroundLighting.SunX, LiveGroundLighting.SunUp, -LiveGroundLighting.SunY), (x, y, zz));
+    }
+
+    [Fact]
+    public void Light_PlayerFalloffIsTheSpriteShadersCurve()
+    {
+        Assert.Equal(1f, LiveGroundLighting.PointFalloff(0f, 170f), 5);
+        Assert.Equal(0.25f, LiveGroundLighting.PointFalloff(85f, 170f), 5);
+        Assert.Equal(0f, LiveGroundLighting.PointFalloff(170f, 170f), 5);
+        Assert.Equal(0f, LiveGroundLighting.PointFalloff(500f, 170f), 5);
+        Assert.Equal(0f, LiveGroundLighting.PointFalloff(2f, 0f), 5); // radius below 1 counts as 1, as the shader
+    }
+
+    [Theory]
+    [InlineData(1, 0f, 0f)]
+    [InlineData(2, -1234.5f, 987f)]
+    [InlineData(3, 50f, -60f)]
+    public void Light_TerrainToUnityRowsAreToUnityOfTheUoProjection(int scale, float ox, float oy)
+    {
+        (float[] rx, float[] ry) = LiveGroundLighting.TerrainToUnityRows(scale, ox, oy);
+        foreach ((int tx, int ty, int tz) in new[] { (0, 0, 0), (1600, 1504, 7), (1615, 1519, -30), (3, 900, 100) })
+        {
+            (float px, float py, float pz) = TerrainLandBuilder.TerrainPoint(tx, ty, tz);
+            (float sx, float sy) = TerrainLandBuilder.ToWorldScreen(px, py, pz, scale);
+            float ux = rx[0] * px + rx[1] * py + rx[2] * pz + rx[3];
+            float uy = ry[0] * px + ry[1] * py + ry[2] * pz + ry[3];
+            // WorldStreamer.ToUnity: (x - origin.x, -(y - origin.y)); ToUnity(0, 0) = (ox, oy).
+            Assert.Equal(sx + ox, ux, 1);
+            Assert.Equal(-sy + oy, uy, 1);
+            (float cx, float cy) = LiveGroundProjection.Corner(tx, ty, LiveGroundProjection.Top, tz, scale);
+            Assert.Equal(cx + ox, ux, 1);
+            Assert.Equal(-cy + oy, uy, 1);
+        }
+    }
+
+    private static int[,] Corners(Func<int, int, int> z)
+    {
+        var c = new int[Chunk + 1, Chunk + 1];
+        for (int i = 0; i <= Chunk; i++)
+            for (int j = 0; j <= Chunk; j++)
+                c[i, j] = z(i, j);
+        return c;
+    }
+
+    private static bool MaskLit(byte[] mask, float tx, float ty)
+    {
+        int col = (int)(tx * LiveGroundLighting.ShadowTexelsPerTile);
+        int row = (int)((Chunk - ty) * LiveGroundLighting.ShadowTexelsPerTile);
+        return mask[row * LiveGroundLighting.ShadowSize + col] == 255;
+    }
+
+    [Fact]
+    public void Shadow_FlatAndGentleGroundIsFullyLit()
+    {
+        byte[] flat = LiveGroundLighting.ShadowMask(Corners((_, _) => 5));
+        Assert.Equal(LiveGroundLighting.ShadowSize * LiveGroundLighting.ShadowSize, flat.Length);
+        Assert.All(flat, b => Assert.Equal(255, b));
+        // A steady slope (4 Z per tile) never rises faster than the sun ray (~9.5 Z per tile): no self-shadow.
+        Assert.All(LiveGroundLighting.ShadowMask(Corners((i, j) => (i + j) * 4 - 60)), b => Assert.Equal(255, b));
+        Assert.All(LiveGroundLighting.ShadowMask(Corners((i, j) => 60 - (i + j) * 4)), b => Assert.Equal(255, b));
+    }
+
+    [Fact]
+    public void Shadow_ARidgeShadowsTheSideAwayFromTheSunOnly()
+    {
+        // A 40 Z wall along corner column 6 (sun comes from -x, slightly -y).
+        int[,] c = Corners((i, _) => i == 6 ? 40 : 0);
+        byte[] mask = LiveGroundLighting.ShadowMask(c);
+        Assert.True(MaskLit(mask, 3.5f, 8.1f), "the sunward side is lit");
+        Assert.False(MaskLit(mask, 7.6f, 8.1f), "right behind the ridge is in shadow");
+        // Shadow length: height 40 Z over a rise of SunUp/|SunXY| per tile ≈ 4.2 tiles behind the crest.
+        float hl = MathF.Sqrt(LiveGroundLighting.SunX * LiveGroundLighting.SunX + LiveGroundLighting.SunY * LiveGroundLighting.SunY);
+        float reach = 40f / (LiveGroundLighting.SunUp / hl / TerrainLandBuilder.HeightUnitPerZ) * (-LiveGroundLighting.SunX / hl);
+        Assert.False(MaskLit(mask, 6f + reach - 0.6f, 8.1f), "inside the shadow length");
+        Assert.True(MaskLit(mask, 6f + reach + 0.9f, 8.1f), "past the shadow length");
+        Assert.Equal(0f, LiveGroundLighting.SunVisibility(c, 7.6f, 8.1f, 40));
+    }
+
+    [Fact]
+    public void Shadow_RaysLeavingTheChunkAreLitAndTheMaskRowsAreBottomUp()
+    {
+        // The whole west half is a 60 Z plateau: its east foot is shadowed, rows near tile y 0 too (rows bottom-up).
+        int[,] c = Corners((i, _) => i <= 4 ? 60 : 0);
+        byte[] mask = LiveGroundLighting.ShadowMask(c);
+        Assert.False(MaskLit(mask, 5.6f, 0.9f));
+        Assert.False(MaskLit(mask, 5.6f, 15.1f));
+        int n = LiveGroundLighting.ShadowSize;
+        Assert.Equal(0, mask[(n - 1) * n + (int)(5.1f * LiveGroundLighting.ShadowTexelsPerTile)]); // top row = tile y 0
+        // The same foot further east at tile y 0.125: its ray leaves the chunk (-y) before reaching the plateau, so it
+        // reads lit. The builder cannot see the neighbouring chunk; this is the documented chunk-edge limit.
+        Assert.Equal(255, mask[(n - 1) * n + (int)(5.6f * LiveGroundLighting.ShadowTexelsPerTile)]);
+        // Nothing in the chunk is higher than the plateau, so its own top is lit up to the chunk edge.
+        Assert.True(MaskLit(mask, 0.1f, 0.1f));
+        Assert.True(MaskLit(mask, 2f, 8f));
+    }
+
+    [Fact]
+    public void Shadow_BuilderAttachesTheMaskOnlyWithLand()
+    {
+        TerrainLandData d = FilledChunk(1600, 1504).Finish();
+        Assert.NotNull(d.SunMask);
+        Assert.Equal(LiveGroundLighting.ShadowMask(d.CornerZ), d.SunMask);
+        Assert.Null(new TerrainLandBuilder(0, 0, 8).Finish().SunMask);
+    }
 }
 
 /// <summary>Water detection against the real tiledata (the shipped client's land rows).</summary>

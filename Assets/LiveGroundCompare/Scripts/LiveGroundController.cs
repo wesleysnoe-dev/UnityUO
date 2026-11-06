@@ -58,7 +58,9 @@ namespace UOClient.LiveGroundCompare
             {
                 string line = LiveGroundStatus.Indicator(_switch.Requested, _switch.Active, _switch.Reason, _switch.Host, _switch.IsAttached, ActiveChunks);
                 if (_switch.Active == GroundBackendKind.Terrain && _terrain != null && !_terrain.IsDisposed)
-                    line += " | " + WaterIndicator(_terrain);
+                    line += " | " + WaterIndicator(_terrain) + " | " + (_terrain.SharedLight
+                        ? "light shared (TOD+player), sun shadow terrain-only"
+                        : $"light ISOLATED: {_terrain.LightIsolatedWhy}");
                 return _parseWarning == null ? line : $"{line} | {_parseWarning}";
             }
         }
