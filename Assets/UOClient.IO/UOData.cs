@@ -194,6 +194,12 @@ namespace UOClient.IO
         public Bitmap32 GetStatic(int graphic) =>
             Override(Kind.Static, graphic, () => StockStatic(graphic)).Shape ?? StockStatic(graphic);
 
+        /// <summary>
+        /// A static exactly as art.mul has it, ignoring the client's overrides: for art whose pixels carry data an
+        /// upscaled copy blurs away (the cursors' green hotspot markers).
+        /// </summary>
+        public Bitmap32 GetStockStatic(int graphic) => StockStatic(graphic);
+
         /// <summary>The HD art for a static when one exists at exactly <paramref name="scale"/>x (else null: upscale the 1x art).</summary>
         public Bitmap32 GetStaticHd(int graphic, int scale)
         {

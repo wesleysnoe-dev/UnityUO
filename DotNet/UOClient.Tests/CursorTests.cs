@@ -103,4 +103,62 @@ public sealed class CursorArtTests
         TargetCursor.CursorImage(_data.GetStatic(0x206A)!, out int ux, out int uy);
         Assert.Equal((7, 1), (ux, uy));
     }
+
+    // The game runs with the HD pack, which has a 2x copy of every pointer whose upscale blends the pure-green markers
+    // (0xFF00FF00 became e.g. 0xFF138370). Read from that copy, every hotspot was (0, 0): the click landed on the
+    // picture's top-left corner, not the fingertip. The pointer must come from the stock art.
+    [Fact]
+    public void HdOverrideWithBlendedMarkersKeepsTheFingertipHotspot()
+    {
+        const int g = 0x206D; // down-right gauntlet: fingertip at (35, 23), far from the corner
+        Bitmap32 stock = _data.GetStockStatic(g)!;
+        var hd = new Bitmap32(stock.Width * 2, stock.Height * 2);
+        for (int y = 0; y < hd.Height; y++)
+            for (int x = 0; x < hd.Width; x++)
+            {
+                uint p = stock[x / 2, y / 2];
+                hd[x, y] = p == 0xFF00FF00 ? 0xFF138370 : p;
+            }
+        string dir = Path.Combine(Path.GetTempPath(), "uoclient-cursor-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(dir, "ExternalImages", "art"));
+            Png.Write(Path.Combine(dir, "ExternalImages", "art", $"0x{g:X4}.png"), hd);
+            _data.UseOverrides(new ClientOverrides(dir, includeHdPack: false));
+
+            TargetCursor.CursorImage(_data.GetStatic(g)!, out int ox, out int oy);
+            Assert.Equal((0, 0), (ox, oy)); // the trap: the override's shape has no marker left
+
+            Bitmap32 img = TargetCursor.PointerImage(_data, g, out int hx, out int hy);
+            Assert.Equal((35, 23), (hx, hy));
+            Assert.Equal((stock.Width, stock.Height), (img.Width, img.Height));
+            Assert.True(img[hx, hy] >> 24 != 0, "the hotspot is on a drawn pixel of the finger");
+        }
+        finally
+        {
+            _data.UseOverrides(null);
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // The fingertip in every pointer the game shows (PointerIndex: the eight directions and the fat west one), peace
+    // and war: the hotspot from the stock art is on a drawn pixel or touching one (the fat pointer's marker sits at
+    // (1, 1), just off the tip's corner, as TazUO uses it). Indices 8 and 10-15 are other cursors, not pointing hands.
+    [Fact]
+    public void EveryPointerHotspotIsOnTheDrawnFingertip()
+    {
+        int[] shown = { 0, 1, 2, 3, 4, 5, 6, 7, TargetCursor.FatPointingWest };
+        for (int war = 0; war < 2; war++)
+            foreach (int i in shown)
+            {
+                int g = TargetCursor.CursorGraphic(i, war == 1);
+                Bitmap32 img = TargetCursor.PointerImage(_data, g, out int hx, out int hy)!;
+                bool touches = false;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++)
+                        if (hx + dx >= 0 && hy + dy >= 0 && hx + dx < img.Width && hy + dy < img.Height && img[hx + dx, hy + dy] >> 24 != 0)
+                            touches = true;
+                Assert.True(touches, $"0x{g:X4} hotspot ({hx},{hy}) is off the drawn hand");
+            }
+    }
 }

@@ -62,17 +62,17 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>
-        /// A pointer from its stock art (not HD: a cursor is drawn 1:1), its border markers cleared and its hotspot read
-        /// from them (<see cref="CursorImage"/>). Readable, as Cursor.SetCursor needs. (null, 0) if the art is missing.
+        /// A pointer from its stock art (<see cref="PointerImage"/>: drawn 1:1, and the HD copy has lost its markers), its
+        /// border markers cleared and its hotspot read from them. Rows are flipped into Unity's bottom-up order, so the
+        /// hotspot stays counted from the top-left as Cursor.SetCursor takes it. (null, 0) if the art is missing.
         /// </summary>
         private (Texture2D, Vector2) Pointer(UOClient.IO.UOData data, int graphic)
         {
             if (_pointers.TryGetValue(graphic, out var p))
                 return p;
-            Bitmap32 art = data?.GetStatic(graphic);
-            if (art != null)
+            Bitmap32 bmp = PointerImage(data, graphic, out int hotX, out int hotY);
+            if (bmp != null)
             {
-                Bitmap32 bmp = CursorImage(art, out int hotX, out int hotY);
                 var tex = new Texture2D(bmp.Width, bmp.Height, TextureFormat.RGBA32, false)
                 {
                     name = $"cursor 0x{graphic:X4}", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp

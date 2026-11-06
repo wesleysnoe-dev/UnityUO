@@ -80,6 +80,18 @@ namespace UOClient.Unity.UI
             overWorld ? MouseDirection(originX, originY, mouseX, mouseY, 1) : FatPointingWest;
 
         /// <summary>
+        /// A pointer's picture and hotspot (<see cref="CursorImage"/>) from its stock art.mul entry, as TazUO's art
+        /// loader reads it. Not the HD pack's copy: its upscale blends the pure-green markers into other greens, so no
+        /// marker is found and the hotspot falls to (0, 0), the picture's corner instead of the fingertip. Null if missing.
+        /// </summary>
+        public static Bitmap32 PointerImage(UOClient.IO.UOData data, int graphic, out int hotX, out int hotY)
+        {
+            hotX = hotY = 0;
+            Bitmap32 art = data?.GetStockStatic(graphic);
+            return art == null ? null : CursorImage(art, out hotX, out hotY);
+        }
+
+        /// <summary>
         /// TazUO Art.CreateCursorSurfacePtr: the cursor art carries its hotspot as pure green marker pixels on its top row
         /// (x) and left column (y); every non-black pixel on the border (top row, left column, last row, last column) is a
         /// marker and is cleared. Returns a cleaned copy; the hotspot is (0, 0) when the art has no marker.
