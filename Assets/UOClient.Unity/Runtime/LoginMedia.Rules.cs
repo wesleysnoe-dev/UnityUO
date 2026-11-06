@@ -32,13 +32,34 @@ namespace UOClient.Unity
         public const string LoginButtonRelativePath = "Login/login_button.png";
 
         /// <summary>
-        /// Inner editable slot inside <see cref="AccountPanelRelativePath"/>, as fractions of the panel (provisional
-        /// from ornament-manifest.json input_text_xywh / native size).
+        /// Editable/hit rect inside <see cref="AccountPanelRelativePath"/> as x,y,w,h fractions of the panel.
+        /// This is the dark recessed fill between the slot's left/right ornaments — NOT raw
+        /// ornament-manifest.json <c>input_text_xywh</c>, which extends under the end-caps and reads "way off".
+        /// Native px on 816×207: [124,112,567,47].
         /// </summary>
-        public static readonly (float X, float Y, float W, float H) AccountInputFrac = (0.052696f, 0.560386f, 0.897059f, 0.183575f);
+        public static readonly (float X, float Y, float W, float H) AccountInputFrac = (0.151961f, 0.541063f, 0.694853f, 0.227053f);
 
-        /// <summary>Inner editable slot inside <see cref="PasswordPanelRelativePath"/>.</summary>
-        public static readonly (float X, float Y, float W, float H) PasswordInputFrac = (0.050307f, 0.552239f, 0.898160f, 0.179104f);
+        /// <summary>Same for <see cref="PasswordPanelRelativePath"/> (815×201 native px [123,107,568,45]).</summary>
+        public static readonly (float X, float Y, float W, float H) PasswordInputFrac = (0.150920f, 0.532338f, 0.696933f, 0.223881f);
+
+        /// <summary>Native-pixel editable fills (x,y,w,h) on the shipped panel PNGs — source of <see cref="AccountInputFrac"/>.</summary>
+        public static readonly (int X, int Y, int W, int H) AccountInputNativeXywh = (124, 112, 567, 47);
+        public static readonly (int X, int Y, int W, int H) PasswordInputNativeXywh = (123, 107, 568, 45);
+
+        /// <summary>
+        /// Maps a native-pixel slot on a panel PNG into the panel's laid-out GUI rect. PNG and IMGUI both use
+        /// top-left origin with Y down, so this is a linear scale — no Y flip. Used by layout and regression tests.
+        /// </summary>
+        public static LoginRect MapNativeSlotToPanel(LoginRect panel, float nativeW, float nativeH, (int X, int Y, int W, int H) slotXywh)
+        {
+            if (nativeW <= 0f || nativeH <= 0f || panel.W <= 0f || panel.H <= 0f)
+                return default;
+            return new LoginRect(
+                panel.X + panel.W * (slotXywh.X / nativeW),
+                panel.Y + panel.H * (slotXywh.Y / nativeH),
+                panel.W * (slotXywh.W / nativeW),
+                panel.H * (slotXywh.H / nativeH));
+        }
 
         /// <summary>Native pixel size of the logo PNG (for aspect when the texture is not loaded yet).</summary>
         public const float LogoNativeW = 1521f, LogoNativeH = 985f;
@@ -206,6 +227,10 @@ namespace UOClient.Unity
             }
             return best;
         }
+
+        /// <summary>Native x,y,w,h on a panel PNG → x,y,w,h fractions of that panel.</summary>
+        public static (float X, float Y, float W, float H) FracFromNativeXywh(float nativeW, float nativeH, (int X, int Y, int W, int H) slot) =>
+            (slot.X / nativeW, slot.Y / nativeH, slot.W / nativeW, slot.H / nativeH);
 
         /// <summary>A slot rectangle inside a panel, from fractions of that panel.</summary>
         public static LoginRect SubRect(LoginRect panel, (float X, float Y, float W, float H) frac) =>

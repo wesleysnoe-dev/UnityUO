@@ -274,6 +274,74 @@ public sealed class LoginMediaTests
         Assert.Contains("login-account", body);
     }
 
+        [Fact]
+    public void InputFrac_IsRecessedFill_NotManifestTextSpan()
+    {
+        // Manifest input_text_xywh starts under the left ornament (~x=43) and is ~732px wide; the true dark
+        // fill between end-caps is ~x=124 and ~567px. Using the manifest span is what made the fields "way off".
+        var manifestText = LoginMediaRules.FracFromNativeXywh(LoginMediaRules.AccountNativeW, LoginMediaRules.AccountNativeH, (43, 116, 732, 38));
+        Assert.True(LoginMediaRules.AccountInputFrac.X > manifestText.X + 0.05f);
+        Assert.True(LoginMediaRules.AccountInputFrac.W < manifestText.W - 0.10f);
+        var accountFrac = LoginMediaRules.FracFromNativeXywh(LoginMediaRules.AccountNativeW, LoginMediaRules.AccountNativeH, LoginMediaRules.AccountInputNativeXywh);
+        var passwordFrac = LoginMediaRules.FracFromNativeXywh(LoginMediaRules.PasswordNativeW, LoginMediaRules.PasswordNativeH, LoginMediaRules.PasswordInputNativeXywh);
+        Assert.Equal(accountFrac.X, LoginMediaRules.AccountInputFrac.X, 5);
+        Assert.Equal(accountFrac.Y, LoginMediaRules.AccountInputFrac.Y, 5);
+        Assert.Equal(accountFrac.W, LoginMediaRules.AccountInputFrac.W, 5);
+        Assert.Equal(accountFrac.H, LoginMediaRules.AccountInputFrac.H, 5);
+        Assert.Equal(passwordFrac.X, LoginMediaRules.PasswordInputFrac.X, 5);
+        Assert.Equal(passwordFrac.Y, LoginMediaRules.PasswordInputFrac.Y, 5);
+        Assert.Equal(passwordFrac.W, LoginMediaRules.PasswordInputFrac.W, 5);
+        Assert.Equal(passwordFrac.H, LoginMediaRules.PasswordInputFrac.H, 5);
+    }
+
+    [Theory]
+    [InlineData(1920, 1080)]
+    [InlineData(1280, 720)]
+    [InlineData(1024, 768)]
+    [InlineData(800, 600)]
+    public void MapNativeSlotToPanel_AlignsWithLaidOutInputs(float sw, float sh)
+    {
+        float logoA = LoginMediaRules.LogoNativeW / LoginMediaRules.LogoNativeH;
+        float accountA = LoginMediaRules.AccountNativeW / LoginMediaRules.AccountNativeH;
+        float passwordA = LoginMediaRules.PasswordNativeW / LoginMediaRules.PasswordNativeH;
+        float loginA = LoginMediaRules.LoginNativeW / LoginMediaRules.LoginNativeH;
+        var L = LoginMediaRules.LayoutOrnament(sw, sh, logoA, accountA, passwordA, loginA);
+        Assert.True(L.Valid);
+
+        var accountMapped = LoginMediaRules.MapNativeSlotToPanel(
+            L.Account, LoginMediaRules.AccountNativeW, LoginMediaRules.AccountNativeH, LoginMediaRules.AccountInputNativeXywh);
+        var passwordMapped = LoginMediaRules.MapNativeSlotToPanel(
+            L.Password, LoginMediaRules.PasswordNativeW, LoginMediaRules.PasswordNativeH, LoginMediaRules.PasswordInputNativeXywh);
+
+        Assert.Equal(L.AccountInput.X, accountMapped.X, 2);
+        Assert.Equal(L.AccountInput.Y, accountMapped.Y, 2);
+        Assert.Equal(L.AccountInput.W, accountMapped.W, 2);
+        Assert.Equal(L.AccountInput.H, accountMapped.H, 2);
+        Assert.Equal(L.PasswordInput.X, passwordMapped.X, 2);
+        Assert.Equal(L.PasswordInput.Y, passwordMapped.Y, 2);
+        Assert.Equal(L.PasswordInput.W, passwordMapped.W, 2);
+        Assert.Equal(L.PasswordInput.H, passwordMapped.H, 2);
+
+        // Hit/text rect stays inside the drawn panel (and therefore over the recessed art, not the side ornaments).
+        Assert.True(L.AccountInput.X > L.Account.X);
+        Assert.True(L.AccountInput.XMax < L.Account.XMax);
+        Assert.True(L.AccountInput.Y > L.Account.Y);
+        Assert.True(L.AccountInput.YMax < L.Account.YMax);
+        Assert.True(L.PasswordInput.X > L.Password.X);
+        Assert.True(L.PasswordInput.XMax < L.Password.XMax);
+
+        // Nested scale: laying out in a pre-scaled logical space (UiScale divides Screen by s) still maps linearly.
+        float s = 1.25f;
+        var nested = LoginMediaRules.LayoutOrnament(sw / s, sh / s, logoA, accountA, passwordA, loginA);
+        Assert.True(nested.Valid);
+        var nestedMap = LoginMediaRules.MapNativeSlotToPanel(
+            nested.Account, LoginMediaRules.AccountNativeW, LoginMediaRules.AccountNativeH, LoginMediaRules.AccountInputNativeXywh);
+        Assert.Equal(nested.AccountInput.X, nestedMap.X, 2);
+        Assert.Equal(nested.AccountInput.Y, nestedMap.Y, 2);
+        Assert.Equal(nested.AccountInput.W, nestedMap.W, 2);
+        Assert.Equal(nested.AccountInput.H, nestedMap.H, 2);
+    }
+
         private static string RepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)

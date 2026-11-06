@@ -247,7 +247,7 @@ namespace UOClient.Unity.UI
             GUI.DrawTexture(ToRect(layout.Account), _accountPanel, ScaleMode.StretchToFill);
             GUI.DrawTexture(ToRect(layout.Password), _passwordPanel, ScaleMode.StretchToFill);
 
-            // Baked labels stay in the art — only the editable slots are real controls.
+            // Baked labels stay in the art — typed text + caret + hit target share AccountInput/PasswordInput (recessed fill).
             // Font tracks the slot height so 1280x720 / 4:3 stay legible.
             int fieldFont = Mathf.Clamp(Mathf.RoundToInt(layout.AccountInput.H * 0.55f), 11, 22);
             _ornamentField.fontSize = fieldFont;
@@ -600,6 +600,10 @@ namespace UOClient.Unity.UI
                 fontSize = 16,
                 alignment = TextAnchor.MiddleLeft,
                 padding = new RectOffset(8, 8, 4, 4),
+                // Skin textField borders 9-slice a 1×1 fill and visually shift the chrome off the art slot.
+                border = new RectOffset(0, 0, 0, 0),
+                margin = new RectOffset(0, 0, 0, 0),
+                overflow = new RectOffset(0, 0, 0, 0),
             };
             var ink = new Color(0.95f, 0.92f, 0.84f, 1f);
             _ornamentField.normal.textColor = ink;
