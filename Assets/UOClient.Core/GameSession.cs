@@ -118,6 +118,7 @@ namespace UOClient.Core
             RegisterBookHandlers();
             RegisterBulletinBoardHandlers();
             RegisterDeathHandlers();
+            RegisterMenuHandlers();
         }
 
         public World World { get; }

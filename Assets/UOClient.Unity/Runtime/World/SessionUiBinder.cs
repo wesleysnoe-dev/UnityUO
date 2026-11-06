@@ -95,6 +95,9 @@ namespace UOClient.Unity
             s.BulletinBoardOpened += OnBulletinBoardOpened;
             s.BulletinPostOpened += OnBulletinPostOpened;
             s.MapDisplayed += OnMapDisplayed;
+            s.HuePickerRequested += OnHuePickerRequested;
+            s.MenuOpened += OnMenuOpened;
+            s.OpenUrlRequested += OnOpenUrlRequested;
             s.EffectStarted += _effects.Start;
 
             if (_ctx.Camera.GetComponent<AudioListener>() == null && UnityEngine.Object.FindAnyObjectByType<AudioListener>() == null)
@@ -148,6 +151,9 @@ namespace UOClient.Unity
             s.BulletinBoardOpened -= OnBulletinBoardOpened;
             s.BulletinPostOpened -= OnBulletinPostOpened;
             s.MapDisplayed -= OnMapDisplayed;
+            s.HuePickerRequested -= OnHuePickerRequested;
+            s.MenuOpened -= OnMenuOpened;
+            s.OpenUrlRequested -= OnOpenUrlRequested;
             s.EffectStarted -= _effects.Start;
             s.SoundPlayed -= OnSoundPlayed;
             s.MusicRequested -= OnMusicRequested;
@@ -352,6 +358,37 @@ namespace UOClient.Unity
             Ui.Open(new UI.BulletinPostWindow(board, post)).SetPost(post);
 
         private void OnMapDisplayed(MapItemDetails map) => Ui.Open(new UI.MapItemWindow(map));
+
+        /// <summary>A dye tub's picker (0x95): a picker already up for the same tub goes (closing it sends nothing).</summary>
+        private void OnHuePickerRequested(HuePickerRequest request)
+        {
+            CloseByKey(UI.HuePickerWindow.KeyFor(request.Serial));
+            Ui.Open(new UI.HuePickerWindow(request));
+        }
+
+        /// <summary>A legacy menu (0x7C): one already open with the same serial goes without answering (that would answer this one).</summary>
+        private void OnMenuOpened(LegacyMenu menu)
+        {
+            if (Ui.Find(UI.LegacyMenuWindow.KeyFor(menu.Serial)) is UI.LegacyMenuWindow old)
+            {
+                old.Forget();
+                Ui.Close(old);
+            }
+            Ui.Open(new UI.LegacyMenuWindow(menu));
+        }
+
+        /// <summary>
+        /// 0xA5: never opened unasked (TazUO launches it). Only an http/https link is offered, in a question showing it; a
+        /// newer link replaces an unanswered one. Anything else is refused with a line in the log.
+        /// </summary>
+        private void OnOpenUrlRequested(string url)
+        {
+            CloseByKey(UI.OpenUrlWindow.WindowKey);
+            if (GameSession.TryParseSafeUrl(url, out _))
+                Ui.Open(new UI.OpenUrlWindow(url.Trim()));
+            else
+                _ctx.Hud.Log(null, "The server sent a link that was not opened (only http and https links are offered).");
+        }
 
         private void OnSoundPlayed(int id, int x, int y, int z)
         {
