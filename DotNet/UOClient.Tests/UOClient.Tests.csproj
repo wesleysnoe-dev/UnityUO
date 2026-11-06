@@ -49,6 +49,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\BuffBarWindow.Layout.cs" Link="Unity\BuffBarWindow.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MobileActions.cs" Link="Unity\MobileActions.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MobileLook.cs" Link="Unity\MobileLook.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\ItemStack.cs" Link="Unity\ItemStack.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\CorpseDraw.cs" Link="Unity\CorpseDraw.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\ObjectHighlight.cs" Link="Unity\ObjectHighlight.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MousePick.cs" Link="Unity\MousePick.cs" />

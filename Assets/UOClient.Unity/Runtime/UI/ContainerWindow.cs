@@ -112,10 +112,11 @@ namespace UOClient.Unity.UI
             _drawn.Clear();
             foreach (ContainedItem item in Session.World.ItemsIn(_serial))
             {
-                UiImage img = Art.Item(item.Graphic, item.Hue);
+                // A coin pile's art; any other stack twice (ItemStack, as ContainerGump/ItemGump draw them).
+                UiImage img = Art.Item(ItemStack.DisplayedGraphic(item.Graphic, item.Amount), item.Hue);
                 if (img == null)
                     continue;
-                bool stack = item.Amount > 1 && (Art.Data.TileData.GetStatic(item.Graphic).Flags & TileFlags.Generic) != 0;
+                bool stack = ItemStack.DrawsTwice(item.Graphic, item.Amount, Art.Data.TileData.GetStatic(item.Graphic).Flags);
                 int extra = stack ? MousePick.StackOffset : 0;
                 _drawn.Add((item, img, new Rect(item.X, item.Y, img.Width + extra, img.Height + extra)));
             }
@@ -301,7 +302,7 @@ namespace UOClient.Unity.UI
             // The item's top-left goes where it was grabbed from relative to the cursor, kept inside the gump.
             // In gump pixels, as ItemAt: the window is the gump at the container scale.
             float s = S;
-            UiImage art = Art.Item(item.Graphic, item.Hue);
+            UiImage art = Art.Item(item.DisplayGraphic != 0 ? item.DisplayGraphic : item.Graphic, item.Hue); // the held art (ContainerGump.cs:384-388)
             (int dx, int dy) = MousePick.DropOrigin(local.x / s, local.y / s, item.Grab.x, item.Grab.y, Ui.Scale * s);
             int x = Mathf.Clamp(dx, 0, Mathf.Max(0, (int)(Rect.width / s) - (art?.Width ?? 20)));
             int y = Mathf.Clamp(dy, 0, Mathf.Max(0, (int)(Rect.height / s) - (art?.Height ?? 20)));

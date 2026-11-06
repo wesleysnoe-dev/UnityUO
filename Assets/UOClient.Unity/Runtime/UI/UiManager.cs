@@ -164,6 +164,8 @@ namespace UOClient.Unity.UI
         public bool FromGround;       // picked up in the world at (FromX, FromY, FromZ)
         public int FromX, FromY, FromZ;
         public Vector2 Grab;           // where in the art it was grabbed (art pixels)
+        public ushort DisplayGraphic;  // the art the cursor shows (ItemStack.HeldGraphic); set by BeginDrag, 0 before
+        public bool Twice;             // the cursor shows two copies (ItemStack.HeldDrawsTwice)
     }
 
     /// <summary>
@@ -330,15 +332,23 @@ namespace UOClient.Unity.UI
             if (Dragging != null)
                 return;
             Dragging = item;
+            // TazUO's ItemHold.Set: the art by the whole stack where it lay, one coin when one is lifted, two copies of a
+            // lifted stack (ItemStack). Read before the lift, while the world still has the item's amount.
+            int total = Session.World.Contained.TryGetValue(item.Serial, out ContainedItem inside) ? inside.Amount
+                : Session.World.Items.TryGetValue(item.Serial, out WorldItem ground) ? ground.Amount : item.Amount;
+            item.DisplayGraphic = (ushort)ItemStack.HeldGraphic(item.Graphic, item.Amount, Math.Max(total, item.Amount));
+            item.Twice = ItemStack.HeldDrawsTwice(item.Graphic, item.DisplayGraphic, item.Amount, Art.Data.TileData.GetStatic(item.Graphic).Flags);
             Session.Lift(item.Serial, item.Amount);
             // The art drawn as windows draw it, at the UI scale, held where it was grabbed: what the cursor shows is where
             // the drop puts it (a window's Drop takes local - Grab). Not art.Texture: an HD texture is larger than the
-            // stock art Grab is measured on, and window textures are not readable.
-            UiImage art = Art.Item(item.Graphic, item.Hue);
+            // stock art Grab is measured on, and window textures are not readable. A second copy goes 5 pixels down-right
+            // of the first, so the grab point on the first is unchanged.
+            UiImage art = Art.Item(item.DisplayGraphic, item.Hue);
             if (art != null)
             {
-                var (w, h, hx, hy) = MousePick.DragCursor(art.Width, art.Height, item.Grab.x, item.Grab.y, Scale);
-                Cursor.SetCursor(Art.CursorTexture(art, w, h), new Vector2(hx, hy), CursorMode.ForceSoftware);
+                int aw = art.Width + (item.Twice ? ItemStack.GumpOffset : 0), ah = art.Height + (item.Twice ? ItemStack.GumpOffset : 0);
+                var (w, h, hx, hy) = MousePick.DragCursor(aw, ah, item.Grab.x, item.Grab.y, Scale);
+                Cursor.SetCursor(Art.CursorTexture(art, w, h, item.Twice), new Vector2(hx, hy), CursorMode.ForceSoftware);
             }
         }
 

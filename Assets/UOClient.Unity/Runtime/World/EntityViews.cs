@@ -274,7 +274,12 @@ namespace UOClient.Unity
                     AddPick(kv.Key, kv.Value.PickSprite, kv.Value.LastSlot);
             foreach (KeyValuePair<uint, ItemView> kv in _items)
                 if (kv.Value.Drawn && ObjectHighlight.Hovers(kv.Value.PickKind))
+                {
+                    // A stack's copy behind it first, so at one depth the item itself is the later, picked one.
+                    if (kv.Value.BackPickSprite is MousePick.Sprite back)
+                        AddPick(kv.Key, back, kv.Value.LastSlot);
                     AddPick(kv.Key, kv.Value.PickSprite, kv.Value.LastSlot);
+                }
 
             Camera cam = _ctx.Camera;
             Vector3 c = cam.transform.position;

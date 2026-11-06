@@ -102,7 +102,7 @@ namespace UOClient.Unity.UI
         {
             foreach (ContainedItem item in Session.World.ItemsIn(container))
             {
-                UiImage img = Art.Item(item.Graphic, item.Hue);
+                UiImage img = Art.Item(ItemStack.DisplayedGraphic(item.Graphic, item.Amount), item.Hue); // TradingGump: it.DisplayedGraphic
                 if (img == null)
                     continue;
                 (int fx, int fy) = FitInBox(item.X, item.Y, img.Width, img.Height);
@@ -115,9 +115,16 @@ namespace UOClient.Unity.UI
         {
             foreach (var (item, img, r, _) in _drawn)
             {
+                bool twice = Twice(item);
                 if (item == over)
+                {
                     DrawOutline(img, r.x, r.y);
+                    if (twice)
+                        DrawOutline(img, r.x + ItemStack.GumpOffset, r.y + ItemStack.GumpOffset);
+                }
                 DrawImage(img, r.x, r.y);
+                if (twice)
+                    DrawImage(img, r.x + ItemStack.GumpOffset, r.y + ItemStack.GumpOffset); // ItemGump's second copy
                 if (item.Amount > 1)
                     Text(new Rect(r.x, r.y + r.height - 12, r.width + 20, 12), item.Amount.ToString(), Ink, 10);
             }
@@ -155,10 +162,14 @@ namespace UOClient.Unity.UI
             return d.Length == 0 ? "0" : d;
         }
 
+        /// <summary>A non-coin stack shows two copies (ItemGump.cs:139-151), and either takes the mouse (:206-214).</summary>
+        private bool Twice(ContainedItem item) =>
+            ItemStack.DrawsTwice(item.Graphic, item.Amount, Art.Data.TileData.GetStatic(item.Graphic).Flags);
+
         private (ContainedItem Item, Vector2 Offset, bool Mine)? ItemAt(Vector2 local)
         {
             var (i, px, py) = MousePick.WindowItem(_drawn.Count, local.x, local.y, Ui.Scale, k => (_drawn[k].Rect.x, _drawn[k].Rect.y),
-                _ => false, (k, x, y) => _drawn[k].Image.HitTest(x, y));
+                k => Twice(_drawn[k].Item), (k, x, y) => _drawn[k].Image.HitTest(x, y));
             return i < 0 ? ((ContainedItem, Vector2, bool)?)null : (_drawn[i].Item, new Vector2(px, py), _drawn[i].Mine);
         }
 
@@ -248,7 +259,7 @@ namespace UOClient.Unity.UI
             Rect box = MyBox;
             if (!box.Contains(local))
                 return false;
-            UiImage art = Art.Item(item.Graphic, item.Hue);
+            UiImage art = Art.Item(item.DisplayGraphic != 0 ? item.DisplayGraphic : item.Graphic, item.Hue); // the held art (TradingGump.cs:304)
             (int bx, int by) = MousePick.UiPixel(local.x, local.y, box.x, box.y, Ui.Scale); // the box pixel the cursor shows
             (int x, int y) = art == null ? FitInBox(bx, by, 0, 0) : DropInBox(bx, by, art.Width, art.Height);
             Session.DropInto(item.Serial, _trade.MyContainer, x, y);

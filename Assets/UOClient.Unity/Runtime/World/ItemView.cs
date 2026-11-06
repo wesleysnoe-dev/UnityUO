@@ -45,6 +45,9 @@ namespace UOClient.Unity
                 SetCorpseLook(corpseLook, CorpseDraw.Action(data.AnimationLibrary, item));
             }
             StaticTileData td = data.TileData.GetStatic(item.Graphic);
+            // A coin pile's art and a stack's second copy (ItemStack); the view is remade when the amount changes.
+            _shown = item.IsMulti || item.IsCorpse ? item.Graphic : ItemStack.DisplayedGraphic(item.Graphic, item.Amount);
+            _twice = !item.IsMulti && !item.IsCorpse && ItemStack.DrawsTwice(item.Graphic, item.Amount, td.Flags);
             _locked = ObjectHighlight.IsLocked(item.Flags, td.Weight);
             int priorityZ = item.Z + (td.IsBackground ? -1 : 0) + (td.Height > 0 ? 1 : 0);
             _item = new DrawItem { Kind = DrawKind.Static, Graphic = item.Graphic, X = item.X, Y = item.Y, Z = item.Z, PriorityZ = priorityZ };
@@ -56,9 +59,30 @@ namespace UOClient.Unity
             _shader = shader;
             _renderer = _go.AddComponent<MeshRenderer>();
             _renderer.enabled = false;
+            if (_twice)
+            {
+                var back = new GameObject("Stack copy");
+                back.transform.SetParent(_go.transform, false);
+                _backMesh = new Mesh();
+                back.AddComponent<MeshFilter>().sharedMesh = _backMesh;
+                _backRenderer = back.AddComponent<MeshRenderer>();
+                _backRenderer.enabled = false;
+            }
             _outline = new OutlineQuad(_go.transform, shader);
             Placed = ++_placements;
         }
+
+        private readonly int _shown;          // the art drawn: ItemStack.DisplayedGraphic of the graphic as sent
+        private readonly bool _twice;         // a stack: a second copy up-left, under it
+        private readonly Mesh _backMesh;
+        private readonly MeshRenderer _backRenderer;
+
+        /// <summary>The stack's second copy as the world pick sees it (hit on either copy, ItemView.cs:509-520), or null.</summary>
+        public MousePick.Sprite? BackPickSprite =>
+            _backRenderer != null && _backRenderer.enabled ? MobileArt.PickSprite(_backRect, LastSlot, false, _backDepth, LastCut) : (MousePick.Sprite?)null;
+
+        private Rect _backRect;
+        private float _backDepth;
 
         private static long _placements;
 
@@ -193,23 +217,38 @@ namespace UOClient.Unity
         {
             if (_sprite == null)
             {
-                _sprite = _art.GetItem(_graphic, _hue);
+                _sprite = _art.GetItem(_shown, _hue);
                 if (_sprite == null)
                     return; // building, or no art
                 (_item.Left, _item.Top, _item.Width, _item.Height) = IsoCompositor.PlacementRect(_item, _scale, _sprite.OriginalWidth, _sprite.OriginalHeight);
                 _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(_sprite.Slot.Page));
             }
             _renderer.enabled = !Hidden;
+            if (_backRenderer != null)
+                _backRenderer.enabled = !Hidden;
             if (Hidden)
                 return;
             // Always the item's own hue: the mouse-over cue is the outline alone (ObjectHighlight).
             ItemSprite sprite = _sprite;
-            _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(sprite.Slot.Page));
+            Material material = MaterialFor(_shader, _art.Atlas.Page(sprite.Slot.Page));
+            _renderer.sharedMaterial = material;
             LastRect = world.ToUnityRect(_item.Left, _item.Top, _item.Width, _item.Height);
             LastDepth = Depth(world);
             LastSlot = sprite.Slot;
             LastMirror = false;
-            SetQuad(world, _art.Atlas.Uv(sprite.Slot), false);
+            Vector4 uv = _art.Atlas.Uv(sprite.Slot);
+            SetQuad(world, uv, false);
+            if (_backRenderer != null)
+            {
+                // TazUO draws the copy first, 5 art pixels up-left: just behind this item, in front of anything behind it.
+                int o = ItemStack.GroundOffset * _scale;
+                _backRect = world.ToUnityRect(_item.Left + o, _item.Top + o, _item.Width, _item.Height);
+                _backDepth = LastDepth + DepthKey.Step * 0.5f;
+                _backRenderer.sharedMaterial = material;
+                // The same foot as the item (TEST sprite shadow), so both copies shade alike; the plain quad otherwise.
+                Vector2 foot = world.ToUnity(new Vector2((_item.X - _item.Y) * 22, (_item.X + _item.Y) * 22 + 22 - _item.Z * 4) * _scale);
+                MeshBuilder.SetQuad(_backMesh, _backRect, uv, _backDepth, false, LastCut, new Vector4(foot.x, foot.y, _item.Z, 1f));
+            }
         }
 
         // DepthKey's tie levels are its last digit: tie t is t steps nearer than tie 0.
@@ -235,6 +274,8 @@ namespace UOClient.Unity
         public void Dispose()
         {
             _outline.Dispose();
+            if (_backMesh != null)
+                UnityEngine.Object.Destroy(_backMesh);
             UnityEngine.Object.Destroy(_mesh);
             UnityEngine.Object.Destroy(_go);
         }

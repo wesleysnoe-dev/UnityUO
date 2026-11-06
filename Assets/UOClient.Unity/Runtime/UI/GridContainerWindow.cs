@@ -192,7 +192,7 @@ namespace UOClient.Unity.UI
                 Fill(new Rect(ox + cell - 1, y + 1, 1, cell - 2), edge);
 
                 ContainedItem item = _items[i];
-                UiImage img = Art.Item(item.Graphic, item.Hue);
+                UiImage img = Art.Item(ItemStack.DisplayedGraphic(item.Graphic, item.Amount), item.Hue); // drawn once (GridItem.cs:225)
                 if (img == null)
                     continue;
                 var b = BoundsOf(img);
@@ -251,7 +251,7 @@ namespace UOClient.Unity.UI
             if (i < 0 || i >= _items.Count)
                 return null;
             ContainedItem item = _items[i];
-            UiImage img = Art.Item(item.Graphic, item.Hue);
+            UiImage img = Art.Item(ItemStack.DisplayedGraphic(item.Graphic, item.Amount), item.Hue);
             if (img == null)
                 return (item, Vector2.zero);
             Rect art = ArtRect(img, (_origins[i].X, _origins[i].Y - _scroll), cell);

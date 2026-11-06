@@ -171,17 +171,18 @@ namespace UOClient.Unity.UI
             return o;
         }
 
-        private readonly Dictionary<(UiImage, int, int), Texture2D> _dragCursors = new Dictionary<(UiImage, int, int), Texture2D>();
+        private readonly Dictionary<(UiImage, int, int, bool), Texture2D> _dragCursors = new Dictionary<(UiImage, int, int, bool), Texture2D>();
 
         /// <summary>
         /// A picture as a cursor <paramref name="width"/> x <paramref name="height"/> display pixels (the stock art,
         /// point-scaled to the UI scale as windows draw it), kept readable as Cursor.SetCursor needs. Cached per size.
+        /// <paramref name="twice"/>: a held stack's two copies (<see cref="ItemStack.Doubled"/>).
         /// </summary>
-        public Texture2D CursorTexture(UiImage img, int width, int height)
+        public Texture2D CursorTexture(UiImage img, int width, int height, bool twice = false)
         {
-            if (_dragCursors.TryGetValue((img, width, height), out Texture2D tex) && tex != null)
+            if (_dragCursors.TryGetValue((img, width, height, twice), out Texture2D tex) && tex != null)
                 return tex;
-            Bitmap32 src = img.Bitmap;
+            Bitmap32 src = twice ? ItemStack.Doubled(img.Bitmap) : img.Bitmap;
             tex = new Texture2D(width, height, TextureFormat.RGBA32, false)
             {
                 name = "drag cursor", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp
@@ -195,7 +196,7 @@ namespace UOClient.Unity.UI
                 }
             tex.SetPixels32(colors);
             tex.Apply(false, false);
-            _dragCursors[(img, width, height)] = tex;
+            _dragCursors[(img, width, height, twice)] = tex;
             return tex;
         }
 
