@@ -57,7 +57,19 @@ namespace UOClient.Unity
             _renderer = _go.AddComponent<MeshRenderer>();
             _renderer.enabled = false;
             _outline = new OutlineQuad(_go.transform, shader);
+            Placed = ++_placements;
         }
+
+        private static long _placements;
+
+        /// <summary>When this view was made: every item update makes a new one, as TazUO's re-adds the item to its tile's end.</summary>
+        public long Placed { get; }
+
+        /// <summary>The depth key's sort key; items sharing one draw in <see cref="Tie"/> order (<see cref="MousePick.TieRanks"/>).</summary>
+        public long TieKey => MousePick.TieKey(_item.X + _item.Y, _item.PriorityZ);
+
+        /// <summary>The tie level among items with the same <see cref="TieKey"/>: a later one is drawn, and picked, in front.</summary>
+        public int Tie { get; set; }
 
         private readonly OutlineQuad _outline;
 
@@ -118,7 +130,7 @@ namespace UOClient.Unity
                 RenderArt(world);
             // The edge of what was drawn this frame: a corpse's body (every worn layer) or the item's art.
             bool show = _renderer.enabled && ObjectHighlight.OutlinesInWorld(Selected, IsBody, _locked, ObjectHighlight.HighlightGameObjects);
-            _outline.Update(show, _art, LastSlot, LastRect, LastMirror, LastDepth, MeshBuilder.CutHeight(_item.Z));
+            _outline.Update(show, _art, LastSlot, LastRect, LastMirror, LastDepth, LastCut);
         }
 
         private void RenderCorpse(IWorldSpace world)
@@ -173,12 +185,12 @@ namespace UOClient.Unity
             float left = anchor.x - (mirror ? f.Slot.Width - f.AnchorX : f.AnchorX);
             float top = anchor.y - f.AnchorY;
             LastRect = world.ToUnityRect(left, top, f.Slot.Width, f.Slot.Height);
-            LastDepth = world.DepthFor(_item);
+            LastDepth = Depth(world);
             LastSlot = f.Slot;
             LastMirror = mirror;
             _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(f.Slot.Page));
             _renderer.enabled = true;
-            MeshBuilder.SetQuad(_mesh, LastRect, _art.Atlas.Uv(f.Slot), LastDepth, mirror, MeshBuilder.CutHeight(_item.Z));
+            MeshBuilder.SetQuad(_mesh, LastRect, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut);
         }
 
         private void RenderArt(IWorldSpace world)
@@ -201,11 +213,17 @@ namespace UOClient.Unity
                 sprite = lit;
             _renderer.sharedMaterial = MaterialFor(_shader, _art.Atlas.Page(sprite.Slot.Page));
             LastRect = world.ToUnityRect(_item.Left, _item.Top, _item.Width, _item.Height);
-            LastDepth = world.DepthFor(_item);
+            LastDepth = Depth(world);
             LastSlot = sprite.Slot;
             LastMirror = false;
-            MeshBuilder.SetQuad(_mesh, LastRect, _art.Atlas.Uv(sprite.Slot), LastDepth, false, MeshBuilder.CutHeight(_item.Z));
+            MeshBuilder.SetQuad(_mesh, LastRect, _art.Atlas.Uv(sprite.Slot), LastDepth, false, LastCut);
         }
+
+        // DepthKey's tie levels are its last digit: tie t is t steps nearer than tie 0.
+        private float Depth(IWorldSpace world) => world.DepthFor(_item) - Mathf.Clamp(Tie, 0, DepthKey.TieLevels - 1) * DepthKey.Step;
+
+        /// <summary>The upper-floor cut height the quad is drawn with (WorldSprite.shader hides it under the cut).</summary>
+        public float LastCut => MeshBuilder.CutHeight(_item.Z);
 
         /// <summary>Where the item was last drawn (Unity units) and its depth, for mouse picking; empty until its art is ready.</summary>
         public Rect LastRect { get; private set; }
@@ -215,8 +233,11 @@ namespace UOClient.Unity
         public AtlasSlot LastSlot { get; private set; }
         public bool LastMirror { get; private set; }
 
-        /// <summary>Whether a world point (Unity units) falls on an opaque pixel of what was last drawn.</summary>
-        public bool HitTest(Vector2 p) => _renderer.enabled && _art.HitTest(LastRect, LastSlot, LastMirror, p);
+        /// <summary>Whether it was drawn last frame, so the pick may take it.</summary>
+        public bool Drawn => _renderer.enabled;
+
+        /// <summary>What was last drawn, as the world pick (<see cref="MousePick"/>) sees it.</summary>
+        public MousePick.Sprite PickSprite => MobileArt.PickSprite(LastRect, LastSlot, LastMirror, LastDepth, LastCut);
 
         public void Dispose()
         {

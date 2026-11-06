@@ -65,8 +65,7 @@ namespace UOClient.Unity
             UI.UiManager ui = _ui();
             if (ui != null && ui.IsOverUi(Input.mousePosition))
                 return null;
-            Vector3 wp = _ctx.Camera.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, 0));
-            Vector2Int tile = _ctx.World.TileAt(_ctx.World.FromUnity(new Vector2(wp.x, wp.y)), _ctx.Player.Z);
+            Vector2Int tile = _ctx.World.TileAt(_ctx.World.FromUnity(_entities.ScreenToWorld(Input.mousePosition)), _ctx.Player.Z);
             return new Vector3Int(tile.x, tile.y, _ctx.Walk.SurfaceZ(tile.x, tile.y, _ctx.Player.Z));
         }
 
@@ -293,8 +292,7 @@ namespace UOClient.Unity
                     return;
                 }
             }
-            Vector3 wp = _ctx.Camera.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0));
-            Vector2Int tile = _ctx.World.TileAt(_ctx.World.FromUnity(new Vector2(wp.x, wp.y)), _ctx.Player.Z);
+            Vector2Int tile = _ctx.World.TileAt(_ctx.World.FromUnity(_entities.ScreenToWorld(screen)), _ctx.Player.Z);
             _ctx.Session.DropOnGround(item.Serial, tile.x, tile.y, _ctx.Walk.SurfaceZ(tile.x, tile.y, _ctx.Player.Z));
         }
     }

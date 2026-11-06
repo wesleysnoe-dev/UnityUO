@@ -158,13 +158,9 @@ namespace UOClient.Unity.UI
 
         private (ContainedItem Item, Vector2 Offset, bool Mine)? ItemAt(Vector2 local)
         {
-            for (int i = _drawn.Count - 1; i >= 0; i--)
-            {
-                var (item, img, rect, mine) = _drawn[i];
-                if (rect.Contains(local) && img.HitTest((int)(local.x - rect.x), (int)(local.y - rect.y)))
-                    return (item, local - rect.position, mine);
-            }
-            return null;
+            var (i, px, py) = MousePick.WindowItem(_drawn.Count, local.x, local.y, Ui.Scale, k => (_drawn[k].Rect.x, _drawn[k].Rect.y),
+                _ => false, (k, x, y) => _drawn[k].Image.HitTest(x, y));
+            return i < 0 ? ((ContainedItem, Vector2, bool)?)null : (_drawn[i].Item, new Vector2(px, py), _drawn[i].Mine);
         }
 
         private void HandleMouse()

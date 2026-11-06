@@ -118,16 +118,17 @@ namespace UOClient.Unity
         }
 
         /// <summary>
-        /// Whether a world point (Unity units) is on an opaque pixel of a sprite drawn over <paramref name="drawn"/> (mirrored
-        /// or not), as TazUO's pick tests the art's pixels; atlas pages stay readable on the CPU.
+        /// A sprite drawn over <paramref name="drawn"/> (mirrored or not) as the world pick sees it (<see cref="MousePick"/>),
+        /// which tests the art's pixels as TazUO's pick does; atlas pages stay readable on the CPU.
         /// </summary>
-        public bool HitTest(Rect drawn, AtlasSlot slot, bool mirror, Vector2 p)
+        public static MousePick.Sprite PickSprite(Rect drawn, AtlasSlot slot, bool mirror, float depth, float cut) => new MousePick.Sprite
         {
-            if (slot.Width <= 0 || slot.Height <= 0)
-                return false;
-            var px = ObjectHighlight.SpritePixel(p.x, p.y, drawn.xMin, drawn.yMin, drawn.width, drawn.height, slot.Width, slot.Height, mirror);
-            return px.HasValue && _atlas.Opaque(slot, px.Value.X, px.Value.Y);
-        }
+            Left = drawn.xMin, Bottom = drawn.yMin, Width = drawn.width, Height = drawn.height,
+            SpriteWidth = slot.Width, SpriteHeight = slot.Height, Mirror = mirror, Depth = depth, CutHeight = cut
+        };
+
+        /// <summary>The 8-bit alpha of a sprite's pixel (from its top-left) in the atlas, which the pick holds to the shader's cutoff.</summary>
+        public byte Alpha(AtlasSlot slot, int x, int y) => _atlas.Alpha(slot, x, y);
 
         // Outlines of sprites already in the atlas, by the sprite's place there (main thread only).
         private readonly Dictionary<(int, int, int), AtlasSlot> _outlines = new Dictionary<(int, int, int), AtlasSlot>();
@@ -421,7 +422,10 @@ namespace UOClient.Unity
         }
 
         /// <summary>Whether a slot's pixel (x, y) from its top-left is opaque, read from the page's CPU copy (rows are stored bottom-up).</summary>
-        public bool Opaque(AtlasSlot s, int x, int y) => _pages[s.Page].GetPixel(s.X + x, _pageSize - 1 - s.Y - y).a > 0;
+        public bool Opaque(AtlasSlot s, int x, int y) => Alpha(s, x, y) > 0;
+
+        /// <summary>A slot's pixel (x, y) from its top-left: its 8-bit alpha, read from the page's CPU copy (rows are stored bottom-up).</summary>
+        public byte Alpha(AtlasSlot s, int x, int y) => ((Color32)_pages[s.Page].GetPixel(s.X + x, _pageSize - 1 - s.Y - y)).a;
 
         /// <summary>A slot's pixels back as a top-left-origin bitmap, from the page's CPU copy.</summary>
         public Bitmap32 Read(AtlasSlot s)

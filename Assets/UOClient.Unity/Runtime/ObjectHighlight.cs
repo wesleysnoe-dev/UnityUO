@@ -115,35 +115,6 @@ namespace UOClient.Unity
         /// <summary>What the world selects under the mouse: nothing while a window (or the journal) is over it.</summary>
         public static uint WorldSelection(bool overUi, uint picked) => overUi ? 0 : picked;
 
-        /// <summary>The last of <paramref name="count"/> things drawn in order (so the topmost) that <paramref name="hit"/> accepts, or -1.</summary>
-        public static int Topmost(int count, Func<int, bool> hit)
-        {
-            for (int i = count - 1; i >= 0; i--)
-                if (hit(i))
-                    return i;
-            return -1;
-        }
-
-        /// <summary>
-        /// The world's pick: of the <paramref name="count"/> sprites <paramref name="hit"/> accepts (an opaque pixel under
-        /// the mouse), the one drawn in front (smallest depth), or -1.
-        /// </summary>
-        public static int Nearest(int count, Func<int, float> depth, Func<int, bool> hit)
-        {
-            int best = -1;
-            float bestDepth = float.MaxValue;
-            for (int i = 0; i < count; i++)
-            {
-                float d = depth(i);
-                if (d < bestDepth && hit(i))
-                {
-                    best = i;
-                    bestDepth = d;
-                }
-            }
-            return best;
-        }
-
         /// <summary>
         /// The sprite pixel (from its unmirrored top-left) under a point in a drawn rectangle whose y grows upwards,
         /// or null outside it. The rectangle may be drawn at another size than the sprite's own.

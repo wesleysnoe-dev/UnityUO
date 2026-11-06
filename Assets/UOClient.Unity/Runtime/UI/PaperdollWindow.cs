@@ -154,12 +154,13 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>A left double-click on a picture's opaque pixels (TazUO's GumpPic with a MouseDoubleClick handler).</summary>
-        private static bool DoubleClicked(UiImage img, float x, float y)
+        private bool DoubleClicked(UiImage img, float x, float y)
         {
             Event e = Event.current;
             if (img == null || e.type != EventType.MouseDown || e.button != 0 || e.clickCount != 2)
                 return false;
-            if (!img.HitTest((int)(e.mousePosition.x - x), (int)(e.mousePosition.y - y)))
+            var (px, py) = MousePick.UiPixel(e.mousePosition.x, e.mousePosition.y, x, y, Ui.Scale);
+            if (!img.HitTest(px, py))
                 return false;
             e.Use();
             return true;
@@ -168,13 +169,12 @@ namespace UOClient.Unity.UI
         /// <summary>Topmost worn item under a local point (hair and beard can't be picked).</summary>
         private (byte Layer, EquippedItem Item)? ItemAt(Vector2 local)
         {
-            for (int i = _drawn.Count - 1; i >= 0; i--)
-            {
-                var (layer, item, img, _) = _drawn[i];
-                if (img.HitTest((int)(local.x - BodyX), (int)(local.y - BodyY)))
-                    return layer == 11 || layer == 16 ? ((byte, EquippedItem)?)null : (layer, item);
-            }
-            return null;
+            var (i, _, _) = MousePick.WindowItem(_drawn.Count, local.x, local.y, Ui.Scale, _ => (BodyX, BodyY),
+                _ => false, (k, x, y) => _drawn[k].Image.HitTest(x, y));
+            if (i < 0)
+                return null;
+            var (layer, item, _, _) = _drawn[i];
+            return layer == 11 || layer == 16 ? ((byte, EquippedItem)?)null : (layer, item);
         }
 
         private void HandleMouse()

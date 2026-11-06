@@ -329,3 +329,22 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
 3. **Tests:** 2 new (760 pass): an outline mirrors with its sprite, and composited layers (body + cape) get one edge around their union. Cape and vendor-body tests still pass (22). Tests, Cli, EditorCheck (forced, 157 script metas OK) and GumpPreview build with 0 warnings.
 4. **Unity compile (read only, no refresh requested):** the open Editor recompiled by itself. `UOClient.Unity.dll` is **18:51:39**, after every `Assets/` edit of `39f61a7` (commit 18:50:18). `Editor.log` shows the `WorldSprite.shader` import, then `Tundra build success` (line 133250) and a reloaded assembly, with no `error CS` or shader error after them. This follow-up changed only tests and docs, so that DLL is HEAD's Unity code. (Item 3 of the previous session was true when written.)
 5. **Still not verified:** the look in play mode (outline thickness, white on snow and sand, HD window art, shop scroll), and live.
+
+## Session: mouse pick accuracy (2026-11-05, ~19:00-19:10)
+
+1. **One pick, on what the screen shows** (Wes 18:55: "mouse feels inaccurate/sloppy"; backup tag `fidelity-pre-mousepick` = `4573ac8`; details in LIVE_PARITY "Mouse pick accuracy").
+   - **Already right:** world hover, click, drag start, drop and tooltip all went through `EntityViews.PickAt`. The orthographic `ScreenToWorldPoint(.., 0)` is not the bug. Pick quad = drawn quad, same frame. The gauntlet hotspot comes from the art's markers, as in TazUO.
+   - **Fixed:**
+     - The pick took alpha > 0, but the shader draws >= 0.5, so HD soft edges were pickable halos.
+     - The pick took sprites the upper-floor cut hides (TazUO skips them via `_maxGroundZ`).
+     - Equal-depth ground items (a pile) broke ties differently in the depth test and in the pick. Now: tie levels by placement, newest in front, later wins (TazUO `>=`).
+     - The pick tests the pixel centre, not its corner (matters below zoom 1 and at the fractional UI scale).
+     - Window `(int)` truncation lit the column and row outside an item.
+     - The drag cursor used the HD/non-readable texture, unscaled, with a stock-pixel hotspot.
+     - The crosshair hotspot was one row low.
+   - **Code:** new `MousePick` (Unity-free, linked into tests). `PickAt`, `MouseTile`, `DropInWorld` and the container/paperdoll/trade/vendor item picks all use it. `ObjectHighlight.Topmost`/`Nearest` removed. Outline, `0x0035` hue, vendor body art (`06302cb`) and cape order (`173be55`) untouched.
+2. **Verified by tests:** 786 pass (26 new in `MousePickTests`, 2 rerouted). Covered: per-display-pixel sweeps against a rasterizer model at 6 zooms and 5 UI scales; cutoff 127/128; the cut; ties; stacks; drag cursor. Mutation check: the old behaviour fails 12 of them. Tests, Cli, EditorCheck (forced, 158 script metas OK, new `MousePick.cs.meta`) and GumpPreview build with 0 warnings.
+3. **Editor (read only, nothing refreshed):** `UOClient.Unity.dll` is **19:04:11**. That is a mid-edit compile (Tundra success). Later edits (19:04:14-19:08:32: `WorldInput`, `UiManager`, `GumpArt`, `TargetCursor`, the windows, final `MousePick`, its `.meta`) are **not** in it. Then, at ~19:05, `Editor.log` shows play mode being entered. **Unity has not compiled the committed state.**
+4. **Not mine, left alone:** at 19:05:09 the Editor added `com.unity.ai.assistant` and `com.unity.ai.inference` to `Packages/manifest.json` and `packages-lock.json`. Not committed, not reverted.
+   - Also seen: `_cc_logs/mp_steer_outline_only.txt` (Wes 18:58: "hover = outline only, remove the 0x0035 recolour"). It is addressed to a follow-up run and was not done here. This run's brief said not to re-open the outline scope.
+5. **Not verified:** play mode and live. See the LIVE_PARITY re-test item. The `Input.mousePosition` y convention is an assumption; if hovers are one pixel low, see `MousePick.PixelCenter`.

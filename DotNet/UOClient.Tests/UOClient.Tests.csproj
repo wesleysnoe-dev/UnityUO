@@ -42,6 +42,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MobileLook.cs" Link="Unity\MobileLook.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\CorpseDraw.cs" Link="Unity\CorpseDraw.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\ObjectHighlight.cs" Link="Unity\ObjectHighlight.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MousePick.cs" Link="Unity\MousePick.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\ShopWindow.Icon.cs" Link="Unity\ShopWindow.Icon.cs" />
   </ItemGroup>
   <ItemGroup>

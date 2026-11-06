@@ -176,6 +176,34 @@ namespace UOClient.Unity.UI
             return o;
         }
 
+        private readonly Dictionary<(UiImage, int, int), Texture2D> _dragCursors = new Dictionary<(UiImage, int, int), Texture2D>();
+
+        /// <summary>
+        /// A picture as a cursor <paramref name="width"/> x <paramref name="height"/> display pixels (the stock art,
+        /// point-scaled to the UI scale as windows draw it), kept readable as Cursor.SetCursor needs. Cached per size.
+        /// </summary>
+        public Texture2D CursorTexture(UiImage img, int width, int height)
+        {
+            if (_dragCursors.TryGetValue((img, width, height), out Texture2D tex) && tex != null)
+                return tex;
+            Bitmap32 src = img.Bitmap;
+            tex = new Texture2D(width, height, TextureFormat.RGBA32, false)
+            {
+                name = "drag cursor", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp
+            };
+            var colors = new Color32[width * height];
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                {
+                    uint p = src[Math.Min(src.Width - 1, x * src.Width / width), Math.Min(src.Height - 1, y * src.Height / height)];
+                    colors[(height - 1 - y) * width + x] = new Color32((byte)(p >> 16), (byte)(p >> 8), (byte)p, (byte)(p >> 24));
+                }
+            tex.SetPixels32(colors);
+            tex.Apply(false, false);
+            _dragCursors[(img, width, height)] = tex;
+            return tex;
+        }
+
         /// <summary>The stock-size picture, or its HD version (drawn at the stock size, so smoothed rather than point-sampled).</summary>
         private static Texture2D Texture(Bitmap32 bmp, Bitmap32 hd, string name)
         {
@@ -221,6 +249,9 @@ namespace UOClient.Unity.UI
                     UnityEngine.Object.Destroy(i.Texture);
             foreach (UiImage i in _outlines.Values)
                 UnityEngine.Object.Destroy(i.Texture);
+            foreach (Texture2D t in _dragCursors.Values)
+                UnityEngine.Object.Destroy(t);
+            _dragCursors.Clear();
             _gumps.Clear();
             _items.Clear();
             _bodies.Clear();

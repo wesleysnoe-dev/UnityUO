@@ -328,9 +328,15 @@ namespace UOClient.Unity.UI
                 return;
             Dragging = item;
             Session.Lift(item.Serial, item.Amount);
+            // The art drawn as windows draw it, at the UI scale, held where it was grabbed: what the cursor shows is where
+            // the drop puts it (a window's Drop takes local - Grab). Not art.Texture: an HD texture is larger than the
+            // stock art Grab is measured on, and window textures are not readable.
             UiImage art = Art.Item(item.Graphic, item.Hue);
             if (art != null)
-                Cursor.SetCursor(art.Texture, item.Grab, CursorMode.ForceSoftware);
+            {
+                var (w, h, hx, hy) = MousePick.DragCursor(art.Width, art.Height, item.Grab.x, item.Grab.y, Scale);
+                Cursor.SetCursor(Art.CursorTexture(art, w, h), new Vector2(hx, hy), CursorMode.ForceSoftware);
+            }
         }
 
         /// <summary>

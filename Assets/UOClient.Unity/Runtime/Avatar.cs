@@ -83,8 +83,11 @@ namespace UOClient.Unity
         private MobileLook _litFor, _lit;
         private string _litKey;
 
-        /// <summary>Whether a world point (Unity units) falls on an opaque pixel of the frame last drawn.</summary>
-        public bool HitTest(Vector2 p) => Visible && _art.HitTest(LastRect, LastSlot, LastMirror, p);
+        /// <summary>The upper-floor cut height the frame was last drawn with (WorldSprite.shader hides it under the cut).</summary>
+        public float LastCut { get; private set; }
+
+        /// <summary>The frame last drawn, as the world pick (<see cref="MousePick"/>) sees it.</summary>
+        public MousePick.Sprite PickSprite => MobileArt.PickSprite(LastRect, LastSlot, LastMirror, LastDepth, LastCut);
 
         /// <summary>Remaining time of the current step, in seconds.</summary>
         public float StepRemaining => IsMoving ? _stepDuration - _stepTime : 0f;
@@ -330,11 +333,12 @@ namespace UOClient.Unity
             LastMirror = mirror;
             LastRect = r;
             LastDepth = view.DepthFor(SortItem);
+            LastCut = MeshBuilder.CutHeight(Z);
             // Characters on a floor above us are cut away with it (we ourselves always stand below the cut).
-            MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, MeshBuilder.CutHeight(Z));
+            MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut);
             // The frame is every worn layer composited, so its outline is the whole equipped silhouette.
             _outline.Update(ObjectHighlight.OutlinesInWorld(Selected, true, false, ObjectHighlight.HighlightGameObjects),
-                _art, f.Slot, r, mirror, LastDepth, MeshBuilder.CutHeight(Z));
+                _art, f.Slot, r, mirror, LastDepth, LastCut);
         }
 
         private Vector2 TileAnchor(int x, int y, int z)

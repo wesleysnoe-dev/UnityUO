@@ -189,7 +189,8 @@ public sealed class ObjectHighlightTests
     {
         // Drawn in order: a solid item at (0,0), then a padded one over it at (0,0).
         var drawn = new[] { (X: 0, Y: 0, Art: Solid()), (X: 0, Y: 0, Art: Ring()) };
-        int At(int px, int py) => ObjectHighlight.Topmost(drawn.Length, i => Opaque(drawn[i].Art, px - drawn[i].X, py - drawn[i].Y));
+        int At(int px, int py) => MousePick.WindowItem(drawn.Length, px, py, 1f, i => (drawn[i].X, drawn[i].Y), _ => false,
+            (i, x, y) => Opaque(drawn[i].Art, x, y)).Index;
         Assert.Equal(1, At(1, 1));  // the later item's opaque middle
         Assert.Equal(0, At(0, 0));  // the later item's transparent corner: the one under it
         Assert.Equal(-1, At(9, 9)); // nothing
@@ -200,10 +201,13 @@ public sealed class ObjectHighlightTests
     {
         // Two sprites over the same spot: the nearer (depth 1) only has pixels in its middle.
         var sprites = new[] { (Depth: 5f, Art: Solid()), (Depth: 1f, Art: Ring()) };
-        int At(int x, int y) => ObjectHighlight.Nearest(sprites.Length, i => sprites[i].Depth, i => Opaque(sprites[i].Art, x, y));
+        // Each 4x4 sprite drawn over world (0, 0)-(4, 4), y up: sprite pixel (x, y) is centred at (x + 0.5, 3.5 - y).
+        var quads = sprites.Select(s => new MousePick.Sprite { Width = 4, Height = 4, SpriteWidth = 4, SpriteHeight = 4, Depth = s.Depth }).ToArray();
+        byte Alpha(int i, int x, int y) => Opaque(sprites[i].Art, x, y) ? (byte)255 : (byte)0;
+        int At(int x, int y) => MousePick.World(quads, x + 0.5f, 3.5f - y, 0, Alpha);
         Assert.Equal(1, At(2, 2));
         Assert.Equal(0, At(0, 3));
-        Assert.Equal(-1, ObjectHighlight.Nearest(2, i => sprites[i].Depth, _ => false));
+        Assert.Equal(-1, MousePick.World(quads, 9f, 9f, 0, Alpha));
     }
 
     [Fact]

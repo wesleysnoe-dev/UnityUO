@@ -61,7 +61,8 @@ namespace UOClient.Unity.UI
                 if (img == null)
                     continue;
                 bool stack = item.Amount > 1 && (Art.Data.TileData.GetStatic(item.Graphic).Flags & TileFlags.Generic) != 0;
-                _drawn.Add((item, img, new Rect(item.X, item.Y, img.Width + (stack ? 5 : 0), img.Height + (stack ? 5 : 0))));
+                int extra = stack ? MousePick.StackOffset : 0;
+                _drawn.Add((item, img, new Rect(item.X, item.Y, img.Width + extra, img.Height + extra)));
             }
             ContainedItem over = MouseIsOver ? ItemAt(Event.current.mousePosition)?.Item : null;
             foreach (var (item, own, rect) in _drawn)
@@ -73,11 +74,11 @@ namespace UOClient.Unity.UI
                 {
                     DrawOutline(img, item.X, item.Y);
                     if (rect.width > img.Width)
-                        DrawOutline(img, item.X + 5, item.Y + 5);
+                        DrawOutline(img, item.X + MousePick.StackOffset, item.Y + MousePick.StackOffset);
                 }
                 DrawImage(img, item.X, item.Y);
                 if (rect.width > img.Width)
-                    DrawImage(img, item.X + 5, item.Y + 5); // the classic two-copies look of a stack
+                    DrawImage(img, item.X + MousePick.StackOffset, item.Y + MousePick.StackOffset); // the classic two-copies look of a stack
             }
 
             if (Event.current.type == EventType.Repaint)
@@ -112,16 +113,11 @@ namespace UOClient.Unity.UI
             }
         }
 
+        /// <summary>The topmost item on an opaque pixel under a window point, and where in its art (MousePick.WindowItem).</summary>
         private (ContainedItem Item, Vector2 Offset)? ItemAt(Vector2 local)
         {
-            int px = 0, py = 0;
-            int i = ObjectHighlight.Topmost(_drawn.Count, k =>
-            {
-                var (item, img, rect) = _drawn[k];
-                px = (int)(local.x - item.X);
-                py = (int)(local.y - item.Y);
-                return rect.Contains(local) && (img.HitTest(px, py) || img.HitTest(px - 5, py - 5));
-            });
+            var (i, px, py) = MousePick.WindowItem(_drawn.Count, local.x, local.y, Ui.Scale, k => (_drawn[k].Item.X, _drawn[k].Item.Y),
+                k => _drawn[k].Rect.width > _drawn[k].Image.Width, (k, x, y) => _drawn[k].Image.HitTest(x, y));
             return i < 0 ? ((ContainedItem, Vector2)?)null : (_drawn[i].Item, new Vector2(px, py));
         }
 

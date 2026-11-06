@@ -118,6 +118,7 @@ namespace UOClient.Unity
             // Before the items: a fall that just reached its end hands over to its corpse in this same frame (the
             // avatar's destroy is carried out before rendering), so the last frame is never missing or doubled.
             DropFinishedFalls();
+            RankTies();
             foreach (KeyValuePair<uint, ItemView> kv in _items)
             {
                 kv.Value.Hidden = IsFallingCorpse(kv.Key);
@@ -125,6 +126,33 @@ namespace UOClient.Unity
                 kv.Value.Render(_ctx.World);
             }
             RenderMultis(hideUpperMultiParts);
+        }
+
+        // RankTies' buffers, reused every frame.
+        private readonly List<ItemView> _tieViews = new List<ItemView>();
+        private readonly List<(long Key, long Placed)> _tieKeys = new List<(long, long)>();
+        private readonly List<int> _tieOrder = new List<int>();
+        private int[] _tieRanks = Array.Empty<int>();
+
+        /// <summary>
+        /// Ground items sharing a depth key (a pile on one tile, things along one diagonal at one height) take its tie
+        /// levels by when they were placed, the newest in front, so what is drawn on top is what the pick takes
+        /// (<see cref="MousePick.TieRanks"/>); otherwise the depth test and the pick each settle the tie their own way.
+        /// </summary>
+        private void RankTies()
+        {
+            _tieViews.Clear();
+            _tieKeys.Clear();
+            foreach (ItemView v in _items.Values)
+            {
+                _tieViews.Add(v);
+                _tieKeys.Add((v.TieKey, v.Placed));
+            }
+            if (_tieRanks.Length < _tieViews.Count)
+                _tieRanks = new int[Math.Max(_tieViews.Count, _tieRanks.Length * 2)];
+            MousePick.TieRanks(_tieKeys, _tieOrder, _tieRanks, DepthKey.TieLevels);
+            for (int i = 0; i < _tieViews.Count; i++)
+                _tieViews[i].Tie = _tieRanks[i];
         }
 
         private bool IsFallingCorpse(uint serial) =>
@@ -186,30 +214,60 @@ namespace UOClient.Unity
             return null;
         }
 
-        // PickAt's candidates, reused every call: serial, depth, and the view whose pixels are tested.
-        private readonly List<(uint Serial, float Depth, Avatar Mobile, ItemView Item)> _pickable = new List<(uint, float, Avatar, ItemView)>();
+        // PickAt's candidates, reused every call: serial, the sprite as drawn, and its atlas slot for the alpha.
+        private readonly List<uint> _pickSerials = new List<uint>();
+        private readonly List<MousePick.Sprite> _pickSprites = new List<MousePick.Sprite>();
+        private readonly List<AtlasSlot> _pickSlots = new List<AtlasSlot>();
+        private Func<int, int, int, byte> _pickAlpha;
 
         /// <summary>
-        /// The character, corpse or ground item drawn in front under a screen point, on an opaque pixel of what was last
-        /// drawn (TazUO picks by the art's pixels, so a sprite's transparent box never takes the click), or 0. Only what
-        /// <see cref="ObjectHighlight.Hovers"/> takes: house and boat parts, map statics and land are never offered.
+        /// The character, corpse or ground item drawn in front under a screen point (Unity's bottom-left origin), on a
+        /// pixel the world shader draws (TazUO picks by the art's pixels, so a sprite's transparent box never takes the
+        /// click), or 0. Only what <see cref="ObjectHighlight.Hovers"/> takes: house and boat parts, map statics and land
+        /// are never offered. The one world pick: hover, click, drag start and drop all ask here (<see cref="MousePick"/>).
         /// </summary>
         public uint PickAt(Vector2 screen)
         {
-            Vector3 w = _ctx.Camera.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0));
-            var p = new Vector2(w.x, w.y);
-            _pickable.Clear();
+            _pickSerials.Clear();
+            _pickSprites.Clear();
+            _pickSlots.Clear();
             if (_ctx.Player.Visible)
-                _pickable.Add((_ctx.Session.World.PlayerSerial, _ctx.Player.LastDepth, _ctx.Player, null));
+                AddPick(_ctx.Session.World.PlayerSerial, _ctx.Player.PickSprite, _ctx.Player.LastSlot);
             foreach (KeyValuePair<uint, Avatar> kv in _others)
                 if (kv.Value.Visible && ObjectHighlight.Hovers(ObjectHighlight.PickKind.Mobile))
-                    _pickable.Add((kv.Key, kv.Value.LastDepth, kv.Value, null));
+                    AddPick(kv.Key, kv.Value.PickSprite, kv.Value.LastSlot);
             foreach (KeyValuePair<uint, ItemView> kv in _items)
-                if (ObjectHighlight.Hovers(kv.Value.PickKind))
-                    _pickable.Add((kv.Key, kv.Value.LastDepth, null, kv.Value));
-            int i = ObjectHighlight.Nearest(_pickable.Count, k => _pickable[k].Depth,
-                k => _pickable[k].Mobile?.HitTest(p) ?? _pickable[k].Item.HitTest(p));
-            return i < 0 ? 0 : _pickable[i].Serial;
+                if (kv.Value.Drawn && ObjectHighlight.Hovers(kv.Value.PickKind))
+                    AddPick(kv.Key, kv.Value.PickSprite, kv.Value.LastSlot);
+
+            Camera cam = _ctx.Camera;
+            Vector3 c = cam.transform.position;
+            Rect view = cam.pixelRect;
+            _pickAlpha ??= (k, x, y) => _ctx.MobileArt.Alpha(_pickSlots[k], x, y);
+            int i = MousePick.World(_pickSprites, screen.x, screen.y, c.x, c.y, cam.orthographicSize,
+                view.x, view.y, view.width, view.height, Shader.GetGlobalFloat("_UOCutZ"), _pickAlpha);
+            return i < 0 ? 0 : _pickSerials[i];
+        }
+
+        private void AddPick(uint serial, MousePick.Sprite sprite, AtlasSlot slot)
+        {
+            _pickSerials.Add(serial);
+            _pickSprites.Add(sprite);
+            _pickSlots.Add(slot);
+        }
+
+        /// <summary>
+        /// A screen point (bottom-left origin) on the world plane, at its pixel's centre: the point <see cref="PickAt"/>
+        /// tests, so the ground tile a click or a drop falls on is found the same way.
+        /// </summary>
+        public Vector2 ScreenToWorld(Vector2 screen)
+        {
+            Camera cam = _ctx.Camera;
+            Vector3 c = cam.transform.position;
+            Rect view = cam.pixelRect;
+            (float cx, float cy) = MousePick.PixelCenter(screen.x, screen.y);
+            (float x, float y) = MousePick.ScreenToWorld(cx, cy, c.x, c.y, cam.orthographicSize, view.x, view.y, view.width, view.height);
+            return new Vector2(x, y);
         }
 
         /// <summary>

@@ -80,9 +80,11 @@ namespace UOClient.Unity.UI
             float content = 0;
             foreach (ShopItem it in _list.Items)
                 content += LineHeight(it.Serial, Art.Data.TileData.GetStatic(it.Graphic).Height);
-            // The mouse in the list's own coordinates, while it is on the visible list and no window covers it.
+            // The mouse in the list's own coordinates, while it is on the visible list and no window covers it: at the
+            // display pixel's centre, which is what the icon shows there (MousePick.UiPixel).
+            float half = 0.5f / Ui.Scale;
             Vector2? mouse = MouseIsOver && view.Contains(Event.current.mousePosition)
-                ? Event.current.mousePosition - view.position + _scroll : (Vector2?)null;
+                ? Event.current.mousePosition + new Vector2(half, half) - view.position + _scroll : (Vector2?)null;
             _scroll = GUI.BeginScrollView(view, _scroll, new Rect(0, 0, view.width - 18, content));
             float y = 0;
             foreach (ShopItem item in _list.Items)

@@ -39,7 +39,9 @@ namespace UOClient.Unity.UI
                 _crossHarmful ??= Crosshair(new Color(1f, 0.3f, 0.25f));
                 _crossBeneficial ??= Crosshair(new Color(0.4f, 0.7f, 1f));
                 tex = t.Flags == 1 ? _crossHarmful : t.Flags == 2 ? _crossBeneficial : _crossNeutral;
-                hotspot = new Vector2(16, 16);
+                // The crosshair's centre is texel (16, 16) counted up from the bottom (Crosshair), so row 15 from the
+                // top, which is what SetCursor's hotspot counts from.
+                hotspot = new Vector2(16, 15);
             }
             else if (ui?.Art != null)
             {
