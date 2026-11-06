@@ -27,24 +27,79 @@ namespace UOClient.Editor
             EditorUtility.DisplayDialog(ProductName, result, "OK");
         }
 
-        public static string Build()
+        public static string Build() => Build(ProductName, OutputFolder);
+
+        // ---- LiveGroundCompare TEST build: its own folder and product name; Builds/Windows is never touched ----
+
+        public const string GroundCompareProductName = "Unity UO GroundCompare";
+        public const string GroundCompareOutputFolder = "Builds/Windows-GroundCompare";
+
+        /// <summary>Touch this file to have the editor build the GroundCompare TEST player; the result goes to build-groundcompare-result.txt.</summary>
+        public const string GroundCompareRequestFile = "Library/UOClient/build-groundcompare";
+
+        [MenuItem("UOClient/Build Windows Player (GroundCompare TEST)")]
+        public static void BuildGroundCompareFromMenu()
+        {
+            string result = BuildGroundCompare();
+            EditorUtility.DisplayDialog(GroundCompareProductName, result, "OK");
+        }
+
+        /// <summary>Builds the same scene as "Unity UO.exe" under a distinct product name and folder, then puts the project's product name back.</summary>
+        public static string BuildGroundCompare()
+        {
+            string productName = PlayerSettings.productName;
+            try
+            {
+                return Build(GroundCompareProductName, GroundCompareOutputFolder);
+            }
+            finally
+            {
+                PlayerSettings.productName = productName;
+            }
+        }
+
+        // Called from BuildIfRequested's poll. Unlike the live build it never leaves Play mode: it waits for edit mode.
+        private static void BuildGroundCompareIfRequested()
+        {
+            string request = Path.Combine(ProjectRoot, GroundCompareRequestFile);
+            string refreshed = request + "-refreshed";
+            if (!File.Exists(request) || EditorApplication.isCompiling || EditorApplication.isPlayingOrWillChangePlaymode)
+                return;
+            if (!File.Exists(refreshed))
+            {
+                File.WriteAllText(refreshed, System.DateTime.UtcNow.ToString("o")); // survives the domain reload
+                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                return;
+            }
+            try
+            {
+                File.WriteAllText(Path.Combine(ProjectRoot, "Library", "UOClient", "build-groundcompare-result.txt"), BuildGroundCompare());
+                File.Delete(request);
+            }
+            finally
+            {
+                File.Delete(refreshed);
+            }
+        }
+
+        private static string Build(string productName, string outputFolder)
         {
             if (!File.Exists(WorldDemoLauncher.ScenePath))
                 WorldDemoLauncher.CreateScene();
 
-            PlayerSettings.productName = ProductName;
+            PlayerSettings.productName = productName;
             PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
             PlayerSettings.defaultScreenWidth = 1920;
             PlayerSettings.defaultScreenHeight = 1080;
             PlayerSettings.resizableWindow = true;
             PlayerSettings.runInBackground = true; // keep the connection and the frame loop alive when unfocused
 
-            string outDir = Path.Combine(ProjectRoot, OutputFolder);
+            string outDir = Path.Combine(ProjectRoot, outputFolder);
             Directory.CreateDirectory(outDir);
             var options = new BuildPlayerOptions
             {
                 scenes = new[] { WorldDemoLauncher.ScenePath },
-                locationPathName = Path.Combine(outDir, ProductName + ".exe"),
+                locationPathName = Path.Combine(outDir, productName + ".exe"),
                 target = BuildTarget.StandaloneWindows64,
                 options = BuildOptions.None
             };
@@ -83,6 +138,7 @@ namespace UOClient.Editor
             if (EditorApplication.timeSinceStartup < _nextPoll)
                 return;
             _nextPoll = EditorApplication.timeSinceStartup + 1.0;
+            BuildGroundCompareIfRequested();
 
             string request = Path.Combine(ProjectRoot, BuildRequestFile);
             if (!File.Exists(request) || EditorApplication.isCompiling)
