@@ -33,6 +33,15 @@ namespace UOClient.Unity.UI
         /// <summary>The options' DoubleClickToLootInsideContainers (TazUO's): GameOptions.LootsOnDoubleClick.</summary>
         public static bool DoubleClickToLoot { get; set; }
 
+        /// <summary>The options' HighlightContainerWhenSelected (TazUO's): WorldInput selects the container under the mouse.</summary>
+        public static bool HighlightWhenSelected { get; set; }
+
+        /// <summary>
+        /// The container whose window the mouse is over with <see cref="HighlightWhenSelected"/> on, else 0 (TazUO's
+        /// SelectedObject.SelectedContainer, set by WorldInput each frame): outlined where it sits in another container's window.
+        /// </summary>
+        public static uint SelectedContainer { get; set; }
+
         /// <summary>This container's size: the chess and backgammon boards keep theirs (GameOptions.ContainerScale).</summary>
         private float S => GameOptions.ContainerScale(ScalePercent, _gump);
 
@@ -91,8 +100,9 @@ namespace UOClient.Unity.UI
             foreach (var (item, img, rect) in _drawn)
             {
                 // The item the mouse is on keeps its own hue and is outlined (both copies of a stack, under them, so the
-                // pair shows one edge): the outline alone is the mouse-over cue (ObjectHighlight).
-                if (item == over)
+                // pair shows one edge): the outline alone is the mouse-over cue (ObjectHighlight). A bag whose own window
+                // the mouse is over gets it too (ItemGump: LocalSerial == SelectedObject.SelectedContainer).
+                if (item == over || (SelectedContainer != 0 && item.Serial == SelectedContainer))
                 {
                     DrawScaled(Art.Outline(img), item.X - 1, item.Y - 1);
                     if (rect.width > img.Width)

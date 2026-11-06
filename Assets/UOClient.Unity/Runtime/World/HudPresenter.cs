@@ -21,6 +21,10 @@ namespace UOClient.Unity
             _entities = entities;
         }
 
+        /// <summary>The options' ShowMobilesHP and MobileHPShowWhen (GameOptions.ShowsHealthLine).</summary>
+        public bool ShowMobilesHP { get; set; } = GameOptions.Defaults().showMobilesHP;
+        public int MobileHPShowWhen { get; set; } = GameOptions.Defaults().mobileHPShowWhen;
+
         public void Update()
         {
             _ctx.Hud.UpdatePlayer(_ctx.Player.X, _ctx.Player.Y, _ctx.Player.IsMoving, Time.deltaTime);
@@ -70,15 +74,16 @@ namespace UOClient.Unity
                 _ctx.Hud.Labels.Add((m.Name, new Vector2(s.x, Screen.height - s.y), DemoHud.NotorietyColor(m.Notoriety)));
             }
 
-            // Health bars under the feet: whoever we fight, anyone hurt, and ourselves in war mode or when hurt.
+            // Health lines under the feet (the options' ShowMobilesHP / MobileHPShowWhen): everyone, or anyone hurt plus
+            // whoever we fight and ourselves in war mode.
             _ctx.Hud.HealthBars.Clear();
             void Bar(Core.Mobile m, Avatar a)
             {
-                if (m == null || a == null || !a.Visible || m.HitsMax <= 0)
+                if (m == null || a == null || !a.Visible)
                     return;
-                bool show = m.Serial == _ctx.Session.Combatant || m.Hits < m.HitsMax
-                            || (m.Serial == _ctx.Session.World.PlayerSerial && _ctx.Session.WarMode);
-                if (!show)
+                bool alsoWhenFull = m.Serial == _ctx.Session.Combatant
+                                    || (m.Serial == _ctx.Session.World.PlayerSerial && _ctx.Session.WarMode);
+                if (!GameOptions.ShowsHealthLine(ShowMobilesHP, MobileHPShowWhen, m.Hits, m.HitsMax, alsoWhenFull))
                     return;
                 Vector3 s = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(a.AnchorPixels + new Vector2(0, 10 * _ctx.ArtScale)));
                 _ctx.Hud.HealthBars.Add((new Vector2(s.x, Screen.height - s.y), m.Hits / (float)m.HitsMax, DemoHud.NotorietyColor(m.Notoriety)));

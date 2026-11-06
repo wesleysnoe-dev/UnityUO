@@ -58,6 +58,30 @@ namespace UOClient.Unity
         public static float ContainerScale(int percent, ushort gump) =>
             KeepsSize(gump) ? 1f : Math.Max(MinContainersScale, Math.Min(MaxContainersScale, percent)) / 100f;
 
+        /// <summary>
+        /// Whether a character's health line is drawn: TazUO's HealthLinesManager.Draw, ShowMobilesHP and MobileHPShowWhen
+        /// (always, or only below full health; no line without a known maximum). <paramref name="alsoWhenFull"/> is this
+        /// client's own extra for "when damaged", kept from before the option: whoever the player fights, and the player in
+        /// war mode, show a full line too (TazUO's "&lt;100%" hides them).
+        /// </summary>
+        public static bool ShowsHealthLine(bool showMobilesHP, int showWhen, int hits, int hitsMax, bool alsoWhenFull)
+        {
+            if (!showMobilesHP || hitsMax <= 0)
+                return false;
+            return showWhen != MobileHPWhenDamaged || hits < hitsMax || alsoWhenFull;
+        }
+
+        /// <summary>The health line's width in UI pixels: this client's 44 times TazUO's HealthLineSizeMultiplier (clamped 1-5).</summary>
+        public static float HealthLineWidth(int multiplier) =>
+            44f * Math.Max(MinHealthLineSize, Math.Min(MaxHealthLineSize, multiplier));
+
+        /// <summary>
+        /// Whether a journal line goes into the HUD journal: everything, unless <see cref="showSystemMessagesInJournal"/> is
+        /// off and the line is the server's own (serial 0 or 0xFFFFFFFF, no object said it). Speech, labels and party lines stay.
+        /// </summary>
+        public static bool JournalShowsLine(bool showSystemMessages, uint serial) =>
+            showSystemMessages || (serial != 0 && serial != 0xFFFFFFFF);
+
         /// <summary>TazUO's journal log name (JournalManager.CreateWriter): <c>yyyy_MM_dd_HH_mm_ss_{name}_journal.txt</c>, the name made safe.</summary>
         public static string JournalFileName(DateTime opened, string characterName)
         {

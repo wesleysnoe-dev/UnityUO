@@ -36,13 +36,14 @@ namespace UOClient.Unity.UI
         public static readonly (Page Page, string Text)[] NotOffered =
         {
             (Page.General, "Pathfinding: this client has no pathfinder."),
-            (Page.General, "Health lines over mobiles: nothing draws them yet."),
+            (Page.General, "Health as a percent (or both), \"smart\": only the line is drawn."),
             (Page.Sound, "Footsteps: the client plays no footstep sounds of its own."),
             (Page.Sound, "Music / sound on-off, combat music: volume only."),
             (Page.Tooltip, "Center mobile tooltips: TazUO reads that option nowhere."),
             (Page.Tooltip, "Tooltip font, colours, background: one fixed style."),
             (Page.Speech, "Chat without Enter: always on here (WASD and keys need the keyboard)."),
-            (Page.Speech, "Speech / emote / yell / party hues: one server-side hue."),
+            (Page.Speech, "Guild / alliance hues: this client sends no guild chat (AoS)."),
+            (Page.Speech, "Override party hue: TazUO's recolours members' bodies, not chat."),
             (Page.CombatSpells, "Spell hues, cursor spell names, HP colours: not drawn."),
             (Page.Containers, "Container opacity and grid containers: classic gumps only."),
         };
@@ -56,6 +57,6 @@ namespace UOClient.Unity.UI
             "Okay: uses the changes and saves them (unity-uo-options.json; edited macros: unity-uo-hotkeys.json).",
         };
 
-        public const int Width = 660, Height = 520, MenuX = 16, MenuWidth = 140, ContentX = 172;
+        public const int Width = 660, Height = 560, MenuX = 16, MenuWidth = 140, ContentX = 172;
     }
 }

@@ -86,7 +86,7 @@ namespace UOClient.Core
                         Speaker = toAll ? $"[Party][{name}]" : $"[Party][{name}] (private)",
                         Name = name,
                         Text = text.Trim(),
-                        Hue = PartyHue,
+                        Hue = SpeechOptions.Party,
                         Type = PartyMessageType,
                         Serial = from
                     });

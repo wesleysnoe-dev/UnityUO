@@ -257,10 +257,13 @@ namespace UOClient.Core
 
         public const ushort SpeechHue = 0x3B2;
 
+        /// <summary>The speech hues and dropped chat kinds the options chose (the client keeps one and hands it to each session).</summary>
+        public SpeechSettings SpeechOptions { get; set; } = new SpeechSettings();
+
         /// <summary>
         /// Speech in the world (0xAD unicode speech). As in ClassicUO, ": " emotes, "; " whispers and "! " yells;
-        /// with the default hue each of those takes the classic client's own hue for it. A line starting with "/" is
-        /// party chat (<see cref="PartyLine"/>).
+        /// with the default hue each line takes its kind's hue from <see cref="SpeechOptions"/> (TazUO's SpeechHue,
+        /// EmoteHue, WhisperHue, YellHue). A line starting with "/" is party chat (<see cref="PartyLine"/>).
         /// </summary>
         public void Say(string text, ushort hue = SpeechHue)
         {
@@ -272,29 +275,34 @@ namespace UOClient.Core
                 PartyLine(text.Trim());
                 return;
             }
-            var (type, said, modeHue) = SpeechMode(text.Trim());
+            var (type, said, modeHue) = SpeechMode(text.Trim(), SpeechOptions);
             if (said.Length == 0)
                 return;
             _conn.Send(UnicodeSpeechRequest(said, SpeechKeywords?.Match(said), hue == SpeechHue ? modeHue : hue, type));
         }
 
+        /// <summary>As <see cref="SpeechMode(string, SpeechSettings)"/> with the classic client's hues.</summary>
+        public static (byte Type, string Text, ushort Hue) SpeechMode(string line) => SpeechMode(line, null);
+
         /// <summary>
         /// The speech type (ModernUO MessageType: 0 regular, 2 emote, 8 whisper, 9 yell), the text to send and the
-        /// default hue for a typed line. An emote goes out as "*text*", the way ClassicUO sends it.
+        /// hue for a typed line, from <paramref name="hues"/> (null: the classic client's). An emote goes out as "*text*",
+        /// the way ClassicUO sends it.
         /// </summary>
-        public static (byte Type, string Text, ushort Hue) SpeechMode(string line)
+        public static (byte Type, string Text, ushort Hue) SpeechMode(string line, SpeechSettings hues)
         {
+            hues ??= SpeechSettings.Classic;
             if (line.Length >= 2 && line[1] == ' ')
             {
                 string rest = line.Substring(2).Trim();
                 switch (line[0])
                 {
-                    case ':': return (2, rest.Length > 0 ? "*" + rest + "*" : "", 0x21);
-                    case ';': return (8, rest, 0x33);
-                    case '!': return (9, rest, 0x21);
+                    case ':': return (2, rest.Length > 0 ? "*" + rest + "*" : "", hues.Emote);
+                    case ';': return (8, rest, hues.Whisper);
+                    case '!': return (9, rest, hues.Yell);
                 }
             }
-            return (0, line, SpeechHue);
+            return (0, line, hues.Speech);
         }
 
         /// <summary>
@@ -894,8 +902,11 @@ namespace UOClient.Core
 
         private void AddSpeech(uint serial, string name, string text, ushort hue, byte type)
         {
-            if (string.IsNullOrWhiteSpace(text))
+            if (string.IsNullOrWhiteSpace(text) || SpeechOptions.Drops(type))
                 return;
+            // GameScene.ChatOnMessageReceived: an emote sent without a hue takes the emote hue.
+            if (type == 2 && hue == 0)
+                hue = SpeechOptions.Emote;
             bool system = serial == 0xFFFFFFFF || serial == 0 || string.IsNullOrEmpty(name) || name == "System";
             string link = ExtractLink(ref text);
             World.AddJournal(new JournalEntry
@@ -988,5 +999,24 @@ namespace UOClient.Core
             _conn?.Dispose();
             _conn = null;
         }
+    }
+
+    /// <summary>
+    /// The options' speech settings a session reads (TazUO's Profile SpeechHue, WhisperHue, EmoteHue, YellHue,
+    /// PartyMessageHue, IgnoreGuildMessages, IgnoreAllianceMessages). The defaults are the classic client's hues.
+    /// </summary>
+    public sealed class SpeechSettings
+    {
+        /// <summary>The classic client's hues, nothing dropped (never changed: a session's own copy is a new instance).</summary>
+        public static readonly SpeechSettings Classic = new SpeechSettings();
+
+        public ushort Speech = GameSession.SpeechHue, Whisper = 0x33, Emote = 0x21, Yell = 0x21, Party = GameSession.PartyHue;
+        public bool IgnoreGuildMessages, IgnoreAllianceMessages;
+
+        /// <summary>
+        /// Whether an incoming line of this type is dropped before the journal sees it: guild (13) or alliance (14) with
+        /// its ignore on, as TazUO's MessageManager.HandleMessage returns before raising MessageReceived.
+        /// </summary>
+        public bool Drops(byte type) => (type == 13 && IgnoreGuildMessages) || (type == 14 && IgnoreAllianceMessages);
     }
 }

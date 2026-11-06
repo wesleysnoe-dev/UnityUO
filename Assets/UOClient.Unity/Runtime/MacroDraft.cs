@@ -24,13 +24,15 @@ namespace UOClient.Unity
         /// <summary>The actions Hotkeys.Run carries out, and nothing else (a test reads Hotkeys.cs to keep them the same).</summary>
         public static readonly string[] Verbs =
         {
-            "cast", "skill", "say", "war", "peace", "togglewar", "lasttarget", "targetself", "bandageself", "use", "target",
-            "useobject", "lastobject", "record", "playmacro", "cancel", "backpack", "paperdoll", "skills", "status", "journal",
-            "options", "help",
+            "cast", "skill", "say", "emote", "whisper", "yell", "spellbook", "war", "peace", "togglewar", "lasttarget",
+            "targetself", "bandageself", "use", "target", "useobject", "lastobject", "record", "playmacro", "cancel",
+            "backpack", "paperdoll", "skills", "status", "journal", "options", "help", "party", "worldmap", "minimap",
+            "worldchat", "logout",
         };
 
         /// <summary>The actions that need something after them (<c>cast Heal</c>, <c>use 0x0E21</c>).</summary>
-        public static readonly string[] VerbsWithArgument = { "cast", "skill", "say", "use", "target", "useobject" };
+        public static readonly string[] VerbsWithArgument =
+            { "cast", "skill", "say", "emote", "whisper", "yell", "use", "target", "useobject" };
 
         private readonly Func<IReadOnlyList<Row>> _read;
         private readonly Action<IReadOnlyList<Row>> _apply;

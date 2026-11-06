@@ -1,4 +1,5 @@
 using UOClient.Core;
+using UOClient.Net;
 using UOClient.Unity;
 using UOClient.Unity.UI;
 
@@ -453,6 +454,152 @@ public sealed class GameOptionsTests
         string window = File.ReadAllText(Path.Combine(runtime, "UI", "OptionsWindow.cs"));
         Assert.Contains("new OptionsDraft(game.CurrentOptions, game.ApplyOptions, game.SaveOptions)", window);
         Assert.DoesNotContain("SaveOptions(", window);
+    }
+
+    // ---- batch 3: health lines, speech hues, chat filters, container highlight, macro verbs ----
+
+    [Fact]
+    public void Batch3_Defaults_FollowTazUO_OrKeepThisClientsBehaviour()
+    {
+        var d = GameOptions.Defaults();
+        // As TazUO's Profile.cs.
+        Assert.Equal(1, d.healthLineSizeMultiplier);
+        Assert.Equal((0x33, 0x21, 0x21, 0x44), (d.whisperHue, d.emoteHue, d.yellHue, d.partyMessageHue));
+        Assert.False(d.ignoreGuildMessages);
+        Assert.False(d.ignoreAllianceMessages);
+        Assert.False(d.highlightContainerWhenSelected);
+        // Kept as this client always behaved: lines drawn when hurt, the classic speech hue (TazUO 0x2B2), server lines shown.
+        Assert.True(d.showMobilesHP);
+        Assert.Equal(GameOptions.MobileHPWhenDamaged, d.mobileHPShowWhen);
+        Assert.Equal(0x3B2, d.speechHue);
+        Assert.True(d.showSystemMessagesInJournal);
+        // The session's own defaults agree, so an unsaved game sends what the options say.
+        var s = new GameSession(new LoginSettings()).SpeechOptions;
+        Assert.Equal((d.speechHue, d.whisperHue, d.emoteHue, d.yellHue, d.partyMessageHue),
+            ((int)s.Speech, (int)s.Whisper, (int)s.Emote, (int)s.Yell, (int)s.Party));
+        Assert.Equal((d.ignoreGuildMessages, d.ignoreAllianceMessages), (s.IgnoreGuildMessages, s.IgnoreAllianceMessages));
+        Assert.Equal(GameSession.SpeechHue, s.Speech);
+        Assert.Equal(GameSession.PartyHue, s.Party);
+    }
+
+    [Fact]
+    public void Batch3_RoundTrip_ParseAndClamp()
+    {
+        var o = new GameOptions
+        {
+            showMobilesHP = false, mobileHPShowWhen = GameOptions.MobileHPAlways, healthLineSizeMultiplier = 3,
+            speechHue = 0x2B2, whisperHue = 100, emoteHue = 200, yellHue = 300, partyMessageHue = 400,
+            ignoreGuildMessages = true, ignoreAllianceMessages = true, showSystemMessagesInJournal = false,
+            highlightContainerWhenSelected = true,
+        };
+        string json = o.ToJson();
+        Assert.Contains("\"speechHue\": 690,", json);
+        GameOptions again = GameOptions.Parse(json, out var unknown);
+        Assert.Empty(unknown);
+        Assert.True(again.SameAs(o));
+
+        foreach (string key in new[] { "ignoreGuildMessages", "ignoreAllianceMessages", "highlightContainerWhenSelected" })
+            Assert.False(GameOptions.Parse("{\"" + key + "\": true}").SameAs(GameOptions.Defaults()), key);
+        foreach (string key in new[] { "showMobilesHP", "showSystemMessagesInJournal" })
+            Assert.False(GameOptions.Parse("{\"" + key + "\": false}").SameAs(GameOptions.Defaults()), key);
+        foreach (string key in new[] { "mobileHPShowWhen", "speechHue", "whisperHue", "emoteHue", "yellHue", "partyMessageHue" })
+            Assert.False(GameOptions.Parse("{\"" + key + "\": 0}").SameAs(GameOptions.Defaults()), key);
+        Assert.False(GameOptions.Parse("{\"healthLineSizeMultiplier\": 2}").SameAs(GameOptions.Defaults()));
+
+        var c = new GameOptions { speechHue = 5000, whisperHue = -4, mobileHPShowWhen = 2, healthLineSizeMultiplier = 9 }.Clamp();
+        Assert.Equal(GameOptions.MaxHue, c.speechHue);
+        Assert.Equal(GameOptions.MinHue, c.whisperHue);
+        Assert.Equal(GameOptions.MobileHPWhenDamaged, c.mobileHPShowWhen); // TazUO's "smart" only differs in the % text
+        Assert.Equal(GameOptions.MaxHealthLineSize, c.healthLineSizeMultiplier);
+        Assert.Equal(GameOptions.MinHealthLineSize, GameOptions.Parse("{\"healthLineSizeMultiplier\": 0}").healthLineSizeMultiplier);
+        Assert.Equal(GameOptions.MobileHPAlways, GameOptions.Parse("{\"mobileHPShowWhen\": -1}").mobileHPShowWhen);
+    }
+
+    [Fact]
+    public void HealthLines_FollowShowMobilesHPAndShowWhen()
+    {
+        const int Always = GameOptions.MobileHPAlways, Damaged = GameOptions.MobileHPWhenDamaged;
+        Assert.False(GameOptions.ShowsHealthLine(false, Always, 10, 20, true)); // off hides every line
+        Assert.False(GameOptions.ShowsHealthLine(true, Always, 0, 0, true));    // no known maximum, no line
+        Assert.True(GameOptions.ShowsHealthLine(true, Always, 20, 20, false));  // always: full lines too
+        Assert.True(GameOptions.ShowsHealthLine(true, Damaged, 19, 20, false));
+        Assert.False(GameOptions.ShowsHealthLine(true, Damaged, 20, 20, false)); // TazUO: showWhen 1 && current == max
+        Assert.True(GameOptions.ShowsHealthLine(true, Damaged, 20, 20, true));   // whoever we fight / ourselves in war
+        Assert.Equal(44f, GameOptions.HealthLineWidth(1));
+        Assert.Equal(132f, GameOptions.HealthLineWidth(3));
+        Assert.Equal(220f, GameOptions.HealthLineWidth(99));
+        Assert.Equal(44f, GameOptions.HealthLineWidth(0));
+    }
+
+    [Fact]
+    public void Journal_ServerLinesOnlyHiddenWhenAsked()
+    {
+        Assert.True(GameOptions.JournalShowsLine(true, 0xFFFFFFFF));
+        Assert.False(GameOptions.JournalShowsLine(false, 0xFFFFFFFF));
+        Assert.False(GameOptions.JournalShowsLine(false, 0));
+        Assert.True(GameOptions.JournalShowsLine(false, 0x1234)); // someone said it (or a party member)
+    }
+
+    [Fact]
+    public void ContainerHighlight_SelectsTheHoveredContainer_OnlyOverTheUi()
+    {
+        Assert.Equal(0u, ObjectHighlight.WorldSelection(true, 0x55, 0));          // option off: nothing over a window
+        Assert.Equal(0x40000010u, ObjectHighlight.WorldSelection(true, 0x55, 0x40000010));
+        Assert.Equal(0x55u, ObjectHighlight.WorldSelection(false, 0x55, 0x40000010)); // over the world the pick stands
+        Assert.Equal(ObjectHighlight.WorldSelection(true, 7), ObjectHighlight.WorldSelection(true, 7, 0));
+    }
+
+    [Fact]
+    public void SpeechHues_TypedLinesUseTheOptions()
+    {
+        var hues = new SpeechSettings { Speech = 0x2B2, Whisper = 0x10, Emote = 0x20, Yell = 0x30 };
+        Assert.Equal((0, "hi", (ushort)0x2B2), GameSession.SpeechMode("hi", hues));
+        Assert.Equal((8, "psst", (ushort)0x10), GameSession.SpeechMode("; psst", hues));
+        Assert.Equal((2, "*waves*", (ushort)0x20), GameSession.SpeechMode(": waves", hues));
+        Assert.Equal((9, "Guards!", (ushort)0x30), GameSession.SpeechMode("! Guards!", hues));
+        Assert.Equal(GameSession.SpeechMode(": waves"), GameSession.SpeechMode(": waves", new SpeechSettings()));
+    }
+
+    private static byte[] UnicodeSpeech(uint serial, byte type, ushort hue, string name, string text) =>
+        new PacketWriter(0xAE).UInt32(serial).UInt16(0x190).Byte(type).UInt16(hue).UInt16(3).Ascii("ENU", 4).Ascii(name, 30)
+            .UnicodeZ(text).ToArray();
+
+    [Fact]
+    public void IgnoredGuildAndAllianceLines_NeverReachTheJournal_AndPartyTakesItsHue()
+    {
+        var session = new GameSession(new LoginSettings());
+        session.SpeechOptions = new SpeechSettings { IgnoreGuildMessages = true, Party = 0x99 };
+        var seen = new List<JournalEntry>();
+        session.World.JournalAdded += seen.Add;
+
+        session.Inject(UnicodeSpeech(0x10, 13, 0x44, "[Guild][Bob]", "guild line"), true);
+        session.Inject(UnicodeSpeech(0x10, 14, 0x57, "[Alliance][Bob]", "ally line"), true);
+        session.Inject(UnicodeSpeech(0x10, 2, 0, "Bob", "*nods*"), true);
+        Assert.Equal(new[] { "ally line", "*nods*" }, seen.Select(j => j.Text));
+        Assert.Equal(session.SpeechOptions.Emote, seen[1].Hue); // an emote without a hue takes the emote hue
+
+        session.SpeechOptions.IgnoreAllianceMessages = true; // a change in place reaches the session at once
+        session.Inject(UnicodeSpeech(0x10, 14, 0x57, "[Alliance][Bob]", "ally again"), true);
+        Assert.Equal(2, seen.Count);
+
+        session.Inject(new PacketWriter(0xBF).UInt16(0x06).Byte(0x04).UInt32(0x10).UnicodeZ("party line").ToArray(), true);
+        Assert.Equal((ushort)0x99, seen[^1].Hue);
+    }
+
+    [Fact]
+    public void Batch3_MacroVerbs_HaveTheirArguments()
+    {
+        foreach (string verb in new[] { "emote", "whisper", "yell" })
+        {
+            Assert.Contains(verb, MacroDraft.VerbsWithArgument);
+            Assert.NotNull(MacroDraft.Problem(new MacroDraft.Row { Key = "F1", Action = verb }));
+            Assert.Null(MacroDraft.Problem(new MacroDraft.Row { Key = "F1", Action = verb + " hello" }));
+        }
+        foreach (string verb in new[] { "spellbook", "logout", "party", "worldmap", "minimap", "worldchat" })
+            Assert.Null(MacroDraft.Problem(new MacroDraft.Row { Key = "F1", Action = verb }));
+        // Quests and guild menus are left out: ModernUO answers neither on an AoS shard.
+        Assert.DoesNotContain("quests", MacroDraft.Verbs);
+        Assert.DoesNotContain("guild", MacroDraft.Verbs);
     }
 
     private static string RepoRoot()

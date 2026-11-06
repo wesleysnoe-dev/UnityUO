@@ -82,6 +82,15 @@ namespace UOClient.Unity
         public static uint WorldSelection(bool overUi, uint picked) => overUi ? 0 : picked;
 
         /// <summary>
+        /// As <see cref="WorldSelection(bool, uint)"/>, but while the mouse is over a container window with TazUO's
+        /// HighlightContainerWhenSelected on (ContainerGump.Update sets SelectedObject.SelectedContainer, cleared each
+        /// frame), that container (<paramref name="hoveredContainer"/>, 0 for none or the option off) is selected instead, so
+        /// it gets the same outline wherever it is drawn. Nothing is picked through the window.
+        /// </summary>
+        public static uint WorldSelection(bool overUi, uint picked, uint hoveredContainer) =>
+            overUi ? hoveredContainer : picked;
+
+        /// <summary>
         /// The sprite pixel (from its unmirrored top-left) under a point in a drawn rectangle whose y grows upwards,
         /// or null outside it. The rectangle may be drawn at another size than the sprite's own.
         /// </summary>

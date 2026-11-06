@@ -293,10 +293,13 @@ namespace UOClient.Unity.UI
         /// True when a screen point (Unity screen coordinates, bottom-left origin) is over a window: the whole window rect,
         /// the one IMGUI takes the window's events in and clips its drawing to, at any ui.Scale (UiRouting.ScreenToUi).
         /// </summary>
-        public bool IsOverUi(Vector2 screen)
+        public bool IsOverUi(Vector2 screen) => TopWindowAtScreen(screen) != null;
+
+        /// <summary>The front window at a screen point (Unity screen coordinates, bottom-left origin), or null.</summary>
+        public UiWindow TopWindowAtScreen(Vector2 screen)
         {
             (float x, float y) = UiRouting.ScreenToUi(screen.x, screen.y, Screen.height, Scale);
-            return TopWindowAt(new Vector2(x, y)) != null;
+            return TopWindowAt(new Vector2(x, y));
         }
 
         /// <summary>

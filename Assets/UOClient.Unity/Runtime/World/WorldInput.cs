@@ -91,9 +91,13 @@ namespace UOClient.Unity
             if (ui == null)
                 return;
             // What the mouse is on in the world (TazUO's SelectedObject.Object), drawn highlighted; nothing while a window
-            // or the journal covers the world there, since the UI takes the mouse first.
+            // or the journal covers the world there, since the UI takes the mouse first. With HighlightContainerWhenSelected,
+            // a container window under the mouse selects its container instead (outlined on the ground, or in its parent bag).
             bool overUi = OverWindowOrJournal(ui);
-            _entities.Selected = ObjectHighlight.WorldSelection(overUi, overUi ? 0 : _entities.PickAt(Input.mousePosition));
+            uint hoveredContainer = UI.ContainerWindow.HighlightWhenSelected && ui.TopWindowAtScreen(Input.mousePosition) is UI.ContainerWindow cw
+                ? cw.Serial : 0;
+            UI.ContainerWindow.SelectedContainer = hoveredContainer;
+            _entities.Selected = ObjectHighlight.WorldSelection(overUi, overUi ? 0 : _entities.PickAt(Input.mousePosition), hoveredContainer);
             if (!UI.UiRouting.WorldTakesKeys(_chat.Typing, ui.HasKeyboardFocus))
             {
                 // A window's text box has the keys; a press on the world gives them back, as TazUO's does, and only that.

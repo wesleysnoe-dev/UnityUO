@@ -367,6 +367,18 @@ namespace UOClient.Unity
             useTooltip = _tooltip.UseTooltip,
             buffBarTime = UI.BuffBarWindow.ShowTimers,
             castSpellsByOneClick = UI.SpellIconWindow.SingleClickIconUse,
+            showMobilesHP = _hudPresenter.ShowMobilesHP,
+            mobileHPShowWhen = _hudPresenter.MobileHPShowWhen,
+            healthLineSizeMultiplier = _ctx.Hud.HealthLineSize,
+            speechHue = _speechOptions.Speech,
+            whisperHue = _speechOptions.Whisper,
+            emoteHue = _speechOptions.Emote,
+            yellHue = _speechOptions.Yell,
+            partyMessageHue = _speechOptions.Party,
+            ignoreGuildMessages = _speechOptions.IgnoreGuildMessages,
+            ignoreAllianceMessages = _speechOptions.IgnoreAllianceMessages,
+            showSystemMessagesInJournal = _showSystemMessagesInJournal,
+            highlightContainerWhenSelected = UI.ContainerWindow.HighlightWhenSelected,
         };
 
         public void ApplyOptions(GameOptions options)
@@ -398,7 +410,24 @@ namespace UOClient.Unity
             _tooltip.UseTooltip = o.useTooltip;
             UI.BuffBarWindow.ShowTimers = o.buffBarTime;
             UI.SpellIconWindow.SingleClickIconUse = o.castSpellsByOneClick;
+            _hudPresenter.ShowMobilesHP = o.showMobilesHP;
+            _hudPresenter.MobileHPShowWhen = o.mobileHPShowWhen;
+            _ctx.Hud.HealthLineSize = o.healthLineSizeMultiplier;
+            // The session reads this same object, so a change reaches the one online now too.
+            _speechOptions.Speech = (ushort)o.speechHue;
+            _speechOptions.Whisper = (ushort)o.whisperHue;
+            _speechOptions.Emote = (ushort)o.emoteHue;
+            _speechOptions.Yell = (ushort)o.yellHue;
+            _speechOptions.Party = (ushort)o.partyMessageHue;
+            _speechOptions.IgnoreGuildMessages = o.ignoreGuildMessages;
+            _speechOptions.IgnoreAllianceMessages = o.ignoreAllianceMessages;
+            _showSystemMessagesInJournal = o.showSystemMessagesInJournal;
+            UI.ContainerWindow.HighlightWhenSelected = o.highlightContainerWhenSelected;
         }
+
+        // Handed to each new session (SetUpUi); the options change it in place.
+        private readonly SpeechSettings _speechOptions = new SpeechSettings();
+        private bool _showSystemMessagesInJournal = GameOptions.Defaults().showSystemMessagesInJournal;
 
         // ---- journal log (the options' SaveJournalToFile) ----
 
@@ -422,6 +451,7 @@ namespace UOClient.Unity
                 return;
             _ctx.Session.CriminalActionQuery = _criminalActionQuery;
             _ctx.Session.BeneficialCriminalActionQuery = _beneficialCriminalActionQuery;
+            _ctx.Session.SpeechOptions = _speechOptions;
         }
 
         // ---- cursor ----
@@ -463,7 +493,11 @@ namespace UOClient.Unity
                 _ctx.Player?.Teleport(x, y, z);
                 _ctx.Player?.Face(d);
             };
-            _ctx.Session.World.JournalAdded += j => _ctx.Hud.Log(j.Speaker, j.Text);
+            _ctx.Session.World.JournalAdded += j =>
+            {
+                if (GameOptions.JournalShowsLine(_showSystemMessagesInJournal, j.Serial))
+                    _ctx.Hud.Log(j.Speaker, j.Text);
+            };
             _entities.Attach(_ctx.Session);
             CustomHouses.Attach(_ctx.Session, h => { if (_ctx.World != null) _entities.ShowMulti(h); }, s => _ctx.Hud.Log(null, s));
 

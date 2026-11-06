@@ -51,6 +51,9 @@ namespace UOClient.Unity
         private readonly Dictionary<uint, float> _stacked = new Dictionary<uint, float>();
 
         public readonly List<(Vector2 Screen, float Ratio, Color Color)> HealthBars = new List<(Vector2, float, Color)>();
+
+        /// <summary>The options' HealthLineSizeMultiplier (1-5): the health lines' width (GameOptions.HealthLineWidth).</summary>
+        public int HealthLineSize { get; set; } = 1;
         public bool WarMode { get; set; }
 
         /// <summary>The player is a ghost: a resurrection hint stays on screen.</summary>
@@ -233,9 +236,10 @@ namespace UOClient.Unity
                 DrawOutlined(new Rect(headScreen.x / s - 100, headScreen.y / s - 26, 200, 22), characterName, _name, new Color(0.55f, 0.75f, 1f));
             }
 
+            float barWidth = GameOptions.HealthLineWidth(HealthLineSize);
             foreach (var (screen, ratio, color) in HealthBars)
             {
-                var r = new Rect(screen.x / s - 22, screen.y / s, 44, 6);
+                var r = new Rect(screen.x / s - barWidth / 2, screen.y / s, barWidth, 6);
                 GUI.color = new Color(color.r * 0.6f, color.g * 0.6f, color.b * 0.6f, 0.95f);
                 GUI.DrawTexture(r, _white);
                 GUI.color = new Color(0.1f, 0.02f, 0.02f, 0.95f);

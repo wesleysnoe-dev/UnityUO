@@ -22,7 +22,8 @@ namespace UOClient.Unity.UI
         private readonly OptionsDraft _draft;
         private MacroDraft _macros; // made when the hotkeys exist (online)
         private Page _page = Page.General;
-        private Vector2 _macroScroll;
+        private Vector2 _macroScroll, _pageScroll;
+        private float _pageHeight;
 
         public OptionsWindow(IGameOptions game)
         {
@@ -43,19 +44,27 @@ namespace UOClient.Unity.UI
             var area = new Rect(ContentX, 50, Rect.width - ContentX - 20, Rect.height - 100);
             GUI.BeginGroup(area);
             _y = 0;
-            switch (_page)
+            if (_page == Page.Macros)
+                DrawMacros(area);
+            else
             {
-                case Page.General: DrawGeneral(d); break;
-                case Page.Sound: DrawSound(d); break;
-                case Page.Video: DrawVideo(d); break;
-                case Page.Macros: DrawMacros(area); break;
-                case Page.Tooltip: DrawTooltip(d); break;
-                case Page.Speech: DrawSpeech(d); break;
-                case Page.CombatSpells: DrawCombat(d); break;
-                case Page.Containers: DrawContainers(d); break;
+                // A page taller than the area (last frame's height) scrolls; the macro page has its own list.
+                bool scrolls = _pageHeight > area.height;
+                _pageScroll = GUI.BeginScrollView(new Rect(0, 0, area.width, area.height), _pageScroll,
+                    new Rect(0, 0, area.width - (scrolls ? 20 : 0), Mathf.Max(_pageHeight, area.height)));
+                switch (_page)
+                {
+                    case Page.General: DrawGeneral(d); break;
+                    case Page.Sound: DrawSound(d); break;
+                    case Page.Video: DrawVideo(d); break;
+                    case Page.Tooltip: DrawTooltip(d); break;
+                    case Page.Speech: DrawSpeech(d); break;
+                    case Page.CombatSpells: DrawCombat(d); break;
+                    case Page.Containers: DrawContainers(d); break;
+                }
+                _pageHeight = DrawNotOffered(area);
+                GUI.EndScrollView();
             }
-            if (_page != Page.Macros)
-                DrawNotOffered(area);
             GUI.EndGroup();
             DrawButtons();
         }
@@ -66,7 +75,11 @@ namespace UOClient.Unity.UI
             foreach (var (page, title) in Pages)
             {
                 if (GUI.Toggle(new Rect(MenuX, y, MenuWidth, 24), _page == page, title, GUI.skin.button) && _page != page)
+                {
                     _page = page;
+                    _pageScroll = Vector2.zero;
+                    _pageHeight = 0;
+                }
                 y += 28;
             }
             y += 8;
@@ -146,16 +159,41 @@ namespace UOClient.Unity.UI
 
         private static string Percent(float v) => Mathf.RoundToInt(v * 100) + "%";
 
-        /// <summary>The page's TazUO options left out, greyed with the reason, at the foot of the page.</summary>
-        private void DrawNotOffered(Rect area)
+        /// <summary>The page's TazUO options left out, greyed with the reason, at the foot of the page; returns the page's height.</summary>
+        private float DrawNotOffered(Rect area)
         {
             var lines = NotOffered.Where(n => n.Page == _page).Select(n => n.Text).ToList();
             if (lines.Count == 0)
-                return;
-            float y = Mathf.Max(_y + 6, area.height - 18 - 15 * lines.Count);
+                return _y;
+            float foot = 18 + 15 * lines.Count;
+            float y = Mathf.Max(_y + 6, area.height - foot);
+            float end = y + foot;
             Text(new Rect(0, y, area.width, 16), "Not in this client:", Greyed, 11);
             foreach (string line in lines)
                 Text(new Rect(8, y += 15, area.width - 8, 16), line, Greyed, 11);
+            return end;
+        }
+
+        /// <summary>One of a few choices in a row of buttons (TazUO's combo boxes).</summary>
+        private int Choice(string label, int value, params string[] options)
+        {
+            Text(new Rect(_indent, _y + 2, 120 - _indent, 20), label);
+            int v = GUI.Toolbar(new Rect(125, _y, 110 * options.Length, 22), value, options);
+            _y += 30;
+            return v;
+        }
+
+        /// <summary>A hue number (0-2999) typed in, with a swatch of its text colour.</summary>
+        private int HueField(float x, string label, int hue)
+        {
+            Text(new Rect(x, _y + 2, 76, 20), label);
+            string typed = GUI.TextField(new Rect(x + 78, _y, 56, 22), hue.ToString(), 4);
+            int v = typed.Length == 0 ? 0 : int.TryParse(typed, out int n) ? n : hue;
+            v = GameOptions.ClampHue(v);
+            GUI.color = v == 0 ? Greyed : Art.HueColor(v, Greyed);
+            GUI.DrawTexture(new Rect(x + 140, _y + 3, 26, 16), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            return v;
         }
 
         // ---- pages ----
@@ -172,6 +210,18 @@ namespace UOClient.Unity.UI
             _indent = 20;
             GUI.enabled = d.alwaysRun;
             d.alwaysRunUnlessHidden = Toggle("Unless hidden", d.alwaysRunUnlessHidden);
+            GUI.enabled = true;
+            _indent = 0;
+
+            d.showMobilesHP = Toggle("Show health lines under characters", d.showMobilesHP);
+            _indent = 20;
+            GUI.enabled = d.showMobilesHP;
+            d.mobileHPShowWhen = Choice("Show", d.mobileHPShowWhen, "Always", "When damaged");
+            d.healthLineSizeMultiplier = IntSlider("Line size", d.healthLineSizeMultiplier,
+                GameOptions.MinHealthLineSize, GameOptions.MaxHealthLineSize, "x");
+            Line(d.mobileHPShowWhen == GameOptions.MobileHPAlways
+                ? "Everyone in view whose health is known."
+                : "Below full health, plus whoever you fight and yourself in war mode.");
             GUI.enabled = true;
             _indent = 0;
         }
@@ -224,6 +274,24 @@ namespace UOClient.Unity.UI
             d.saveJournalToFile = Toggle("Save the journal to a file", d.saveJournalToFile);
             Line("Logs/JournalLogs in the project folder, a new file each login.");
             d.showJournal = Toggle("Show the journal", d.showJournal);
+            d.showSystemMessagesInJournal = Toggle("Show server messages in the journal", d.showSystemMessagesInJournal);
+            Line("Off: the server's own lines (no one said them) go to the chat window\nand the journal file only; speech and party lines stay.", 34);
+
+            d.ignoreGuildMessages = Toggle("Hide guild chat", d.ignoreGuildMessages);
+            d.ignoreAllianceMessages = Toggle("Hide alliance chat", d.ignoreAllianceMessages);
+            Line("Dropped as they arrive: journal, chat window and file (as TazUO).\nOn this shard: the world chat's Guild and Faction channels.", 34);
+
+            Text(new Rect(0, _y, 300, 20), "Speech colours (hue 0-2999)", Heading, 13, TextAnchor.UpperLeft, true);
+            _y += 24;
+            d.speechHue = HueField(0, "Speech", d.speechHue);
+            d.whisperHue = HueField(230, "Whisper", d.whisperHue);
+            _y += 28;
+            d.emoteHue = HueField(0, "Emote", d.emoteHue);
+            d.yellHue = HueField(230, "Yell", d.yellHue);
+            _y += 28;
+            d.partyMessageHue = HueField(0, "Party", d.partyMessageHue);
+            _y += 28;
+            Line("What you type goes out in these: plain, \"; \" whisper, \": \" emote, \"! \" yell\n(macros too). Party: how party lines show in the chat window.", 34);
         }
 
         private void DrawCombat(GameOptions d)
@@ -246,6 +314,8 @@ namespace UOClient.Unity.UI
             Line(d.holdShiftToSplitStack
                 ? "Shift+drag asks how many; a plain drag takes the whole stack."
                 : "A plain drag asks how many; Shift+drag takes the whole stack.");
+            d.highlightContainerWhenSelected = Toggle("Highlight a container while the mouse is over its window", d.highlightContainerWhenSelected);
+            Line("Outlined on the ground, or in the window of the bag it sits in.");
         }
 
         private void DrawMacros(Rect area)
@@ -273,7 +343,7 @@ namespace UOClient.Unity.UI
 
             const float rowHeight = 40;
             List<MacroDraft.Row> rows = _macros.Rows;
-            var list = new Rect(0, 24, area.width, area.height - 112);
+            var list = new Rect(0, 24, area.width, area.height - 150);
             GUI.BeginGroup(list);
             _macroScroll = GUI.BeginScrollView(new Rect(0, 0, list.width, list.height), _macroScroll,
                 new Rect(0, 0, list.width - 20, rows.Count * rowHeight));
@@ -301,9 +371,9 @@ namespace UOClient.Unity.UI
             _y = list.yMax + 4;
             if (_macros.SaveFailed || hk.ReadOnly)
                 Line(hk.ReadOnly ? "The hotkeys file could not be read, so it is not written: Apply only." : "Could not write unity-uo-hotkeys.json (see the log).");
-            // Labels don't wrap: the verbs go eight to a line.
-            var verbLines = MacroDraft.Verbs.Select((v, i) => (v, i)).GroupBy(p => p.i / 8, p => p.v).Select(g => string.Join(", ", g));
-            Line("Actions: " + string.Join(",\n", verbLines) + ".", 50);
+            // Labels don't wrap: the verbs go nine to a line.
+            var verbLines = MacroDraft.Verbs.Select((v, i) => (v, i)).GroupBy(p => p.i / 9, p => p.v).Select(g => string.Join(", ", g)).ToList();
+            Line("Actions: " + string.Join(",\n", verbLines) + ".", 16 * verbLines.Count + 2);
             Line("Apply binds the edits now; Okay also saves them; Cancel drops them.");
         }
 

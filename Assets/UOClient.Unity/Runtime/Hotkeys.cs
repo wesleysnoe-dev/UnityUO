@@ -10,10 +10,12 @@ namespace UOClient.Unity
     /// <summary>
     /// Keyboard macros: each binding is a key (with optional Ctrl/Alt/Shift) and an action, kept in
     /// UserSettings/unity-uo-hotkeys.json (written with defaults on first run). Actions:
-    /// <c>cast Heal</c> or <c>cast 4</c>, <c>skill Hiding</c> or <c>skill 21</c>, <c>say text</c>, <c>war</c>, <c>peace</c>,
+    /// <c>cast Heal</c> or <c>cast 4</c>, <c>skill Hiding</c> or <c>skill 21</c>, <c>say text</c> (and <c>emote</c>,
+    /// <c>whisper</c>, <c>yell</c>), <c>spellbook</c> (or <c>spellbook necromancy</c>), <c>war</c>, <c>peace</c>,
     /// <c>lasttarget</c>, <c>targetself</c>, <c>target 0x...</c>, <c>bandageself</c>, <c>use 0x0E21</c> (first item of
     /// that graphic in the backpack), <c>useobject 0x...</c> (that serial), <c>lastobject</c>, <c>backpack</c>,
-    /// <c>paperdoll</c>, <c>skills</c>, <c>status</c>, <c>journal</c>, <c>cancel</c>, and <c>record</c> (start/stop
+    /// <c>paperdoll</c>, <c>skills</c>, <c>status</c>, <c>journal</c>, <c>party</c>, <c>worldmap</c>, <c>minimap</c>,
+    /// <c>worldchat</c>, <c>logout</c> (asks first), <c>cancel</c>, and <c>record</c> (start/stop
     /// recording what you do, kept in the file as <c>recorded</c>) and <c>playmacro</c> (play it back; each target
     /// step waits for the next cursor). The options window's Macros page edits the bindings (<see cref="SetBindings"/> on
     /// Apply, <see cref="SaveBindings"/> on Okay; MacroDraft).
@@ -205,6 +207,15 @@ namespace UOClient.Unity
                     else Log?.Invoke($"Unknown skill \"{arg}\".");
                     break;
                 case "say": session.Say(arg); break;
+                // The typed prefixes (GameSession.SpeechMode), so each goes out in its options hue.
+                case "emote": session.Say(": " + arg); break;
+                case "whisper": session.Say("; " + arg); break;
+                case "yell": session.Say("! " + arg); break;
+                case "spellbook":
+                    int book = SpellbookType(arg);
+                    if (book > 0) session.OpenSpellbook(book);
+                    else Log?.Invoke($"Unknown spellbook \"{arg}\" (magery, necromancy, chivalry).");
+                    break;
                 case "war": session.SetWarMode(true); break;
                 case "peace": session.SetWarMode(false); break;
                 case "togglewar": session.SetWarMode(!session.WarMode); break;
@@ -252,6 +263,11 @@ namespace UOClient.Unity
                 case "journal":
                 case "options":
                 case "help":
+                case "party":
+                case "worldmap":
+                case "minimap":
+                case "worldchat":
+                case "logout": // asks "Log out?" first, as the paperdoll's button
                     Command?.Invoke(verb.ToLowerInvariant());
                     break;
                 default:
@@ -375,6 +391,18 @@ namespace UOClient.Unity
                     return first + i;
             }
             return 0;
+        }
+
+        /// <summary>The 0x12 0x43 book type: none or "magery" 1, "necromancy" 2, "chivalry" 3 (AoS's books), or the number; 0 if unknown.</summary>
+        public static int SpellbookType(string arg)
+        {
+            switch ((arg ?? "").Trim().ToLowerInvariant())
+            {
+                case "": case "magery": return 1;
+                case "necromancy": return 2;
+                case "chivalry": return 3;
+                default: return int.TryParse(arg, out int n) && n >= 1 && n <= 3 ? n : 0;
+            }
         }
 
         private static bool TryParseInt(string s, out int value)

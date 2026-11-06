@@ -31,6 +31,15 @@ namespace UOClient.Unity
         public const float AutoUiScale = 0f;
         public const float MaxTooltipDelay = 2f;
 
+        /// <summary>The hues a speech colour can take: 0 (the server's default) up to the last entry of hues.mul.</summary>
+        public const int MinHue = 0, MaxHue = 2999;
+
+        /// <summary>TazUO's MobileHPShowWhen values offered here (its 2, "smart", only changes the % text, which is not drawn).</summary>
+        public const int MobileHPAlways = 0, MobileHPWhenDamaged = 1;
+
+        /// <summary>TazUO's HealthLineSizeMultiplier slider range (ModernOptionsGump.BuildTazUO, 1-5).</summary>
+        public const int MinHealthLineSize = 1, MaxHealthLineSize = 5;
+
         public bool showNames = true;
         public bool showJournal = true;
         public bool showHud = true;
@@ -100,6 +109,48 @@ namespace UOClient.Unity
         /// <summary>TazUO's CastSpellsByOneClick (GlobalSettings.SingleClickIconUse): a single click on a floating spell icon casts it. Off, as TazUO.</summary>
         public bool castSpellsByOneClick = false;
 
+        /// <summary>
+        /// TazUO's ShowMobilesHP: the health lines under characters (HudPresenter, DemoHud). On by default here (TazUO: off),
+        /// as this client always drew them. Only the line is drawn (TazUO's MobileHPType "line"); no percent text.
+        /// </summary>
+        public bool showMobilesHP = true;
+
+        /// <summary>
+        /// TazUO's MobileHPShowWhen (<see cref="ShowsHealthLine"/>): <see cref="MobileHPAlways"/>, or
+        /// <see cref="MobileHPWhenDamaged"/> (the default here, TazUO: always), which also keeps this client's own extras.
+        /// </summary>
+        public int mobileHPShowWhen = MobileHPWhenDamaged;
+
+        /// <summary>TazUO's HealthLineSizeMultiplier (1-5): the health line's width times this (<see cref="HealthLineWidth"/>). 1, as TazUO.</summary>
+        public int healthLineSizeMultiplier = 1;
+
+        /// <summary>
+        /// TazUO's SpeechHue: the hue plain typed speech goes out in (GameSession.SpeechOptions). 0x3B2, the classic
+        /// client's speech colour this client always sent (TazUO's default is 0x2B2).
+        /// </summary>
+        public int speechHue = 0x3B2;
+
+        /// <summary>TazUO's WhisperHue, EmoteHue, YellHue: typed "; ", ": " and "! " lines go out in these. As TazUO (and the classic client).</summary>
+        public int whisperHue = 0x33, emoteHue = 0x21, yellHue = 0x21;
+
+        /// <summary>TazUO's PartyMessageHue: the hue party lines are shown in (PartyManager). 0x44, as TazUO.</summary>
+        public int partyMessageHue = 0x44;
+
+        /// <summary>TazUO's IgnoreGuildMessages / IgnoreAllianceMessages: those lines are dropped as they arrive (MessageManager). Off, as TazUO.</summary>
+        public bool ignoreGuildMessages = false, ignoreAllianceMessages = false;
+
+        /// <summary>
+        /// This client's own: the server's system lines (no speaker object) go into the HUD journal too
+        /// (<see cref="JournalShowsLine"/>). On, as it always was; off leaves them to the chat window and the journal file.
+        /// </summary>
+        public bool showSystemMessagesInJournal = true;
+
+        /// <summary>
+        /// TazUO's HighlightContainerWhenSelected (ContainerGump.Update): while the mouse is over a container window, that
+        /// container gets the mouse-over outline in the world, or in the window of the container it sits in. Off, as TazUO.
+        /// </summary>
+        public bool highlightContainerWhenSelected = false;
+
         public static GameOptions Defaults() => new GameOptions();
 
         public GameOptions Clone() => (GameOptions)MemberwiseClone();
@@ -115,8 +166,17 @@ namespace UOClient.Unity
             musicVolume = Range(musicVolume, 0f, 1f, d.musicVolume);
             speechDelay = Math.Max(MinSpeechDelay, Math.Min(MaxSpeechDelay, speechDelay));
             containersScale = Math.Max(MinContainersScale, Math.Min(MaxContainersScale, containersScale));
+            mobileHPShowWhen = Math.Max(MobileHPAlways, Math.Min(MobileHPWhenDamaged, mobileHPShowWhen));
+            healthLineSizeMultiplier = Math.Max(MinHealthLineSize, Math.Min(MaxHealthLineSize, healthLineSizeMultiplier));
+            speechHue = ClampHue(speechHue);
+            whisperHue = ClampHue(whisperHue);
+            emoteHue = ClampHue(emoteHue);
+            yellHue = ClampHue(yellHue);
+            partyMessageHue = ClampHue(partyMessageHue);
             return this;
         }
+
+        public static int ClampHue(int hue) => Math.Max(MinHue, Math.Min(MaxHue, hue));
 
         private static float Range(float v, float min, float max, float fallback) =>
             float.IsNaN(v) ? fallback : Math.Max(min, Math.Min(max, v));
@@ -135,7 +195,14 @@ namespace UOClient.Unity
             && scaleSpeechDelay == o.scaleSpeechDelay && speechDelay == o.speechDelay && saveJournalToFile == o.saveJournalToFile
             && containersScale == o.containersScale && doubleClickToLootInsideContainers == o.doubleClickToLootInsideContainers
             && holdShiftToSplitStack == o.holdShiftToSplitStack && useTooltip == o.useTooltip
-            && buffBarTime == o.buffBarTime && castSpellsByOneClick == o.castSpellsByOneClick;
+            && buffBarTime == o.buffBarTime && castSpellsByOneClick == o.castSpellsByOneClick
+            && showMobilesHP == o.showMobilesHP && mobileHPShowWhen == o.mobileHPShowWhen
+            && healthLineSizeMultiplier == o.healthLineSizeMultiplier
+            && speechHue == o.speechHue && whisperHue == o.whisperHue && emoteHue == o.emoteHue && yellHue == o.yellHue
+            && partyMessageHue == o.partyMessageHue
+            && ignoreGuildMessages == o.ignoreGuildMessages && ignoreAllianceMessages == o.ignoreAllianceMessages
+            && showSystemMessagesInJournal == o.showSystemMessagesInJournal
+            && highlightContainerWhenSelected == o.highlightContainerWhenSelected;
 
         // ---- the file: a flat JSON object; keys this version doesn't know are kept as they were ----
 
@@ -176,6 +243,18 @@ namespace UOClient.Unity
                     case "useTooltip": Bool(raw, ref o.useTooltip); break;
                     case "buffBarTime": Bool(raw, ref o.buffBarTime); break;
                     case "castSpellsByOneClick": Bool(raw, ref o.castSpellsByOneClick); break;
+                    case "showMobilesHP": Bool(raw, ref o.showMobilesHP); break;
+                    case "mobileHPShowWhen": Integer(raw, ref o.mobileHPShowWhen); break;
+                    case "healthLineSizeMultiplier": Integer(raw, ref o.healthLineSizeMultiplier); break;
+                    case "speechHue": Integer(raw, ref o.speechHue); break;
+                    case "whisperHue": Integer(raw, ref o.whisperHue); break;
+                    case "emoteHue": Integer(raw, ref o.emoteHue); break;
+                    case "yellHue": Integer(raw, ref o.yellHue); break;
+                    case "partyMessageHue": Integer(raw, ref o.partyMessageHue); break;
+                    case "ignoreGuildMessages": Bool(raw, ref o.ignoreGuildMessages); break;
+                    case "ignoreAllianceMessages": Bool(raw, ref o.ignoreAllianceMessages); break;
+                    case "showSystemMessagesInJournal": Bool(raw, ref o.showSystemMessagesInJournal); break;
+                    case "highlightContainerWhenSelected": Bool(raw, ref o.highlightContainerWhenSelected); break;
                     default: unknown.Add(new KeyValuePair<string, string>(key, raw)); break;
                 }
             }
@@ -232,6 +311,19 @@ namespace UOClient.Unity
             Add("useTooltip", B(useTooltip));
             Add("buffBarTime", B(buffBarTime));
             Add("castSpellsByOneClick", B(castSpellsByOneClick));
+            string I(int i) => i.ToString(CultureInfo.InvariantCulture);
+            Add("showMobilesHP", B(showMobilesHP));
+            Add("mobileHPShowWhen", I(mobileHPShowWhen));
+            Add("healthLineSizeMultiplier", I(healthLineSizeMultiplier));
+            Add("speechHue", I(speechHue));
+            Add("whisperHue", I(whisperHue));
+            Add("emoteHue", I(emoteHue));
+            Add("yellHue", I(yellHue));
+            Add("partyMessageHue", I(partyMessageHue));
+            Add("ignoreGuildMessages", B(ignoreGuildMessages));
+            Add("ignoreAllianceMessages", B(ignoreAllianceMessages));
+            Add("showSystemMessagesInJournal", B(showSystemMessagesInJournal));
+            Add("highlightContainerWhenSelected", B(highlightContainerWhenSelected));
             if (unknown != null)
                 foreach (var kv in unknown)
                     Add(FlatJson.Escape(kv.Key), kv.Value);
