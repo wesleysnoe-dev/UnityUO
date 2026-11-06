@@ -494,6 +494,12 @@ namespace UOClient.Core
                 _conn.Send(new PacketWriter(0x12).Byte(type).AsciiZ(command).ToArray());
         }
 
+        /// <summary>
+        /// The open-door macro (TazUO's Send_OpenDoor, 0x12 0x58): ModernUO's BaseDoor.OpenDoorMacroUsed uses the door on the
+        /// tile the player faces, if any, by the server's own position and facing (IncomingPlayerPackets.cs:172-174).
+        /// </summary>
+        public void OpenDoor() => TextCommand(0x58, "");
+
         /// <summary>Uses a skill by 0-based id (e.g. 21 Hiding, 46 Meditation); targeted skills then send a cursor.</summary>
         public void UseSkill(int skillId)
         {

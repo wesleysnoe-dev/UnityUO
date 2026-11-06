@@ -34,8 +34,17 @@ namespace UOClient.Unity
         /// <summary>The hues a speech colour can take: 0 (the server's default) up to the last entry of hues.mul.</summary>
         public const int MinHue = 0, MaxHue = 2999;
 
-        /// <summary>TazUO's MobileHPShowWhen values offered here (its 2, "smart", only changes the % text, which is not drawn).</summary>
-        public const int MobileHPAlways = 0, MobileHPWhenDamaged = 1;
+        /// <summary>TazUO's MobileHPShowWhen: always, below full health, or "smart" (the line always, the % text only below full).</summary>
+        public const int MobileHPAlways = 0, MobileHPWhenDamaged = 1, MobileHPSmart = 2;
+
+        /// <summary>TazUO's MobileHPType (Profile.cs: 0 = %, 1 = line, 2 = both).</summary>
+        public const int MobileHPPercent = 0, MobileHPLine = 1, MobileHPBoth = 2;
+
+        /// <summary>TazUO's corpse open distance slider (ModernOptionsGump.BuildGeneral, 0-5 tiles).</summary>
+        public const int MaxAutoOpenCorpseRange = 5;
+
+        /// <summary>TazUO's CorpseOpenOptions: none, not while targeting, not while hidden, both (Core.CorpseAutoOpen).</summary>
+        public const int CorpseOpenAlways = 0, CorpseOpenNotTargeting = 1, CorpseOpenNotHiding = 2, CorpseOpenNotTargetingOrHiding = 3;
 
         /// <summary>TazUO's HealthLineSizeMultiplier slider range (ModernOptionsGump.BuildTazUO, 1-5).</summary>
         public const int MinHealthLineSize = 1, MaxHealthLineSize = 5;
@@ -111,15 +120,52 @@ namespace UOClient.Unity
 
         /// <summary>
         /// TazUO's ShowMobilesHP: the health lines under characters (HudPresenter, DemoHud). On by default here (TazUO: off),
-        /// as this client always drew them. Only the line is drawn (TazUO's MobileHPType "line"); no percent text.
+        /// as this client always drew them. What is drawn is <see cref="mobileHPType"/> (<see cref="HealthDisplay"/>).
         /// </summary>
         public bool showMobilesHP = true;
 
         /// <summary>
-        /// TazUO's MobileHPShowWhen (<see cref="ShowsHealthLine"/>): <see cref="MobileHPAlways"/>, or
-        /// <see cref="MobileHPWhenDamaged"/> (the default here, TazUO: always), which also keeps this client's own extras.
+        /// TazUO's MobileHPShowWhen (<see cref="HealthDisplay"/>): <see cref="MobileHPAlways"/>,
+        /// <see cref="MobileHPWhenDamaged"/> (the default here, TazUO: always), which also keeps this client's own extras, or
+        /// <see cref="MobileHPSmart"/>.
         /// </summary>
         public int mobileHPShowWhen = MobileHPWhenDamaged;
+
+        /// <summary>
+        /// TazUO's MobileHPType (<see cref="HealthDisplay"/>): the % text over the head, the line under the feet, or both.
+        /// <see cref="MobileHPLine"/> by default here, as this client always drew (TazUO: percent).
+        /// </summary>
+        public int mobileHPType = MobileHPLine;
+
+        /// <summary>
+        /// TazUO's ShowTargetIndicator (HealthLinesManager): whoever you fight, last attacked or last targeted keeps a health
+        /// line even with <see cref="showMobilesHP"/> off. Off, as TazUO.
+        /// </summary>
+        public bool showTargetIndicator = false;
+
+        /// <summary>TazUO's AutoOpenCorpses (Core.CorpseAutoOpen): corpses in range open once each. On, as TazUO.</summary>
+        public bool autoOpenCorpses = true;
+
+        /// <summary>TazUO's AutoOpenCorpseRange (0-5 tiles). 2, as TazUO.</summary>
+        public int autoOpenCorpseRange = 2;
+
+        /// <summary>TazUO's CorpseOpenOptions (<see cref="CorpseOpenNotTargetingOrHiding"/>, as TazUO).</summary>
+        public int corpseOpenOptions = CorpseOpenNotTargetingOrHiding;
+
+        /// <summary>TazUO's AutoOpenDoors (Core.DoorAutoOpen): stepping or turning to face a closed door opens it. On, as TazUO.</summary>
+        public bool autoOpenDoors = true;
+
+        /// <summary>TazUO's AutoOpenDoorsIfHidden: doors open for a hidden player too. On, as TazUO.</summary>
+        public bool autoOpenDoorsIfHidden = true;
+
+        /// <summary>TazUO's HueContainerGumps (ContainerGump): a container's gump takes the container's hue. On, as TazUO.</summary>
+        public bool hueContainerGumps = true;
+
+        /// <summary>
+        /// TazUO's HoldDownKeyTab (GameSceneInputHandler): war mode while Tab is held, peace when it comes up. Off, as TazUO;
+        /// off, Tab toggles war mode on the press, as this client always did (TazUO toggles on the release).
+        /// </summary>
+        public bool holdDownKeyTab = false;
 
         /// <summary>TazUO's HealthLineSizeMultiplier (1-5): the health line's width times this (<see cref="HealthLineWidth"/>). 1, as TazUO.</summary>
         public int healthLineSizeMultiplier = 1;
@@ -166,7 +212,10 @@ namespace UOClient.Unity
             musicVolume = Range(musicVolume, 0f, 1f, d.musicVolume);
             speechDelay = Math.Max(MinSpeechDelay, Math.Min(MaxSpeechDelay, speechDelay));
             containersScale = Math.Max(MinContainersScale, Math.Min(MaxContainersScale, containersScale));
-            mobileHPShowWhen = Math.Max(MobileHPAlways, Math.Min(MobileHPWhenDamaged, mobileHPShowWhen));
+            mobileHPShowWhen = Math.Max(MobileHPAlways, Math.Min(MobileHPSmart, mobileHPShowWhen));
+            mobileHPType = Math.Max(MobileHPPercent, Math.Min(MobileHPBoth, mobileHPType));
+            autoOpenCorpseRange = Math.Max(0, Math.Min(MaxAutoOpenCorpseRange, autoOpenCorpseRange));
+            corpseOpenOptions = Math.Max(CorpseOpenAlways, Math.Min(CorpseOpenNotTargetingOrHiding, corpseOpenOptions));
             healthLineSizeMultiplier = Math.Max(MinHealthLineSize, Math.Min(MaxHealthLineSize, healthLineSizeMultiplier));
             speechHue = ClampHue(speechHue);
             whisperHue = ClampHue(whisperHue);
@@ -202,7 +251,12 @@ namespace UOClient.Unity
             && partyMessageHue == o.partyMessageHue
             && ignoreGuildMessages == o.ignoreGuildMessages && ignoreAllianceMessages == o.ignoreAllianceMessages
             && showSystemMessagesInJournal == o.showSystemMessagesInJournal
-            && highlightContainerWhenSelected == o.highlightContainerWhenSelected;
+            && highlightContainerWhenSelected == o.highlightContainerWhenSelected
+            && mobileHPType == o.mobileHPType && showTargetIndicator == o.showTargetIndicator
+            && autoOpenCorpses == o.autoOpenCorpses && autoOpenCorpseRange == o.autoOpenCorpseRange
+            && corpseOpenOptions == o.corpseOpenOptions && hueContainerGumps == o.hueContainerGumps
+            && holdDownKeyTab == o.holdDownKeyTab
+            && autoOpenDoors == o.autoOpenDoors && autoOpenDoorsIfHidden == o.autoOpenDoorsIfHidden;
 
         // ---- the file: a flat JSON object; keys this version doesn't know are kept as they were ----
 
@@ -255,6 +309,15 @@ namespace UOClient.Unity
                     case "ignoreAllianceMessages": Bool(raw, ref o.ignoreAllianceMessages); break;
                     case "showSystemMessagesInJournal": Bool(raw, ref o.showSystemMessagesInJournal); break;
                     case "highlightContainerWhenSelected": Bool(raw, ref o.highlightContainerWhenSelected); break;
+                    case "mobileHPType": Integer(raw, ref o.mobileHPType); break;
+                    case "showTargetIndicator": Bool(raw, ref o.showTargetIndicator); break;
+                    case "autoOpenCorpses": Bool(raw, ref o.autoOpenCorpses); break;
+                    case "autoOpenCorpseRange": Integer(raw, ref o.autoOpenCorpseRange); break;
+                    case "corpseOpenOptions": Integer(raw, ref o.corpseOpenOptions); break;
+                    case "hueContainerGumps": Bool(raw, ref o.hueContainerGumps); break;
+                    case "holdDownKeyTab": Bool(raw, ref o.holdDownKeyTab); break;
+                    case "autoOpenDoors": Bool(raw, ref o.autoOpenDoors); break;
+                    case "autoOpenDoorsIfHidden": Bool(raw, ref o.autoOpenDoorsIfHidden); break;
                     default: unknown.Add(new KeyValuePair<string, string>(key, raw)); break;
                 }
             }
@@ -324,6 +387,15 @@ namespace UOClient.Unity
             Add("ignoreAllianceMessages", B(ignoreAllianceMessages));
             Add("showSystemMessagesInJournal", B(showSystemMessagesInJournal));
             Add("highlightContainerWhenSelected", B(highlightContainerWhenSelected));
+            Add("mobileHPType", I(mobileHPType));
+            Add("showTargetIndicator", B(showTargetIndicator));
+            Add("autoOpenCorpses", B(autoOpenCorpses));
+            Add("autoOpenCorpseRange", I(autoOpenCorpseRange));
+            Add("corpseOpenOptions", I(corpseOpenOptions));
+            Add("hueContainerGumps", B(hueContainerGumps));
+            Add("holdDownKeyTab", B(holdDownKeyTab));
+            Add("autoOpenDoors", B(autoOpenDoors));
+            Add("autoOpenDoorsIfHidden", B(autoOpenDoorsIfHidden));
             if (unknown != null)
                 foreach (var kv in unknown)
                     Add(FlatJson.Escape(kv.Key), kv.Value);

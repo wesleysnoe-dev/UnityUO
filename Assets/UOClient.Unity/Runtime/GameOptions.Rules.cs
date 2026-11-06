@@ -71,6 +71,74 @@ namespace UOClient.Unity
             return showWhen != MobileHPWhenDamaged || hits < hitsMax || alsoWhenFull;
         }
 
+        /// <summary>
+        /// What a character shows of its health: TazUO's HealthLinesManager.Draw. With ShowMobilesHP off, nothing, except
+        /// that with ShowTargetIndicator on a target keeps its line (TazUO draws its 0x756x target-indicator gumps there;
+        /// this client draws the line). With it on, <see cref="ShowsHealthLine"/> decides whether anything shows; then the
+        /// % text for MobileHPType percent or both, not on a ghost, not at 0 % (HitsPercentage != 0), and with "smart" only
+        /// below full; the line for MobileHPType line or both, and for a target always (TazUO's forceDraw). A target
+        /// (<paramref name="isTarget"/>) is whoever we fight, last attacked or last targeted.
+        /// </summary>
+        public static (bool Line, bool Percent) HealthDisplay(bool showMobilesHP, int hpType, int showWhen, int hits, int hitsMax,
+                                                              bool isDead, bool alsoWhenFull, bool isTarget, bool showTargetIndicator)
+        {
+            if (hitsMax <= 0)
+                return (false, false);
+            if (!showMobilesHP)
+                return (showTargetIndicator && isTarget, false);
+            if (!ShowsHealthLine(true, showWhen, hits, hitsMax, alsoWhenFull))
+                return (false, false);
+            bool percent = hpType != MobileHPLine && !isDead && (showWhen != MobileHPSmart || hits != hitsMax)
+                           && HitsPercent(hits, hitsMax) != 0;
+            bool line = hpType != MobileHPPercent || isTarget;
+            return (line, percent);
+        }
+
+        /// <summary>TazUO's HitsPercentage (MathHelper.PercentageOf, clamped 0-100): hits x 100 / max, rounded down.</summary>
+        public static int HitsPercent(int hits, int hitsMax) =>
+            hits <= 0 || hitsMax <= 0 ? 0 : Math.Min(100, hits * 100 / hitsMax);
+
+        /// <summary>The % text's hue, as TazUO's Entity.UpdateHits: red below 30, orange below 50, yellow below 80, else green.</summary>
+        public static int HitsPercentHue(int percent) =>
+            percent < 30 ? 0x0021 : percent < 50 ? 0x0030 : percent < 80 ? 0x0058 : 0x0044;
+
+        /// <summary>The % text as TazUO draws it: <c>[57%]</c>.</summary>
+        public static string HitsPercentText(int percent) => "[" + percent + "%]";
+
+        /// <summary>TazUO's ContainerGump CORPSES_GUMP: a corpse's gump is never hued (it gets the eye instead).</summary>
+        public const ushort CorpseGump = 0x0009;
+
+        /// <summary>
+        /// The hue a container's gump is drawn in: TazUO's ContainerGump, <c>_gumpPicContainer.Hue = item.Hue</c> with
+        /// HueContainerGumps on, the corpse gump excepted; 0 (the art's own colours) otherwise.
+        /// </summary>
+        public static ushort ContainerGumpHue(bool hueContainerGumps, ushort gump, ushort containerHue) =>
+            hueContainerGumps && gump != CorpseGump ? containerHue : (ushort)0;
+
+        /// <summary>
+        /// The war mode Tab asks for, or null for none: TazUO's GameSceneInputHandler with HoldDownKeyTab, the press asks for
+        /// war once (only if not in war already) and the release asks for peace if the press was the one holding it
+        /// (<paramref name="holding"/>, kept by the caller). Without it the press toggles, as this client always did.
+        /// </summary>
+        public static bool? TabWarMode(bool holdDownKeyTab, bool pressed, bool released, bool warMode, ref bool holding)
+        {
+            if (pressed)
+            {
+                if (!holdDownKeyTab)
+                    return !warMode;
+                if (holding)
+                    return null;
+                holding = true;
+                return warMode ? (bool?)null : true;
+            }
+            if (released && holding)
+            {
+                holding = false;
+                return false;
+            }
+            return null;
+        }
+
         /// <summary>The health line's width in UI pixels: this client's 44 times TazUO's HealthLineSizeMultiplier (clamped 1-5).</summary>
         public static float HealthLineWidth(int multiplier) =>
             44f * Math.Max(MinHealthLineSize, Math.Min(MaxHealthLineSize, multiplier));

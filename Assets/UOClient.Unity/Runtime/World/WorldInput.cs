@@ -25,6 +25,10 @@ namespace UOClient.Unity
         private Vector2 _pressedAt;
         private bool _shiftPressed; // _pressedItem was pressed with Shift on a stack: a drag splits, a release is a shift-click
         private uint _pressedMobile; // a mobile under the held left button: dragging it pulls out its health bar
+        private bool _tabHolding;    // HoldDownKeyTab: this Tab press asked for war, so its release asks for peace
+
+        /// <summary>The options' HoldDownKeyTab (TazUO's): war mode while Tab is held (GameOptions.TabWarMode); off, Tab toggles.</summary>
+        public bool HoldDownKeyTab { get; set; } = GameOptions.Defaults().holdDownKeyTab;
 
         private const float DoubleClickTime = 0.35f;
         private const float DragDistance = 6f; // screen pixels the mouse moves before a press becomes a drag
@@ -88,6 +92,9 @@ namespace UOClient.Unity
                     _ctx.Session.SingleClick(_pendingClick, _ctx.Data.TileData);
                 _pendingClick = 0;
             }
+            // A held Tab's release ends its war mode wherever the keys are by then (a window may have taken them meanwhile).
+            if (Input.GetKeyUp(KeyCode.Tab))
+                TabWar(false, true);
             if (ui == null)
                 return;
             // What the mouse is on in the world (TazUO's SelectedObject.Object), drawn highlighted; nothing while a window
@@ -115,7 +122,7 @@ namespace UOClient.Unity
             if (Input.GetKeyDown(KeyCode.F1))
                 _ctx.Session.RequestHelp();
             if (Input.GetKeyDown(KeyCode.Tab))
-                _ctx.Session.SetWarMode(!_ctx.Session.WarMode);
+                TabWar(true, false);
             if (Input.GetKeyDown(KeyCode.K))
                 ui.Open(new UI.SkillsWindow());
             if (Input.GetKeyDown(KeyCode.C))
@@ -237,6 +244,13 @@ namespace UOClient.Unity
             if (picked == 0 || !doubleClick)
                 return; // a single click goes out once the double-click time passes
             _ctx.Session.DoubleClick(picked);
+        }
+
+        /// <summary>Tab pressed or released: the war mode it asks for, if any (GameOptions.TabWarMode).</summary>
+        private void TabWar(bool pressed, bool released)
+        {
+            if (GameOptions.TabWarMode(HoldDownKeyTab, pressed, released, _ctx.Session.WarMode, ref _tabHolding) is bool war)
+                _ctx.Session.SetWarMode(war);
         }
 
         /// <summary>Lifts a ground item onto the cursor; a drop the server or a window refuses puts it back where it lay.</summary>

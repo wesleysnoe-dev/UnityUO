@@ -42,6 +42,27 @@ namespace UOClient.Unity.UI
         /// </summary>
         public static uint SelectedContainer { get; set; }
 
+        /// <summary>The options' HueContainerGumps (TazUO's): the gump takes the container's hue (GameOptions.ContainerGumpHue).</summary>
+        public static bool HueGumps { get; set; } = GameOptions.Defaults().hueContainerGumps;
+
+        /// <summary>
+        /// The container's own hue, wherever it is: on the ground, inside another container, or worn (a backpack). TazUO
+        /// reads Item.Hue from its one item list; here those are three.
+        /// </summary>
+        private ushort ContainerHue()
+        {
+            World world = Session.World;
+            if (world.Items.TryGetValue(_serial, out WorldItem ground))
+                return ground.Hue;
+            if (world.Contained.TryGetValue(_serial, out ContainedItem inside))
+                return inside.Hue;
+            foreach (Core.Mobile m in world.Mobiles.Values)
+                foreach (EquippedItem e in m.Equipment.Values)
+                    if (e.Serial == _serial)
+                        return e.Hue;
+            return 0;
+        }
+
         /// <summary>This container's size: the chess and backgammon boards keep theirs (GameOptions.ContainerScale).</summary>
         private float S => GameOptions.ContainerScale(ScalePercent, _gump);
 
@@ -83,7 +104,9 @@ namespace UOClient.Unity.UI
         {
             // Items and their hit tests are in the gump's own pixels; only drawing and the mouse go through the scale.
             FitToGump();
-            DrawScaled(Art.Gump(_gump), 0, 0);
+            // The size and hit tests come from the plain art (FitToGump); a hue only recolours it.
+            ushort hue = HueGumps ? GameOptions.ContainerGumpHue(true, _gump, ContainerHue()) : (ushort)0;
+            DrawScaled(Art.Gump(_gump, hue) ?? Art.Gump(_gump), 0, 0);
 
             // Laid out first, so the item under the mouse is known before anything is drawn.
             _drawn.Clear();

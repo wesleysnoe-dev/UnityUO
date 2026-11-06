@@ -297,6 +297,8 @@ namespace UOClient.Unity
         private void SetUpUi()
         {
             _gumpArt ??= new UI.GumpArt(_ctx.Data);
+            UI.GumpArt art = _gumpArt;
+            _hudPresenter.HueColor = hue => art.HueColor(hue, DemoHud.PercentFallbackColor(hue));
             _binder?.Dispose();
             _binder = new SessionUiBinder(_ctx, this, _gumpArt, _input, _cursor, _overheads, _effects, _chatLine, Sound);
             _binder.LogoutConfirmed += () => _quitAfterLogout = true;
@@ -379,6 +381,15 @@ namespace UOClient.Unity
             ignoreAllianceMessages = _speechOptions.IgnoreAllianceMessages,
             showSystemMessagesInJournal = _showSystemMessagesInJournal,
             highlightContainerWhenSelected = UI.ContainerWindow.HighlightWhenSelected,
+            mobileHPType = _hudPresenter.MobileHPType,
+            showTargetIndicator = _hudPresenter.ShowTargetIndicator,
+            autoOpenCorpses = _corpseAutoOpen.Enabled,
+            autoOpenCorpseRange = _corpseAutoOpen.Range,
+            corpseOpenOptions = _corpseAutoOpen.Options,
+            hueContainerGumps = UI.ContainerWindow.HueGumps,
+            holdDownKeyTab = _input.HoldDownKeyTab,
+            autoOpenDoors = _doorAutoOpen.Enabled,
+            autoOpenDoorsIfHidden = _doorAutoOpen.IfHidden,
         };
 
         public void ApplyOptions(GameOptions options)
@@ -423,7 +434,23 @@ namespace UOClient.Unity
             _speechOptions.IgnoreAllianceMessages = o.ignoreAllianceMessages;
             _showSystemMessagesInJournal = o.showSystemMessagesInJournal;
             UI.ContainerWindow.HighlightWhenSelected = o.highlightContainerWhenSelected;
+            _hudPresenter.MobileHPType = o.mobileHPType;
+            _hudPresenter.ShowTargetIndicator = o.showTargetIndicator;
+            _corpseAutoOpen.Enabled = o.autoOpenCorpses;
+            _corpseAutoOpen.Range = o.autoOpenCorpseRange;
+            _corpseAutoOpen.Options = o.corpseOpenOptions;
+            UI.ContainerWindow.HueGumps = o.hueContainerGumps;
+            _input.HoldDownKeyTab = o.holdDownKeyTab;
+            _doorAutoOpen.Enabled = o.autoOpenDoors;
+            _doorAutoOpen.IfHidden = o.autoOpenDoorsIfHidden;
         }
+
+        // The options' AutoOpenCorpses: kept across logins, each new session starts with nothing opened (Tick).
+        private readonly Core.CorpseAutoOpen _corpseAutoOpen = new Core.CorpseAutoOpen();
+
+        // The options' AutoOpenDoors / AutoOpenDoorsIfHidden (Tick on each step or turn).
+        private readonly Core.DoorAutoOpen _doorAutoOpen = new Core.DoorAutoOpen();
+        private Func<ushort, bool> _isDoor;
 
         // Handed to each new session (SetUpUi); the options change it in place.
         private readonly SpeechSettings _speechOptions = new SpeechSettings();
@@ -587,6 +614,9 @@ namespace UOClient.Unity
             _sections.Begin("input");
             HandleInput();
             _input.Update();
+            _corpseAutoOpen.Tick(_ctx.Session, _ctx.Player.X, _ctx.Player.Y);
+            _isDoor ??= g => (_ctx.Data.TileData.GetStatic(g).Flags & TileFlags.Door) != 0;
+            _doorAutoOpen.Tick(_ctx.Session, _ctx.Player.X, _ctx.Player.Y, _ctx.Player.Z, _ctx.Player.Direction, _isDoor);
             _ctx.Player.Tick(Time.deltaTime);
             _entities.Tick(Time.deltaTime);
 

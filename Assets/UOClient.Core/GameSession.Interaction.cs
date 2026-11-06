@@ -64,6 +64,21 @@ namespace UOClient.Core
             SendQueuedActions();
         }
 
+        /// <summary>
+        /// Uses a corpse for <see cref="CorpseAutoOpen"/>: the same queued 0x06 as <see cref="Use(uint)"/>, but not the
+        /// player's own double-click, so it neither records a macro line nor becomes <see cref="LastObject"/>.
+        /// </summary>
+        public void OpenCorpse(uint serial)
+        {
+            if (State != SessionState.InWorld)
+                return;
+            _actions.Use(serial, new PacketWriter(0x06, 5).UInt32(serial).ToArray());
+            SendQueuedActions();
+        }
+
+        /// <summary>Uses, lifts and drops still waiting on the server's action delay.</summary>
+        public int QueuedActions => _actions.Count;
+
         /// <summary>The last thing we double-clicked (ClassicUO's World.LastObject, for the "last object" macro), or 0.</summary>
         public uint LastObject { get; private set; }
 

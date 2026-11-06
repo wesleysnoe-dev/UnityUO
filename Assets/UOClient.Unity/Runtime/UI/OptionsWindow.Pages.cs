@@ -35,8 +35,8 @@ namespace UOClient.Unity.UI
         /// </summary>
         public static readonly (Page Page, string Text)[] NotOffered =
         {
-            (Page.General, "Pathfinding: this client has no pathfinder."),
-            (Page.General, "Health as a percent (or both), \"smart\": only the line is drawn."),
+            (Page.General, "Pathfinding, smooth doors: this client has no pathfinder."),
+            (Page.General, "Block walking into doors: walks are left to the server to refuse."),
             (Page.Sound, "Footsteps: the client plays no footstep sounds of its own."),
             (Page.Sound, "Music / sound on-off, combat music: volume only."),
             (Page.Tooltip, "Center mobile tooltips: TazUO reads that option nowhere."),

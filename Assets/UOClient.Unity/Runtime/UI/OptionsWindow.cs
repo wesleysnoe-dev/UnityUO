@@ -175,10 +175,13 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>One of a few choices in a row of buttons (TazUO's combo boxes).</summary>
-        private int Choice(string label, int value, params string[] options)
+        private int Choice(string label, int value, params string[] options) => Choice(label, value, 110, options);
+
+        /// <summary>As <see cref="Choice(string, int, string[])"/>, each button <paramref name="buttonWidth"/> wide.</summary>
+        private int Choice(string label, int value, float buttonWidth, params string[] options)
         {
             Text(new Rect(_indent, _y + 2, 120 - _indent, 20), label);
-            int v = GUI.Toolbar(new Rect(125, _y, 110 * options.Length, 22), value, options);
+            int v = GUI.Toolbar(new Rect(125, _y, buttonWidth * options.Length, 22), value, options);
             _y += 30;
             return v;
         }
@@ -213,15 +216,34 @@ namespace UOClient.Unity.UI
             GUI.enabled = true;
             _indent = 0;
 
-            d.showMobilesHP = Toggle("Show health lines under characters", d.showMobilesHP);
+            d.showMobilesHP = Toggle("Show characters' health", d.showMobilesHP);
             _indent = 20;
             GUI.enabled = d.showMobilesHP;
-            d.mobileHPShowWhen = Choice("Show", d.mobileHPShowWhen, "Always", "When damaged");
+            d.mobileHPType = Choice("Type", d.mobileHPType, "Percent", "Line", "Both");
+            d.mobileHPShowWhen = Choice("Show", d.mobileHPShowWhen, "Always", "When damaged", "Smart");
             d.healthLineSizeMultiplier = IntSlider("Line size", d.healthLineSizeMultiplier,
                 GameOptions.MinHealthLineSize, GameOptions.MaxHealthLineSize, "x");
-            Line(d.mobileHPShowWhen == GameOptions.MobileHPAlways
-                ? "Everyone in view whose health is known."
-                : "Below full health, plus whoever you fight and yourself in war mode.");
+            Line(d.mobileHPShowWhen == GameOptions.MobileHPAlways ? "Everyone in view whose health is known."
+                : d.mobileHPShowWhen == GameOptions.MobileHPWhenDamaged ? "Below full health, plus whoever you fight and yourself in war mode."
+                : "Everyone in view; the [%] text only below full health.");
+            Line("The [%] text sits over the head, the line under the feet. Whoever you fight,\nlast attacked or last targeted keeps a line even with Percent.", 34);
+            GUI.enabled = true;
+            _indent = 0;
+
+            d.autoOpenDoors = Toggle("Open doors automatically", d.autoOpenDoors);
+            _indent = 20;
+            GUI.enabled = d.autoOpenDoors;
+            d.autoOpenDoorsIfHidden = Toggle("Also while hidden", d.autoOpenDoorsIfHidden);
+            Line("Stepping or turning to face a closed door opens it (the server's open-door\nmacro); open doors are left alone, and nothing opens for a ghost.", 34);
+            GUI.enabled = true;
+            _indent = 0;
+
+            d.autoOpenCorpses = Toggle("Open corpses automatically", d.autoOpenCorpses);
+            _indent = 20;
+            GUI.enabled = d.autoOpenCorpses;
+            d.autoOpenCorpseRange = IntSlider("Distance", d.autoOpenCorpseRange, 0, GameOptions.MaxAutoOpenCorpseRange, " tiles");
+            d.corpseOpenOptions = Choice("Unless", d.corpseOpenOptions, 76, "(none)", "Targeting", "Hidden", "Both");
+            Line("Each corpse within the distance opens once, after any use of yours queued;\nheld off while a target cursor is up and/or while you are hidden.", 34);
             GUI.enabled = true;
             _indent = 0;
         }
@@ -302,6 +324,12 @@ namespace UOClient.Unity.UI
             d.buffBarTime = Toggle("Show the time left on buff icons", d.buffBarTime);
             d.castSpellsByOneClick = Toggle("Cast spells with one click on a spell icon", d.castSpellsByOneClick);
             Line("Spell icons are the ones dragged out of a spellbook; off, a double-click casts.");
+            d.holdDownKeyTab = Toggle("Hold Tab for war mode", d.holdDownKeyTab);
+            Line(d.holdDownKeyTab
+                ? "War mode while Tab is held down; peace again when you let go."
+                : "Off: each press of Tab switches between war and peace.");
+            d.showTargetIndicator = Toggle("Keep your target's health line", d.showTargetIndicator);
+            Line("Whoever you fight, last attacked or last targeted keeps a health line\neven with characters' health off (General).", 34);
         }
 
         private void DrawContainers(GameOptions d)
@@ -316,6 +344,8 @@ namespace UOClient.Unity.UI
                 : "A plain drag asks how many; Shift+drag takes the whole stack.");
             d.highlightContainerWhenSelected = Toggle("Highlight a container while the mouse is over its window", d.highlightContainerWhenSelected);
             Line("Outlined on the ground, or in the window of the bag it sits in.");
+            d.hueContainerGumps = Toggle("Hue container gumps", d.hueContainerGumps);
+            Line("A dyed bag or chest draws its window in its own colour (corpses never).");
         }
 
         private void DrawMacros(Rect area)

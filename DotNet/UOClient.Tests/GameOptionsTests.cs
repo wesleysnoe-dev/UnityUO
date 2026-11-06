@@ -506,10 +506,10 @@ public sealed class GameOptionsTests
             Assert.False(GameOptions.Parse("{\"" + key + "\": 0}").SameAs(GameOptions.Defaults()), key);
         Assert.False(GameOptions.Parse("{\"healthLineSizeMultiplier\": 2}").SameAs(GameOptions.Defaults()));
 
-        var c = new GameOptions { speechHue = 5000, whisperHue = -4, mobileHPShowWhen = 2, healthLineSizeMultiplier = 9 }.Clamp();
+        var c = new GameOptions { speechHue = 5000, whisperHue = -4, mobileHPShowWhen = 3, healthLineSizeMultiplier = 9 }.Clamp();
         Assert.Equal(GameOptions.MaxHue, c.speechHue);
         Assert.Equal(GameOptions.MinHue, c.whisperHue);
-        Assert.Equal(GameOptions.MobileHPWhenDamaged, c.mobileHPShowWhen); // TazUO's "smart" only differs in the % text
+        Assert.Equal(GameOptions.MobileHPSmart, c.mobileHPShowWhen); // batch 4: TazUO's "smart" (2) is the top value now
         Assert.Equal(GameOptions.MaxHealthLineSize, c.healthLineSizeMultiplier);
         Assert.Equal(GameOptions.MinHealthLineSize, GameOptions.Parse("{\"healthLineSizeMultiplier\": 0}").healthLineSizeMultiplier);
         Assert.Equal(GameOptions.MobileHPAlways, GameOptions.Parse("{\"mobileHPShowWhen\": -1}").mobileHPShowWhen);

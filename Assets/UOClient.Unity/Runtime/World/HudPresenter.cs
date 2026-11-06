@@ -21,9 +21,14 @@ namespace UOClient.Unity
             _entities = entities;
         }
 
-        /// <summary>The options' ShowMobilesHP and MobileHPShowWhen (GameOptions.ShowsHealthLine).</summary>
+        /// <summary>The options' ShowMobilesHP, MobileHPShowWhen, MobileHPType and ShowTargetIndicator (GameOptions.HealthDisplay).</summary>
         public bool ShowMobilesHP { get; set; } = GameOptions.Defaults().showMobilesHP;
         public int MobileHPShowWhen { get; set; } = GameOptions.Defaults().mobileHPShowWhen;
+        public int MobileHPType { get; set; } = GameOptions.Defaults().mobileHPType;
+        public bool ShowTargetIndicator { get; set; } = GameOptions.Defaults().showTargetIndicator;
+
+        /// <summary>A hue's text colour (hues.mul), for the % text; until set, TazUO's four hues' rough colours.</summary>
+        public Func<int, Color> HueColor { get; set; }
 
         public void Update()
         {
@@ -74,8 +79,9 @@ namespace UOClient.Unity
                 _ctx.Hud.Labels.Add((m.Name, new Vector2(s.x, Screen.height - s.y), DemoHud.NotorietyColor(m.Notoriety)));
             }
 
-            // Health lines under the feet (the options' ShowMobilesHP / MobileHPShowWhen): everyone, or anyone hurt plus
-            // whoever we fight and ourselves in war mode.
+            // Health under the feet and over the head (the options' ShowMobilesHP / MobileHPShowWhen / MobileHPType /
+            // ShowTargetIndicator): everyone, or anyone hurt plus whoever we fight and ourselves in war mode; the line, the
+            // % text or both; a target keeps its line (TazUO's forceDraw).
             _ctx.Hud.HealthBars.Clear();
             void Bar(Core.Mobile m, Avatar a)
             {
@@ -83,10 +89,26 @@ namespace UOClient.Unity
                     return;
                 bool alsoWhenFull = m.Serial == _ctx.Session.Combatant
                                     || (m.Serial == _ctx.Session.World.PlayerSerial && _ctx.Session.WarMode);
-                if (!GameOptions.ShowsHealthLine(ShowMobilesHP, MobileHPShowWhen, m.Hits, m.HitsMax, alsoWhenFull))
+                bool isTarget = m.Serial != _ctx.Session.World.PlayerSerial
+                                && (m.Serial == _ctx.Session.Combatant || m.Serial == _ctx.Session.LastAttack || m.Serial == _ctx.Session.LastTarget);
+                var (line, percent) = GameOptions.HealthDisplay(ShowMobilesHP, MobileHPType, MobileHPShowWhen, m.Hits, m.HitsMax,
+                    m.IsDead, alsoWhenFull, isTarget, ShowTargetIndicator);
+                if (!line && !percent)
                     return;
                 Vector3 s = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(a.AnchorPixels + new Vector2(0, 10 * _ctx.ArtScale)));
-                _ctx.Hud.HealthBars.Add((new Vector2(s.x, Screen.height - s.y), m.Hits / (float)m.HitsMax, DemoHud.NotorietyColor(m.Notoriety)));
+                Vector3 head = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(a.AnchorPixels - new Vector2(0, 75 * _ctx.ArtScale)));
+                int perc = GameOptions.HitsPercent(m.Hits, m.HitsMax);
+                int hue = GameOptions.HitsPercentHue(perc);
+                _ctx.Hud.HealthBars.Add(new DemoHud.HealthBar
+                {
+                    Screen = new Vector2(s.x, Screen.height - s.y),
+                    Ratio = m.Hits / (float)m.HitsMax,
+                    Color = DemoHud.NotorietyColor(m.Notoriety),
+                    Line = line,
+                    Percent = percent ? perc : -1,
+                    Head = new Vector2(head.x, Screen.height - head.y),
+                    PercentColor = HueColor != null ? HueColor(hue) : DemoHud.PercentFallbackColor(hue),
+                });
             }
             Bar(p, _ctx.Player);
             foreach (KeyValuePair<uint, Avatar> kv in _entities.Others)

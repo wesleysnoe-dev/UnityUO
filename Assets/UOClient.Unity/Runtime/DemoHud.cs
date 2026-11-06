@@ -28,7 +28,7 @@ namespace UOClient.Unity
         private int _playerX = int.MinValue, _playerY;
         private int _tab;
         private float _staminaValue = 92f;
-        private GUIStyle _label, _small, _title, _bar, _name, _tabStyle, _tabActive, _overhead, _death;
+        private GUIStyle _label, _small, _title, _bar, _name, _tabStyle, _tabActive, _overhead, _death, _percent;
 
         public bool Visible { get; set; } = true;
         public string Summary { get; set; } = "";
@@ -50,7 +50,29 @@ namespace UOClient.Unity
         public readonly List<(string Text, Vector2 Screen, Color Color, int Size, uint Stack)> Overheads = new List<(string, Vector2, Color, int, uint)>();
         private readonly Dictionary<uint, float> _stacked = new Dictionary<uint, float>();
 
-        public readonly List<(Vector2 Screen, float Ratio, Color Color)> HealthBars = new List<(Vector2, float, Color)>();
+        /// <summary>One character's health: the line under the feet and/or TazUO's % text over the head (GameOptions.HealthDisplay).</summary>
+        public struct HealthBar
+        {
+            /// <summary>Under the feet, screen pixels (top-left origin).</summary>
+            public Vector2 Screen;
+            public float Ratio;
+            public Color Color;
+            public bool Line;
+
+            /// <summary>The % text's number, or -1 for no text.</summary>
+            public int Percent;
+
+            /// <summary>Over the head, where the name label sits (screen pixels, top-left origin): the % text goes just above it.</summary>
+            public Vector2 Head;
+            public Color PercentColor;
+        }
+
+        public readonly List<HealthBar> HealthBars = new List<HealthBar>();
+
+        /// <summary>TazUO's % text hues (0x21, 0x30, 0x58, 0x44) roughly, for when hues.mul isn't at hand.</summary>
+        public static Color PercentFallbackColor(int hue) =>
+            hue == 0x0021 ? new Color(0.9f, 0.2f, 0.15f) : hue == 0x0030 ? new Color(1f, 0.55f, 0.15f)
+            : hue == 0x0058 ? new Color(0.95f, 0.85f, 0.2f) : new Color(0.3f, 0.85f, 0.3f);
 
         /// <summary>The options' HealthLineSizeMultiplier (1-5): the health lines' width (GameOptions.HealthLineWidth).</summary>
         public int HealthLineSize { get; set; } = 1;
@@ -237,8 +259,20 @@ namespace UOClient.Unity
             }
 
             float barWidth = GameOptions.HealthLineWidth(HealthLineSize);
-            foreach (var (screen, ratio, color) in HealthBars)
+            foreach (HealthBar bar in HealthBars)
             {
+                if (bar.Percent >= 0)
+                {
+                    // Over the name label (it sits 26 px above the head point), or where it would be with names off.
+                    float above = NamesVisible ? 46 : 26;
+                    DrawOutlined(new Rect(bar.Head.x / s - 60, bar.Head.y / s - above, 120, 20),
+                                 GameOptions.HitsPercentText(bar.Percent), _percent, bar.PercentColor);
+                }
+                if (!bar.Line)
+                    continue;
+                Vector2 screen = bar.Screen;
+                float ratio = bar.Ratio;
+                Color color = bar.Color;
                 var r = new Rect(screen.x / s - barWidth / 2, screen.y / s, barWidth, 6);
                 GUI.color = new Color(color.r * 0.6f, color.g * 0.6f, color.b * 0.6f, 0.95f);
                 GUI.DrawTexture(r, _white);
@@ -554,6 +588,7 @@ namespace UOClient.Unity
             _title.normal.textColor = new Color(0.96f, 0.88f, 0.68f);
             _bar = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             _death = new GUIStyle(_bar) { fontSize = 28 };
+            _percent = new GUIStyle(_label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             _name =new GUIStyle(_label) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             _overhead = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.LowerCenter, wordWrap = true };
             _tabStyle = new GUIStyle(GUI.skin.button) { fontSize = 13 };
