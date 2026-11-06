@@ -1,0 +1,14 @@
+﻿{
+    "name": "UOClient.GroundPrototype.Editor",
+    "rootNamespace": "UOClient.GroundPrototype.Editor",
+    "references": [ "UOClient.GroundPrototype" ],
+    "includePlatforms": [ "Editor" ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
