@@ -564,6 +564,21 @@ Backup tag `fidelity-pre-options3` = `4308569`. Files: `GameOptions.cs` / `GameO
 
 **Coverage recount** (same counting as batch 2): General 5 → **7** (+ShowMobilesHP, MobileHPShowWhen), Speech 3 → **10** (+IgnoreGuildMessages, IgnoreAllianceMessages, SpeechHue, WhisperHue, EmoteHue, YellHue, PartyMessageHue), Containers 2 → **3** (+HighlightContainerWhenSelected), TazUO page 0 → **1** (HealthLineSizeMultiplier). **Total 30 of 322** (≈ 9 %; 29 of the 176 outside TazUO's own page, ≈ 16 %). Plus 5 of this client's own (show names, journal, HUD, UI scale, server messages in journal). Still a small share of TazUO's options, not most of them.
 
+| TazUO page | TazUO controls | Ours | Which |
+|---|---|---|---|
+| General | 71 | 7 | HighlightGameObjects, hide roofs (DrawRoofs), AlwaysRun, AlwaysRunUnlessHidden, HoldShiftToSplitStack, ShowMobilesHP, MobileHPShowWhen |
+| Sound | 10 (+1 voice) | 2 | sound volume, music volume |
+| Video | 32 | 1 | zoom (DefaultScale) |
+| Tooltip | 4 | 2 | UseTooltip, delay |
+| Speech | 17 | 10 | ScaleSpeechDelay, SpeechDelay, SaveJournalToFile, IgnoreGuildMessages, IgnoreAllianceMessages, SpeechHue, WhisperHue, EmoteHue, YellHue, PartyMessageHue |
+| Combat & Spells | 19 | 4 | both criminal queries, BuffBarTime, SingleClickIconUse |
+| Containers | 10 | 3 | ContainersScale, DoubleClickToLootInsideContainers, HighlightContainerWhenSelected |
+| TazUO | 146 | 1 | HealthLineSizeMultiplier (shown on our General page) |
+| Counters / Info Bar / Experimental | 5 / 2 / 5 | 0 | unavailable |
+| **Total** | **322** | **30** | ≈ 9 % (29 of the 176 outside TazUO's own page, ≈ 16 %) |
+
+Not counted: this client's own 5 above, and the greyed (`NotOffered`) rows, which show a reason but do nothing.
+
 - **Verified:** `dotnet test` 887/887 (8 new in `GameOptionsTests`: batch 3 defaults agree with `SpeechSettings`; round trip / per-key parse / clamp of hues, show-when, size; `ShowsHealthLine` cases incl. the kept extras; line width; journal server-line rule; container selection rule; `SpeechMode` with option hues; injected 0xAE guild / alliance lines dropped (alliance after an in-place change), hue-0 emote takes the emote hue, party line takes the party hue; new verbs' argument rules). EditorCheck `--no-incremental` 0 warnings / 0 errors, `CheckUnityScriptMetas: 173 script metas OK`. Cli builds. **Unity Editor compile and play: not checked; unverified in play.**
 
 ## Login video + music (2026-11-05)
