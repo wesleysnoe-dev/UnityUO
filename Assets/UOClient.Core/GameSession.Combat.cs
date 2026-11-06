@@ -77,14 +77,28 @@ namespace UOClient.Core
             _handlers[0x2D] = MobileAttributes;
             _handlers[0x0B] = r => { uint s = r.ReadUInt32(); Damaged?.Invoke(s, r.ReadUInt16()); };
             _handlers[0x3A] = SkillList;
-            _handlers[0xD1] = _ => Fail("Logged out."); // logout acknowledged
+            _handlers[0xD1] = _ => // logout acknowledged
+            {
+                LoggedOut = true;
+                Fail(LoggedOutStatus);
+            };
         }
 
-        /// <summary>Asks to log out; the server saves and confirms, then the connection closes.</summary>
+        public const string LoggedOutStatus = "Logged out.";
+
+        /// <summary>The player asked to log out (<see cref="Logout"/>); a drop from here on is the logout, not a failure.</summary>
+        public bool LogoutRequested { get; private set; }
+
+        /// <summary>The session ended by logging out (the server's 0xD1, or the connection closing after the request).</summary>
+        public bool LoggedOut { get; private set; }
+
+        /// <summary>Asks to log out; the server saves and confirms, then the connection closes. Asking again sends nothing.</summary>
         public void Logout()
         {
-            if (State == SessionState.InWorld)
-                _conn.Send(new byte[] { 0xD1, 0x00 });
+            if (State != SessionState.InWorld || LogoutRequested || _conn == null)
+                return;
+            LogoutRequested = true;
+            _conn.Send(new byte[] { 0xD1, 0x00 });
         }
 
         // ---- targeting ----

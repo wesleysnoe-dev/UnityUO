@@ -301,15 +301,17 @@ namespace UOClient.Unity
             _hudPresenter.HueColor = hue => art.HueColor(hue, DemoHud.PercentFallbackColor(hue));
             _binder?.Dispose();
             _binder = new SessionUiBinder(_ctx, this, _gumpArt, _input, _cursor, _overheads, _effects, _chatLine, Sound);
-            _binder.LogoutConfirmed += () => _quitAfterLogout = true;
             _binder.Attach(_ctx.Session);
+            _sound = _binder.Sound; // kept for the next session's binder (the component is added once)
             ApplyAudioOptions(); // the session's Audio exists from here
             ApplyCombatOptions();
             _journalFile.Attach(_ctx.Session.World, () => characterName); // a new log file per session, if saving is on
         }
 
         /// <summary>Sound effects and music (null until online).</summary>
-        public Audio Sound => _binder?.Sound;
+        public Audio Sound => _binder?.Sound ?? _sound;
+
+        private Audio _sound;
 
         // ---- effects ----
 
@@ -318,13 +320,11 @@ namespace UOClient.Unity
         private EffectView MakeEffectView(GraphicEffect e) =>
             _ctx.World == null ? null : new EffectView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, e, _entities.Locate);
 
-        private bool _quitAfterLogout;
-
         /// <summary>The height upper floors are cut at right now (null outdoors).</summary>
         public int? CutZ => _roofs.CutZ;
 
         /// <summary>The paperdoll's buttons.</summary>
-        private void OnUiCommand(string command) => _binder.RunCommand(command);
+        private void OnUiCommand(string command) => _binder?.RunCommand(command);
 
         /// <summary>Keyboard macros (null until online).</summary>
         public Hotkeys Hotkeys => _binder?.Hotkeys;
@@ -450,8 +450,7 @@ namespace UOClient.Unity
             UI.GridContainerWindow.DefaultToOldStyleView = o.gridContainersDefaultToOldStyleView;
             UI.GridContainerWindow.Opacity = o.containerOpacity;
             UI.GridContainerWindow.ScalePercent = o.gridContainersScale;
-            UI.GridContainerWindow.ScaleItems = o.gridContainerScaleItems;
-        }
+            UI.GridContainerWindow.ScaleItems = o.gridContainerScaleItems;        }
 
         // The options' AutoOpenCorpses: kept across logins, each new session starts with nothing opened (Tick).
         private readonly Core.CorpseAutoOpen _corpseAutoOpen = new Core.CorpseAutoOpen();
@@ -504,8 +503,12 @@ namespace UOClient.Unity
 
         private void StartOnline(LoginSettings login)
         {
+            if (_ctx.Session != null)
+                TearDownSession(); // a session still live (never expected from the login screen): it goes first
             characterName = login.CharacterName;
             _ctx.Session = new GameSession(login);
+            // Every handler below is guarded: once the session ends (TearDownSession) none of them runs again.
+            _life.Begin(_ctx.Session);
             string cliloc = Path.Combine(_ctx.Data.Directory, "Cliloc.enu");
             if (File.Exists(cliloc))
                 _ctx.Session.Cliloc = new Cliloc(cliloc);
@@ -518,34 +521,33 @@ namespace UOClient.Unity
             else
                 Debug.LogError($"UOClient: speech.mul not found at {speech}; speech goes out untagged and bankers, stablemasters and vendors will ignore keywords.");
 
-            _ctx.Session.StatusChanged += s => _ctx.Hud.ConnectionStatus = s;
-            _ctx.Session.Entered += OnEnteredWorld;
+            _ctx.Session.StatusChanged += _life.Guard<string>(s => _ctx.Hud.ConnectionStatus = s);
+            _ctx.Session.Entered += _life.Guard(OnEnteredWorld);
             // The server's first region music can come before the login completes: the login music is gone by then.
-            _ctx.Session.MusicRequested += _ => EndLoginScreen();
+            _ctx.Session.MusicRequested += _life.Guard<int>(_ => EndLoginScreen());
             SetUpUi();
-            _ctx.Session.MoveRejected += (x, y, z, d) =>
+            _ctx.Session.MoveRejected += _life.Guard<int, int, sbyte, byte>((x, y, z, d) =>
             {
                 _ctx.Player?.Teleport(x, y, z);
                 _ctx.Player?.Face(d);
-            };
-            _ctx.Session.World.JournalAdded += j =>
+            });
+            _ctx.Session.World.JournalAdded += _life.Guard<JournalEntry>(j =>
             {
                 if (GameOptions.JournalShowsLine(_showSystemMessagesInJournal, j.Serial))
                     _ctx.Hud.Log(j.Speaker, j.Text);
-            };
+            });
             _entities.Attach(_ctx.Session);
-            CustomHouses.Attach(_ctx.Session, h => { if (_ctx.World != null) _entities.ShowMulti(h); }, s => _ctx.Hud.Log(null, s));
+            CustomHouses.Attach(_ctx.Session, _life.Guard<WorldItem>(h => { if (_ctx.World != null) _entities.ShowMulti(h); }),
+                                _life.Guard<string>(s => _ctx.Hud.Log(null, s)));
 
-            _ctx.Hud.ConnectionStatus = $"Connecting to {login.Host}:{login.Port}â€¦";
+            _ctx.Hud.ConnectionStatus = $"Connecting to {login.Host}:{login.Port}...";
             try
             {
                 _ctx.Session.Start();
             }
             catch (Exception e)
             {
-                _ctx.Session.Dispose();
-                _ctx.Session = null;
-                _ctx.Hud.ConnectionStatus = "";
+                TearDownSession();
                 if (login.Interactive && _login != null)
                 {
                     _login.Failed($"Could not reach {login.Host}:{login.Port} ({e.Message}).");
@@ -572,6 +574,62 @@ namespace UOClient.Unity
             _ctx.Hud.Log(null, $"Connected as {characterName}. Enter to talk, F3 for frame stats.");
         }
 
+        // ---- the session's end ----
+
+        private readonly SessionLifecycle _life = new SessionLifecycle();
+
+        /// <summary>
+        /// Frees everything built for the session (its windows and their bindings, entity and effect views, overheads, the
+        /// chat line, the world and the player) and disposes it; its guarded handlers go quiet. Returns what the login
+        /// screen should say, or null. Safe to call again, or with no session.
+        /// </summary>
+        private string TearDownSession()
+        {
+            string message = _life.End();
+            _ctx.Session?.Dispose(); // already disposed when it was the lifecycle's; harmless again
+            _ctx.Session = null;
+            _journalFile.Attach(null, null);
+            if (_binder != null)
+            {
+                _sound = _binder.Sound;
+                _binder.Dispose();
+                _binder = null; // its windows, chat log and macros go with it
+            }
+            _sound?.PlayMusic(Audio.StopMusicId); // the region's music; the login music comes back with the login screen
+            _entities.Reset();
+            _effects.Dispose();
+            _overheads.Clear();
+            _chatLine.Close();
+            _placement.Clear();
+            _ctx.Player?.Dispose();
+            _ctx.Player = null;
+            _ctx.World?.Dispose();
+            _ctx.World = null;
+            _ctx.Walk = null;
+            _ready = false;
+            _cursor.PlayerScreen = null;
+            _cursor.Update(null, null); // the system pointer again (no target crosshair left behind)
+            _ctx.Hud.ConnectionStatus = "";
+            _ctx.Hud.HasStats = false;
+            _ctx.Hud.WarMode = false;
+            _ctx.Hud.DeathScreenUntil = 0;
+            _ctx.Hud.TopInset = 0;
+            return message;
+        }
+
+        /// <summary>The session ended: back to the login screen (its video and music again), saying why.</summary>
+        private void ReturnToLogin()
+        {
+            string message = TearDownSession();
+            Debug.Log($"UOClient: session ended ({message ?? "closed by the client"}); back to the login screen.");
+            if (_login == null)
+                ShowLoginScreen(); // an unattended login has none yet; it never logs in again by itself
+            else
+                StartLoginMedia(); // stopped once the server's music came
+            if (message != null)
+                _login.Failed(message);
+        }
+
         // ---- frame loop ----
 
         private void Update()
@@ -584,17 +642,11 @@ namespace UOClient.Unity
             _sections.Begin("network");
             _ctx.Session?.Update(Time.realtimeSinceStartupAsDouble);
 
-            // Dropped before reaching the world (bad password, server down, cancelled): back to the login form.
-            if (_login != null && _ctx.World == null && _ctx.Session != null && _ctx.Session.State == SessionState.Disconnected)
-            {
-                _login.Failed(_ctx.Session.Status);
-                _ctx.Session.Dispose();
-                _ctx.Session = null;
-                StartLoginMedia(); // stopped if the server's music came before the drop
-            }
-            // Logged out: the server saved us and closed the connection.
-            if (_quitAfterLogout && _ctx.Session != null && _ctx.Session.State == SessionState.Disconnected)
-                Quit();
+            // The session ended: dropped before the world (bad password, server down, cancelled), lost in it, or
+            // logged out. The world and everything of the session goes, and the login form says why; the player logs
+            // in again from there (nothing reconnects by itself).
+            if (_life.HasEnded)
+                ReturnToLogin();
 
             if (_ctx.World == null || _ctx.Player == null)
                 return;
@@ -687,8 +739,8 @@ namespace UOClient.Unity
             if (!_ready)
             {
                 string what = _ctx.World == null
-                    ? (_ctx.Session != null ? _ctx.Hud.ConnectionStatus : "Loading Britanniaâ€¦")
-                    : $"Loading the areaâ€¦ ({_ctx.World.LoadedChunks} chunks)";
+                    ? (_ctx.Session != null ? _ctx.Hud.ConnectionStatus : "Loading Britannia...")
+                    : $"Loading the area... ({_ctx.World.LoadedChunks} chunks)";
                 GUI.Label(new Rect(20, 20, 600, 30), what);
                 return;
             }
@@ -758,6 +810,7 @@ namespace UOClient.Unity
         {
             _journalFile.Dispose();
             _binder?.Dispose();
+            _life.End();
             _ctx.Session?.Dispose();
             _ctx.Player?.Dispose();
             _entities?.Dispose();

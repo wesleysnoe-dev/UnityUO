@@ -20,6 +20,13 @@ namespace UOClient.Unity
             _chat = "";
         }
 
+        /// <summary>The session ended: the line closes, its text unsent.</summary>
+        public void Close()
+        {
+            Typing = false;
+            _chat = "";
+        }
+
         public void OnGUI(GameSession session, UI.UiManager ui)
         {
             if (session == null)

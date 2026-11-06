@@ -30,6 +30,9 @@ namespace UOClient.Unity
         /// <summary>How long a line of speech stays overhead (TazUO's MessageManager.CalculateTimeToLive, GameOptions.SpeechSeconds).</summary>
         public float SpeechSeconds(string text) => GameOptions.SpeechSeconds(text?.Length ?? 0, ScaleSpeechDelay, SpeechDelay);
 
+        /// <summary>The session ended: every line goes.</summary>
+        public void Clear() => _overheads.Clear();
+
         public void Add(uint serial, string text, Color color, int size, float life, bool rises)
         {
             // Classic clients keep a few lines per speaker; older ones scroll off.

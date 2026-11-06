@@ -466,6 +466,25 @@ namespace UOClient.Unity
             return string.Join(", ", parts);
         }
 
+        /// <summary>
+        /// The session ended: stops listening to it and frees every view (multi parts too), ready for the next session's
+        /// <see cref="Attach"/>. Calling it again does nothing more.
+        /// </summary>
+        public void Reset()
+        {
+            Detach();
+            Dispose();
+            _others.Clear();
+            _otherLook.Clear();
+            _items.Clear();
+            _tieViews.Clear();
+            foreach (List<ItemView> parts in _multis.Values)
+                foreach (ItemView v in parts)
+                    v.Dispose();
+            _multis.Clear();
+            _playerLook = -1;
+        }
+
         /// <summary>Disposes the character and item views, as WorldDemo.OnDestroy did (multi parts are left to the scene unload).</summary>
         public void Dispose()
         {

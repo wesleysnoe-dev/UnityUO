@@ -180,7 +180,7 @@ public sealed class LoginMediaTests
         int entered = demo.IndexOf("private void OnEnteredWorld()", StringComparison.Ordinal);
         Assert.True(entered > 0);
         Assert.Contains("EndLoginScreen();", demo.Substring(entered, 200));
-        Assert.Contains("MusicRequested += _ => EndLoginScreen();", demo);
+        Assert.Contains("MusicRequested += _life.Guard<int>(_ => EndLoginScreen());", demo);
         Assert.Contains("_loginMedia.MusicVolume = _musicVolume;", demo);
     }
 

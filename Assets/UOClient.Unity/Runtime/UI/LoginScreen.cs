@@ -98,17 +98,20 @@ namespace UOClient.Unity.UI
         {
             _session = session;
             Current = Page.Connecting;
-            Status = "Connectingâ€¦";
-            session.StatusChanged += s => Status = s;
-            session.ServersListed += () => Current = Page.Servers;
+            Status = "Connecting...";
+            // Only the session followed now: one cancelled or dropped (Failed) changes nothing here any more.
+            session.StatusChanged += s => { if (_session == session) Status = s; };
+            session.ServersListed += () => { if (_session == session) Current = Page.Servers; };
             session.CharactersListed += () =>
             {
+                if (_session != session)
+                    return;
                 Current = Page.Characters;
                 _deleteArmed = -1;
             };
         }
 
-        /// <summary>The session dropped before entering the world: back to the form, keeping the reason.</summary>
+        /// <summary>The session ended (dropped, cancelled, logged out, or lost in the world): back to the form, keeping the reason.</summary>
         public void Failed(string reason)
         {
             _session = null;
@@ -342,7 +345,7 @@ namespace UOClient.Unity.UI
                 if (name.Length == 0)
                 {
                     hasFree = true;
-                    GUI.Label(row, "â€” empty â€”", _small);
+                    GUI.Label(row, "- empty -", _small);
                     continue;
                 }
                 if (GUI.Button(row, name))

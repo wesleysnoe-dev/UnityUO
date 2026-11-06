@@ -190,6 +190,8 @@ namespace UOClient.Core
         /// <summary>Handles a packet as if the server had sent it (tests and packet replays).</summary>
         public void Inject(byte[] packet, bool variableLength)
         {
+            if (IsDisposed)
+                return;
             if (_handlers.TryGetValue(packet[0], out Action<PacketReader> handler))
                 handler(new PacketReader(packet, variableLength));
         }
@@ -228,7 +230,11 @@ namespace UOClient.Core
             }
 
             if (_conn != null && !_conn.IsConnected && State != SessionState.Disconnected)
-                SetState(SessionState.Disconnected, $"Disconnected: {_conn.CloseReason}");
+            {
+                // The server may close without its 0xD1 once it has saved us: still a logout.
+                LoggedOut |= LogoutRequested;
+                SetState(SessionState.Disconnected, LoggedOut ? LoggedOutStatus : $"Disconnected: {_conn.CloseReason}");
+            }
 
             SendQueuedActions();
 
@@ -994,8 +1000,18 @@ namespace UOClient.Core
             StatusChanged?.Invoke(status);
         }
 
+        /// <summary>
+        /// Closes the connection as if the server or the network had (tests and packet replays); the next
+        /// <see cref="Update"/> reports the drop.
+        /// </summary>
+        public void SimulateConnectionLost(string reason) => _conn?.Close(reason);
+
+        /// <summary>Disposed by the client (closed, cancelled, or torn down): nothing is handled or raised from here on.</summary>
+        public bool IsDisposed { get; private set; }
+
         public void Dispose()
         {
+            IsDisposed = true;
             _conn?.Dispose();
             _conn = null;
         }

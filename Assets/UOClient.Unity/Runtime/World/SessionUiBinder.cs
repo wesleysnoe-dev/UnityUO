@@ -43,7 +43,7 @@ namespace UOClient.Unity
         public Hotkeys Hotkeys { get; private set; }
         public Audio Sound { get; private set; }
 
-        /// <summary>The player confirmed "Log out?"; raised just before the logout request is sent.</summary>
+        /// <summary>The player confirmed "Log out?"; raised just before the logout request is sent (the game returns to login on the drop).</summary>
         public event Action LogoutConfirmed;
 
         public void Attach(GameSession s)
@@ -108,7 +108,10 @@ namespace UOClient.Unity
             s.MusicRequested += OnMusicRequested;
         }
 
-        /// <summary>Unsubscribes everything <see cref="Attach"/> subscribed. The windows, chat log, macros and audio stay as they are.</summary>
+        /// <summary>
+        /// Unsubscribes everything <see cref="Attach"/> subscribed. The windows, chat log, macros and audio stay as they are
+        /// (the game drops the binder, and with it the windows, when the session ends; the audio goes to the next binder).
+        /// </summary>
         public void Dispose()
         {
             GameSession s = _session;
@@ -366,10 +369,13 @@ namespace UOClient.Unity
                 case "help": _ctx.Session.RequestHelp(); break;
                 case "options": Ui.Open(new UI.OptionsWindow(_game)); break;
                 case "logout":
-                    Ui.Open(new UI.ConfirmWindow("Log out?", "Quit the game and return to the desktop?", () =>
+                    // The server saves us and closes; the game goes back to the login screen (Quit there leaves).
+                    Ui.Open(new UI.ConfirmWindow("Log out?", "Return to the login screen?", () =>
                     {
+                        if (_session == null)
+                            return; // the session already ended
                         LogoutConfirmed?.Invoke();
-                        _ctx.Session.Logout();
+                        _session.Logout();
                     }));
                     break;
                 case "journal": _ctx.Hud.JournalVisible = !_ctx.Hud.JournalVisible; break;

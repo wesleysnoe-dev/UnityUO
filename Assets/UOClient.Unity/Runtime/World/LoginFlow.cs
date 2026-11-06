@@ -72,7 +72,8 @@ namespace UOClient.Unity
                 {
                     Host = screen.Host, Port = screen.Port, Account = screen.Account, Password = screen.Password,
                     Interactive = true,
-                    Version = _accounts().ReadVersion(_settings.host)
+                    // The server being logged in to (under -server the settings' host is not it).
+                    Version = _accounts().ReadVersion(screen.Host)
                 };
                 _startOnline(login);
                 if (_ctx.Session != null)

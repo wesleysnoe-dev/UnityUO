@@ -26,6 +26,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\GameOptions.cs" Link="Unity\GameOptions.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\GameOptions.Rules.cs" Link="Unity\GameOptions.Rules.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\MacroDraft.cs" Link="Unity\MacroDraft.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\World\SessionLifecycle.cs" Link="Unity\SessionLifecycle.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\LoginMedia.Rules.cs" Link="Unity\LoginMedia.Rules.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\OptionsWindow.Pages.cs" Link="Unity\OptionsWindow.Pages.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\HoverTooltip.Placement.cs" Link="Unity\HoverTooltip.Placement.cs" />
