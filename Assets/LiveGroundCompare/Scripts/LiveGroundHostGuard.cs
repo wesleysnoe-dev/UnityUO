@@ -29,7 +29,14 @@ namespace UOClient.LiveGroundCompare
         /// opt-in flag, on a local host, and when it is available in this build. <paramref name="reason"/> says why
         /// a request was refused (null when granted as asked).
         /// </summary>
-        public static GroundBackendKind Resolve(bool optIn, string host, GroundBackendKind requested, out string reason)
+        public static GroundBackendKind Resolve(bool optIn, string host, GroundBackendKind requested, out string reason) =>
+            Resolve(optIn, false, host, requested, out reason);
+
+        /// <summary>
+        /// As above; <paramref name="anyHost"/> (-liveground-anyhost, the normal client's promotion) lifts only the host check.
+        /// The -liveground opt-in and the availability check still apply.
+        /// </summary>
+        public static GroundBackendKind Resolve(bool optIn, bool anyHost, string host, GroundBackendKind requested, out string reason)
         {
             reason = null;
             if (!GroundBackend.IsExperimental(requested))
@@ -39,7 +46,7 @@ namespace UOClient.LiveGroundCompare
                 reason = "experimental ground needs -liveground";
                 return GroundBackendKind.Original;
             }
-            if (!IsLocalHost(host))
+            if (!anyHost && !IsLocalHost(host))
             {
                 reason = $"experimental ground refused for non-local host '{host}' (TEST 127.0.0.1 only)";
                 return GroundBackendKind.Original;
@@ -65,18 +72,31 @@ namespace UOClient.LiveGroundCompare
     public sealed class LiveGroundSwitch : System.IDisposable
     {
         private readonly bool _optIn;
+        private readonly bool _anyHost;
         private readonly System.Func<GroundBackendKind, string> _apply;
         private bool _attached, _disposed;
 
         public LiveGroundSwitch(bool optIn, GroundBackendKind requested, System.Action<GroundBackendKind> apply)
-            : this(optIn, requested, Infallible(apply))
+            : this(optIn, false, requested, Infallible(apply))
         {
         }
 
         /// <param name="apply">Applies a backend; returns null on success, else why it could not (Original never fails).</param>
         public LiveGroundSwitch(bool optIn, GroundBackendKind requested, System.Func<GroundBackendKind, string> apply)
+            : this(optIn, false, requested, apply)
+        {
+        }
+
+        public LiveGroundSwitch(bool optIn, bool anyHost, GroundBackendKind requested, System.Action<GroundBackendKind> apply)
+            : this(optIn, anyHost, requested, Infallible(apply))
+        {
+        }
+
+        /// <param name="anyHost">-liveground-anyhost: the guard skips its host check (see <see cref="LiveGroundHostGuard.Resolve(bool, bool, string, GroundBackendKind, out string)"/>).</param>
+        public LiveGroundSwitch(bool optIn, bool anyHost, GroundBackendKind requested, System.Func<GroundBackendKind, string> apply)
         {
             _optIn = optIn;
+            _anyHost = anyHost;
             Requested = requested;
             _apply = apply ?? throw new System.ArgumentNullException(nameof(apply));
         }
@@ -146,7 +166,7 @@ namespace UOClient.LiveGroundCompare
 
         private string Apply()
         {
-            GroundBackendKind effective = LiveGroundHostGuard.Resolve(_optIn, Host, Requested, out string reason);
+            GroundBackendKind effective = LiveGroundHostGuard.Resolve(_optIn, _anyHost, Host, Requested, out string reason);
             string error = _apply(effective); // also when unchanged: a freshly attached world starts without an emitter
             if (error != null && effective != GroundBackendKind.Original)
             {

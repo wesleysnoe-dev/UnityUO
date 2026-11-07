@@ -36,7 +36,8 @@ namespace UOClient.LiveGroundCompare
                 _parseWarning = $"-groundbackend '{groundBackend}' not understood; using Original";
             _scale = scale;
             _mesh = new MeshLandEmitter(scale);
-            _switch = new LiveGroundSwitch(optIn, requested, Apply);
+            // -liveground-anyhost is read here so WorldDemo's 3-argument creation stays as it is.
+            _switch = new LiveGroundSwitch(optIn, LaunchOptions.FromCommandLine().LiveGroundAnyHost, requested, Apply);
 
             var go = new GameObject("LiveGround TEST indicator");
             UnityEngine.Object.DontDestroyOnLoad(go);

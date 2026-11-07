@@ -25,8 +25,14 @@ namespace UOClient.Unity
         /// <summary>-groundbackend &lt;original|mesh|terrain&gt; as typed (null when absent, "" without a value); parsed by LiveGroundCompare.</summary>
         public readonly string GroundBackend;
 
+        /// <summary>
+        /// -liveground-anyhost: the normal client's explicit promotion of the land backends to any host, the live shard
+        /// included. Does nothing without -liveground; without it the guard stays loopback-only.
+        /// </summary>
+        public readonly bool LiveGroundAnyHost;
+
         private LaunchOptions(bool captureFromCommandLine, bool autoLogin, bool serverFromArguments, (int map, int x, int y)? offlineAt,
-                              bool liveGround, string groundBackend)
+                              bool liveGround, string groundBackend, bool liveGroundAnyHost)
         {
             CaptureFromCommandLine = captureFromCommandLine;
             AutoLogin = autoLogin;
@@ -34,6 +40,7 @@ namespace UOClient.Unity
             OfflineAt = offlineAt;
             LiveGround = liveGround;
             GroundBackend = groundBackend;
+            LiveGroundAnyHost = liveGroundAnyHost;
         }
 
         public static LaunchOptions FromCommandLine() => Parse(Environment.GetCommandLineArgs());
@@ -54,7 +61,8 @@ namespace UOClient.Unity
                 cl.Any(a => a.TrimStart('-').Equals("server", StringComparison.OrdinalIgnoreCase)),
                 offlineAt,
                 cl.Any(a => a.Equals("-liveground", StringComparison.OrdinalIgnoreCase)),
-                groundBackend);
+                groundBackend,
+                cl.Any(a => a.Equals("-liveground-anyhost", StringComparison.OrdinalIgnoreCase)));
         }
     }
 }

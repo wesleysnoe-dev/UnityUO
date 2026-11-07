@@ -54,6 +54,9 @@ LiveGround TEST | requested Mesh | active Mesh | ok | host 127.0.0.1 | mesh chun
 - **Fail-closed:** experimental backends need a local host (`127.0.0.1`, `localhost`, `::1`; the same as
   `ClientSettings.IsLocal`), and any host containing `uosmallz` is refused. The check runs again every time a world is
   created, against the server you actually logged in to (a host typed on the login screen counts too).
+- **Normal-client promotion:** `-liveground-anyhost` (together with `-liveground`) lifts only that host check, so the
+  normal "Unity UO" shortcut can run Terrain on the live shard. Without `-liveground` it does nothing; without it the
+  guard stays loopback-only. Ctrl+Shift+G still reaches Original.
 - Nothing here logs in, teleports, creates accounts or sends packets.
 
 ## Geometry contract (tested in `DotNet/UOClient.Tests/LiveGroundCompareTests.cs`)
