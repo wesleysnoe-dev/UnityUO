@@ -6,6 +6,8 @@
 // Sun shadow: the presenter's world CPU ceiling (LGCeilVisibility, as TerrainLit and the sprites) dims only the ambient
 // term and the sun highlight (LGLitShadowed); the player's light is not shadowed. Without the ceiling (_LGCeilOn 0)
 // visibility is 1 and the water is lit exactly as before.
+// Item, static and multi-part lights (UO_ITEM_LIGHTS, ItemLights) join the player's light in that same local term, as on
+// TerrainLit; without the keyword this compiles to the code it had before.
 //
 // Mesh contract (TerrainWater): world space = terrain space (1 unit per tile, +Y up, tile y along -Z);
 // vertex colour rgb = mean colour of that tile's classic art; uv.x = shore distance / MaxShore (0 shoreline, 1 open).
@@ -40,6 +42,7 @@ Shader "LiveGroundCompare/Water"
             #pragma vertex vert
             #pragma fragment frag
             #pragma target 3.0
+            #pragma multi_compile __ UO_ITEM_LIGHTS
             #include "UnityCG.cginc"
             #include "../LiveGroundLight.cginc"
 

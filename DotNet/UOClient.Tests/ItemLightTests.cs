@@ -116,3 +116,41 @@ public sealed class ItemLightInstallTests
         }
     }
 }
+
+/// <summary>
+/// Every shader that lights through the shared item-light sum compiles its UO_ITEM_LIGHTS variant: without it the keyword
+/// ItemLights enables finds no variant and that surface stays dark (the TEST water did, GPU acceptance 2026-11-06).
+/// </summary>
+public sealed class ItemLightShaderTests
+{
+    private static string Source(params string[] path)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, "Assets", "LiveGroundCompare")))
+                return File.ReadAllText(Path.Combine(new[] { dir.FullName }.Concat(path).ToArray())).Replace("\r\n", "\n");
+        throw new DirectoryNotFoundException("repo root");
+    }
+
+    private const string Pragma = "#pragma multi_compile __ UO_ITEM_LIGHTS";
+
+    [Theory]
+    [InlineData("UOClient.Unity", "Runtime", "Resources", "WorldSprite.shader")]
+    [InlineData("LiveGroundCompare", "Shaders", "Resources", "LiveGroundCompareTerrain.shader")]
+    [InlineData("LiveGroundCompare", "Shaders", "Resources", "LiveGroundCompareWater.shader")]
+    public void ItemLitShadersCompileTheVariant(params string[] path)
+    {
+        string shader = Source(new[] { "Assets" }.Concat(path).ToArray());
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(shader, System.Text.RegularExpressions.Regex.Escape(Pragma)));
+    }
+
+    [Fact]
+    public void TheWaterTakesThemThroughTheSharedLocalTerm()
+    {
+        string water = Source("Assets", "LiveGroundCompare", "Shaders", "Resources", "LiveGroundCompareWater.shader");
+        string include = Source("Assets", "LiveGroundCompare", "Shaders", "LiveGroundLight.cginc");
+        Assert.Contains("#include \"../LiveGroundLight.cginc\"", water);
+        Assert.Contains("* LGLitShadowed(n, visibility, i.world);", water);                  // ambient x shade + LGLocalLight x shade
+        Assert.Contains("return player + UOItemLightAdd(unityXY, _UOAmbient.rgb + player);", include); // under UO_ITEM_LIGHTS
+        Assert.DoesNotContain("UOItemLightAdd", water);                                         // no second, water-only light term
+    }
+}
