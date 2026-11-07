@@ -344,6 +344,7 @@ namespace UOClient.Unity
                 }
                 chunk.AddMesh(g.Value.Build($"Chunk {build.ChunkX},{build.ChunkY}"), material, g.Key.Item2);
             }
+            chunk.Lights = build.Lights.ToArray();
             double now = ItemView.AnimationClockMs;
             foreach (AnimatedBuild a in build.Animated)
             {
@@ -452,6 +453,10 @@ namespace UOClient.Unity
                     land.Add(new LandPlacement { Item = it, Art = e.Sprite, Texmap = it.Stretched, Depth = DepthKey.Relative(it, build.BaseDiagonal, tie) });
                     continue;
                 }
+
+                // A light source (LightSources): a map static lights by its tiledata Layer (ItemLights picks the nearest).
+                if (it.Kind == DrawKind.Static && LightSources.IsLight(tileData.GetStatic(it.Graphic).Flags))
+                    build.Lights.Add(new StaticLight { X = it.X, Y = it.Y, Z = it.Z, Graphic = it.Graphic, Id = tileData.GetStatic(it.Graphic).Layer });
 
                 // Animated art (ArtAnimation): out of the baked mesh into its own quad, every frame's sprite sent now, so
                 // the main thread only swaps one quad's rect and UV when its frame changes. Baked (HD placement) art stays.
@@ -678,10 +683,24 @@ namespace UOClient.Unity
             public int Shown = -1;
         }
 
+        private struct StaticLight
+        {
+            public int X, Y, Z, Graphic, Id;
+        }
+
+        /// <summary>The light-source statics of the loaded chunks, for <see cref="ItemLights"/> (main thread).</summary>
+        public void AddStaticLights(ItemLights lights)
+        {
+            foreach (Chunk c in _chunks.Values)
+                foreach (StaticLight l in c.Lights)
+                    lights.Add(l.X, l.Y, l.Z, l.Graphic, l.Id);
+        }
+
         private sealed class ChunkBuild
         {
             public int ChunkX, ChunkY, Generation, BaseDiagonal;
             public readonly List<ChunkQuad> Quads = new List<ChunkQuad>();
+            public readonly List<StaticLight> Lights = new List<StaticLight>();
             public readonly List<AnimatedBuild> Animated = new List<AnimatedBuild>();
             public readonly List<SharedSprite> NewShared = new List<SharedSprite>();
             public Color32[] UniqueColors;
@@ -701,6 +720,7 @@ namespace UOClient.Unity
             public Texture2D UniqueTexture;
             public ILandChunk Land;
             public readonly List<AnimatedQuad> Animated = new List<AnimatedQuad>();
+            public StaticLight[] Lights = Array.Empty<StaticLight>();
 
             /// <summary>An animated static's quad under the chunk (so it takes the chunk's depth origin), hidden until a frame shows.</summary>
             public AnimatedQuad AddAnimated(AnimatedBuild a, Shader shader)

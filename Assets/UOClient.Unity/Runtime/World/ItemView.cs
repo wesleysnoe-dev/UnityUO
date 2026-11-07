@@ -33,7 +33,8 @@ namespace UOClient.Unity
         private MobileFrame _lastCorpseFrame;
         private bool _lastCorpseMirror;
 
-        public ItemView(UOData data, MobileArt art, Transform parent, Shader shader, int scale, WorldItem item, MobileLook corpseLook = null)
+        public ItemView(UOData data, MobileArt art, Transform parent, Shader shader, int scale, WorldItem item, MobileLook corpseLook = null,
+                        bool multiPart = false)
         {
             _art = art;
             _scale = scale;
@@ -48,6 +49,13 @@ namespace UOClient.Unity
             // A coin pile's art and a stack's second copy (ItemStack); the view is remade when the amount changes.
             _shown = item.IsMulti || item.IsCorpse ? item.Graphic : ItemStack.DisplayedGraphic(item.Graphic, item.Amount);
             _twice = !item.IsMulti && !item.IsCorpse && ItemStack.DrawsTwice(item.Graphic, item.Amount, td.Flags);
+            // A light (LightSources): a ground item lights by the server's light byte (0xF3's direction byte, ModernUO's
+            // Item.Light), a multi part, as a static, by its tiledata Layer.
+            if (!item.IsCorpse && !item.IsMulti && (multiPart ? LightSources.IsLight(td.Flags) : LightSources.ItemGivesLight(item.Graphic, td.Flags)))
+            {
+                GivesLight = true;
+                LightId = multiPart ? td.Layer : item.Direction;
+            }
             // Animated art (ArtAnimation, TazUO's ItemData.IsAnimated + AnimOffset): every frame's sprite is asked for now,
             // so a frame change only swaps to art already built.
             if (!item.IsCorpse && !item.IsMulti)
@@ -92,6 +100,14 @@ namespace UOClient.Unity
 
         /// <summary>The clock every animated art runs on (ms; one per graphic, shared with the map's statics).</summary>
         public static double AnimationClockMs => Time.unscaledTimeAsDouble * 1000.0;
+
+        /// <summary>It is a light source (ItemLights): its tile, graphic as sent and light id.</summary>
+        public bool GivesLight { get; }
+        public int LightId { get; }
+        public int TileX => _item.X;
+        public int TileY => _item.Y;
+        public int TileZ => _item.Z;
+        public int Graphic => _graphic;
 
         /// <summary>The art graphic last drawn (the frame's, for animated art).</summary>
         public int DrawnGraphic => _spriteGraphic;

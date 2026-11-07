@@ -30,7 +30,12 @@ Shader "UOClient/WorldSprite"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile __ LG_SPRITE_SHADOW
+            #pragma multi_compile __ UO_ITEM_LIGHTS
             #include "UnityCG.cginc"
+            #ifdef UO_ITEM_LIGHTS
+            // Item, static and multi-part lights (ItemLights); the TEST Terrain adds the same sum (LiveGroundLight.cginc).
+            #include "Assets/UOClient.Unity/Runtime/Resources/UOItemLights.cginc"
+            #endif
 
             sampler2D _MainTex;
             float _Cutoff;
@@ -133,6 +138,16 @@ Shader "UOClient/WorldSprite"
                 // as a factor on the line below so the default path stays as it was.
                 float3 lgLit = _UOAmbient.rgb + _UOLightColor.rgb * falloff;
                 c.rgb *= (_UOAmbient.rgb * LGSpriteSunShade(i.world, i.foot) + _UOLightColor.rgb * falloff) / max(lgLit, 1e-4);
+            #endif
+            #ifdef UO_ITEM_LIGHTS
+                // The lights near this pixel join the time-of-day ambient and the player's light (written as a factor on
+                // the line below, so the path without the keyword stays as it was); with the TEST sun shade, on top of it.
+                #ifdef LG_SPRITE_SHADOW
+                float3 uoLit = _UOAmbient.rgb * LGSpriteSunShade(i.world, i.foot) + _UOLightColor.rgb * falloff;
+                #else
+                float3 uoLit = _UOAmbient.rgb + _UOLightColor.rgb * falloff;
+                #endif
+                c.rgb *= (uoLit + UOItemLightAdd(i.world, uoLit)) / max(uoLit, 1e-4);
             #endif
                 c.rgb *= _UOAmbient.rgb + _UOLightColor.rgb * falloff;
                 c *= i.color;

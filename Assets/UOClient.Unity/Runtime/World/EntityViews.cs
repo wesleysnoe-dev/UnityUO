@@ -77,6 +77,7 @@ namespace UOClient.Unity
             _attached.MobileDying -= OnMobileDying;
             _attached.MobileAnimated -= OnMobileAnimated;
             _attached = null;
+            Lights.Clear();
         }
 
         /// <summary>Characters playing their fall right now.</summary>
@@ -136,6 +137,29 @@ namespace UOClient.Unity
                 kv.Value.Render(_ctx.World);
             }
             RenderMultis(hideUpperMultiParts);
+            UpdateLights();
+        }
+
+        /// <summary>Item, static and multi-part lights near the player (bounded, see <see cref="ItemLights"/>).</summary>
+        public ItemLights Lights { get; } = new ItemLights();
+
+        private void UpdateLights()
+        {
+            if (_ctx.World == null || _ctx.Player == null || _ctx.Data == null)
+            {
+                Lights.Clear();
+                return;
+            }
+            Lights.Begin();
+            foreach (ItemView v in _items.Values)
+                if (v.GivesLight)
+                    Lights.Add(v.TileX, v.TileY, v.TileZ, v.Graphic, v.LightId);
+            foreach (List<ItemView> parts in _multis.Values)
+                foreach (ItemView v in parts)
+                    if (v.GivesLight)
+                        Lights.Add(v.TileX, v.TileY, v.TileZ, v.Graphic, v.LightId);
+            _ctx.World.AddStaticLights(Lights);
+            Lights.Apply(_ctx.World, _ctx.Data.LightShapes, _ctx.ArtScale, _ctx.Player.X, _ctx.Player.Y, Lighting.LocalLightScale);
         }
 
         // RankTies' buffers, reused every frame.
@@ -409,7 +433,7 @@ namespace UOClient.Unity
                     Graphic = part.Graphic, X = multi.X + part.X, Y = multi.Y + part.Y,
                     Z = (sbyte)Mathf.Clamp(multi.Z + part.Z, -128, 127), Hue = multi.Hue
                 };
-                views.Add(new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, piece));
+                views.Add(new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, piece, multiPart: true));
                 _ctx.Walk?.AddMultiPart(multi.Serial, piece.X, piece.Y, piece.Z, piece.Graphic);
             }
             _multis[multi.Serial] = views;

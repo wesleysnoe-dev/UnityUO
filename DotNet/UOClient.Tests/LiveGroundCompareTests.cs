@@ -2045,23 +2045,27 @@ public sealed class LiveGroundSpriteShadowSourceTests
 
     private static string Shader() => Source("Assets", "UOClient.Unity", "Runtime", "Resources", "WorldSprite.shader");
 
-    /// <summary>The shader as the compiler sees it without the keyword: every #ifdef LG_SPRITE_SHADOW block and the pragma removed.</summary>
+    /// <summary>
+    /// The shader as the compiler sees it without its keywords: every #ifdef LG_SPRITE_SHADOW and #ifdef UO_ITEM_LIGHTS
+    /// (item lights, remainingFixes batch G: on only while a light is) block and their pragmas removed.
+    /// </summary>
     public static string DefaultVariant(string shader)
     {
         var kept = new List<string>();
         int depth = 0;
+        bool lg = false;
         foreach (string line in shader.Split('\n'))
         {
             string t = line.Trim();
-            if (depth == 0 && t == "#ifdef LG_SPRITE_SHADOW") { depth = 1; continue; }
+            if (depth == 0 && (t == "#ifdef LG_SPRITE_SHADOW" || t == "#ifdef UO_ITEM_LIGHTS")) { depth = 1; lg = t.EndsWith("LG_SPRITE_SHADOW"); continue; }
             if (depth > 0)
             {
                 if (t.StartsWith("#if")) depth++;
                 else if (t == "#endif") depth--;
-                Assert.False(depth > 0 && t.StartsWith("#else"), "no #else in a LG_SPRITE_SHADOW block: the default path must not change");
+                Assert.False(lg && depth > 0 && t.StartsWith("#else"), "no #else in a LG_SPRITE_SHADOW block: the default path must not change");
                 continue;
             }
-            if (t == "#pragma multi_compile __ LG_SPRITE_SHADOW")
+            if (t == "#pragma multi_compile __ LG_SPRITE_SHADOW" || t == "#pragma multi_compile __ UO_ITEM_LIGHTS")
                 continue;
             kept.Add(line);
         }
@@ -2090,7 +2094,7 @@ public sealed class LiveGroundSpriteShadowSourceTests
             Assert.Single(lines, l => l.TrimEnd('\r') == s);
         Assert.Equal(head, string.Join("\n", lines.Where(l => !spectral.Contains(l.TrimEnd('\r')))));
         Assert.DoesNotContain("_LG", DefaultVariant(now));
-        Assert.Single(System.Text.RegularExpressions.Regex.Matches(now, "multi_compile"));
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(now, "multi_compile").Count); // LG_SPRITE_SHADOW, UO_ITEM_LIGHTS
     }
 
     [Fact]

@@ -27,6 +27,7 @@ Shader "LiveGroundCompare/TerrainLit"
             #pragma vertex vert
             #pragma fragment frag
             #pragma target 3.0
+            #pragma multi_compile __ UO_ITEM_LIGHTS
             #include "UnityCG.cginc"
             #include "../LiveGroundLight.cginc"
 

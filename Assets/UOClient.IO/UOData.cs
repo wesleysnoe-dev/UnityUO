@@ -40,6 +40,7 @@ namespace UOClient.IO
             _animations = new Lazy<AnimationFile>(() => new AnimationFile(PathOf("anim.mul"), PathOf("anim.idx")));
             _library = new Lazy<AnimationLibrary>(() => new AnimationLibrary(directory));
             _animData = new Lazy<AnimData>(() => new AnimData(PathOf("animdata.mul")));
+            _lightShapes = new Lazy<LightShapes>(() => new LightShapes(PathOf("light.mul"), PathOf("lightidx.mul")));
             _radarColors = new Lazy<ushort[]>(() =>
             {
                 byte[] raw = File.ReadAllBytes(PathOf("radarcol.mul"));
@@ -62,6 +63,11 @@ namespace UOClient.IO
         public AnimData AnimData => _animData.Value;
 
         private readonly Lazy<AnimData> _animData;
+
+        /// <summary>The light shapes (light.mul) item and static lights are drawn with.</summary>
+        public LightShapes LightShapes => _lightShapes.Value;
+
+        private readonly Lazy<LightShapes> _lightShapes;
 
         /// <summary>House and boat layouts (multi.mul).</summary>
         public MultiFile Multis => _multis ??= new MultiFile(Directory);

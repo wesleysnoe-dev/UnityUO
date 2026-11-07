@@ -36,8 +36,10 @@ namespace UOClient.Unity
             }
             else if (session != null)
             {
-                // Server light: 0 = full day, ~26 and above = deep night.
-                float night = Mathf.Clamp01((session.World.GlobalLight - 2) / 22f);
+                // Server light: 0 = full day, ~26 and above = deep night. The personal light (0x4E, Night Sight) lifts it as
+                // TazUO's IsometricLevel does (LightSources.EffectiveLevel); 0 changes nothing.
+                int level = LightSources.EffectiveLevel(session.World.GlobalLight, session.World.PersonalLight);
+                float night = Mathf.Clamp01((level - 2) / 22f);
                 target = night < 0.5f
                     ? TimeOfDay.Lerp(Times[0], Times[2], night * 2f)
                     : TimeOfDay.Lerp(Times[2], Times[3], night * 2f - 1f);
@@ -55,6 +57,12 @@ namespace UOClient.Unity
 
             _timeCurrent = TimeOfDay.Lerp(_timeCurrent, target, 1f - Mathf.Exp(-Time.deltaTime * 2f));
             ApplyLighting(_timeCurrent);
+            // Item and static lights (ItemLights) as strong as the player's light is for this darkness (none by day), and
+            // only while the personal light is below the overall level, as TazUO's UseLights.
+            bool lightsOn = _timeOverride >= 0 || session == null
+                            || LightSources.LightsOn(session.World.GlobalLight, session.World.PersonalLight);
+            Color l = _timeCurrent.Light;
+            LocalLightScale = lightsOn ? Mathf.Clamp01(Mathf.Max(l.r, Mathf.Max(l.g, l.b)) / NightLightPeak) : 0f;
             hud.TimeName = target.Name + (_timeOverride < 0 && session != null ? $" (server light {session.World.GlobalLight})" : "")
                            + (session != null && session.Season != Season.Summer ? $", {session.Season.ToString().ToLowerInvariant()}" : "");
             hud.Vignette = _timeCurrent.Vignette;
@@ -68,9 +76,15 @@ namespace UOClient.Unity
             Shader.SetGlobalVector("_UOLightPos", new Vector4(light.x, light.y, 170f * artScale, 0));
         }
 
+        /// <summary>How strongly item and static lights show, 0 (day, or the personal light at the overall level) to 1 (night).</summary>
+        public static float LocalLightScale { get; private set; }
+
+        private const float NightLightPeak = 0.95f; // Times' "Night" player light, the brightest
+
         /// <summary>Daylight, before there is a world to light.</summary>
         public static void ApplyDefault()
         {
+            LocalLightScale = 0f;
             ApplyLighting(Times[0]);
             Shader.SetGlobalFloat("_UODead", 0f);
         }

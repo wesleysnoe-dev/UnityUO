@@ -4,6 +4,10 @@
 #ifndef LIVEGROUND_LIGHT_INCLUDED
 #define LIVEGROUND_LIGHT_INCLUDED
 
+#ifdef UO_ITEM_LIGHTS
+#include "Assets/UOClient.Unity/Runtime/Resources/UOItemLights.cginc"
+#endif
+
 float4 _UOAmbient;          // rgb: ambient light for the time of day (season tinted)
 float4 _UOLightColor;       // rgb: the player's point light color * intensity
 float4 _UOLightPos;         // xy: its Unity world position, z: radius
@@ -29,7 +33,13 @@ float3 LGLocalLight(float3 terrainWorld)
     float d = distance(unityXY, _UOLightPos.xy) / max(_UOLightPos.z, 1.0);
     float falloff = saturate(1.0 - d);
     falloff *= falloff;
+#ifdef UO_ITEM_LIGHTS
+    // Item, static and multi-part lights: the same sum the sprites add at this Unity point (UOItemLights.cginc).
+    float3 player = _UOLightColor.rgb * falloff;
+    return player + UOItemLightAdd(unityXY, _UOAmbient.rgb + player);
+#else
     return _UOLightColor.rgb * falloff;
+#endif
 }
 
 // Time-of-day ambient plus the player's light, at the Unity position the sprites would use for this terrain point.
