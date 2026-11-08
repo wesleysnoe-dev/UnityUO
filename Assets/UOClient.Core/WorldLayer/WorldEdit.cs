@@ -115,6 +115,22 @@ namespace UOClient.WorldLayer
                 }
         }
 
+        /// <summary>A tile's painted UO ground (0: none, the blend decides).</summary>
+        public ushort GetGround(int x, int y)
+        {
+            (int rx, int ry) = WorldRegion.RegionOfTile(x, y);
+            WorldRegion r = Get(rx, ry);
+            return r == null ? (ushort)0 : r.Ground[(y - r.TileY0) * WorldRegion.Tiles + (x - r.TileX0)];
+        }
+
+        public void SetGround(int x, int y, ushort graphic)
+        {
+            (int rx, int ry) = WorldRegion.RegionOfTile(x, y);
+            WorldRegion r = Get(rx, ry);
+            if (r != null)
+                r.Ground[(y - r.TileY0) * WorldRegion.Tiles + (x - r.TileX0)] = graphic;
+        }
+
         /// <summary>Marks a tile edited (its server tile is derived from the layer from now on).</summary>
         public void MarkEdited(int x, int y)
         {
@@ -257,6 +273,12 @@ namespace UOClient.WorldLayer
 
         public byte Material;
 
+        /// <summary>
+        /// Paint with <see cref="WorldMaterials.Classic"/>: a UO land graphic laid on every tile whose centre the brush
+        /// covers (the SURFACE palette). 0 with any other material: painting natural ground clears it there.
+        /// </summary>
+        public ushort Ground;
+
         /// <summary>Flatten's target, in UO Z.</summary>
         public float TargetZ;
 
@@ -272,6 +294,7 @@ namespace UOClient.WorldLayer
             Softness = Math.Max(0f, Math.Min(1f, Softness)),
             Strength = Math.Max(0f, Math.Min(1f, Strength)),
             Material = Material < WorldMaterials.Count ? Material : WorldMaterials.Classic,
+            Ground = Material < WorldMaterials.Count && Material == WorldMaterials.Classic ? Ground : (ushort)0,
             TargetZ = Math.Max(-127f, Math.Min(127f, TargetZ))
         };
     }
@@ -282,6 +305,9 @@ namespace UOClient.WorldLayer
         public readonly List<(int Sx, int Sy, short Height, byte[] Ids, byte[] Weights)> Before = new List<(int, int, short, byte[], byte[])>();
         public readonly List<(int Sx, int Sy, short Height, byte[] Ids, byte[] Weights)> After = new List<(int, int, short, byte[], byte[])>();
         public readonly HashSet<(int, int)> Tiles = new HashSet<(int, int)>();
+
+        /// <summary>Painted UO ground per tile, before and after.</summary>
+        public readonly List<(int X, int Y, ushort Before, ushort After)> Ground = new List<(int, int, ushort, ushort)>();
     }
 
     /// <summary>The brushes (deterministic: the same stroke on the same layer gives the same result everywhere).</summary>
@@ -388,7 +414,26 @@ namespace UOClient.WorldLayer
                     if (sx % s == 0 && sy % s == 0)
                         step.Tiles.Add((tx - 1, ty - 1));
                 }
-            if (step.Before.Count == 0)
+            // Painting lays (or, with a natural material, clears) the UO ground of the tiles whose centre the brush covers
+            // at least half strength.
+            if (b.Tool == BrushTool.Paint && b.Strength > 0f)
+            {
+                ushort ground = b.Material == WorldMaterials.Classic ? b.Ground : (ushort)0;
+                for (int ty = (int)Math.Floor(b.Y - b.Radius); ty <= (int)Math.Ceiling(b.Y + b.Radius); ty++)
+                    for (int tx = (int)Math.Floor(b.X - b.Radius); tx <= (int)Math.Ceiling(b.X + b.Radius); tx++)
+                    {
+                        float dx = tx + 0.5f - b.X, dy = ty + 0.5f - b.Y;
+                        if (Falloff((float)Math.Sqrt(dx * dx + dy * dy), b.Radius, b.Softness) < 0.5f)
+                            continue;
+                        ushort before = store.GetGround(tx, ty);
+                        if (before == ground)
+                            continue;
+                        store.SetGround(tx, ty, ground);
+                        step.Ground.Add((tx, ty, before, ground));
+                        step.Tiles.Add((tx, ty));
+                    }
+            }
+            if (step.Before.Count == 0 && step.Ground.Count == 0)
                 return null;
             foreach ((int x, int y) in step.Tiles)
                 store.MarkEdited(x, y);
@@ -403,6 +448,8 @@ namespace UOClient.WorldLayer
                 store.SetHeight(sx, sy, height);
                 store.SetSlots(sx, sy, ids, ws);
             }
+            foreach ((int x, int y, ushort before, ushort afterGround) in step.Ground)
+                store.SetGround(x, y, after ? afterGround : before);
         }
 
         private static short ClampHeight(float v) =>
@@ -422,6 +469,9 @@ namespace UOClient.WorldLayer
             const int s = WorldRegion.SamplesPerTile;
             int z = (int)Math.Round(store.GetHeight(x * s, y * s) / (float)WorldRegion.ZScale);
             z = Math.Max(-128, Math.Min(127, z));
+            ushort painted = store.GetGround(x, y);
+            if (painted != 0)
+                return (painted, z); // UO ground laid by hand (SURFACE)
             var w = new float[WorldMaterials.Count];
             store.GetWeights(x * s + s / 2, y * s + s / 2, w);
             int dominant = WorldMaterials.Classic;

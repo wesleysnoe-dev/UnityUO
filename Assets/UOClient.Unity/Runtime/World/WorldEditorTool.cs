@@ -81,10 +81,19 @@ namespace UOClient.Unity
                 b.Current = WorldBrushSettings.Mode.Soft; b.Size = 7f; b.Softness = 0.6f; b.Strength = 0.5f;
                 layer.Stroke(px + 5.5f, py + 0.5f);
             }
-            else if (_testStep == 91)
+            else if (_testStep <= 96) // SURFACE: a patch of UO wooden floor beside the player
+            {
+                b.Current = WorldBrushSettings.Mode.Paint; b.Size = 2f; b.Softness = 0.1f; b.Strength = 1f;
+                LandTileData[] land = _ctx.Data.TileData.Land;
+                b.Ground = (ushort)Math.Max(0, Array.FindIndex(land, l => string.Equals(l.Name?.Trim(), "wooden floor", StringComparison.OrdinalIgnoreCase)));
+                layer.Stroke(px - 3.5f, py + 3.5f);
+                b.Ground = 0;
+            }
+            else if (_testStep == 97)
             {
                 layer.EndStroke();
                 b.Current = WorldBrushSettings.Mode.Raise;
+                (ui.Find(UI.WorldEditorWindow.WindowKey) as UI.WorldEditorWindow)?.ShowSurface("wooden floor");
                 _ctx.Hud?.Log(null, "World editor self-test: done.");
             }
         }
@@ -98,7 +107,7 @@ namespace UOClient.Unity
             Cursor = null;
             if (ui == null || layer == null || _ctx.World == null || _ctx.Player == null)
                 return;
-            if (SelfTest && _testStep < 91)
+            if (SelfTest && _testStep < 97)
                 RunSelfTest(ui, layer);
 
             if (takesKeys && Input.GetKeyDown(KeyCode.F5))

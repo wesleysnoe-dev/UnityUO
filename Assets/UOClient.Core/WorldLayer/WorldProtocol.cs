@@ -11,7 +11,7 @@ namespace UOClient.WorldLayer
     /// </summary>
     public static class WorldProtocol
     {
-        public const int ProtocolVersion = 1;
+        public const int ProtocolVersion = 2; // 2: strokes carry a UO ground graphic
 
         // Client -> server.
         public const ushort Hello = 0xD0;          // version: int; asks whether this account may edit
@@ -44,6 +44,8 @@ namespace UOClient.WorldLayer
             WriteInt(w, (int)Math.Round(s.Strength * Fixed));
             w.Write(s.Material);
             WriteInt(w, (int)Math.Round(s.TargetZ * Fixed));
+            w.Write((byte)(s.Ground >> 8));
+            w.Write((byte)s.Ground);
         }
 
         public static BrushStroke ReadStroke(Func<byte> readByte, Func<int> readIntBigEndian) => new BrushStroke
@@ -55,11 +57,12 @@ namespace UOClient.WorldLayer
             Softness = readIntBigEndian() / Fixed,
             Strength = readIntBigEndian() / Fixed,
             Material = readByte(),
-            TargetZ = readIntBigEndian() / Fixed
+            TargetZ = readIntBigEndian() / Fixed,
+            Ground = (ushort)((readByte() << 8) | readByte())
         }.Clamped();
 
         /// <summary>Stroke payload length in bytes.</summary>
-        public const int StrokeLength = 1 + 4 * 5 + 1 + 4;
+        public const int StrokeLength = 1 + 4 * 5 + 1 + 4 + 2;
 
         private static void WriteInt(BinaryWriter w, int v)
         {

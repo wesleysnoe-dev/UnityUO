@@ -205,3 +205,72 @@ public sealed class WorldLayerRealDataTests
         }
     }
 }
+
+/// <summary>The SURFACE palette: UO ground painted per tile.</summary>
+public class WorldLayerGroundTests
+{
+    private static int MapZ(int x, int y) => 0;
+    private static byte MapMaterial(int x, int y) => WorldMaterials.Grass;
+    private static WorldStore Store() => new WorldStore(0, (rx, ry) => rx < 0 || ry < 0 ? null : WorldInit.FromMap(0, rx, ry, MapZ, MapMaterial));
+    private static readonly int[][] Plain = Enumerable.Range(0, WorldMaterials.Count).Select(m => new[] { 100 + m }).ToArray();
+
+    [Fact]
+    public void Ground_LaysTheGraphicOnCoveredTilesAndDerivesIt()
+    {
+        WorldStore store = Store();
+        EditStep step = WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Paint, X = 20.5f, Y = 20.5f, Radius = 2, Softness = 0.2f, Strength = 1, Material = WorldMaterials.Classic, Ground = 0x0500 })!;
+        Assert.Equal(0x0500, store.GetGround(20, 20));
+        Assert.Equal(0x0500, store.GetGround(21, 21));
+        Assert.Equal(0, store.GetGround(24, 20));            // outside the brush
+        Assert.Contains(step.Ground, g => g.X == 20 && g.Y == 20 && g.After == 0x0500);
+        Assert.Equal((0x0500, 0), WorldDerive.Tile(store, 20, 20, 0x0003, WorldMaterials.Grass, Plain));
+        Assert.True(store.Find(0, 0)!.Edited[20 * WorldRegion.Tiles + 20]);
+    }
+
+    [Fact]
+    public void Ground_NaturalPaintClearsItAndUndoBringsItBack()
+    {
+        WorldStore store = Store();
+        WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Paint, X = 10.5f, Y = 10.5f, Radius = 1, Softness = 0, Strength = 1, Material = WorldMaterials.Classic, Ground = 0x0501 });
+        EditStep clear = WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Paint, X = 10.5f, Y = 10.5f, Radius = 1, Softness = 0, Strength = 1, Material = WorldMaterials.Sand })!;
+        Assert.Equal(0, store.GetGround(10, 10));
+        WorldBrush.Restore(store, clear, after: false);
+        Assert.Equal(0x0501, store.GetGround(10, 10));
+        WorldBrush.Restore(store, clear, after: true);
+        Assert.Equal(0, store.GetGround(10, 10));
+    }
+
+    [Fact]
+    public void Ground_TravelsInTheStrokeAndOnlyWithClassic()
+    {
+        var s = new BrushStroke { Tool = BrushTool.Paint, X = 1, Y = 2, Radius = 3, Strength = 1, Material = WorldMaterials.Classic, Ground = 0x1234 };
+        Assert.Equal(0x1234, WorldProtocol.StrokeFrom(WorldProtocol.StrokeBytes(s), 0).Ground);
+        s.Material = WorldMaterials.Rock;
+        Assert.Equal(0, s.Clamped().Ground);
+    }
+
+    [Fact]
+    public void Region_GroundRoundTripsAndVersion1FilesStillLoad()
+    {
+        WorldRegion a = WorldInit.FromMap(0, 0, 0, MapZ, MapMaterial);
+        a.Ground[77] = 0x0444;
+        Assert.Equal(0x0444, WorldRegion.Deserialize(a.Serialize()).Ground[77]);
+
+        // A version 1 file: the same bytes up to Edited, with the version field set to 1 and no Ground.
+        byte[] v2;
+        using (var z = new System.IO.Compression.DeflateStream(new System.IO.MemoryStream(a.Serialize()), System.IO.Compression.CompressionMode.Decompress))
+        using (var raw = new System.IO.MemoryStream())
+        {
+            z.CopyTo(raw);
+            v2 = raw.ToArray();
+        }
+        byte[] v1 = v2.Take(v2.Length - a.Ground.Length * 2).ToArray();
+        BitConverter.GetBytes(1).CopyTo(v1, 4);
+        using var packed = new System.IO.MemoryStream();
+        using (var z = new System.IO.Compression.DeflateStream(packed, System.IO.Compression.CompressionLevel.Fastest, true))
+            z.Write(v1, 0, v1.Length);
+        WorldRegion old = WorldRegion.Deserialize(packed.ToArray());
+        Assert.Equal(a.Height, old.Height);
+        Assert.All(old.Ground, g => Assert.Equal(0, g));
+    }
+}

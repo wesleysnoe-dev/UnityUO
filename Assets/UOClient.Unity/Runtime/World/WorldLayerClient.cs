@@ -408,6 +408,9 @@ namespace UOClient.Unity
 
         public byte Material = WorldMaterials.Grass;
 
+        /// <summary>SURFACE: the UO land graphic Paint lays as is (0: paint the blended Material).</summary>
+        public ushort Ground;
+
         /// <summary>Set Z's target height (UO Z); Look picks it from the ground.</summary>
         public float TargetZ;
 
@@ -426,7 +429,8 @@ namespace UOClient.Unity
             Radius = Size,
             Softness = Softness,
             Strength = Strength,
-            Material = Material,
+            Material = Ground != 0 ? WorldMaterials.Classic : Material,
+            Ground = Ground,
             TargetZ = TargetZ
         };
     }

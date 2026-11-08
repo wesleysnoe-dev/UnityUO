@@ -111,8 +111,12 @@ namespace UOClient.IO.Formats
                 if (!_landOverride.TryGetValue(key, out var cells))
                     _landOverride[key] = cells = new System.Collections.Generic.Dictionary<int, LandCell>();
                 cells[((y & 7) << 3) | (x & 7)] = cell;
+                OverrideVersion++;
             }
         }
+
+        /// <summary>Bumped by every <see cref="SetLandOverride"/>: caches of land blocks read before must be dropped.</summary>
+        public int OverrideVersion { get; private set; }
 
         /// <summary>Reads the 64 land cells of a block, indexed [cellY * 8 + cellX], with the world editor's overrides.</summary>
         public LandCell[] ReadLandBlock(int blockX, int blockY)

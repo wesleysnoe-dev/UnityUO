@@ -134,3 +134,10 @@ Each step is usable on the clone on its own.
 - Checked in the real client against the clone with `-worldeditor-selftest` (opens the panel and paints a hill, a
   sand path, a rocky top and a smoothed rim near the character): smooth hill, soft-edged sand path over it, rock on
   top, panel on screen. Not yet painted by hand with the mouse.
+
+**All UO ground (SURFACE palette), 2026-11-08.** The panel's TERRAIN tab holds the blended natural materials; SURFACE
+lists every UO ground family from tiledata (search box, family list, the family's tiles with their art) and paints the
+chosen tile as is on every tile the brush covers (crisp, as every client draws it). Regions gained a per-tile `Ground`
+(format version 2; version 1 files still load); strokes carry the graphic (protocol version 2); the server checks it
+is a real, drawn land tile; natural paint clears it; undo covers it. Fixed on the way: the chunk compositor cached
+land blocks and never saw edited tiles (MapFile.OverrideVersion now drops the cache).

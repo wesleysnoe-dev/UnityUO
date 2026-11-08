@@ -133,6 +133,7 @@ namespace UOClient.ArtPipeline
         private readonly Dictionary<int, Bitmap32> _staticCache = new Dictionary<int, Bitmap32>();
         private readonly Dictionary<int, Bitmap32> _texmapCache = new Dictionary<int, Bitmap32>();
         private readonly Dictionary<long, LandCell[]> _blockCache = new Dictionary<long, LandCell[]>();
+        private int _overrideVersion;
         private MapFile _map;
         private int _scale = 1;
         private Func<DrawKind, int, Bitmap32> _spriteOverride;
@@ -197,9 +198,11 @@ namespace UOClient.ArtPipeline
         public List<DrawEntry> BuildDrawList(int mapIndex, int x0, int y0, int width, int height)
         {
             MapFile map = _data.GetMap(mapIndex);
-            if (_map != map)
+            // A new map, or the world editor changed tiles on this one since (MapFile.OverrideVersion): read again.
+            if (_map != map || _overrideVersion != map.OverrideVersion)
             {
                 _map = map;
+                _overrideVersion = map.OverrideVersion;
                 _blockCache.Clear();
             }
 

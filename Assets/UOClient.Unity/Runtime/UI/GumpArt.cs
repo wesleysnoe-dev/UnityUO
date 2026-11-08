@@ -131,6 +131,22 @@ namespace UOClient.Unity.UI
             return img;
         }
 
+        private readonly Dictionary<int, UiImage> _lands = new Dictionary<int, UiImage>();
+
+        /// <summary>A land tile's art (the 44x44 diamond, HD when there is one), for the world editor's ground gallery.</summary>
+        public UiImage Land(int graphic)
+        {
+            if (_lands.TryGetValue(graphic, out UiImage img))
+                return img;
+            Bitmap32 bmp = _data.GetLand(graphic);
+            Bitmap32 hd = null;
+            for (int s = 2; s <= 4 && hd == null && bmp != null; s++)
+                hd = _data.GetLandHd(graphic, s);
+            img = bmp == null ? null : new UiImage { Bitmap = bmp, Texture = Texture(bmp, hd, $"land 0x{graphic:X4}") };
+            _lands[graphic] = img;
+            return img;
+        }
+
         private readonly Dictionary<int, UiImage> _bodies = new Dictionary<int, UiImage>();
 
         /// <summary>

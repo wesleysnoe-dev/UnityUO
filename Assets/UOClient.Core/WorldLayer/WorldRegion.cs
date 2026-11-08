@@ -21,7 +21,7 @@ namespace UOClient.WorldLayer
         public const int Tiles = 64, SamplesPerTile = 4, N = Tiles * SamplesPerTile + 1, Slots = 4, ZScale = 8;
         public const int SamplesPerRegion = Tiles * SamplesPerTile; // 256: region rx owns samples rx*256 .. rx*256+256
         private const int Magic = 0x4C574F55; // "UOWL"
-        private const int FormatVersion = 1;
+        private const int FormatVersion = 2; // 2: per-tile Ground (version 1 files still load, without it)
 
         public readonly int Map, Rx, Ry;
 
@@ -32,6 +32,12 @@ namespace UOClient.WorldLayer
         public readonly byte[] MatId = new byte[N * N * Slots];
         public readonly byte[] MatW = new byte[N * N * Slots];
         public readonly bool[] Edited = new bool[Tiles * Tiles];
+
+        /// <summary>
+        /// Per tile: a UO land graphic painted as is (the SURFACE palette: floors, caves, lava, any classic ground), or 0
+        /// for none (the tile's ground comes from the blended materials). Indexed [ly * Tiles + lx].
+        /// </summary>
+        public readonly ushort[] Ground = new ushort[Tiles * Tiles];
 
         public WorldRegion(int map, int rx, int ry)
         {
@@ -48,6 +54,7 @@ namespace UOClient.WorldLayer
             Array.Copy(MatId, c.MatId, MatId.Length);
             Array.Copy(MatW, c.MatW, MatW.Length);
             Array.Copy(Edited, c.Edited, Edited.Length);
+            Array.Copy(Ground, c.Ground, Ground.Length);
             return c;
         }
 
@@ -170,6 +177,8 @@ namespace UOClient.WorldLayer
                 w.Write(MatW);
                 foreach (bool e in Edited)
                     w.Write(e);
+                foreach (ushort g in Ground)
+                    w.Write(g);
             }
             return raw.ToArray();
         }
@@ -181,8 +190,8 @@ namespace UOClient.WorldLayer
             if (r.ReadInt32() != Magic)
                 throw new InvalidDataException("not a world layer region");
             int format = r.ReadInt32();
-            if (format != FormatVersion)
-                throw new InvalidDataException($"world layer region format {format}, expected {FormatVersion}");
+            if (format < 1 || format > FormatVersion)
+                throw new InvalidDataException($"world layer region format {format}, expected 1 to {FormatVersion}");
             var region = new WorldRegion(r.ReadInt32(), r.ReadInt32(), r.ReadInt32()) { Version = r.ReadInt32() };
             for (int i = 0; i < region.Height.Length; i++)
                 region.Height[i] = r.ReadInt16();
@@ -190,6 +199,9 @@ namespace UOClient.WorldLayer
             ReadExactly(r, region.MatW);
             for (int i = 0; i < region.Edited.Length; i++)
                 region.Edited[i] = r.ReadBoolean();
+            if (format >= 2)
+                for (int i = 0; i < region.Ground.Length; i++)
+                    region.Ground[i] = r.ReadUInt16();
             return region;
         }
 
