@@ -28,7 +28,7 @@ namespace UOClient.Unity
         private int _playerX = int.MinValue, _playerY;
         private int _tab;
         private float _staminaValue = 92f;
-        private GUIStyle _label, _small, _title, _bar, _name, _tabStyle, _tabActive, _overhead, _death, _percent;
+        private GUIStyle _label, _small, _title, _bar, _name, _tabStyle, _tabActive, _overhead, _death, _percent, _plate;
 
         public bool Visible { get; set; } = true;
         public string Summary { get; set; } = "";
@@ -65,9 +65,62 @@ namespace UOClient.Unity
             /// <summary>Over the head, where the name label sits (screen pixels, top-left origin): the % text goes just above it.</summary>
             public Vector2 Head;
             public Color PercentColor;
+
+            /// <summary>Whose: with a nameplate drawn for them, the % text goes over the plate.</summary>
+            public uint Serial;
         }
 
         public readonly List<HealthBar> HealthBars = new List<HealthBar>();
+
+        /// <summary>One bar on a nameplate: how full and in what colour (NamePlates.Bars).</summary>
+        public struct PlateBar
+        {
+            public NamePlates.Resource Resource;
+            public float Percent;
+            public Color Fill;
+        }
+
+        /// <summary>
+        /// A character's nameplate as HudPresenter fills it each frame (NamePlates.Shows chose it); laid out, placed, culled and
+        /// drawn by <see cref="Draw"/>, which also records where it went for <see cref="NamePlateAt"/>.
+        /// </summary>
+        public struct NamePlate
+        {
+            public uint Serial;
+            public string Name;
+
+            /// <summary>The head point (screen pixels, top-left origin): the plate's bottom centre.</summary>
+            public Vector2 Head;
+
+            /// <summary>The notoriety colour (the name's, with NamePlateUseNotorietyText).</summary>
+            public Color NameColor;
+            public Color Background;
+
+            /// <summary>Our last target: a red border (TazUO's _isLastTarget).</summary>
+            public bool LastTarget;
+            public int BarCount;
+            public PlateBar Bar0, Bar1, Bar2;
+
+            public PlateBar Bar(int i) => i == 0 ? Bar0 : i == 1 ? Bar1 : Bar2;
+        }
+
+        /// <summary>The plates to draw this frame, in overlap order (top of the screen first).</summary>
+        public readonly List<NamePlate> Plates = new List<NamePlate>();
+
+        /// <summary>The nameplate options (GameOptions' nameOverhead* / namePlate* fields) the plates are chosen and drawn with.</summary>
+        public GameOptions NamePlateOptions { get; set; } = GameOptions.Defaults();
+
+        /// <summary>Plates closed with a right-click (TazUO's CloseWithRightClick), until NamePlates.PruneClosed lets them back.</summary>
+        public readonly HashSet<uint> ClosedNamePlates = new HashSet<uint>();
+
+        // Where the last draw put each plate: screen pixels for clicks, UI units for the rest of the draw.
+        private readonly List<(uint Serial, NamePlates.Box Box)> _plateHits = new List<(uint, NamePlates.Box)>();
+        private readonly List<NamePlates.Box> _plateBoxes = new List<NamePlates.Box>();
+        private readonly Dictionary<uint, float> _plateTop = new Dictionary<uint, float>();
+        private Func<string, float> _plateMeasure;
+
+        /// <summary>The character whose plate is under a screen point (top-left origin) as last drawn, or 0.</summary>
+        public uint NamePlateAt(Vector2 screen) => NamePlates.HitTest(_plateHits, screen.x, screen.y);
 
         /// <summary>TazUO's % text hues (0x21, 0x30, 0x58, 0x44) roughly, for when hues.mul isn't at hand.</summary>
         public static Color PercentFallbackColor(int hue) =>
@@ -258,13 +311,17 @@ namespace UOClient.Unity
                 DrawOutlined(new Rect(headScreen.x / s - 100, headScreen.y / s - 26, 200, 22), characterName, _name, new Color(0.55f, 0.75f, 1f));
             }
 
+            DrawNamePlates(s, w, h);
+
             float barWidth = GameOptions.HealthLineWidth(HealthLineSize);
             foreach (HealthBar bar in HealthBars)
             {
                 if (bar.Percent >= 0)
                 {
-                    // Over the name label (it sits 26 px above the head point), or where it would be with names off.
-                    float above = NamesVisible ? 46 : 26;
+                    // Over the name label (it sits 26 px above the head point), or where it would be with names off; over
+                    // the plate when there is one (TazUO's HealthLinesManager lifts it by the plate's height).
+                    float above = _plateTop.TryGetValue(bar.Serial, out float plateTop) ? bar.Head.y / s - plateTop + 22
+                        : NamesVisible ? 46 : 26;
                     DrawOutlined(new Rect(bar.Head.x / s - 60, bar.Head.y / s - above, 120, 20),
                                  GameOptions.HitsPercentText(bar.Percent), _percent, bar.PercentColor);
                 }
@@ -292,7 +349,9 @@ namespace UOClient.Unity
                 float used = 0;
                 if (stack != 0)
                 {
-                    _stacked.TryGetValue(stack, out used);
+                    // Over a plate rather than on it (TazUO lifts overhead text by the plate's height).
+                    if (!_stacked.TryGetValue(stack, out used) && _plateTop.TryGetValue(stack, out float plateTop))
+                        used = Mathf.Max(0, screen.y / s - plateTop + 2);
                     _stacked[stack] = used + th + 2;
                 }
                 DrawOutlined(new Rect(screen.x / s - 120, screen.y / s - th - used, 240, th), text, _overhead, color);
@@ -380,6 +439,118 @@ namespace UOClient.Unity
                     GUI.DrawTexture(new Rect(x, y, 1.5f * s, 16 * s), _white);
             }
             GUI.color = Color.white;
+        }
+
+        /// <summary>
+        /// The nameplates (TazUO's NameOverheadGump.Draw): each measured and laid out (NamePlates.Measure), its bottom on the
+        /// head point (above the plain name when that is on), skipped unless wholly on screen there, then moved down past
+        /// earlier ones with avoid-overlap; then the name
+        /// band, the bars and the name. <paramref name="w"/> / <paramref name="h"/> are the screen in UI units.
+        /// </summary>
+        private void DrawNamePlates(float s, float w, float h)
+        {
+            _plateHits.Clear();
+            _plateBoxes.Clear();
+            _plateTop.Clear();
+            if (Plates.Count == 0)
+                return;
+            GameOptions o = NamePlateOptions;
+            _plateMeasure ??= t => _plate.CalcSize(new GUIContent(t)).x;
+            foreach (NamePlate p in Plates)
+            {
+                Vector2 size = _plate.CalcSize(new GUIContent(p.Name));
+                NamePlates.Layout l = NamePlates.Measure(o, size.x, size.y, p.BarCount);
+                string text = o.namePlateUseFixedWidth ? NamePlates.Fit(p.Name, NamePlates.TextRoom(l), _plateMeasure) : p.Name;
+                NamePlates.Box box = NamePlates.Place(p.Head.x / s, NamePlates.PlateBottom(p.Head.y / s, NamesVisible), l);
+                // TazUO culls where the plate would sit, then moves it past earlier ones (it may then run off the bottom).
+                if (!NamePlates.OnScreen(box, w, h))
+                    continue;
+                if (o.namePlateAvoidOverlap)
+                    box = NamePlates.AvoidOverlap(box, _plateBoxes);
+                _plateBoxes.Add(box);
+                _plateHits.Add((p.Serial, box.Scaled(s)));
+                _plateTop[p.Serial] = box.Y;
+                DrawNamePlate(o, p, l, box, text);
+            }
+        }
+
+        private void DrawNamePlate(GameOptions o, NamePlate p, NamePlates.Layout l, NamePlates.Box box, string text)
+        {
+            NamePlates.Box name = NamePlates.NameBounds(box, l);
+            Color border = p.LastTarget ? Color.red : Color.black;
+            float borderAlpha = NamePlates.BorderAlpha(o);
+            // Combined, the bars cover the plate and bring their own edges (TazUO leaves them out of the name's border).
+            if (l.Split || l.BarCount == 0)
+                DrawFrame(name, border, borderAlpha);
+            Fill(Inner(name), p.Background, NamePlates.BackgroundAlpha(o, l));
+
+            float resourceAlpha = NamePlates.ResourceAlpha(o, l);
+            Color missing = ToColor(NamePlates.MissingHealth);
+            for (int i = 0; i < l.BarCount; i++)
+            {
+                PlateBar bar = p.Bar(i);
+                NamePlates.Box b = NamePlates.BarBounds(box, l, i);
+                DrawFrame(b, border, borderAlpha);
+                NamePlates.Box inner = Inner(b);
+                if (inner.W <= 0 || inner.H <= 0)
+                    continue;
+                int filled = NamePlates.FillWidth((int)inner.W, bar.Percent);
+                // Filled and missing parts never overlap, so a half bar is no more opaque than asked.
+                if (o.namePlateShowMissingHealth && filled < inner.W)
+                    Fill(new NamePlates.Box(inner.X + filled, inner.Y, inner.W - filled, inner.H), missing, resourceAlpha);
+                if (filled > 0)
+                    Fill(new NamePlates.Box(inner.X, inner.Y, filled, inner.H), bar.Fill, resourceAlpha);
+            }
+
+            Color textColor;
+            if (o.namePlateUseNotorietyText)
+                textColor = p.NameColor;
+            else
+            {
+                bool health = l.BarCount > 0 && p.Bar0.Resource == NamePlates.Resource.Hits;
+                NamePlates.Rgb surface = NamePlates.TextSurface(o, l, ToRgb(p.Background), health, health ? p.Bar0.Percent : 0,
+                                                                health ? ToRgb(p.Bar0.Fill) : default);
+                textColor = NamePlates.BlackText(surface) ? Color.black : Color.white;
+            }
+            var r = new Rect(name.X, name.Y, name.W, name.H);
+            if (textColor == Color.black)
+            {
+                GUI.color = Color.black;
+                GUI.Label(r, text, _plate);
+                GUI.color = Color.white;
+            }
+            else
+            {
+                DrawOutlined(r, text, _plate, textColor);
+            }
+        }
+
+        private static NamePlates.Box Inner(NamePlates.Box b) => new NamePlates.Box(b.X + 1, b.Y + 1, Mathf.Max(0, b.W - 2), Mathf.Max(0, b.H - 2));
+
+        private void Fill(NamePlates.Box b, Color c, float alpha)
+        {
+            if (b.W <= 0 || b.H <= 0 || alpha <= 0)
+                return;
+            GUI.color = new Color(c.r, c.g, c.b, alpha);
+            GUI.DrawTexture(new Rect(b.X, b.Y, b.W, b.H), _white);
+            GUI.color = Color.white;
+        }
+
+        /// <summary>A 1-pixel edge just inside the box.</summary>
+        private void DrawFrame(NamePlates.Box b, Color c, float alpha)
+        {
+            Fill(new NamePlates.Box(b.X, b.Y, b.W, 1), c, alpha);
+            Fill(new NamePlates.Box(b.X, b.Bottom - 1, b.W, 1), c, alpha);
+            Fill(new NamePlates.Box(b.X, b.Y + 1, 1, b.H - 2), c, alpha);
+            Fill(new NamePlates.Box(b.Right - 1, b.Y + 1, 1, b.H - 2), c, alpha);
+        }
+
+        public static Color ToColor(NamePlates.Rgb c) => new Color32(c.R, c.G, c.B, 255);
+
+        public static NamePlates.Rgb ToRgb(Color c)
+        {
+            Color32 c32 = c;
+            return new NamePlates.Rgb(c32.r, c32.g, c32.b);
         }
 
         private void DrawStatus(Rect r)
@@ -590,6 +761,7 @@ namespace UOClient.Unity
             _death = new GUIStyle(_bar) { fontSize = 28 };
             _percent = new GUIStyle(_label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             _name =new GUIStyle(_label) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            _plate = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
             _overhead = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.LowerCenter, wordWrap = true };
             _tabStyle = new GUIStyle(GUI.skin.button) { fontSize = 13 };
             _tabStyle.normal.background = Own(UnityTextures.Solid(new Color(0.16f, 0.13f, 0.1f, 0.95f)));

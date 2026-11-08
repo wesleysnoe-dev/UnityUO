@@ -370,7 +370,14 @@ namespace UOClient.Unity
         private bool _criminalActionQuery = GameOptions.Defaults().criminalActionQuery;
         private bool _beneficialCriminalActionQuery = GameOptions.Defaults().beneficialCriminalActionQuery;
 
-        public GameOptions CurrentOptions() => new GameOptions
+        public GameOptions CurrentOptions()
+        {
+            GameOptions o = CurrentOptionsButNamePlates();
+            GameOptions.CopyNamePlates(_ctx.Hud.NamePlateOptions, o);
+            return o;
+        }
+
+        private GameOptions CurrentOptionsButNamePlates() => new GameOptions
         {
             showNames = ShowNames,
             showJournal = ShowJournal,
@@ -477,6 +484,7 @@ namespace UOClient.Unity
             UI.GridContainerWindow.Opacity = o.containerOpacity;
             UI.GridContainerWindow.ScalePercent = o.gridContainersScale;
             UI.GridContainerWindow.ScaleItems = o.gridContainerScaleItems;
+            _ctx.Hud.NamePlateOptions = o.Clone(); // HudPresenter and DemoHud read its nameOverhead* / namePlate* fields
         }
 
         // The options' AutoOpenCorpses: kept across logins, each new session starts with nothing opened (Tick).

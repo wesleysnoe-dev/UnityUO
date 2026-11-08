@@ -378,7 +378,8 @@ public sealed class OptionsBatch4Tests
     {
         // The % text and "smart" are drawn now: no longer listed as left out.
         Assert.DoesNotContain(OptionsWindow.NotOffered, n => n.Text.Contains("percent", StringComparison.OrdinalIgnoreCase));
-        // Nameplates stays unavailable: health type and show-when live on General, as in TazUO's ModernOptionsGump.
-        Assert.Contains("Nameplates", OptionsWindow.UnavailablePages);
+        // Batch 6 opens Nameplates; health type/show-when remain on General as in TazUO.
+        Assert.DoesNotContain("Nameplates", OptionsWindow.UnavailablePages);
+        Assert.Contains(OptionsWindow.Pages, p => p.Title == "Nameplates");
     }
 }

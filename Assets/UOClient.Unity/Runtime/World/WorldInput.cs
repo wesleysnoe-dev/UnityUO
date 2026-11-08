@@ -26,6 +26,7 @@ namespace UOClient.Unity
         private bool _shiftPressed; // _pressedItem was pressed with Shift on a stack: a drag splits, a release is a shift-click
         private uint _pressedMobile; // a mobile under the held left button: dragging it pulls out its health bar
         private bool _tabHolding;    // HoldDownKeyTab: this Tab press asked for war, so its release asks for peace
+        private uint _rightPressedPlate; // the nameplate a right press went down on: releasing over it closes it
 
         /// <summary>The options' HoldDownKeyTab (TazUO's): war mode while Tab is held (GameOptions.TabWarMode); off, Tab toggles.</summary>
         public bool HoldDownKeyTab { get; set; } = GameOptions.Defaults().holdDownKeyTab;
@@ -108,7 +109,8 @@ namespace UOClient.Unity
                 _ => 0u,
             };
             UI.ContainerWindow.SelectedContainer = hoveredContainer;
-            _entities.Selected = ObjectHighlight.WorldSelection(overUi, overUi ? 0 : _entities.PickAt(Input.mousePosition), hoveredContainer);
+            _entities.Selected = ObjectHighlight.WorldSelection(overUi, overUi ? 0 : PickAt(Input.mousePosition), hoveredContainer);
+            CloseNamePlateOnRightClick(overUi);
             if (!UI.UiRouting.WorldTakesKeys(_chat.Typing, ui.HasKeyboardFocus))
             {
                 // A window's text box has the keys; a press on the world gives them back, as TazUO's does, and only that.
@@ -118,7 +120,7 @@ namespace UOClient.Unity
                 return;
             }
             _hotkeys()?.Update(_ctx.Session);
-            _tooltip.UpdateHover(ui, _entities.PickAt);
+            _tooltip.UpdateHover(ui, PickAt);
             if (Input.GetKeyDown(KeyCode.P))
                 _ctx.Session.OpenPaperdoll();
             if (Input.GetKeyDown(KeyCode.B) && !_ctx.Session.OpenBackpack())
@@ -190,7 +192,7 @@ namespace UOClient.Unity
             if (!Input.GetMouseButtonDown(0) || UI.UiRouting.WorldPress(OverWindowOrJournal(ui), ui.Dragging != null, fieldFocused: false) != UI.UiRouting.Press.World)
                 return;
             Vector2 mouse = Input.mousePosition;
-            uint picked = _entities.PickAt(mouse);
+            uint picked = PickAt(mouse);
             UI.UiWindow popup = ui.Find("context");
             if (popup != null)
                 ui.Close(popup);
@@ -279,6 +281,35 @@ namespace UOClient.Unity
             }, shiftHeld); // the split menu or not: UiManager.Lift (HoldShiftToSplitStack)
         }
 
+        /// <summary>
+        /// What a world click at a screen point (bottom-left origin) is on: the character of the nameplate there (TazUO's
+        /// NameOverheadGump takes the mouse before the world), else what the world picks. So a plate's character is
+        /// outlined, named, used / attacked, targeted, dragged out as a health bar and dropped on just as the character
+        /// itself, and the world behind the plate never gets the click.
+        /// </summary>
+        private uint PickAt(Vector2 screen)
+        {
+            uint plate = _ctx.Hud.NamePlateAt(new Vector2(screen.x, Screen.height - screen.y));
+            return plate != 0 ? plate : _entities.PickAt(screen);
+        }
+
+        /// <summary>
+        /// A right-click on a nameplate (down and up on the same plate, not over a window) closes it, as TazUO's
+        /// CloseWithRightClick, until its character leaves view or the plates are turned off (NamePlates.PruneClosed).
+        /// </summary>
+        private void CloseNamePlateOnRightClick(bool overUi)
+        {
+            uint plate = overUi ? 0 : _ctx.Hud.NamePlateAt(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y));
+            if (Input.GetMouseButtonDown(1))
+                _rightPressedPlate = plate;
+            if (Input.GetMouseButtonUp(1))
+            {
+                if (_rightPressedPlate != 0 && plate == _rightPressedPlate)
+                    _ctx.Hud.ClosedNamePlates.Add(plate);
+                _rightPressedPlate = 0;
+            }
+        }
+
         /// <summary>The mouse is over a window or the HUD's journal, not the world.</summary>
         private bool OverWindowOrJournal(UI.UiManager ui) =>
             ui.IsOverUi(Input.mousePosition) || _ctx.Hud.JournalRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y));
@@ -296,7 +327,7 @@ namespace UOClient.Unity
         /// </summary>
         public void DropInWorld(UI.DraggedItem item, Vector2 screen)
         {
-            uint under = _entities.PickAt(screen);
+            uint under = PickAt(screen);
             if (under != 0 && under != item.Serial)
             {
                 if (!_ctx.Session.World.Items.TryGetValue(under, out Core.WorldItem onto))

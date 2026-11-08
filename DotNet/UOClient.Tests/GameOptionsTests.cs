@@ -175,10 +175,10 @@ public sealed class GameOptionsTests
     public void Pages_FollowTazUO_AndUnavailableOnesHaveNoControls()
     {
         // TazUO's PAGE order (ModernOptionsGump.cs :6146-6164), the pages without a system here left out.
-        Assert.Equal(new[] { "General", "Sound", "Video", "Macros", "Tooltip", "Speech", "Combat & Spells", "Containers" },
+        Assert.Equal(new[] { "General", "Sound", "Video", "Macros", "Tooltip", "Speech", "Combat & Spells", "Containers", "Nameplates" },
             OptionsWindow.Pages.Select(p => p.Title));
         Assert.Equal(Enum.GetValues<OptionsWindow.Page>().Length, OptionsWindow.Pages.Length);
-        Assert.Equal(new[] { "Counters", "Info Bar", "Ignore List", "Nameplates", "Cooldowns", "Experimental", "TazUO" }, OptionsWindow.UnavailablePages);
+        Assert.Equal(new[] { "Counters", "Info Bar", "Ignore List", "Cooldowns", "Experimental", "TazUO" }, OptionsWindow.UnavailablePages);
         Assert.Empty(OptionsWindow.UnavailablePages.Intersect(OptionsWindow.Pages.Select(p => p.Title)));
         // Every left-out option says why, and sits on a page that is offered.
         Assert.All(OptionsWindow.NotOffered, n => Assert.Contains(':', n.Text));

@@ -9,7 +9,7 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed partial class OptionsWindow
     {
-        public enum Page { General, Sound, Video, Macros, Tooltip, Speech, CombatSpells, Containers }
+        public enum Page { General, Sound, Video, Macros, Tooltip, Speech, CombatSpells, Containers, Nameplates }
 
         public static readonly (Page Page, string Title)[] Pages =
         {
@@ -21,12 +21,13 @@ namespace UOClient.Unity.UI
             (Page.Speech, "Speech"),
             (Page.CombatSpells, "Combat & Spells"),
             (Page.Containers, "Containers"),
+            (Page.Nameplates, "Nameplates"),
         };
 
         /// <summary>TazUO pages this client has no system for yet: shown greyed in the side menu, never opened.</summary>
         public static readonly string[] UnavailablePages =
         {
-            "Counters", "Info Bar", "Ignore List", "Nameplates", "Cooldowns", "Experimental", "TazUO",
+            "Counters", "Info Bar", "Ignore List", "Cooldowns", "Experimental", "TazUO",
         };
 
         /// <summary>
@@ -48,6 +49,12 @@ namespace UOClient.Unity.UI
             (Page.Containers, "Grid search, sort, quick loot, auto loot, lock slots, bands: not in the grid yet."),
             (Page.Containers, "Grid borders, colours, columns and rows, list view, highlights: default look only."),
             (Page.Containers, "Corpse style, grid loot, nearby loot: corpses follow the original-view option."),
+            (Page.Nameplates, "Filter entries (new, delete, hotkeys, search), hold-to-show key: one filter."),
+            (Page.Nameplates, "Item and corpse plates: characters only."),
+            (Page.Nameplates, "Presets, saved presets, wiki link: set each option here."),
+            (Page.Nameplates, "Word of Death icon: it casts a spell from the plate; not added."),
+            (Page.Nameplates, "Corner radius, plate font and font size: square plates, the HUD font."),
+            (Page.Nameplates, "New character name flash (ShowNewMobileNameIncoming): not drawn."),
         };
 
         /// <summary>What Defaults, Cancel, Apply and Okay do, shown while the mouse is on each (in that order).</summary>

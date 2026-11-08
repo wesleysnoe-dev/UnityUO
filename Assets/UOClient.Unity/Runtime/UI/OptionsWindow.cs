@@ -61,6 +61,7 @@ namespace UOClient.Unity.UI
                     case Page.Speech: DrawSpeech(d); break;
                     case Page.CombatSpells: DrawCombat(d); break;
                     case Page.Containers: DrawContainers(d); break;
+                    case Page.Nameplates: DrawNameplates(d); break;
                 }
                 _pageHeight = DrawNotOffered(area);
                 GUI.EndScrollView();
@@ -362,6 +363,52 @@ namespace UOClient.Unity.UI
             _indent = 0;
         }
 
+        private void DrawNameplates(GameOptions d)
+        {
+            d.nameOverheadToggled = Toggle("Show nameplates over characters", d.nameOverheadToggled);
+            Line("Off by default (as TazUO). Uses the name, notoriety and hits the server sent.\nPlain \"Show names over heads\" (General) stays separate: both can be on.", 34);
+            GUI.enabled = d.nameOverheadToggled;
+            d.namePlateOpacity = IntSlider("Plate opacity", d.namePlateOpacity, 0, 100, "%");
+            d.namePlateBorderOpacity = IntSlider("Border opacity", d.namePlateBorderOpacity, 0, 100, "%");
+            d.namePlateBackgroundMode = Choice("Background", d.namePlateBackgroundMode, NamePlates.BackgroundModeNames);
+            if (d.namePlateBackgroundMode == NamePlates.BackgroundFixed)
+            {
+                _indent = 20;
+                d.namePlateBackgroundR = IntSlider("Red", d.namePlateBackgroundR, 0, 255);
+                d.namePlateBackgroundG = IntSlider("Green", d.namePlateBackgroundG, 0, 255);
+                d.namePlateBackgroundB = IntSlider("Blue", d.namePlateBackgroundB, 0, 255);
+                _indent = 0;
+            }
+            d.namePlateUseNotorietyText = Toggle("Name in notoriety colour", d.namePlateUseNotorietyText);
+            d.namePlateHealthBar = Toggle("Health bar on the plate", d.namePlateHealthBar);
+            _indent = 20;
+            GUI.enabled = d.nameOverheadToggled && d.namePlateHealthBar;
+            d.namePlateHealthBarOpacity = IntSlider("Bar opacity", d.namePlateHealthBarOpacity, 0, 100, "%");
+            d.namePlateShowMissingHealth = Toggle("Show missing health (dark empty)", d.namePlateShowMissingHealth);
+            d.namePlateHealthBarMode = Choice("Bar colour", d.namePlateHealthBarMode, NamePlates.FillNames);
+            d.namePlateSplitHealthBar = Toggle("Bars under the name (split)", d.namePlateSplitHealthBar);
+            d.namePlateUseFixedHealthBarWidth = Toggle("Fixed health bar width", d.namePlateUseFixedHealthBarWidth);
+            if (d.namePlateUseFixedHealthBarWidth)
+                d.namePlateHealthBarFixedWidth = IntSlider("Bar width", d.namePlateHealthBarFixedWidth, NamePlates.MinFixedWidth, NamePlates.MaxFixedWidth, "px");
+            GUI.enabled = d.nameOverheadToggled;
+            _indent = 0;
+            d.namePlateHideAtFullHealth = Toggle("Hide at full health", d.namePlateHideAtFullHealth);
+            _indent = 20;
+            GUI.enabled = d.nameOverheadToggled && d.namePlateHideAtFullHealth;
+            d.namePlateHideAtFullHealthInWarmode = Toggle("Only in war mode", d.namePlateHideAtFullHealthInWarmode);
+            GUI.enabled = d.nameOverheadToggled;
+            _indent = 0;
+            d.namePlateUseFixedWidth = Toggle("Fixed name width", d.namePlateUseFixedWidth);
+            _indent = 20;
+            GUI.enabled = d.nameOverheadToggled && d.namePlateUseFixedWidth;
+            d.namePlateFixedWidth = IntSlider("Name width", d.namePlateFixedWidth, NamePlates.MinFixedWidth, NamePlates.MaxFixedWidth, "px");
+            GUI.enabled = d.nameOverheadToggled;
+            _indent = 0;
+            d.namePlateHeight = IntSlider("Plate height (0 = fit text)", d.namePlateHeight, 0, NamePlates.MaxHeight, "px");
+            d.namePlateAvoidOverlap = Toggle("Avoid overlapping plates", d.namePlateAvoidOverlap);
+            Line("Right-click a plate to hide it until that character leaves view.");
+            GUI.enabled = true;
+        }
         private void DrawMacros(Rect area)
         {
             Hotkeys hk = _game.Hotkeys;

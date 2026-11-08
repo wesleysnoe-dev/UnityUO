@@ -225,7 +225,105 @@ namespace UOClient.Unity
         /// <summary>TazUO's GridContainerScaleItems: the item art in a grid cell scales with it (<see cref="GridArtSize"/>). On, as TazUO.</summary>
         public bool gridContainerScaleItems = true;
 
+        // ---- nameplates (NamePlates; TazUO's Nameplates page and TazUO -> Nameplates) ----
+
+        /// <summary>
+        /// TazUO's NameOverheadToggled (NameOverHeadManager.IsPermaToggled): plates over characters (NamePlates). Off, as
+        /// TazUO. Not the plain names over heads (<see cref="showNames"/>, TazUO's ShowMobileNameOverhead): with both on, both
+        /// are drawn, the plate above the plain name (NamePlates.PlateBottom), as TazUO.
+        /// </summary>
+        public bool nameOverheadToggled = false;
+
+        /// <summary>TazUO's active NameOverheadOption's character bits (NamePlates.Allowed). TazUO's "Mobiles only" entry.</summary>
+        public int nameOverheadFlags = NamePlates.AllMobiles;
+
+        /// <summary>TazUO's NamePlateHealthBar: plates also act as health bars (from the hits the server sent). On, as TazUO.</summary>
+        public bool namePlateHealthBar = true;
+
+        /// <summary>TazUO's NamePlateUseNotorietyText: the name in its notoriety colour; off, black or white for contrast. Off, as TazUO.</summary>
+        public bool namePlateUseNotorietyText = false;
+
+        /// <summary>TazUO's NamePlateShowMissingHealth: the empty part of a bar drawn dark. On, as TazUO.</summary>
+        public bool namePlateShowMissingHealth = true;
+
+        /// <summary>TazUO's NamePlateHealthBarOpacity (0-100). 50, as TazUO.</summary>
+        public int namePlateHealthBarOpacity = 50;
+
+        /// <summary>TazUO's NamePlateHideAtFullHealth / NamePlateHideAtFullHealthInWarmode (only while in war mode). Off, as TazUO.</summary>
+        public bool namePlateHideAtFullHealth = false, namePlateHideAtFullHealthInWarmode = false;
+
+        /// <summary>TazUO's NamePlateUseFixedWidth / NamePlateFixedWidth (60-300): the name band's width, long names cut with "...". Off, 120.</summary>
+        public bool namePlateUseFixedWidth = false;
+        public int namePlateFixedWidth = 120;
+
+        /// <summary>TazUO's NamePlateUseFixedHealthBarWidth / NamePlateHealthBarFixedWidth (60-300). Off, 120.</summary>
+        public bool namePlateUseFixedHealthBarWidth = false;
+        public int namePlateHealthBarFixedWidth = 120;
+
+        /// <summary>TazUO's NamePlateHeight (0-80; 0 = fits the text). 0.</summary>
+        public int namePlateHeight = 0;
+
+        /// <summary>TazUO's NamePlateSplitHealthBar: bars in their own rows under the name. Off.</summary>
+        public bool namePlateSplitHealthBar = false;
+
+        /// <summary>TazUO's NamePlateHealthBarMode: status colours (0) or one of ten fixed colours (NamePlates.FillNames). Status.</summary>
+        public int namePlateHealthBarMode = NamePlates.FillStatus;
+
+        /// <summary>TazUO's NamePlateBackgroundMode (NamePlates.BackgroundModeNames). Fixed colour.</summary>
+        public int namePlateBackgroundMode = NamePlates.BackgroundFixed;
+
+        /// <summary>TazUO's NamePlateBorderOpacity and NamePlateOpacity (background), 0-100. 50 and 75, as TazUO.</summary>
+        public int namePlateBorderOpacity = 50, namePlateOpacity = 75;
+
+        /// <summary>TazUO's NamePlateBackgroundR / G / B (0-255): the fixed background colour. Black.</summary>
+        public int namePlateBackgroundR = 0, namePlateBackgroundG = 0, namePlateBackgroundB = 0;
+
+        /// <summary>TazUO's NamePlateAvoidOverlap: a plate overlapping an earlier one moves down below it. Off.</summary>
+        public bool namePlateAvoidOverlap = false;
+
         public static GameOptions Defaults() => new GameOptions();
+
+        /// <summary>Copies the nameplate options (the fields above) from <paramref name="from"/> into <paramref name="to"/>.</summary>
+        public static void CopyNamePlates(GameOptions from, GameOptions to)
+        {
+            to.nameOverheadToggled = from.nameOverheadToggled;
+            to.nameOverheadFlags = from.nameOverheadFlags;
+            to.namePlateHealthBar = from.namePlateHealthBar;
+            to.namePlateUseNotorietyText = from.namePlateUseNotorietyText;
+            to.namePlateShowMissingHealth = from.namePlateShowMissingHealth;
+            to.namePlateHealthBarOpacity = from.namePlateHealthBarOpacity;
+            to.namePlateHideAtFullHealth = from.namePlateHideAtFullHealth;
+            to.namePlateHideAtFullHealthInWarmode = from.namePlateHideAtFullHealthInWarmode;
+            to.namePlateUseFixedWidth = from.namePlateUseFixedWidth;
+            to.namePlateFixedWidth = from.namePlateFixedWidth;
+            to.namePlateUseFixedHealthBarWidth = from.namePlateUseFixedHealthBarWidth;
+            to.namePlateHealthBarFixedWidth = from.namePlateHealthBarFixedWidth;
+            to.namePlateHeight = from.namePlateHeight;
+            to.namePlateSplitHealthBar = from.namePlateSplitHealthBar;
+            to.namePlateHealthBarMode = from.namePlateHealthBarMode;
+            to.namePlateBackgroundMode = from.namePlateBackgroundMode;
+            to.namePlateBorderOpacity = from.namePlateBorderOpacity;
+            to.namePlateOpacity = from.namePlateOpacity;
+            to.namePlateBackgroundR = from.namePlateBackgroundR;
+            to.namePlateBackgroundG = from.namePlateBackgroundG;
+            to.namePlateBackgroundB = from.namePlateBackgroundB;
+            to.namePlateAvoidOverlap = from.namePlateAvoidOverlap;
+        }
+
+        private bool SameNamePlates(GameOptions o) =>
+            nameOverheadToggled == o.nameOverheadToggled && nameOverheadFlags == o.nameOverheadFlags
+            && namePlateHealthBar == o.namePlateHealthBar && namePlateUseNotorietyText == o.namePlateUseNotorietyText
+            && namePlateShowMissingHealth == o.namePlateShowMissingHealth && namePlateHealthBarOpacity == o.namePlateHealthBarOpacity
+            && namePlateHideAtFullHealth == o.namePlateHideAtFullHealth
+            && namePlateHideAtFullHealthInWarmode == o.namePlateHideAtFullHealthInWarmode
+            && namePlateUseFixedWidth == o.namePlateUseFixedWidth && namePlateFixedWidth == o.namePlateFixedWidth
+            && namePlateUseFixedHealthBarWidth == o.namePlateUseFixedHealthBarWidth
+            && namePlateHealthBarFixedWidth == o.namePlateHealthBarFixedWidth && namePlateHeight == o.namePlateHeight
+            && namePlateSplitHealthBar == o.namePlateSplitHealthBar && namePlateHealthBarMode == o.namePlateHealthBarMode
+            && namePlateBackgroundMode == o.namePlateBackgroundMode && namePlateBorderOpacity == o.namePlateBorderOpacity
+            && namePlateOpacity == o.namePlateOpacity && namePlateBackgroundR == o.namePlateBackgroundR
+            && namePlateBackgroundG == o.namePlateBackgroundG && namePlateBackgroundB == o.namePlateBackgroundB
+            && namePlateAvoidOverlap == o.namePlateAvoidOverlap;
 
         public GameOptions Clone() => (GameOptions)MemberwiseClone();
 
@@ -252,8 +350,22 @@ namespace UOClient.Unity
             partyMessageHue = ClampHue(partyMessageHue);
             containerOpacity = Math.Max(MinContainerOpacity, Math.Min(MaxContainerOpacity, containerOpacity));
             gridContainersScale = Math.Max(MinGridContainersScale, Math.Min(MaxGridContainersScale, gridContainersScale));
+            nameOverheadFlags &= NamePlates.MobileFlags;
+            namePlateHealthBarOpacity = Percent100(namePlateHealthBarOpacity);
+            namePlateBorderOpacity = Percent100(namePlateBorderOpacity);
+            namePlateOpacity = Percent100(namePlateOpacity);
+            namePlateFixedWidth = Math.Max(NamePlates.MinFixedWidth, Math.Min(NamePlates.MaxFixedWidth, namePlateFixedWidth));
+            namePlateHealthBarFixedWidth = Math.Max(NamePlates.MinFixedWidth, Math.Min(NamePlates.MaxFixedWidth, namePlateHealthBarFixedWidth));
+            namePlateHeight = Math.Max(0, Math.Min(NamePlates.MaxHeight, namePlateHeight));
+            namePlateHealthBarMode = Math.Max(NamePlates.FillStatus, Math.Min(NamePlates.FillLast, namePlateHealthBarMode));
+            namePlateBackgroundMode = Math.Max(NamePlates.BackgroundFixed, Math.Min(NamePlates.BackgroundEntityNotoriety, namePlateBackgroundMode));
+            namePlateBackgroundR = Math.Max(0, Math.Min(255, namePlateBackgroundR));
+            namePlateBackgroundG = Math.Max(0, Math.Min(255, namePlateBackgroundG));
+            namePlateBackgroundB = Math.Max(0, Math.Min(255, namePlateBackgroundB));
             return this;
         }
+
+        private static int Percent100(int v) => Math.Max(0, Math.Min(100, v));
 
         public static int ClampHue(int hue) => Math.Max(MinHue, Math.Min(MaxHue, hue));
 
@@ -289,7 +401,8 @@ namespace UOClient.Unity
             && autoOpenDoors == o.autoOpenDoors && autoOpenDoorsIfHidden == o.autoOpenDoorsIfHidden
             && gridContainersDefaultToOldStyleView == o.gridContainersDefaultToOldStyleView
             && containerOpacity == o.containerOpacity && gridContainersScale == o.gridContainersScale
-            && gridContainerScaleItems == o.gridContainerScaleItems;
+            && gridContainerScaleItems == o.gridContainerScaleItems
+            && SameNamePlates(o);
 
         // ---- the file: a flat JSON object; keys this version doesn't know are kept as they were ----
 
@@ -355,6 +468,28 @@ namespace UOClient.Unity
                     case "containerOpacity": Integer(raw, ref o.containerOpacity); break;
                     case "gridContainersScale": Integer(raw, ref o.gridContainersScale); break;
                     case "gridContainerScaleItems": Bool(raw, ref o.gridContainerScaleItems); break;
+                    case "nameOverheadToggled": Bool(raw, ref o.nameOverheadToggled); break;
+                    case "nameOverheadFlags": Integer(raw, ref o.nameOverheadFlags); break;
+                    case "namePlateHealthBar": Bool(raw, ref o.namePlateHealthBar); break;
+                    case "namePlateUseNotorietyText": Bool(raw, ref o.namePlateUseNotorietyText); break;
+                    case "namePlateShowMissingHealth": Bool(raw, ref o.namePlateShowMissingHealth); break;
+                    case "namePlateHealthBarOpacity": Integer(raw, ref o.namePlateHealthBarOpacity); break;
+                    case "namePlateHideAtFullHealth": Bool(raw, ref o.namePlateHideAtFullHealth); break;
+                    case "namePlateHideAtFullHealthInWarmode": Bool(raw, ref o.namePlateHideAtFullHealthInWarmode); break;
+                    case "namePlateUseFixedWidth": Bool(raw, ref o.namePlateUseFixedWidth); break;
+                    case "namePlateFixedWidth": Integer(raw, ref o.namePlateFixedWidth); break;
+                    case "namePlateUseFixedHealthBarWidth": Bool(raw, ref o.namePlateUseFixedHealthBarWidth); break;
+                    case "namePlateHealthBarFixedWidth": Integer(raw, ref o.namePlateHealthBarFixedWidth); break;
+                    case "namePlateHeight": Integer(raw, ref o.namePlateHeight); break;
+                    case "namePlateSplitHealthBar": Bool(raw, ref o.namePlateSplitHealthBar); break;
+                    case "namePlateHealthBarMode": Integer(raw, ref o.namePlateHealthBarMode); break;
+                    case "namePlateBackgroundMode": Integer(raw, ref o.namePlateBackgroundMode); break;
+                    case "namePlateBorderOpacity": Integer(raw, ref o.namePlateBorderOpacity); break;
+                    case "namePlateOpacity": Integer(raw, ref o.namePlateOpacity); break;
+                    case "namePlateBackgroundR": Integer(raw, ref o.namePlateBackgroundR); break;
+                    case "namePlateBackgroundG": Integer(raw, ref o.namePlateBackgroundG); break;
+                    case "namePlateBackgroundB": Integer(raw, ref o.namePlateBackgroundB); break;
+                    case "namePlateAvoidOverlap": Bool(raw, ref o.namePlateAvoidOverlap); break;
                     default: unknown.Add(new KeyValuePair<string, string>(key, raw)); break;
                 }
             }
@@ -437,6 +572,28 @@ namespace UOClient.Unity
             Add("containerOpacity", I(containerOpacity));
             Add("gridContainersScale", I(gridContainersScale));
             Add("gridContainerScaleItems", B(gridContainerScaleItems));
+            Add("nameOverheadToggled", B(nameOverheadToggled));
+            Add("nameOverheadFlags", I(nameOverheadFlags));
+            Add("namePlateHealthBar", B(namePlateHealthBar));
+            Add("namePlateUseNotorietyText", B(namePlateUseNotorietyText));
+            Add("namePlateShowMissingHealth", B(namePlateShowMissingHealth));
+            Add("namePlateHealthBarOpacity", I(namePlateHealthBarOpacity));
+            Add("namePlateHideAtFullHealth", B(namePlateHideAtFullHealth));
+            Add("namePlateHideAtFullHealthInWarmode", B(namePlateHideAtFullHealthInWarmode));
+            Add("namePlateUseFixedWidth", B(namePlateUseFixedWidth));
+            Add("namePlateFixedWidth", I(namePlateFixedWidth));
+            Add("namePlateUseFixedHealthBarWidth", B(namePlateUseFixedHealthBarWidth));
+            Add("namePlateHealthBarFixedWidth", I(namePlateHealthBarFixedWidth));
+            Add("namePlateHeight", I(namePlateHeight));
+            Add("namePlateSplitHealthBar", B(namePlateSplitHealthBar));
+            Add("namePlateHealthBarMode", I(namePlateHealthBarMode));
+            Add("namePlateBackgroundMode", I(namePlateBackgroundMode));
+            Add("namePlateBorderOpacity", I(namePlateBorderOpacity));
+            Add("namePlateOpacity", I(namePlateOpacity));
+            Add("namePlateBackgroundR", I(namePlateBackgroundR));
+            Add("namePlateBackgroundG", I(namePlateBackgroundG));
+            Add("namePlateBackgroundB", I(namePlateBackgroundB));
+            Add("namePlateAvoidOverlap", B(namePlateAvoidOverlap));
             if (unknown != null)
                 foreach (var kv in unknown)
                     Add(FlatJson.Escape(kv.Key), kv.Value);
