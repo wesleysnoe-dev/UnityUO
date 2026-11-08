@@ -94,8 +94,39 @@ namespace UOClient.Unity
                 layer.EndStroke();
                 b.Current = WorldBrushSettings.Mode.Raise;
                 (ui.Find(UI.WorldEditorWindow.WindowKey) as UI.WorldEditorWindow)?.ShowSurface("wooden floor");
+            }
+            else if (_testStep <= 101) // OBJECTS: a short stone wall north of the player
+            {
+                b.Current = WorldBrushSettings.Mode.Object;
+                b.ObjectGraphic = StaticNamed("stone wall");
+                int x = px + 1 + (_testStep - 98), y = py - 3;
+                layer.PlaceObject(x, y, PlaceZ(x, y, 0));
+            }
+            else if (_testStep == 102) // and a tree west of it
+            {
+                b.ObjectGraphic = StaticNamed("tree");
+                layer.PlaceObject(px - 3, py - 3, PlaceZ(px - 3, py - 3, 0));
+            }
+            else if (_testStep == 110 && layer.SelectedItem is WorldItem tree) // the tree (just placed, so selected) one tile south
+                layer.MoveObject(tree.Serial, tree.X, tree.Y + 1, tree.Z);
+            else if (_testStep == 116) // and back (undo the move)
+                layer.Undo(false);
+            else if (_testStep == TestEnd)
+            {
+                b.Current = WorldBrushSettings.Mode.Select;
+                (ui.Find(UI.WorldEditorWindow.WindowKey) as UI.WorldEditorWindow)?.ShowObjects("walls", "stone wall");
                 _ctx.Hud?.Log(null, "World editor self-test: done.");
             }
+        }
+
+        private const int TestEnd = 122;
+
+        /// <summary>The first item graphic with this tiledata name (the self-test's objects).</summary>
+        private ushort StaticNamed(string name)
+        {
+            StaticTileData[] items = _ctx.Data.TileData.Statics;
+            int g = Array.FindIndex(items, 1, items.Length - 1, s => string.Equals(s.Name?.Trim(), name, StringComparison.OrdinalIgnoreCase));
+            return (ushort)Math.Max(0, g);
         }
 
         /// <summary>Every frame. <paramref name="takesKeys"/>: the world has the keyboard (not typing in chat or a text box).</summary>
@@ -107,7 +138,7 @@ namespace UOClient.Unity
             Cursor = null;
             if (ui == null || layer == null || _ctx.World == null || _ctx.Player == null)
                 return;
-            if (SelfTest && _testStep < 97)
+            if (SelfTest && _testStep < TestEnd)
                 RunSelfTest(ui, layer);
 
             if (takesKeys && Input.GetKeyDown(KeyCode.F5))
@@ -130,12 +161,19 @@ namespace UOClient.Unity
             if (takesKeys && ctrl && Input.GetKeyDown(KeyCode.Y))
                 layer.Undo(true);
 
+            WorldBrushSettings brush = layer.Brush;
+            if (brush.ObjectMode && takesKeys)
+                ObjectKeys(layer, brush);
+
             bool overWorld = !ui.IsOverUi(Input.mousePosition) && ui.Dragging == null;
             if (!overWorld)
             {
                 if (!Input.GetMouseButton(0))
+                {
                     StopPainting();
-                if (!_painting)
+                    _dragging = 0;
+                }
+                if (!_painting && _dragging == 0)
                     return;
             }
             Cursor = MouseTile();
@@ -143,7 +181,12 @@ namespace UOClient.Unity
             if (Cursor is not Vector2 at)
                 return;
 
-            WorldBrushSettings brush = layer.Brush;
+            if (brush.ObjectMode)
+            {
+                StopPainting();
+                UpdateObjects(layer, brush, at, overWorld);
+                return;
+            }
             if (brush.Current == WorldBrushSettings.Mode.Look)
             {
                 if (Input.GetMouseButtonDown(0) && layer.HeightAt(at.x, at.y) is float picked)
@@ -171,6 +214,61 @@ namespace UOClient.Unity
             }
             else
                 StopPainting();
+        }
+
+        // ---- OBJECTS: place, select, drag to move, PageUp / PageDown height, Delete ----
+
+        private uint _dragging;
+        private Vector2Int _dragFrom;
+
+        private static int Tile(float v) => Mathf.FloorToInt(v);
+
+        /// <summary>The height an object goes in at a tile: the ground's there, plus the panel's lift.</summary>
+        private int PlaceZ(int x, int y, int lift) => Mathf.RoundToInt(GroundZ(x, y)) + lift;
+
+        private void ObjectKeys(WorldLayerClient layer, WorldBrushSettings brush)
+        {
+            int step = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 5 : 1;
+            int dz = Input.GetKeyDown(KeyCode.PageUp) ? step : Input.GetKeyDown(KeyCode.PageDown) ? -step : 0;
+            WorldItem sel = layer.SelectedItem;
+            if (dz != 0)
+            {
+                if (brush.Current == WorldBrushSettings.Mode.Select && sel != null)
+                    layer.MoveObject(sel.Serial, sel.X, sel.Y, sel.Z + dz);
+                else
+                    brush.ObjectLift = Mathf.Clamp(brush.ObjectLift + dz, -60, 120);
+            }
+            if (sel != null && (Input.GetKeyDown(KeyCode.Delete) || Input.GetKeyDown(KeyCode.Backspace)))
+                layer.DeleteObject(sel.Serial);
+        }
+
+        private void UpdateObjects(WorldLayerClient layer, WorldBrushSettings brush, Vector2 at, bool overWorld)
+        {
+            int tx = Tile(at.x), ty = Tile(at.y);
+            if (brush.Current == WorldBrushSettings.Mode.Object)
+            {
+                if (Input.GetMouseButtonDown(0) && overWorld && brush.ObjectGraphic != 0)
+                    layer.PlaceObject(tx, ty, PlaceZ(tx, ty, brush.ObjectLift));
+                return;
+            }
+            if (Input.GetMouseButtonDown(0) && overWorld)
+            {
+                uint serial = _entities.PickAt(Input.mousePosition);
+                bool isItem = serial != 0 && _ctx.Session.World.Items.TryGetValue(serial, out WorldItem item) && !item.IsMulti;
+                brush.Selected = isItem ? serial : 0;
+                _dragging = brush.Selected;
+                _dragFrom = new Vector2Int(tx, ty);
+            }
+            if (_dragging != 0 && !Input.GetMouseButton(0))
+            {
+                // Dropped on another tile: it keeps its height above the ground.
+                if ((tx != _dragFrom.x || ty != _dragFrom.y) && _ctx.Session.World.Items.TryGetValue(_dragging, out WorldItem moved))
+                {
+                    int above = moved.Z - Mathf.RoundToInt(GroundZ(moved.X, moved.Y));
+                    layer.MoveObject(_dragging, tx, ty, PlaceZ(tx, ty, above));
+                }
+                _dragging = 0;
+            }
         }
 
         private void StopPainting()
@@ -220,16 +318,85 @@ namespace UOClient.Unity
         /// <summary>The brush circle on the ground under the mouse (OnGUI, before the windows).</summary>
         public void DrawOverlay()
         {
-            if (Cursor is not Vector2 at || Layer == null || _ctx.Camera == null || Event.current.type != EventType.Repaint)
+            if (Layer == null || _ctx.Camera == null || Event.current.type != EventType.Repaint || !Open)
                 return;
             _dot ??= Texture2D.whiteTexture;
             WorldBrushSettings brush = Layer.Brush;
+            if (brush.ObjectMode)
+            {
+                DrawObjectOverlay(brush);
+                return;
+            }
+            if (Cursor is not Vector2 at)
+                return;
             float r = brush.Current == WorldBrushSettings.Mode.Look ? 0.3f : brush.Size;
             float inner = r * (1f - brush.Softness);
             DrawRing(at, r, new Color(0.75f, 0.95f, 0.45f, 0.95f), 64);
             if (inner > 0.2f && inner < r - 0.1f)
                 DrawRing(at, inner, new Color(0.75f, 0.95f, 0.45f, 0.45f), 48);
             DrawPoint(at, new Color(1f, 1f, 1f, 0.9f), 4f);
+        }
+
+        /// <summary>OBJECTS: the selected object's tile outlined, and the object to place (or the one dragged) as a ghost.</summary>
+        private void DrawObjectOverlay(WorldBrushSettings brush)
+        {
+            if (Layer.SelectedItem is WorldItem sel)
+                DrawTileOutline(sel.X, sel.Y, sel.Z, new Color(1f, 0.85f, 0.25f, 0.95f));
+            if (Cursor is not Vector2 at)
+                return;
+            int tx = Tile(at.x), ty = Tile(at.y);
+            if (brush.Current == WorldBrushSettings.Mode.Object && brush.ObjectGraphic != 0)
+            {
+                int z = PlaceZ(tx, ty, brush.ObjectLift);
+                DrawTileOutline(tx, ty, z, new Color(0.75f, 0.95f, 0.45f, 0.9f));
+                DrawGhost(brush.ObjectGraphic, brush.ObjectHue, tx, ty, z, 0.6f);
+            }
+            else if (_dragging != 0 && _ctx.Session.World.Items.TryGetValue(_dragging, out WorldItem dragged))
+            {
+                int z = PlaceZ(tx, ty, dragged.Z - Mathf.RoundToInt(GroundZ(dragged.X, dragged.Y)));
+                DrawTileOutline(tx, ty, z, new Color(0.75f, 0.95f, 0.45f, 0.9f));
+                DrawGhost(dragged.Graphic, dragged.Hue, tx, ty, z, 0.5f);
+            }
+            else
+                DrawTileOutline(tx, ty, Mathf.RoundToInt(GroundZ(tx, ty)), new Color(1f, 1f, 1f, 0.5f));
+        }
+
+        /// <summary>A screen point (GUI, top-left origin) of a world point at height z.</summary>
+        private Vector2 ScreenAt(float x, float y, float z)
+        {
+            float s = _ctx.ArtScale;
+            Vector3 world = _ctx.World.ToUnity(new Vector2((x - y) * 22f, (x + y) * 22f - z * 4f) * s);
+            Vector3 p = _ctx.Camera.WorldToScreenPoint(world);
+            return new Vector2(p.x, UnityEngine.Screen.height - p.y);
+        }
+
+        private void DrawTileOutline(int x, int y, int z, Color color)
+        {
+            Vector2 a = ScreenAt(x, y, z), b = ScreenAt(x + 1, y, z), c = ScreenAt(x + 1, y + 1, z), d = ScreenAt(x, y + 1, z);
+            Color saved = GUI.color;
+            GUI.color = color;
+            for (int i = 0; i <= 12; i++)
+            {
+                float t = i / 12f;
+                foreach (Vector2 p in new[] { Vector2.Lerp(a, b, t), Vector2.Lerp(b, c, t), Vector2.Lerp(c, d, t), Vector2.Lerp(d, a, t) })
+                    GUI.DrawTexture(new Rect(p.x - 1.5f, p.y - 1.5f, 3f, 3f), _dot);
+            }
+            GUI.color = saved;
+        }
+
+        /// <summary>An item's art standing on a tile as the world draws statics (bottom centre on the tile's lower corner).</summary>
+        private void DrawGhost(int graphic, int hue, int x, int y, int z, float alpha)
+        {
+            UI.UiImage img = _ui()?.Art?.Item(graphic, hue);
+            if (img?.Texture == null || img.Bitmap == null)
+                return;
+            Vector2 foot = ScreenAt(x + 1, y + 1, z);
+            float px = (ScreenAt(x + 2, y + 2, z).y - foot.y) / 44f; // screen pixels per art pixel
+            float w = img.Bitmap.Width * px, h = img.Bitmap.Height * px;
+            Color saved = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            GUI.DrawTexture(new Rect(foot.x - w * 0.5f, foot.y - h, w, h), img.Texture);
+            GUI.color = saved;
         }
 
         private void DrawRing(Vector2 centre, float radius, Color color, int points)

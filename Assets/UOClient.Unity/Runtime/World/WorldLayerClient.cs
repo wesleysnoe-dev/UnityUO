@@ -56,6 +56,7 @@ namespace UOClient.Unity
             _session.WorldRegionReceived += OnRegion;
             _session.WorldRegionChanged += OnChanged;
             _session.WorldEditResult += OnResult;
+            _session.WorldObjectPlaced += OnPlaced;
             Current = this;
         }
 
@@ -187,6 +188,34 @@ namespace UOClient.Unity
             _session.UndoWorld(redo);
             AskAgainSoon();
         }
+
+        /// <summary>OBJECTS: places the chosen object on a tile (a real static item on the server; it selects it back).</summary>
+        public void PlaceObject(int x, int y, int z)
+        {
+            if (CanEdit && Brush.ObjectGraphic != 0)
+                _session.PlaceWorldObject(_session.World.Map, Brush.ObjectGraphic, x, y, z, Brush.ObjectHue);
+        }
+
+        public void MoveObject(uint serial, int x, int y, int z)
+        {
+            if (CanEdit && serial != 0)
+                _session.MoveWorldObject(serial, x, y, z);
+        }
+
+        public void DeleteObject(uint serial)
+        {
+            if (!CanEdit || serial == 0)
+                return;
+            _session.DeleteWorldObject(serial);
+            if (Brush.Selected == serial)
+                Brush.Selected = 0;
+        }
+
+        /// <summary>The selected object as the world has it now (null once it is gone).</summary>
+        public WorldItem SelectedItem =>
+            Brush.Selected != 0 && _session.World.Items.TryGetValue(Brush.Selected, out WorldItem item) ? item : null;
+
+        private void OnPlaced(uint serial) => Brush.Selected = serial;
 
         private void AskAgainSoon()
         {
@@ -375,6 +404,7 @@ namespace UOClient.Unity
             _session.WorldRegionReceived -= OnRegion;
             _session.WorldRegionChanged -= OnChanged;
             _session.WorldEditResult -= OnResult;
+            _session.WorldObjectPlaced -= OnPlaced;
             if (Current == this)
                 Current = null;
         }
@@ -390,7 +420,22 @@ namespace UOClient.Unity
     /// <summary>What the editor panel sets: the mode and the brush (WORLD_EDITOR.md, the owner's mockup).</summary>
     public sealed class WorldBrushSettings
     {
-        public enum Mode { Raise, Lower, SetZ, Soft, Paint, Look }
+        // Object (place the chosen object) and Select (pick, drag, nudge, delete) come from the OBJECTS tab.
+        public enum Mode { Raise, Lower, SetZ, Soft, Paint, Look, Object, Select }
+
+        /// <summary>Whether the mode places or edits objects (no brush).</summary>
+        public bool ObjectMode => Current == Mode.Object || Current == Mode.Select;
+
+        /// <summary>OBJECTS: the item graphic to place (0: none chosen).</summary>
+        public ushort ObjectGraphic;
+
+        public ushort ObjectHue;
+
+        /// <summary>OBJECTS: height above the ground under the mouse (PageUp / PageDown).</summary>
+        public int ObjectLift;
+
+        /// <summary>The placed object being edited (0: none); the last placed one is selected.</summary>
+        public uint Selected;
 
         public Mode Current = Mode.Raise;
 

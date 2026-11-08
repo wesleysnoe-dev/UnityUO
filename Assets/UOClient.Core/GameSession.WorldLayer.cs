@@ -70,6 +70,30 @@ namespace UOClient.Core
                 _conn.Send(new PacketWriter(0xBF).UInt16(WorldProtocol.Undo).Bool(redo).ToArray());
         }
 
+        /// <summary>The server placed an object for this editor (its serial), so it can be selected.</summary>
+        public event Action<uint> WorldObjectPlaced;
+
+        /// <summary>Places a static object (the OBJECTS tab); the server answers with <see cref="WorldObjectPlaced"/>.</summary>
+        public void PlaceWorldObject(int map, int graphic, int x, int y, int z, int hue)
+        {
+            if (State == SessionState.InWorld && WorldLayerOn)
+                _conn.Send(new PacketWriter(0xBF).UInt16(WorldProtocol.PlaceObject).Byte(map).UInt16(graphic).UInt16(x).UInt16(y)
+                    .Byte((sbyte)Math.Max(-128, Math.Min(127, z))).UInt16(hue).ToArray());
+        }
+
+        /// <summary>Moves a placed static object to (x, y, z).</summary>
+        public void MoveWorldObject(uint serial, int x, int y, int z) => ObjectOp(serial, WorldProtocol.ObjectMove, x, y, z);
+
+        /// <summary>Deletes a placed static object.</summary>
+        public void DeleteWorldObject(uint serial) => ObjectOp(serial, WorldProtocol.ObjectDelete, 0, 0, 0);
+
+        private void ObjectOp(uint serial, byte op, int x, int y, int z)
+        {
+            if (State == SessionState.InWorld && WorldLayerOn)
+                _conn.Send(new PacketWriter(0xBF).UInt16(WorldProtocol.ObjectOp).UInt32(serial).Byte(op).UInt16(x).UInt16(y)
+                    .Byte((sbyte)Math.Max(-128, Math.Min(127, z))).ToArray());
+        }
+
         /// <summary>0xBF world layer sub-commands; true if consumed. Ignored until the hello went out.</summary>
         private bool WorldLayerExtended(int sub, PacketReader r)
         {
@@ -126,6 +150,9 @@ namespace UOClient.Core
                     WorldRegionChanged?.Invoke(map, rx, ry, version);
                     return true;
                 }
+                case WorldProtocol.ObjectPlaced:
+                    WorldObjectPlaced?.Invoke(r.ReadUInt32());
+                    return true;
             }
             return false;
         }

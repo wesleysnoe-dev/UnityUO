@@ -141,3 +141,19 @@ chosen tile as is on every tile the brush covers (crisp, as every client draws i
 (format version 2; version 1 files still load); strokes carry the graphic (protocol version 2); the server checks it
 is a real, drawn land tile; natural paint clears it; undo covers it. Fixed on the way: the chunk compositor cached
 land blocks and never saw edited tiles (MapFile.OverrideVersion now drops the cache).
+
+**Step 4 (objects), first part, 2026-11-08.** The panel's OBJECTS tab sorts every item graphic by tiledata flags and
+name into walls, floors, roofs, doors, windows, stairs, fences, trees, rocks, plants, furniture, lights, decor (and
+all), with search and art thumbnails. PLACE shows the chosen object as a ghost under the mouse and a click places it
+on that tile at the ground's height plus a lift (PageUp / PageDown, Shift for 5). SELECT picks a placed object;
+dragging it moves it (it keeps its height above the ground), the N/S/W/E/UP/DN buttons nudge it, Delete removes it.
+- Server (`WorldLayerSystem.cs`, 0xBF 0xD6 place / 0xD7 move-delete): objects are real `Static` items in the world
+  save, so every client sees them (TazUO too). Only Static items can be moved or deleted, never anyone's belongings.
+  Object actions join the same undo history as terrain strokes, so Ctrl+Z covers both. Each action is written to the
+  server console (`[worldeditor] name: placed / moved / deleted ...`) as a record for the patch to live.
+- Checked against the clone with `-worldeditor-selftest`: four stone walls and a tree placed, the tree moved and the
+  move undone; the server's log matches step for step and the tree drew where it was placed. The walls fell on the
+  self-test's raised hill and were not visible in the capture: statics on painted high ground with the terrain
+  backend still need a look.
+- Placed objects are saved by the world save; stopping the clone without a save loses the ones since the last save.
+- Still to do: premade buildings (multis), lines and fills of walls or floors, hue choice.

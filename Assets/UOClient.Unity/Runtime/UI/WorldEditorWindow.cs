@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UOClient.Core;
 using UOClient.IO.Formats;
 using UOClient.WorldLayer;
 
@@ -24,6 +25,11 @@ namespace UOClient.Unity.UI
         private static Texture2D[] _swatches;
 
         private bool _surface;               // SURFACE tab (else TERRAIN)
+        private bool _objects;               // OBJECTS tab (over the other two)
+        private string _objSearch = "";
+        private string _category = "walls";
+        private Vector2 _categoryScroll, _objectScroll;
+        private static Dictionary<string, int[]> _catalog;
         private string _search = "";
         private string _family;              // the chosen UO ground family
         private Vector2 _familyScroll, _tileScroll;
@@ -33,6 +39,15 @@ namespace UOClient.Unity.UI
         {
             _layer = layer;
             _surface = layer.Brush.Ground != 0;
+            _objects = layer.Brush.ObjectMode;
+        }
+
+        /// <summary>Opens the OBJECTS tab on a category (the self-test shows the gallery this way).</summary>
+        public void ShowObjects(string category, string search = "")
+        {
+            _objects = true;
+            _category = category;
+            _objSearch = search ?? "";
         }
 
         public override string Key => WindowKey;
@@ -143,14 +158,31 @@ namespace UOClient.Unity.UI
                 y += 28f;
 
             // Ground palettes.
-            float hb = (Rect.width - 24f - 6f) / 2f;
-            if (GUI.Button(new Rect(12, y, hb, 24), "TERRAIN", !_surface ? _active : _button))
-                _surface = false;
-            if (GUI.Button(new Rect(18 + hb, y, hb, 24), "SURFACE", _surface ? _active : _button))
+            float hb = (Rect.width - 24f - 6f) / 2f, tb = (Rect.width - 24f - 12f) / 3f;
+            if (GUI.Button(new Rect(12, y, tb, 24), "TERRAIN", !_objects && !_surface ? _active : _button))
+            {
+                _objects = _surface = false;
+                if (b.ObjectMode)
+                    b.Current = WorldBrushSettings.Mode.Paint;
+            }
+            if (GUI.Button(new Rect(18 + tb, y, tb, 24), "SURFACE", !_objects && _surface ? _active : _button))
+            {
+                _objects = false;
                 _surface = true;
+                if (b.ObjectMode)
+                    b.Current = WorldBrushSettings.Mode.Paint;
+            }
+            if (GUI.Button(new Rect(24 + 2 * tb, y, tb, 24), "OBJECTS", _objects ? _active : _button))
+            {
+                _objects = true;
+                if (!b.ObjectMode)
+                    b.Current = b.ObjectGraphic != 0 ? WorldBrushSettings.Mode.Object : WorldBrushSettings.Mode.Select;
+            }
             y += 32f;
             float paletteHeight = 300f;
-            if (_surface)
+            if (_objects)
+                DrawObjects(b, new Rect(12, y, Rect.width - 24, paletteHeight));
+            else if (_surface)
                 DrawSurface(b, new Rect(12, y, Rect.width - 24, paletteHeight));
             else
                 DrawTerrain(b, new Rect(12, y, Rect.width - 24, paletteHeight));
@@ -162,8 +194,9 @@ namespace UOClient.Unity.UI
             if (GUI.Button(new Rect(18 + hb, y, hb, 26), "REDO (Ctrl+Y)", _button))
                 _layer.Undo(true);
             y += 32f;
-            GUI.Label(new Rect(12, y, Rect.width - 24, 40),
-                "Hold the left mouse on the ground to use the brush; the right mouse still walks. Every stroke is saved on the server by itself.",
+            GUI.Label(new Rect(12, y, Rect.width - 24, 40), b.ObjectMode
+                    ? "PLACE: click the ground. SELECT: click an object, drag it to move. PgUp/PgDn height, Delete removes. Right mouse walks."
+                    : "Hold the left mouse on the ground to use the brush; the right mouse still walks. Every stroke is saved on the server by itself.",
                 _small);
             y += 40f;
             GUI.Label(new Rect(12, y, Rect.width - 24, 34), _layer.Status, _small);
@@ -243,6 +276,159 @@ namespace UOClient.Unity.UI
             }
             GUI.EndScrollView();
         }
+
+        // ---- OBJECTS ----
+
+        private static readonly string[] Categories =
+            { "walls", "floors", "roofs", "doors", "windows", "stairs", "fences", "trees", "rocks", "plants", "furniture", "lights", "decor", "all" };
+
+        private static bool Has(string name, params string[] words)
+        {
+            foreach (string w in words)
+                if (name.Contains(w))
+                    return true;
+            return false;
+        }
+
+        /// <summary>Which category an item goes in (tiledata flags first, then its name), or null to leave it out.</summary>
+        private static string CategoryOf(in StaticTileData t)
+        {
+            string n = (t.Name ?? "").Trim().ToLowerInvariant();
+            TileFlags f = t.Flags;
+            if (n.Length == 0 || (f & (TileFlags.Wearable | TileFlags.Weapon | TileFlags.Armor | TileFlags.Internal)) != 0)
+                return null;
+            if ((f & TileFlags.Door) != 0 || Has(n, "door", "portcullis"))
+                return "doors";
+            if ((f & TileFlags.Window) != 0 || Has(n, "window"))
+                return "windows";
+            if ((f & TileFlags.Roof) != 0 || Has(n, "roof", "shingle", "thatch"))
+                return "roofs";
+            if ((f & (TileFlags.StairBack | TileFlags.StairRight)) != 0 || Has(n, "stair", "steps", "ladder"))
+                return "stairs";
+            if (Has(n, "fence", "railing", "gate", "palisade", "picket"))
+                return "fences";
+            if (Has(n, "floor", "paving", "flagstone", "tile", "carpet", "rug", "boardwalk", "plank", "cobblestone"))
+                return "floors";
+            if ((f & TileFlags.Wall) != 0 || Has(n, "wall", "pillar", "column", "arch", "post", "battlement", "crenel"))
+                return "walls";
+            if (Has(n, "tree", "trunk", "leaves", "stump", "log", "branch", "palm", "willow", "cedar", "oak", "yew"))
+                return "trees";
+            if (Has(n, "rock", "boulder", "stone", "stalag", "crystal", "cave"))
+                return "rocks";
+            if ((f & TileFlags.Foliage) != 0 || Has(n, "plant", "flower", "grass", "bush", "shrub", "fern", "weed", "mushroom",
+                    "cactus", "vine", "reed", "lily", "hedge", "ivy", "moss", "bulrush", "cattail", "poppy", "rose", "orchid"))
+                return "plants";
+            if ((f & TileFlags.LightSource) != 0 || Has(n, "lamp", "lantern", "candle", "torch", "brazier", "sconce", "chandelier", "fire"))
+                return "lights";
+            if (Has(n, "chair", "table", "bench", "bed", "chest", "shelf", "stool", "throne", "counter", "armoire", "dresser",
+                    "bookcase", "drawer", "desk", "cabinet", "crate", "barrel", "cupboard", "wardrobe", "loom", "anvil", "forge",
+                    "oven", "stove", "box", "keg", "vanity", "couch", "trough"))
+                return "furniture";
+            return "decor";
+        }
+
+        private static Dictionary<string, int[]> Catalog(GumpArt art)
+        {
+            if (_catalog != null)
+                return _catalog;
+            StaticTileData[] items = art.Data.TileData.Statics;
+            var lists = Categories.ToDictionary(c => c, _ => new List<int>());
+            for (int g = 1; g < items.Length; g++)
+            {
+                string c = CategoryOf(items[g]);
+                if (c == null)
+                    continue;
+                lists[c].Add(g);
+                lists["all"].Add(g);
+            }
+            _catalog = lists.ToDictionary(kv => kv.Key, kv => kv.Value.ToArray());
+            return _catalog;
+        }
+
+        private static string ItemName(GumpArt art, int g) => (art.Data.TileData.GetStatic(g).Name ?? "").Trim();
+
+        /// <summary>OBJECTS: place real static objects (walls, floors, trees, furniture...) and edit placed ones.</summary>
+        private void DrawObjects(WorldBrushSettings b, Rect area)
+        {
+            Dictionary<string, int[]> catalog = Catalog(Art);
+            float half = (area.width - 6f) / 2f;
+            if (GUI.Button(new Rect(area.x, area.y, half, 22), "PLACE", b.Current == WorldBrushSettings.Mode.Object ? _active : _button))
+                b.Current = WorldBrushSettings.Mode.Object;
+            if (GUI.Button(new Rect(area.x + half + 6, area.y, half, 22), "SELECT / MOVE", b.Current == WorldBrushSettings.Mode.Select ? _active : _button))
+                b.Current = WorldBrushSettings.Mode.Select;
+            float y = area.y + 28f;
+            GUI.Label(new Rect(area.x, y + 2, 50, 20), "Search", _label);
+            _objSearch = GUI.TextField(new Rect(area.x + 52, y, area.width - 52, 20), _objSearch ?? "", 40, _field);
+            string q = _objSearch.Trim().ToLowerInvariant();
+            y += 26f;
+
+            // Categories on the left.
+            float listW = 96f, gridH = area.height - (y - area.y) - 58f;
+            _categoryScroll = GUI.BeginScrollView(new Rect(area.x, y, listW, gridH), _categoryScroll, new Rect(0, 0, listW - 16, Categories.Length * 18f));
+            for (int i = 0; i < Categories.Length; i++)
+            {
+                string c = Categories[i];
+                if (GUI.Button(new Rect(0, i * 18f, listW - 16, 18), c, c == _category ? _listActive : _listItem))
+                {
+                    _category = c;
+                    _objectScroll = Vector2.zero;
+                }
+            }
+            GUI.EndScrollView();
+
+            // The category's objects on the right (search runs across the category; in "all", across everything).
+            int[] all = catalog.TryGetValue(_category ?? "", out int[] list) ? list : catalog["all"];
+            int[] shown = q.Length == 0 ? all : all.Where(g => ItemName(Art, g).ToLowerInvariant().Contains(q) || $"0x{g:x4}" == q).ToArray();
+            float gx = area.x + listW + 6, gw = area.width - listW - 6;
+            const float cell = 54f;
+            int cols = Math.Max(1, (int)((gw - 16) / cell));
+            var grid = new Rect(0, 0, gw - 16, ((shown.Length + cols - 1) / cols) * cell);
+            _objectScroll = GUI.BeginScrollView(new Rect(gx, y, gw, gridH), _objectScroll, grid);
+            for (int i = 0; i < shown.Length; i++)
+            {
+                var r = new Rect((i % cols) * cell, (i / cols) * cell, cell - 4, cell - 4);
+                if (r.yMax < _objectScroll.y || r.y > _objectScroll.y + gridH)
+                    continue; // off the visible part: no texture made for it
+                GUI.DrawTexture(r, b.ObjectGraphic == shown[i] ? _accent : _panel);
+                UiImage img = Art.Item(shown[i]);
+                if (img?.Texture != null)
+                    GUI.DrawTexture(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), img.Texture, ScaleMode.ScaleToFit);
+                if (GUI.Button(r, new GUIContent("", $"{ItemName(Art, shown[i])} 0x{shown[i]:X4}"), GUIStyle.none))
+                {
+                    b.ObjectGraphic = (ushort)shown[i];
+                    b.Current = WorldBrushSettings.Mode.Object;
+                }
+            }
+            GUI.EndScrollView();
+            y += gridH + 4f;
+
+            // What is chosen, and the selected object's controls.
+            string chosen = b.ObjectGraphic != 0 ? $"{ItemName(Art, b.ObjectGraphic)} (0x{b.ObjectGraphic:X4})" : "nothing chosen";
+            GUI.Label(new Rect(area.x, y, area.width, 18), $"Place: {chosen}   height +{b.ObjectLift}", _small);
+            y += 18f;
+            WorldItem sel = _layer.SelectedItem;
+            if (sel == null)
+            {
+                GUI.Label(new Rect(area.x, y, area.width, 34), "Nothing selected. SELECT, then click a placed object (statics only).", _small);
+                return;
+            }
+            GUI.Label(new Rect(area.x, y, 150, 34), $"{ItemName(Art, sel.Graphic)} at {sel.X},{sel.Y},{sel.Z}", _small);
+            string[] nudges = { "N", "S", "W", "E", "UP", "DN", "DEL" };
+            float nb = (area.width - 150f - 6 * 3f) / nudges.Length;
+            for (int i = 0; i < nudges.Length; i++)
+            {
+                if (!GUI.Button(new Rect(area.x + 150 + i * (nb + 3), y, nb, 30), nudges[i], _button))
+                    continue;
+                if (i == 6)
+                {
+                    _layer.DeleteObject(sel.Serial);
+                    continue;
+                }
+                int dx = i == 2 ? -1 : i == 3 ? 1 : 0, dy = i == 0 ? -1 : i == 1 ? 1 : 0, dz = i == 4 ? 1 : i == 5 ? -1 : 0;
+                _layer.MoveObject(sel.Serial, sel.X + dx, sel.Y + dy, sel.Z + dz);
+            }
+        }
+
 
         private float Slider(ref float y, string name, float value, float min, float max, string shown)
         {

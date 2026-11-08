@@ -20,6 +20,11 @@ namespace UOClient.WorldLayer
         public const ushort Undo = 0xD3;           // redo: bool
         public const ushort EndStroke = 0xD4;      // closes one mouse drag into one undo step
 
+        // Objects (step 4, the OBJECTS tab): real static items in the world save, so every client sees them.
+        public const ushort PlaceObject = 0xD6;    // map: byte, graphic: ushort, x: ushort, y: ushort, z: sbyte, hue: ushort
+        public const ushort ObjectOp = 0xD7;       // serial: uint, op: byte (ObjectDelete / ObjectMove), x: ushort, y: ushort, z: sbyte
+        public const byte ObjectDelete = 0, ObjectMove = 1;
+
         // Server -> client (same subcommand numbers, other direction).
         public const ushort HelloReply = 0xD0;     // version: int, canEdit: bool, materialCount: byte
         // map: byte, rx: ushort, ry: ushort, version: int, total: int, offset: int, then this part's bytes to the packet's end.
@@ -30,6 +35,7 @@ namespace UOClient.WorldLayer
         public const int RegionPart = 60000;
         public const ushort Result = 0xD2;         // ok: bool, message: ascii (byte length + bytes)
         public const ushort RegionChanged = 0xD5;  // map: byte, rx: ushort, ry: ushort, version: int (re-request it)
+        public const ushort ObjectPlaced = 0xD6;   // serial: uint (the object just placed, so the editor can select it)
 
         /// <summary>Fixed-point scale for fractional fields (tile units, Z) on the wire.</summary>
         public const float Fixed = 1000f;
