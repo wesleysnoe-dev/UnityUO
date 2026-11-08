@@ -19,11 +19,11 @@ Shader "LiveGroundCompare/Water"
         _EyeDir ("Direction to the viewer (terrain space)", Vector) = (0.5, 0.7071, -0.5, 0)
         _WaveAmp ("Wave normal strength", Range(0, 1)) = 0.35
         _WaveSpeed ("Wave speed", Range(0, 4)) = 1
-        _ShoreAlpha ("Alpha at the shoreline", Range(0, 1)) = 0.35
-        _OpenAlpha ("Alpha in open water", Range(0, 1)) = 0.7
+        _ShoreAlpha ("Alpha at the shoreline", Range(0, 1)) = 0.45
+        _OpenAlpha ("Alpha in open water", Range(0, 1)) = 0.82
         _DeepShade ("Open-water darkening", Range(0, 1)) = 0.2
         _Foam ("Shore foam strength", Range(0, 1)) = 0.55
-        _Gloss ("Specular strength", Range(0, 2)) = 0.6
+        _Gloss ("Specular strength", Range(0, 2)) = 0.35
     }
 
     SubShader
@@ -82,22 +82,44 @@ Shader "LiveGroundCompare/Water"
                 return dir * (k * cos(phase));
             }
 
+            // Value noise (smooth, non-periodic) for the ripple layer.
+            float Hash(float2 p) { return frac(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
+            float Noise(float2 p)
+            {
+                float2 c = floor(p), f = frac(p);
+                float2 u = f * f * (3.0 - 2.0 * f);
+                return lerp(lerp(Hash(c), Hash(c + float2(1, 0)), u.x), lerp(Hash(c + float2(0, 1)), Hash(c + 1.0), u.x), u.y);
+            }
+
+            // d(noise)/d(x, z) by central differences: the ripple's slope.
+            float2 NoiseSlope(float2 p)
+            {
+                const float e = 0.05;
+                return float2(Noise(p + float2(e, 0)) - Noise(p - float2(e, 0)), Noise(p + float2(0, e)) - Noise(p - float2(0, e))) / (2.0 * e);
+            }
+
             fixed4 frag(v2f i) : SV_Target
             {
                 float t = _Time.y * _WaveSpeed;
                 float2 p = i.world.xz;
 
+                // Long, gentle swells at lengths that never line up with the tile grid (several tiles each, so no
+                // per-tile pattern), then two drifting noise ripples that break any remaining regularity.
                 float2 g = 0;
-                g += 0.050 * Wave(p, normalize(float2(1.0, 0.35)), 2.3, 0.35, t);
-                g += 0.035 * Wave(p, normalize(float2(-0.4, 1.0)), 1.45, 0.28, t);
-                g += 0.020 * Wave(p, normalize(float2(0.8, -0.7)), 0.85, 0.22, t);
-                g += 0.012 * Wave(p, normalize(float2(-1.0, -0.2)), 0.55, 0.18, t);
+                g += 0.060 * Wave(p, normalize(float2(1.0, 0.31)), 9.7, 0.55, t);
+                g += 0.045 * Wave(p, normalize(float2(-0.37, 1.0)), 6.3, 0.45, t);
+                g += 0.030 * Wave(p, normalize(float2(0.83, -0.66)), 3.9, 0.35, t);
+                g += 0.018 * Wave(p, normalize(float2(-1.0, -0.23)), 2.45, 0.28, t);
+                g += 0.045 * NoiseSlope(p * 0.62 + float2(t * 0.11, t * 0.07));
+                g += 0.030 * NoiseSlope(p * 1.37 - float2(t * 0.09, -t * 0.13));
                 float3 n = normalize(float3(-g.x * _WaveAmp * 6.0, 1.0, -g.y * _WaveAmp * 6.0));
 
                 float3 l = normalize(_LGSunDir.xyz);
                 float3 v = normalize(_EyeDir.xyz);
                 float visibility = LGCeilVisibility(i.world); // 1 without the ceiling
-                float spec = pow(saturate(dot(n, normalize(l + v))), 48.0) * _Gloss * visibility; // no sun glint in shadow
+                // A broad sheen plus a smaller glint: soft light on the swells, not crisp white squiggles.
+                float nh = saturate(dot(n, normalize(l + v)));
+                float spec = (pow(nh, 24.0) * 0.6 + pow(nh, 160.0) * 0.4) * _Gloss * visibility; // no sun glint in shadow
 
                 // The map's own water colour, slightly darker away from the shore (shore distance, not real depth).
                 float open = i.shore;

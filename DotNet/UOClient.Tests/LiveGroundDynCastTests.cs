@@ -819,14 +819,19 @@ public sealed class LiveGroundWaterRecvTests
     }
 
     [Fact]
-    public void WaterShader_OnlyItsLightingLinesChangedSince83c0a85()
+    public void WaterShader_WaveRedesignKeepsTheShadowReceiveLighting()
     {
-        string[] now = Frag(Water()).Split('\n'), old = Frag(Source("Assets", "LiveGroundCompare", "Evidence~", "LiveGroundCompareWater.83c0a85.shader.txt")).Split('\n');
-        var added = now.Except(old).Select(l => l.Trim()).ToArray();
-        var removed = old.Except(now).Select(l => l.Trim()).ToArray();
-        Assert.Equal(3, added.Length);
-        Assert.Equal(3, removed.Length);
-        Assert.All(removed, l => Assert.True(l.Contains("light") || l.Contains("spec ="), l));
+        // 2026-11-08: the waves were redesigned (the old 0.55-2.3 tile wavelengths read as a per-tile pattern from above);
+        // the shadow-receive lighting this guard protected since 83c0a85 must be untouched.
+        string frag = Frag(Water());
+        Assert.Contains("float visibility = LGCeilVisibility(i.world); // 1 without the ceiling", frag);
+        Assert.Contains("LGLitShadowed(n, visibility, i.world)", frag);
+        Assert.Contains("* _Gloss * visibility; // no sun glint in shadow", frag);
+        // Every swell is longer than two tiles, so no wave repeats within a tile.
+        var lengths = System.Text.RegularExpressions.Regex.Matches(frag, @"Wave\(p, normalize\([^)]*\)\), ([0-9.]+),")
+            .Select(m => float.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        Assert.Equal(4, lengths.Length);
+        Assert.All(lengths, l => Assert.True(l > 2f, $"wavelength {l} tiles"));
     }
 
     // CPU mirrors of the cginc (LGShade / LGLocalLight already mirrored by LiveGroundLighting.Shade / PointFalloff).

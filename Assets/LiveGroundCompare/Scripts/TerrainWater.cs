@@ -19,14 +19,18 @@ namespace UOClient.LiveGroundCompare
         /// <summary>Terrain-space direction to the viewer: the kernel of the presenter's screen projection, (1, √2, -1)/2.</summary>
         public static readonly Vector4 EyeDir = new Vector4(0.5f, 0.70710678f, -0.5f, 0f);
 
-        private TerrainWaterSupport(bool[] table, Material material)
+        private TerrainWaterSupport(bool[] table, bool[] statics, Material material)
         {
             Table = table;
+            StaticTable = statics;
             Material = material;
         }
 
         /// <summary>Land graphic → water (index = graphic).</summary>
         public bool[] Table { get; }
+
+        /// <summary>Static graphic → open-water static the surface takes over (<see cref="WaterTiles.IsOceanStatic"/>).</summary>
+        public bool[] StaticTable { get; }
 
         /// <summary>One runtime material for every chunk (per-tile colour and shore distance are vertex data).</summary>
         public Material Material { get; private set; }
@@ -49,7 +53,7 @@ namespace UOClient.LiveGroundCompare
                 }
                 var material = new Material(shader) { name = "UO land water (LiveGround)" };
                 material.SetVector("_EyeDir", EyeDir);
-                return new TerrainWaterSupport(table, material);
+                return new TerrainWaterSupport(table, WaterTiles.StaticTable(world.Data.TileData.Statics), material);
             }
             catch (Exception e)
             {

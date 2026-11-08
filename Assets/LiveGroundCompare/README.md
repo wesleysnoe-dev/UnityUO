@@ -135,8 +135,14 @@ surface there).
   reflection). `WaterTiles.TryLand` fails closed: no data, a tiledata that does not load or no land rows turn water off
   with a reason instead of an empty "no water" table. If that or the shader fails, the indicator shows
   `water off: <why>` and the terrain still draws.
-- **Static water is not covered.** Shore/lake water placed as statics (0x1797… "water" statics) is not land, is never
-  diverted and still draws as classic sprites on top of everything here.
+- **Ocean statics are water too (2026-11-08).** The flat open-water statics 0x1796–0x17B2 (Wet, "water") are diverted
+  as well (`TerrainLandEmitter.Diverts`, `WaterTiles.IsOceanStatic`) and become water tiles flat at the static's Z
+  (`WaterSurfaceBuilder.AddStaticWater`), whatever land is under them, so a dock's water and the open sea are one
+  surface. The other "water" statics (0x346E…, 0x55F0… shoreline and fall edges, part rock or foam) stay sprites.
+  Under every water tile the terrain bakes a flat bed colour (`TerrainLandBuilder.SetFlat`, 70% of the tile's mean)
+  instead of the classic water art, and the shore distance reads the map around the chunk (`SetOutside`), so foam
+  runs on across chunk borders. The shader's swells are 2.45–9.7 tiles long plus two drifting noise ripples: the old
+  0.55–2.3 tile waves with a sharp glint read as a repeating per-tile pattern from above.
 - **Geometry:** `WaterSurfaceBuilder` (Unity-free, tested) builds one mesh per chunk over the water tiles only, in
   terrain space at the map's corner heights (the same corners the terrain heightmap uses), split RIGHT–LEFT. Heights,
   holes, the collider and movement are unchanged; the water has no collider.

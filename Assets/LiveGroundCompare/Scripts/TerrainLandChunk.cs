@@ -12,6 +12,7 @@ namespace UOClient.LiveGroundCompare
         private readonly TerrainIsoPresenter _presenter;
         private readonly int _scale, _texels;
         private readonly bool[] _water; // null: water off
+        private readonly bool[] _staticWater; // ocean statics the water surface draws instead of their sprites
         private readonly bool _occlusion;
 
         public TerrainLandEmitter(TerrainIsoPresenter presenter, int scale)
@@ -20,7 +21,38 @@ namespace UOClient.LiveGroundCompare
             _scale = scale;
             _texels = TerrainLandBuilder.TexelsFor(scale);
             _water = presenter.Water?.Table;
+            _staticWater = presenter.Water?.StaticTable;
             _occlusion = presenter.DepthShader != null;
+        }
+
+        /// <summary>
+        /// Around a chunk, for the water's shore distance: whether a map tile is drawn ground that no water covers (not
+        /// water land, no ocean static on it, not no-draw land). Off the map counts as not land.
+        /// </summary>
+        private Func<int, int, bool> OutsideLand()
+        {
+            WorldStreamer world = _presenter.World;
+            IO.Formats.MapFile map = world?.Data?.GetMap(world.Map);
+            if (map == null)
+                return null;
+            var statics = new Dictionary<long, IO.Formats.StaticCell[]>();
+            return (x, y) =>
+            {
+                if (x < 0 || y < 0 || x >= map.Width || y >= map.Height)
+                    return false;
+                IO.Formats.LandCell cell = map.GetLand(x, y);
+                ushort g = cell.Graphic;
+                if (g < 3 || g == 0x1DB || (g >= 0x1AE && g <= 0x1B5) || WaterTiles.Lookup(_water, g))
+                    return false; // no-draw land (IsoCompositor.IsNoDrawLand) or water land
+                long key = ((long)(x >> 3) << 32) | (uint)(y >> 3);
+                if (!statics.TryGetValue(key, out IO.Formats.StaticCell[] block))
+                    statics[key] = block = map.ReadStaticBlock(x >> 3, y >> 3);
+                if (block != null)
+                    foreach (IO.Formats.StaticCell s in block)
+                        if (s.X == (x & 7) && s.Y == (y & 7) && WaterTiles.Lookup(_staticWater, s.Graphic))
+                            return false;
+                return true;
+            };
         }
 
         /// <summary>The chunk's static columns for the sun mask, or null (terrain-only shadow, reason reported once).</summary>
@@ -45,7 +77,10 @@ namespace UOClient.LiveGroundCompare
             }
         }
 
-        public bool Diverts(in ArtPipeline.DrawItem item, bool baked) => GroundBackend.Diverts(GroundBackendKind.Terrain, item, baked);
+        // Land as before, plus the ocean statics: drawn by the water surface, not as flat tiled sprites over it.
+        public bool Diverts(in ArtPipeline.DrawItem item, bool baked) =>
+            GroundBackend.Diverts(GroundBackendKind.Terrain, item, baked)
+            || !baked && item.Kind == ArtPipeline.DrawKind.Static && WaterTiles.Lookup(_staticWater, item.Graphic);
 
         public ILandChunk BuildLand(int chunkX, int chunkY, List<LandPlacement> land)
         {
@@ -54,11 +89,19 @@ namespace UOClient.LiveGroundCompare
                 int x0 = chunkX * WorldStreamer.ChunkSize, y0 = chunkY * WorldStreamer.ChunkSize;
                 var builder = new TerrainLandBuilder(x0, y0, _texels);
                 var water = _water != null ? new WaterSurfaceBuilder(x0, y0) : null;
+                water?.SetOutside(OutsideLand());
                 foreach (LandPlacement p in land)
                 {
+                    if (p.Item.Kind == ArtPipeline.DrawKind.Static) // an ocean static (Diverts): water only
+                    {
+                        water?.AddStaticWater(p.Item, p.Art);
+                        continue;
+                    }
                     builder.AddTile(p.Item, p.Art, p.Texmap, _occlusion ? p.Depth : float.NaN);
                     water?.AddTile(p.Item, p.Art, p.Texmap, WaterTiles.Lookup(_water, p.Item.Graphic));
                 }
+                // Under water the ground bakes flat (no classic water pattern through the surface).
+                water?.ForEachBed((x, y, argb) => builder.SetFlat(x, y, argb));
                 int[,] occluders = _presenter.SharedLight ? Occluders(x0, y0) : null;
                 builder.SetOccluders(occluders);
                 TerrainLandData data = builder.Finish();

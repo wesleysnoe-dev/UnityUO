@@ -35,7 +35,20 @@ namespace UOClient.LiveGroundCompare
         private readonly bool[,] _texmap = new bool[Tiles, Tiles];
         private readonly int?[,] _corner = new int?[Tiles + 1, Tiles + 1];
         private readonly float[,] _depth = NewDepth();
+        private readonly uint[,] _flat = new uint[Tiles, Tiles]; // non-zero: bake this colour instead of the art
         private int[,] _occluderTop;
+
+        /// <summary>
+        /// Bakes tile (world x, y) as one flat colour (ARGB) instead of its art: the bed under water, so the classic
+        /// water art's repeating pattern does not show through the water surface (which brings its own waves and foam).
+        /// </summary>
+        public void SetFlat(int x, int y, uint argb)
+        {
+            int i = x - _x0, j = y - _y0;
+            if (i < 0 || j < 0 || i >= Tiles || j >= Tiles)
+                throw new ArgumentOutOfRangeException(nameof(x), $"tile {x},{y} is outside chunk {_x0},{_y0}");
+            _flat[i, j] = argb | 0xFF000000u;
+        }
 
         private static float[,] NewDepth()
         {
@@ -201,7 +214,7 @@ namespace UOClient.LiveGroundCompare
                     if (!_present[i, j])
                         continue;
                     float u = (ix % p + 0.5f) / p;
-                    uint px = SampleArt(_art[i, j], _texmap[i, j], u, v);
+                    uint px = _flat[i, j] != 0 ? _flat[i, j] : SampleArt(_art[i, j], _texmap[i, j], u, v);
                     int o = (dstRow * size + ix) * 4;
                     rgba[o] = (byte)(px >> 16);
                     rgba[o + 1] = (byte)(px >> 8);

@@ -882,6 +882,52 @@ public class LiveGroundCompareTests
     }
 
     [Fact]
+    public void Water_OceanStaticsAreFlatWaterOverWhateverLandIsUnder()
+    {
+        // All land (sand, graphic 3) with sloped corners; an ocean static at Z -5 on columns 8..15.
+        WaterSurfaceBuilder wb = WaterChunk(0, 0, (_, _) => false);
+        for (int j = 0; j < Chunk; j++)
+            for (int i = 8; i < Chunk; i++)
+                wb.AddStaticWater(new DrawItem { Kind = DrawKind.Static, Graphic = 0x1797, X = i, Y = j, Z = -5 }, Solid(44, WaterArgb));
+        WaterSurfaceData d = wb.Finish();
+        Assert.Equal(8 * Chunk, d.TileCount);
+        Assert.Contains(0x1797, d.Graphics);
+        (float _, float flat, float _) = TerrainLandBuilder.TerrainPoint(0, 0, -5);
+        Assert.All(d.Y, y => Assert.Equal(flat, y, 4));                  // flat at the static's Z, not the land's slope
+        Assert.Contains(d.Shore, s => s == 0f);                          // the sand beside it is the shoreline
+        Assert.Throws<ArgumentException>(() => wb.AddStaticWater(LiveGroundProjection.LandItem(0, 0, 3, 0, 0, 0, 0, hasTexmap: false), Solid(44, WaterArgb)));
+    }
+
+    [Fact]
+    public void Water_OceanStaticTableTakesOnlyTheFlatOpenWaterStatics()
+    {
+        var statics = new StaticTileData[0x3500];
+        statics[0x1797] = new StaticTileData { Flags = TileFlags.Wet, Name = "water" };
+        statics[0x1798] = new StaticTileData { Flags = 0, Name = "water" };          // not Wet
+        statics[0x346E] = new StaticTileData { Flags = TileFlags.Wet, Name = "water" }; // a shoreline edge piece
+        statics[0x17A0] = new StaticTileData { Flags = TileFlags.Wet, Name = "water trough" };
+        bool[] table = WaterTiles.StaticTable(statics);
+        Assert.True(WaterTiles.Lookup(table, 0x1797));
+        Assert.False(WaterTiles.Lookup(table, 0x1798));
+        Assert.False(WaterTiles.Lookup(table, 0x346E));
+        Assert.False(WaterTiles.Lookup(table, 0x17A0));
+    }
+
+    [Fact]
+    public void Water_ShoreDistanceSeesLandInTheNeighbouringChunk()
+    {
+        // All water in this chunk; the chunk to the west (x < 0) is land. Without the outside the shore is open water.
+        WaterSurfaceBuilder wb = WaterChunk(0, 0, (_, _) => true);
+        wb.SetOutside((x, _) => x < 0);
+        WaterSurfaceData d = wb.Finish();
+        for (int v = 0; v < d.VertexCount; v++)
+        {
+            int ci = (int)Math.Round(d.X[v]);
+            Assert.Equal(Math.Min(ci, WaterSurfaceBuilder.MaxShore) / (float)WaterSurfaceBuilder.MaxShore, d.Shore[v], 4);
+        }
+    }
+
+    [Fact]
     public void Water_ShoreDistanceGrowsFromTheShorelineAndCaps()
     {
         // Land in columns 0..3, water from column 4: corner column 4 touches land.
