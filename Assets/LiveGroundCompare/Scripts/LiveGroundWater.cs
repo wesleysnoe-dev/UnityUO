@@ -208,7 +208,7 @@ namespace UOClient.LiveGroundCompare
             var d = new WaterSurfaceData { ChunkX0 = _x0, ChunkY0 = _y0, TileCount = WaterTileCount };
             d.Graphics = new List<int>(_graphics);
             d.Graphics.Sort();
-            if (WaterTileCount == 0)
+            if (WaterTileCount == 0 && _flatLevel == null) // flat: a skirt can reach in from water in the next chunk
                 return d;
 
             // Shore: drawn ground that no water (land or ocean static) covers; around the chunk, what the map says.
@@ -224,26 +224,52 @@ namespace UOClient.LiveGroundCompare
             var z = new List<float>();
             var s = new List<float>();
             var c = new List<uint>();
+
+            // Which tiles the mesh covers: the water tiles, and with a flat level also a one-tile skirt over the banks
+            // (the terrain hides it wherever the bank is above the water, so the shoreline follows the ground).
+            Func<int, int, (bool Water, int Level)> flat = _flatLevel;
+            var mesh = new bool[Tiles, Tiles];
+            for (int i = 0; i < Tiles; i++)
+                for (int j = 0; j < Tiles; j++)
+                {
+                    mesh[i, j] = _water[i, j];
+                    if (flat != null && !mesh[i, j])
+                        for (int di = -1; di <= 1 && !mesh[i, j]; di++)
+                            for (int dj = -1; dj <= 1 && !mesh[i, j]; dj++)
+                                mesh[i, j] = flat(_x0 + i + di, _y0 + j + dj).Water;
+                }
+            uint chunkTint = MeanTint();
             for (int i = 0; i <= Tiles; i++)
                 for (int j = 0; j <= Tiles; j++)
                 {
                     index[i, j] = -1;
-                    if (!Touches(_water, i, j))
+                    if (!Touches(mesh, i, j))
                         continue;
+                    float level;
+                    if (flat != null)
+                    {
+                        float? l = FlatLevel(flat, _x0 + i, _y0 + j);
+                        if (l == null)
+                            continue;
+                        level = l.Value;
+                    }
+                    else
+                        level = _corner[i, j] ?? 0;
                     index[i, j] = x.Count;
-                    (float px, float py, float pz) = TerrainLandBuilder.TerrainPoint(_x0 + i, _y0 + j, _corner[i, j] ?? 0);
+                    (float px, float py, float pz) = TerrainLandBuilder.TerrainPoint(_x0 + i, _y0 + j, level);
                     x.Add(px);
                     y.Add(py);
                     z.Add(pz);
-                    s.Add((float)shore[i, j] / MaxShore);
-                    c.Add(CornerTint(i, j));
+                    bool wet = Touches(_water, i, j);
+                    s.Add(wet ? (float)shore[i, j] / MaxShore : 0f);
+                    c.Add(wet ? CornerTint(i, j) : chunkTint);
                 }
 
             var tri = new List<int>(WaterTileCount * 6);
             for (int i = 0; i < Tiles; i++)
                 for (int j = 0; j < Tiles; j++)
                 {
-                    if (!_water[i, j])
+                    if (!mesh[i, j] || index[i, j] < 0 || index[i + 1, j] < 0 || index[i + 1, j + 1] < 0 || index[i, j + 1] < 0)
                         continue;
                     int top = index[i, j], right = index[i + 1, j], bottom = index[i + 1, j + 1], left = index[i, j + 1];
                     // RIGHT–LEFT split, wound so cross(b - a, c - a) is terrain +Y (Unity's front face seen from above).
@@ -258,6 +284,56 @@ namespace UOClient.LiveGroundCompare
             d.Tint = c.ToArray();
             d.Indices = tri.ToArray();
             return d;
+        }
+
+        private Func<int, int, (bool Water, int Level)> _flatLevel;
+
+        /// <summary>
+        /// Natural terrain: the surface is flat at the water's level (a little under it, <see cref="WaterBed.SurfaceDrop"/>)
+        /// instead of following the tile corners, and reaches one tile past the water over the banks. With the bed lowered
+        /// under it (<see cref="WaterBed.Corner"/>) and the terrain's smooth heights, the bank's own slope cuts the
+        /// shoreline. <paramref name="tileWater"/>: any world tile → (water there, its level).
+        /// </summary>
+        public void UseFlatLevel(Func<int, int, (bool Water, int Level)> tileWater) => _flatLevel = tileWater;
+
+        /// <summary>The flat surface's height at world corner (x, y): the mean level of the water tiles around it, else of
+        /// those within two tiles (a skirt corner); null when there is no water near.</summary>
+        public static float? FlatLevel(Func<int, int, (bool Water, int Level)> tileWater, int x, int y)
+        {
+            for (int reach = 1; reach <= 2; reach++)
+            {
+                int sum = 0, n = 0;
+                for (int tx = x - reach; tx < x + reach; tx++)
+                    for (int ty = y - reach; ty < y + reach; ty++)
+                    {
+                        (bool water, int level) = tileWater(tx, ty);
+                        if (!water)
+                            continue;
+                        sum += level;
+                        n++;
+                    }
+                if (n > 0)
+                    return (float)sum / n - WaterBed.SurfaceDrop;
+            }
+            return null;
+        }
+
+        /// <summary>The mean colour of the chunk's water tiles (for skirt corners, which touch none).</summary>
+        private uint MeanTint()
+        {
+            long r = 0, g = 0, b = 0;
+            int n = 0;
+            for (int i = 0; i < Tiles; i++)
+                for (int j = 0; j < Tiles; j++)
+                    if (_water[i, j])
+                    {
+                        uint m = _mean[i, j];
+                        r += (m >> 16) & 0xFF;
+                        g += (m >> 8) & 0xFF;
+                        b += m & 0xFF;
+                        n++;
+                    }
+            return n == 0 ? 0xFF204060u : 0xFF000000u | (uint)(r / n) << 16 | (uint)(g / n) << 8 | (uint)(b / n);
         }
 
         /// <summary>Whether any of the (up to four) tiles around corner (ci, cj) is set in <paramref name="tiles"/>.</summary>
@@ -383,6 +459,47 @@ namespace UOClient.LiveGroundCompare
             if (count == 0)
                 return 0xFF000000;
             return 0xFF000000u | (uint)(r / count) << 16 | (uint)(g / count) << 8 | (uint)(b / count);
+        }
+    }
+
+    /// <summary>
+    /// Natural terrain: the ground under water as a bed below the surface, so the water has depth and the shoreline is
+    /// cut by the bank's slope, not by tile edges (Unity-free).
+    /// </summary>
+    public static class WaterBed
+    {
+        /// <summary>How far (UO Z) the bed sits under the surface away from the banks.</summary>
+        public const int Depth = 8;
+
+        /// <summary>How far (UO Z) the flat surface sits under the water's own level, so flat beaches at that level stay dry.</summary>
+        public const float SurfaceDrop = 0.4f;
+
+        /// <summary>How far (UO Z) a bank corner touching water dips under the level, so the water reaches it.</summary>
+        public const int BankDip = 2;
+
+        /// <summary>
+        /// A world corner's height for the drawn terrain: under open water (all four tiles round it water) the bed, the
+        /// mean level less <see cref="Depth"/>; on a bank (some of them water) just under the lowest level touching it;
+        /// elsewhere the map's own height. Never raised.
+        /// </summary>
+        public static float Corner(int mapZ, Func<int, int, (bool Water, int Level)> tileWater, int x, int y)
+        {
+            int n = 0, sum = 0, min = int.MaxValue;
+            for (int tx = x - 1; tx <= x; tx++)
+                for (int ty = y - 1; ty <= y; ty++)
+                {
+                    (bool water, int level) = tileWater(tx, ty);
+                    if (!water)
+                        continue;
+                    n++;
+                    sum += level;
+                    min = Math.Min(min, level);
+                }
+            if (n == 4)
+                return Math.Min(mapZ, (float)sum / n - Depth);
+            if (n > 0)
+                return Math.Min(mapZ, min - BankDip);
+            return mapZ;
         }
     }
 

@@ -23,7 +23,17 @@ namespace UOClient.LiveGroundCompare
             _water = presenter.Water?.Table;
             _staticWater = presenter.Water?.StaticTable;
             _occlusion = presenter.DepthShader != null;
+            // Natural terrain cuts the shoreline from the ground itself: the classic shoreline edge statics (the other
+            // "water" statics, 0x346E… / 0x55F0…, part foam, part rock) would draw a sawtooth over it, so they go.
+            if (presenter.Materials != null && _staticWater != null && presenter.World?.Data?.TileData?.Statics is { } statics)
+            {
+                _shoreEdge = new bool[statics.Length];
+                for (int i = 0; i < statics.Length; i++)
+                    _shoreEdge[i] = WaterTiles.IsWater(statics[i].Flags, statics[i].Name) && !WaterTiles.Lookup(_staticWater, i);
+            }
         }
+
+        private readonly bool[] _shoreEdge; // natural terrain: shoreline edge statics, dropped
 
         /// <summary>
         /// Around a chunk, for the water's shore distance: whether a map tile is drawn ground that no water covers (not
@@ -77,6 +87,40 @@ namespace UOClient.LiveGroundCompare
             }
         }
 
+        /// <summary>
+        /// Natural terrain, per chunk build: any world tile → (water, its level): land water at its lowest corner, or an
+        /// ocean static at the static's Z (the higher one if several). Cached for the build; off the map: dry.
+        /// </summary>
+        private Func<int, int, (bool Water, int Level)> TileWater(IO.Formats.MapFile map)
+        {
+            var tiles = new Dictionary<long, (bool, int)>();
+            var blocks = new Dictionary<long, IO.Formats.StaticCell[]>();
+            return (x, y) =>
+            {
+                if (map == null || x < 0 || y < 0 || x >= map.Width - 1 || y >= map.Height - 1)
+                    return (false, 0);
+                long key = ((long)x << 32) | (uint)y;
+                if (tiles.TryGetValue(key, out var hit))
+                    return hit;
+                (bool, int) result = (false, 0);
+                long bk = ((long)(x >> 3) << 32) | (uint)(y >> 3);
+                if (!blocks.TryGetValue(bk, out IO.Formats.StaticCell[] block))
+                    blocks[bk] = block = map.ReadStaticBlock(x >> 3, y >> 3);
+                int? top = null;
+                if (block != null)
+                    foreach (IO.Formats.StaticCell s in block)
+                        if (s.X == (x & 7) && s.Y == (y & 7) && WaterTiles.Lookup(_staticWater, s.Graphic))
+                            top = Math.Max(top ?? int.MinValue, s.Z);
+                if (top.HasValue)
+                    result = (true, top.Value);
+                else if (WaterTiles.Lookup(_water, map.GetLand(x, y).Graphic))
+                    result = (true, Math.Min(Math.Min(map.GetLand(x, y).Z, map.GetLand(x + 1, y).Z),
+                                             Math.Min(map.GetLand(x + 1, y + 1).Z, map.GetLand(x, y + 1).Z)));
+                tiles[key] = result;
+                return result;
+            };
+        }
+
         /// <summary>The map's material at any tile (natural terrain), off the map or unreadable: classic art.</summary>
         private Func<int, int, int> MaterialAt()
         {
@@ -91,7 +135,8 @@ namespace UOClient.LiveGroundCompare
         // Land as before, plus the ocean statics: drawn by the water surface, not as flat tiled sprites over it.
         public bool Diverts(in ArtPipeline.DrawItem item, bool baked) =>
             GroundBackend.Diverts(GroundBackendKind.Terrain, item, baked)
-            || !baked && item.Kind == ArtPipeline.DrawKind.Static && WaterTiles.Lookup(_staticWater, item.Graphic);
+            || !baked && item.Kind == ArtPipeline.DrawKind.Static
+               && (WaterTiles.Lookup(_staticWater, item.Graphic) || _shoreEdge != null && WaterTiles.Lookup(_shoreEdge, item.Graphic));
 
         public ILandChunk BuildLand(int chunkX, int chunkY, List<LandPlacement> land)
         {
@@ -101,11 +146,29 @@ namespace UOClient.LiveGroundCompare
                 var builder = new TerrainLandBuilder(x0, y0, _texels);
                 var water = _water != null ? new WaterSurfaceBuilder(x0, y0) : null;
                 water?.SetOutside(OutsideLand());
+                // Natural terrain: smooth heights, the bed lowered under water, and a flat water surface over it.
+                if (_presenter.Materials != null)
+                {
+                    WorldStreamer world = _presenter.World;
+                    IO.Formats.MapFile map = world?.Data?.GetMap(world.Map);
+                    if (map != null)
+                    {
+                        Func<int, int, (bool Water, int Level)> tileWater = TileWater(map);
+                        builder.UseSmoothHeights((x, y) =>
+                        {
+                            int cx = Math.Max(0, Math.Min(map.Width - 1, x)), cy = Math.Max(0, Math.Min(map.Height - 1, y));
+                            int mapZ = map.GetLand(cx, cy).Z;
+                            return _water != null ? WaterBed.Corner(mapZ, tileWater, cx, cy) : mapZ;
+                        });
+                        water?.UseFlatLevel(tileWater);
+                    }
+                }
                 foreach (LandPlacement p in land)
                 {
-                    if (p.Item.Kind == ArtPipeline.DrawKind.Static) // an ocean static (Diverts): water only
+                    if (p.Item.Kind == ArtPipeline.DrawKind.Static) // an ocean static (Diverts): water only; a shoreline edge: dropped
                     {
-                        water?.AddStaticWater(p.Item, p.Art);
+                        if (WaterTiles.Lookup(_staticWater, p.Item.Graphic))
+                            water?.AddStaticWater(p.Item, p.Art);
                         continue;
                     }
                     builder.AddTile(p.Item, p.Art, p.Texmap, _occlusion ? p.Depth : float.NaN);
@@ -132,7 +195,10 @@ namespace UOClient.LiveGroundCompare
                     data.SunCeiling = LiveGroundLighting.ShadowCeiling(data.CornerZ, occluders);
                     data.OccluderTop = occluders;
                 }
-                WaterSurfaceData waterData = water != null && water.WaterTileCount > 0 ? water.Finish() : null;
+                // Natural terrain also finishes chunks with no water of their own: a skirt may reach in from the next chunk.
+                WaterSurfaceData waterData = water != null && (water.WaterTileCount > 0 || _presenter.Materials != null) ? water.Finish() : null;
+                if (waterData != null && waterData.VertexCount == 0)
+                    waterData = null;
                 DepthProxyData proxy = _occlusion ? TerrainDepthProxy.Build(data, _scale) : null;
                 return data.TileCount == 0 ? null : new TerrainLandChunk(_presenter, data, waterData, proxy);
             }
@@ -189,7 +255,7 @@ namespace UOClient.LiveGroundCompare
             {
                 (float sx, float sy, float sz) = d.Size;
                 _terrainData = new TerrainData { name = $"UO land terrain {name}" };
-                _terrainData.heightmapResolution = TerrainLandBuilder.HeightmapResolution;
+                _terrainData.heightmapResolution = d.HeightmapResolution;
                 _terrainData.size = new Vector3(sx, sy, sz);
                 _terrainData.SetHeights(0, 0, d.Heights);
                 _terrainData.SetHoles(0, 0, d.Solid);

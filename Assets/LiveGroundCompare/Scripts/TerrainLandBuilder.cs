@@ -115,16 +115,56 @@ namespace UOClient.LiveGroundCompare
             _occluderTop = top;
         }
 
+        /// <summary>Natural terrain: heightmap samples per tile edge when <see cref="UseSmoothHeights"/> is on.</summary>
+        public const int SmoothSamplesPerTile = 4;
+
+        private Func<int, int, float> _smoothCorner;
+
+        /// <summary>
+        /// Natural terrain: the heightmap is a smooth surface through the corner heights instead of the compositor's
+        /// flat tile triangles, at <see cref="SmoothSamplesPerTile"/> samples per tile. <paramref name="cornerZ"/> gives
+        /// any world corner's height (the map's, with the water bed already lowered); it is read past the chunk's edge
+        /// too, so neighbouring chunks meet exactly. Only the drawn terrain changes: <see cref="TerrainLandData.CornerZ"/>
+        /// (shadows, occlusion, the sprites' ground) stays the map's.
+        /// </summary>
+        public void UseSmoothHeights(Func<int, int, float> cornerZ) => _smoothCorner = cornerZ;
+
+        /// <summary>
+        /// Height at world tile coordinates on a Catmull-Rom surface through the corners (it passes through every corner
+        /// exactly), clamped to the lowest and highest of the cell's four corners so cliffs never overshoot into ripples.
+        /// </summary>
+        public static float SmoothZ(Func<int, int, float> cornerZ, float wx, float wy)
+        {
+            int i = (int)Math.Floor(wx), j = (int)Math.Floor(wy);
+            float u = wx - i, v = wy - j;
+            Span<float> rows = stackalloc float[4];
+            for (int r = 0; r < 4; r++)
+            {
+                int y = j - 1 + r;
+                rows[r] = CatmullRom(cornerZ(i - 1, y), cornerZ(i, y), cornerZ(i + 1, y), cornerZ(i + 2, y), u);
+            }
+            float z = CatmullRom(rows[0], rows[1], rows[2], rows[3], v);
+            float a = cornerZ(i, j), b = cornerZ(i + 1, j), c = cornerZ(i, j + 1), e = cornerZ(i + 1, j + 1);
+            float lo = Math.Min(Math.Min(a, b), Math.Min(c, e)), hi = Math.Max(Math.Max(a, b), Math.Max(c, e));
+            return Math.Max(lo, Math.Min(hi, z));
+        }
+
+        private static float CatmullRom(float p0, float p1, float p2, float p3, float t) =>
+            0.5f * (2f * p1 + (-p0 + p2) * t + (2f * p0 - 5f * p1 + 4f * p2 - p3) * t * t + (-p0 + 3f * p1 - 3f * p2 + p3) * t * t * t);
+
         public TerrainLandData Finish()
         {
+            int samples = _smoothCorner != null ? SmoothSamplesPerTile : SamplesPerTile;
+            int resolution = Tiles * samples + 1, holes = resolution - 1;
             var d = new TerrainLandData
             {
                 ChunkX0 = _x0,
                 ChunkY0 = _y0,
                 TileCount = TileCount,
                 CornerZ = new int[Tiles + 1, Tiles + 1],
-                Heights = new float[HeightmapResolution, HeightmapResolution],
-                Solid = new bool[HolesResolution, HolesResolution],
+                HeightmapResolution = resolution,
+                Heights = new float[resolution, resolution],
+                Solid = new bool[holes, holes],
                 TextureSize = Tiles * _texelsPerTile
             };
             if (TileCount == 0)
@@ -140,19 +180,30 @@ namespace UOClient.LiveGroundCompare
                     d.CornerZ[i, j] = _corner[i, j] ?? fill;
 
             // Heights[row, col]: row along terrain +Z (= tile y descending), col along +X (tile x).
-            for (int row = 0; row < HeightmapResolution; row++)
+            // Smooth heights read each world corner once (the cache spans the chunk and the 2-corner margin Catmull-Rom needs).
+            Func<int, int, float> corner = null;
+            if (_smoothCorner != null)
             {
-                float ty = Tiles - (float)row / SamplesPerTile;
-                for (int col = 0; col < HeightmapResolution; col++)
+                const int m = 2, n = Tiles + 1 + 2 * m;
+                var cache = new float[n, n];
+                for (int a = 0; a < n; a++)
+                    for (int b = 0; b < n; b++)
+                        cache[a, b] = _smoothCorner(_x0 + a - m, _y0 + b - m);
+                corner = (x, y) => cache[x - _x0 + m, y - _y0 + m];
+            }
+            for (int row = 0; row < resolution; row++)
+            {
+                float ty = Tiles - (float)row / samples;
+                for (int col = 0; col < resolution; col++)
                 {
-                    float tx = (float)col / SamplesPerTile;
-                    d.Heights[row, col] = Normalize(SampleZ(d.CornerZ, tx, ty));
+                    float tx = (float)col / samples;
+                    d.Heights[row, col] = Normalize(corner != null ? SmoothZ(corner, _x0 + tx, _y0 + ty) : SampleZ(d.CornerZ, tx, ty));
                 }
             }
 
-            for (int row = 0; row < HolesResolution; row++)
-                for (int col = 0; col < HolesResolution; col++)
-                    d.Solid[row, col] = _present[col / SamplesPerTile, Tiles - 1 - row / SamplesPerTile];
+            for (int row = 0; row < holes; row++)
+                for (int col = 0; col < holes; col++)
+                    d.Solid[row, col] = _present[col / samples, Tiles - 1 - row / samples];
 
             d.Rgba = BakeTexture(d.TextureSize);
             d.SunMask = LiveGroundLighting.ShadowMask(d.CornerZ, _occluderTop);
@@ -253,6 +304,12 @@ namespace UOClient.LiveGroundCompare
 
         /// <summary>The map's corner heights, [i, j] = corner (x0 + i, y0 + j).</summary>
         public int[,] CornerZ;
+
+        /// <summary>
+        /// Heightmap samples per side: <see cref="TerrainLandBuilder.HeightmapResolution"/> (33), or 65 with smooth heights
+        /// (<see cref="TerrainLandBuilder.UseSmoothHeights"/>). The holes are one fewer per side.
+        /// </summary>
+        public int HeightmapResolution = TerrainLandBuilder.HeightmapResolution;
 
         /// <summary>Unity SetHeights layout: [row along +Z, col along +X], normalized over <see cref="Size"/>.Y.</summary>
         public float[,] Heights;
