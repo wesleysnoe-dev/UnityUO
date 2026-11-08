@@ -117,3 +117,20 @@ Each step is usable on the clone on its own.
   the character's feet (+6 Z, sand dominant, 33 tiles edited, both regions the brush crossed bumped), the region
   fetched in parts, undo restored it, regions saved to their own files; the map files untouched.
 - Not yet seen in the Unity client itself (it needs the editor panel of step 2 to paint, and a login to the clone).
+
+**Step 2 (terrain brushes) done, 2026-11-08.**
+
+- Panel `UI/WorldEditorWindow.cs` (F5, administrators only): Raise, Lower, Set Z, Soft, Paint, Look (picks Set Z's
+  height from the ground); brush size, edge softness, flow, strength, Set Z target; the 8 ground materials as
+  swatches; undo / redo (also Ctrl+Z / Ctrl+Y). `World/WorldEditorTool.cs`: the brush circle on the ground, holding
+  the left mouse paints at the flow rate (WorldInput leaves the left mouse alone while the panel is open over the
+  world; the right mouse still walks).
+- Strokes apply at once on the client (the same shared code as the server, on a local copy made from the original
+  map), redraw only the touched chunks a few times a second, overlay the derived tiles, and go to the server; when
+  the drag ends the server's copy is taken (no redraw if identical).
+- Fixed on the way: the natural terrain's weight textures were named `_Splat0..2`, which Unity's Terrain overwrites
+  every frame, so the shader always saw "classic art" (the natural-terrain pilot was mostly showing tile art). They
+  are `_LGWeights0..2` now; painted ground shows the blended materials.
+- Checked in the real client against the clone with `-worldeditor-selftest` (opens the panel and paints a hill, a
+  sand path, a rocky top and a smoothed rim near the character): smooth hill, soft-edged sand path over it, rock on
+  top, panel on screen. Not yet painted by hand with the mouse.

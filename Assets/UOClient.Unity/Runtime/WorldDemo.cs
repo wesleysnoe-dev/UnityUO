@@ -622,6 +622,7 @@ namespace UOClient.Unity
 
         private readonly SessionLifecycle _life = new SessionLifecycle();
         private WorldLayerClient _worldLayer;
+        private WorldEditorTool _editorTool;
 
         /// <summary>
         /// Frees everything built for the session (its windows and their bindings, entity and effect views, overheads, the
@@ -701,6 +702,11 @@ namespace UOClient.Unity
             if (_liveGround?.Tick() is string groundStatus)
                 _ctx.Hud.Log(null, groundStatus);
             _worldLayer?.Update();
+            if (_worldLayer != null)
+            {
+                _editorTool ??= new WorldEditorTool(_ctx, _entities, () => _ui);
+                _editorTool.Update(UI.UiRouting.WorldTakesKeys(_chatLine.Typing, _ui != null && _ui.HasKeyboardFocus));
+            }
 
             if (_ctx.Session != null && _ctx.Session.World.Map != _ctx.World.Map)
             {
@@ -799,6 +805,8 @@ namespace UOClient.Unity
             Vector3 head = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(_ctx.Player.AnchorPixels - new Vector2(0, 75 * _ctx.ArtScale)));
             _effects.DrawLightningGUI(_gumpArt, _ctx.Camera, _ctx.World, _ctx.ArtScale);
             _ctx.Hud.Draw(characterName, new Vector2(head.x, Screen.height - head.y));
+            if (_worldLayer != null)
+                _editorTool?.DrawOverlay(); // the brush circle, under the windows
             if (_ui != null)
             {
                 _ui.Scale = UI.UiScale.Current;

@@ -1,7 +1,7 @@
 // LiveGroundCompare natural terrain (-terrainstyle natural): the Terrain backend's land as blended materials instead of
 // per-tile art. Same contract and light as LiveGroundCompare/TerrainLit (LiveGroundLight.cginc, sun mask, ceiling),
 // plus:
-//   _Splat0/_Splat1: weights of materials 0-3 / 4-7 (TerrainMaterials), _Splat2.r: weight of the classic art (_MainTex),
+//   _LGWeights0/_LGWeights1: weights of materials 0-3 / 4-7 (TerrainMaterials), _LGWeights2.r: weight of the classic art (_MainTex),
 //                    chunk UV like _MainTex (SplatBuilder: 4 samples per tile, borders already wandered by noise).
 //   _LGAlbedoArray:  per material sRGB albedo, height in alpha; _LGNormalArray: per material normal map (BC5 / DXT5nm).
 //   _LGMatTint[8]:   per material colour multiplier toward UO's own mean colour (TerrainMaterialSet).
@@ -14,9 +14,9 @@ Shader "LiveGroundCompare/TerrainSplat"
     {
         _MainTex ("Chunk art", 2D) = "white" {}
         _LGShadowTex ("Sun visibility (1 lit)", 2D) = "white" {}
-        _Splat0 ("Weights 0-3", 2D) = "black" {}
-        _Splat1 ("Weights 4-7", 2D) = "black" {}
-        _Splat2 ("Weight art (r)", 2D) = "red" {}
+        _LGWeights0 ("Weights 0-3", 2D) = "black" {}
+        _LGWeights1 ("Weights 4-7", 2D) = "black" {}
+        _LGWeights2 ("Weight art (r)", 2D) = "red" {}
         _Tiling ("Tiles per texture repeat", Float) = 5
         _NormalStrength ("Normal map strength", Range(0, 2)) = 1.1
         _HeightBlend ("Height blend sharpness", Range(0.02, 1)) = 0.18
@@ -45,7 +45,7 @@ Shader "LiveGroundCompare/TerrainSplat"
 
             sampler2D _MainTex;
             sampler2D _LGShadowTex;
-            sampler2D _Splat0, _Splat1, _Splat2;
+            sampler2D _LGWeights0, _LGWeights1, _LGWeights2;
             UNITY_DECLARE_TEX2DARRAY(_LGAlbedoArray);
             UNITY_DECLARE_TEX2DARRAY(_LGNormalArray);
             float4 _LGMatTint[8];
@@ -91,8 +91,8 @@ Shader "LiveGroundCompare/TerrainSplat"
 
             fixed4 frag(v2f i) : SV_Target
             {
-                float4 s0 = tex2D(_Splat0, i.uv), s1 = tex2D(_Splat1, i.uv);
-                float artW = tex2D(_Splat2, i.uv).r;
+                float4 s0 = tex2D(_LGWeights0, i.uv), s1 = tex2D(_LGWeights1, i.uv);
+                float artW = tex2D(_LGWeights2, i.uv).r;
                 float w[8] = { s0.r, s0.g, s0.b, s0.a, s1.r, s1.g, s1.b, s1.a };
 
                 // World-space material UVs: tile (x, y) -> (x, y) / tiling; a second, rotated and rescaled set.

@@ -393,7 +393,7 @@ namespace UOClient.LiveGroundCompare
                         };
                         _splat[s].SetPixelData(d.Splat[s], 0);
                         _splat[s].Apply(false, true);
-                        _material.SetTexture("_Splat" + s, _splat[s]);
+                        _material.SetTexture("_LGWeights" + s, _splat[s]); // not _SplatN: Unity's Terrain overwrites those every frame
                     }
                     set.PublishTint();
                 }

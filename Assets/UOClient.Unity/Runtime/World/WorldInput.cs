@@ -198,6 +198,9 @@ namespace UOClient.Unity
             // A split stack rides the cursor with the button up: the next click is its drop, not a world click.
             if (!Input.GetMouseButtonDown(0) || UI.UiRouting.WorldPress(OverWindowOrJournal(ui), ui.Dragging != null, fieldFocused: false) != UI.UiRouting.Press.World)
                 return;
+            // The world editor's brush has the left mouse (panel open, pointer over the world).
+            if (WorldEditorTool.CapturesLeftMouse)
+                return;
             Vector2 mouse = Input.mousePosition;
             uint picked = PickAt(mouse);
             UI.UiWindow popup = ui.Find("context");
