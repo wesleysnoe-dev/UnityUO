@@ -133,6 +133,17 @@ namespace UOClient.LiveGroundCompare
                     : $"UOClient LiveGround terrain style: classic art ({MaterialsError})");
             }
 
+            // Grass (-grass): only over the natural terrain, whose materials it reads.
+            if (GrassBuilder.Enabled)
+            {
+                Shader grass = Materials != null ? Resources.Load<Shader>(GrassBuilder.ShaderResource) : null;
+                if (grass != null && grass.isSupported)
+                    GrassShader = grass;
+                Debug.Log(GrassShader != null
+                    ? $"UOClient LiveGround grass: on ({GrassBuilder.BladesPerTile} blades per tile at full grass)"
+                    : $"UOClient LiveGround grass: off ({(Materials == null ? "needs -terrainstyle natural" : "shader missing or unsupported")})");
+            }
+
             // Occlusion is optional too: without its shader the terrain draws behind every sprite, as before, and says so.
             Shader depth = Resources.Load<Shader>(DepthShaderResource);
             if (depth == null)
@@ -160,6 +171,9 @@ namespace UOClient.LiveGroundCompare
         public SpriteShadowCeiling SpriteCeiling { get; private set; }
 
         public string SpriteShadowError { get; }
+
+        /// <summary>The grass blades' shader (-grass over the natural terrain); null when grass is off.</summary>
+        public Shader GrassShader { get; }
 
         /// <summary>The occlusion proxy's shader; null when occlusion is off (see <see cref="OcclusionError"/>).</summary>
         public Shader DepthShader { get; }

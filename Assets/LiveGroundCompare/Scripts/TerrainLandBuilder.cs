@@ -370,6 +370,9 @@ namespace UOClient.LiveGroundCompare
         /// </summary>
         public byte[][] Splat;
 
+        /// <summary>Natural terrain with -grass: the chunk's grass blades (TerrainGrass), or null.</summary>
+        public GrassData Grass;
+
         /// <summary>
         /// World editor: the water bed's drop (UO Z, 0 away from water) per heightmap sample, in <see cref="Heights"/>'
         /// layout; a stroke rewrites heights in place as painted height plus this. Null outside the natural terrain.

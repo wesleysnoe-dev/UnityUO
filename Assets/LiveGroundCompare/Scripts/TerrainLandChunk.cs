@@ -318,6 +318,8 @@ namespace UOClient.LiveGroundCompare
                 TerrainLandData data = builder.Finish();
                 if (_presenter.Materials != null && data.TileCount > 0)
                     data.Splat = painted != null ? PaintedSplat(painted, x0, y0) : SplatBuilder.Build(x0, y0, MaterialAt());
+                if (_presenter.GrassShader != null && data.Splat != null)
+                    data.Grass = GrassBuilder.Build(data);
                 // World editor: the bed's drop per heightmap sample, kept so a stroke can rewrite heights in place.
                 if (bedAt != null && data.HeightmapResolution == TerrainLandBuilder.Tiles * TerrainLandBuilder.SmoothSamplesPerTile + 1)
                 {
@@ -485,7 +487,26 @@ namespace UOClient.LiveGroundCompare
                 return;
             }
             AttachWater(name);
+            AttachGrass(d.Grass, name);
             AttachProxy(chunk, world, name);
+        }
+
+        private TerrainGrass _grass;
+
+        private void AttachGrass(GrassData g, string name)
+        {
+            if (g == null || _presenter.GrassShader == null)
+                return;
+            try
+            {
+                _grass = TerrainGrass.Attach(_presenter.Root, _presenter.GrassShader, _sunMask, g, name);
+            }
+            catch (Exception e)
+            {
+                _grass?.Dispose();
+                _grass = null;
+                Debug.LogWarning($"UOClient LiveGround grass: chunk {name} failed: {e.GetType().Name}: {e.Message}");
+            }
         }
 
         /// <summary>
@@ -681,6 +702,8 @@ namespace UOClient.LiveGroundCompare
             if (_counted)
                 _presenter.ChunkCount--;
             _counted = false;
+            _grass?.Dispose();
+            _grass = null;
             if (_go != null) UnityEngine.Object.Destroy(_go);
             if (_terrainData != null) UnityEngine.Object.Destroy(_terrainData);
             if (_material != null) UnityEngine.Object.Destroy(_material);

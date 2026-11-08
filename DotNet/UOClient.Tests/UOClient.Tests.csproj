@@ -67,6 +67,7 @@
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\TerrainLandBuilder.cs" Link="LiveGroundCompare\TerrainLandBuilder.cs" />
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\LiveGroundWater.cs" Link="LiveGroundCompare\LiveGroundWater.cs" />
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\TerrainMaterials.cs" Link="LiveGroundCompare\TerrainMaterials.cs" />
+    <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\GrassBuilder.cs" Link="LiveGroundCompare\GrassBuilder.cs" />
     <Compile Include="$(AssetsDir)LiveGroundCompare\Scripts\LiveGroundLighting.cs" Link="LiveGroundCompare\LiveGroundLighting.cs" />
   </ItemGroup>
   <ItemGroup>
