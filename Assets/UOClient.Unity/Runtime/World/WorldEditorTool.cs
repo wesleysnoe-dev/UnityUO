@@ -265,7 +265,7 @@ namespace UOClient.Unity
                 {
                     brush.TargetZ = Mathf.Round(picked);
                     brush.Current = WorldBrushSettings.Mode.SetZ;
-                    _ctx.Hud?.Log(null, $"World editor: Set Z target {brush.TargetZ:0}");
+                    _ctx.Hud?.Log(null, $"World editor: flatten to Z {brush.TargetZ:0}");
                 }
                 return;
             }

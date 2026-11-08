@@ -137,7 +137,7 @@ namespace UOClient.Unity.UI
             }
 
             // Modes.
-            string[] modes = { "RAISE", "LOWER", "SET Z", "SOFT", "PAINT", "LOOK" };
+            string[] modes = { "RAISE", "LOWER", "FLAT", "SOFT", "PAINT", "LOOK" };
             float y = 38f, bw = (Rect.width - 24f - 5 * 4f) / 6f;
             for (int i = 0; i < modes.Length; i++)
             {
@@ -153,7 +153,18 @@ namespace UOClient.Unity.UI
             b.Flow = Slider(ref y, "Flow", b.Flow, 1f, 20f, $"{b.Flow:0.0}/sec");
             b.Strength = Slider(ref y, "Strength", b.Strength, 0.05f, 1f, $"{b.Strength * 100:0}%");
             if (b.Current == WorldBrushSettings.Mode.SetZ || b.Current == WorldBrushSettings.Mode.Look)
-                b.TargetZ = Mathf.Round(Slider(ref y, "Set Z target", b.TargetZ, -60f, 100f, $"Z {b.TargetZ:0}"));
+            {
+                // FLAT: the height the ground is pulled to (LOOK picks it from the ground; Z 0 is the plain).
+                GUI.Label(new Rect(12, y, 110, 20), "Flatten to", _label);
+                b.TargetZ = Mathf.Round(GUI.HorizontalSlider(new Rect(122, y + 6, Rect.width - 122 - 104, 16), b.TargetZ, -60f, 100f));
+                GUI.Label(new Rect(Rect.width - 100, y, 44, 20), $"Z {b.TargetZ:0}", _value);
+                if (GUI.Button(new Rect(Rect.width - 52, y, 40, 20), "Z 0", b.TargetZ == 0f ? _active : _button))
+                {
+                    b.TargetZ = 0f;
+                    b.Current = WorldBrushSettings.Mode.SetZ;
+                }
+                y += 28f;
+            }
             else
                 y += 28f;
 
