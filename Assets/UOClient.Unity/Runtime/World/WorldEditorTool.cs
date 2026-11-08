@@ -101,9 +101,9 @@ namespace UOClient.Unity
                 Debug.Log("[editprofile] stress test: drag 2 done");
                 _stressAt = Time.unscaledTime + 4f;
             }
-            else if (s <= 302) // drag 3: a big smooth over both
+            else if (s <= 302) // drag 3: flatten back to the Z 0 plain across both
             {
-                b.Current = WorldBrushSettings.Mode.Soft; b.Size = 16f; b.Softness = 0.6f; b.Strength = 0.5f;
+                b.Current = WorldBrushSettings.Mode.SetZ; b.TargetZ = 0f; b.Size = 10f; b.Softness = 0.5f; b.Strength = 1f;
                 layer.Stroke(_stressX - 10f + (s - 223) * 0.25f, _stressY);
             }
             else if (s == 303)
