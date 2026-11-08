@@ -222,7 +222,14 @@ namespace UOClient.Unity
                 }
             if (added)
                 _wake.Set();
+            if (added && EditProfile.On)
+            {
+                _batchStarted = Time.realtimeSinceStartup;
+                Debug.Log($"[editprofile] rebuild batch: {_replacing.Count} chunk(s) for tiles {x0},{y0}..{x1},{y1}");
+            }
         }
+
+        private float _batchStarted;
 
         // Loaded chunks whose new build (RebuildArea) replaces them when it is ready.
         private readonly HashSet<(int, int)> _replacing = new HashSet<(int, int)>();
@@ -289,7 +296,13 @@ namespace UOClient.Unity
             {
                 Integrate(build, pcx, pcy, r);
                 integrated++;
+                EditProfile.Add("worker.build", build.BuildMs);
+                if (EditProfile.On && build.BuildMs > 100 && _replacing.Contains((build.ChunkX, build.ChunkY)))
+                    Debug.Log($"[editprofile] chunk {build.ChunkX},{build.ChunkY} built in {build.BuildMs:0} ms: draw list {build.DrawListMs:0}, " +
+                              $"quads {build.QuadsMs:0}, land {build.LandMs:0}, entries {build.Quads.Count}");
             }
+            if (integrated > 0)
+                EditProfile.Add("integrate", watch.Elapsed.TotalMilliseconds, integrated);
             _shared.Apply();
             Animate();
 
@@ -365,6 +378,7 @@ namespace UOClient.Unity
             var ready = new List<ChunkBuild>(_held.Values);
             _held.Clear();
             _replacing.Clear();
+            var swapWatch = System.Diagnostics.Stopwatch.StartNew();
             foreach (ChunkBuild b in ready)
             {
                 var bk = (b.ChunkX, b.ChunkY);
@@ -375,6 +389,10 @@ namespace UOClient.Unity
                 }
                 Attach(b);
             }
+            EditProfile.Add("batch.swap", swapWatch.Elapsed.TotalMilliseconds, ready.Count);
+            if (EditProfile.On && ready.Count > 0)
+                Debug.Log($"[editprofile] rebuild batch swapped in: {ready.Count} chunk(s), {swapWatch.Elapsed.TotalMilliseconds:0} ms, " +
+                          $"{(Time.realtimeSinceStartup - _batchStarted) * 1000f:0} ms after it started");
         }
 
         /// <summary>Puts a finished, current build on screen as its chunk.</summary>
@@ -527,6 +545,7 @@ namespace UOClient.Unity
             int x0 = cx * ChunkSize, y0 = cy * ChunkSize;
             List<IsoCompositor.DrawEntry> entries = compositor.BuildDrawList(map, x0, y0, ChunkSize, ChunkSize);
             var build = new ChunkBuild { ChunkX = cx, ChunkY = cy, Generation = generation, BaseDiagonal = x0 + y0 };
+            build.DrawListMs = watch.Elapsed.TotalMilliseconds;
 
             // Unique art (sloped land, baked placements) is packed into the chunk's own texture.
             var uniques = new List<(Bitmap32 Bitmap, int Quad)>();
@@ -598,10 +617,13 @@ namespace UOClient.Unity
                 build.Quads.Add(quad);
             }
 
+            build.QuadsMs = watch.Elapsed.TotalMilliseconds - build.DrawListMs;
             if (uniques.Count > 0)
                 PackUniques(build, uniques);
+            double beforeLand = watch.Elapsed.TotalMilliseconds;
             if (land != null && land.Count > 0)
                 build.Land = landEmitter.BuildLand(cx, cy, land);
+            build.LandMs = watch.Elapsed.TotalMilliseconds - beforeLand;
 
             build.BuildMs = watch.Elapsed.TotalMilliseconds;
             return build;
@@ -810,7 +832,7 @@ namespace UOClient.Unity
             public readonly List<SharedSprite> NewShared = new List<SharedSprite>();
             public Color32[] UniqueColors;
             public int UniqueWidth, UniqueHeight;
-            public double BuildMs;
+            public double BuildMs, DrawListMs, QuadsMs, LandMs;
             public ILandChunk Land; // LiveGroundCompare only
         }
 

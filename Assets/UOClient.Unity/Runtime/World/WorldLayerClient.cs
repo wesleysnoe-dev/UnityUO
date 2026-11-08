@@ -128,14 +128,28 @@ namespace UOClient.Unity
             if (file == null || rx < 0 || ry < 0 || rx * WorldRegion.Tiles >= file.Width || ry * WorldRegion.Tiles >= file.Height)
                 return null;
             LandTileData[] land = _ctx.Data.TileData.Land;
-            LandCell Original(int x, int y)
-            {
-                x = Math.Max(0, Math.Min(file.Width - 1, x));
-                y = Math.Max(0, Math.Min(file.Height - 1, y));
-                return file.ReadOriginalLandBlock(x >> 3, y >> 3)[((y & 7) << 3) | (x & 7)];
-            }
-            WorldRegion region = WorldInit.FromMap(map, rx, ry, (x, y) => Original(x, y).Z,
-                (x, y) => WorldMaterials.Classify(Original(x, y).Graphic < land.Length ? land[Original(x, y).Graphic].Name : ""));
+            // The region's original tiles and a border, read once (the smoothing asks for each corner many times).
+            const int border = 4, span = WorldRegion.Tiles + 2 * border;
+            int bx0 = rx * WorldRegion.Tiles - border, by0 = ry * WorldRegion.Tiles - border;
+            var z = new sbyte[span * span];
+            var material = new byte[span * span];
+            var blocks = new Dictionary<long, LandCell[]>();
+            var classified = new Dictionary<ushort, byte>();
+            for (int ty = 0; ty < span; ty++)
+                for (int tx = 0; tx < span; tx++)
+                {
+                    int x = Math.Max(0, Math.Min(file.Width - 1, bx0 + tx)), y = Math.Max(0, Math.Min(file.Height - 1, by0 + ty));
+                    long key = ((long)(x >> 3) << 32) | (uint)(y >> 3);
+                    if (!blocks.TryGetValue(key, out LandCell[] cells))
+                        blocks[key] = cells = file.ReadOriginalLandBlock(x >> 3, y >> 3);
+                    LandCell cell = cells[((y & 7) << 3) | (x & 7)];
+                    z[ty * span + tx] = cell.Z;
+                    if (!classified.TryGetValue(cell.Graphic, out byte m))
+                        classified[cell.Graphic] = m = WorldMaterials.Classify(cell.Graphic < land.Length ? land[cell.Graphic].Name : "");
+                    material[ty * span + tx] = m;
+                }
+            int At(int x, int y) => Math.Max(0, Math.Min(span - 1, y - by0)) * span + Math.Max(0, Math.Min(span - 1, x - bx0));
+            WorldRegion region = WorldInit.FromMap(map, rx, ry, (x, y) => z[At(x, y)], (x, y) => material[At(x, y)]);
             _regions[(map, rx, ry)] = region;
             return region;
         }
@@ -160,15 +174,21 @@ namespace UOClient.Unity
             if (!CanEdit || _session.State != SessionState.InWorld)
                 return;
             BrushStroke stroke = Brush.StrokeAt(x, y).Clamped();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             EditStep step = WorldBrush.Apply(Store(), stroke);
+            EditProfile.Add("stroke.apply", watch.Elapsed.TotalMilliseconds);
             _session.SendWorldStroke(_session.World.Map, stroke);
             _quietUntil = Time.unscaledTime + 1.5f; // our own edits: the server's copy is taken once the drag ends
             if (step == null)
                 return;
+            watch.Restart();
             OverlayTiles(step.Tiles);
+            EditProfile.Add("stroke.overlay", watch.Elapsed.TotalMilliseconds, step.Tiles.Count);
             int r = (int)Math.Ceiling(stroke.Radius) + 1;
             var area = new RectInt((int)Math.Floor(stroke.X) - r, (int)Math.Floor(stroke.Y) - r, 2 * r + 1, 2 * r + 1);
+            watch.Restart();
             PaintedTerrain?.Repaint(_session.World.Map, area); // on screen now, no rebuild
+            EditProfile.Add("stroke.repaint", watch.Elapsed.TotalMilliseconds);
             _lastStroke = Time.unscaledTime;
             MarkDirty(area); // the full rebuild, once the painting pauses
         }
@@ -240,6 +260,7 @@ namespace UOClient.Unity
         /// <summary>Every frame (main thread).</summary>
         public void Update()
         {
+            EditProfile.EndFrame(Time.unscaledDeltaTime * 1000f);
             if (_session.State != SessionState.InWorld || _ctx.Player == null)
                 return;
             if (!_hello)
@@ -253,8 +274,10 @@ namespace UOClient.Unity
             {
                 _nextRebuild = Time.unscaledTime + RebuildEvery;
                 _dirty = null;
+                var watch = System.Diagnostics.Stopwatch.StartNew();
                 Snapshot(d); // every chunk of this batch reads the same frozen data
                 _ctx.World?.RebuildArea(d.xMin, d.yMin, d.xMax, d.yMax);
+                EditProfile.Add($"rebuild.start {d.width}x{d.height}", watch.Elapsed.TotalMilliseconds);
             }
             if (Time.unscaledTime < _nextAsk || Time.unscaledTime < _quietUntil)
                 return;
@@ -309,6 +332,7 @@ namespace UOClient.Unity
                 return; // nobody painted it (any region we made locally stays: it is the same as the server's start)
             }
             WorldRegion region;
+            EditProfile.Add("region.received", 0);
             try
             {
                 region = WorldRegion.Deserialize(data);
@@ -407,6 +431,44 @@ namespace UOClient.Unity
             _session.WorldObjectPlaced -= OnPlaced;
             if (Current == this)
                 Current = null;
+        }
+    }
+
+    /// <summary>
+    /// World editor frame timing: the editing work timed by section; while the editor is on, every frame slower than
+    /// <see cref="SlowMs"/> is written to the log with what ran in it (sections, chunks swapped, garbage collections).
+    /// </summary>
+    public static class EditProfile
+    {
+        public const float SlowMs = 45f;
+        private static readonly Dictionary<string, (double Ms, int Count)> _frame = new Dictionary<string, (double, int)>();
+        private static int _gc0, _gc2;
+        private static int _slow;
+
+        public static bool On => WorldLayerClient.Current != null;
+
+        public static void Add(string section, double ms, int count = 1)
+        {
+            if (!On)
+                return;
+            _frame[section] = _frame.TryGetValue(section, out var v) ? (v.Ms + ms, v.Count + count) : (ms, count);
+        }
+
+        /// <summary>Once a frame: the last frame's time and what ran in it.</summary>
+        public static void EndFrame(float lastFrameMs)
+        {
+            int gc0 = GC.CollectionCount(0), gc2 = GC.CollectionCount(2);
+            if (lastFrameMs > SlowMs && Time.realtimeSinceStartup > 12f && _slow < 2000)
+            {
+                _slow++;
+                var parts = new System.Text.StringBuilder();
+                foreach (var kv in _frame)
+                    parts.Append($" {kv.Key} {kv.Value.Ms:0.0}ms x{kv.Value.Count};");
+                Debug.Log($"[editprofile] frame {lastFrameMs:0} ms:{parts} gc0 +{gc0 - _gc0} gc2 +{gc2 - _gc2}");
+            }
+            _gc0 = gc0;
+            _gc2 = gc2;
+            _frame.Clear();
         }
     }
 

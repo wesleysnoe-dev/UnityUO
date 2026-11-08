@@ -157,3 +157,13 @@ dragging it moves it (it keeps its height above the ground), the N/S/W/E/UP/DN b
   backend still need a look.
 - Placed objects are saved by the world save; stopping the clone without a save loses the ones since the last save.
 - Still to do: premade buildings (multis), lines and fills of walls or floors, hue choice.
+
+**Editing freezes, 2026-11-08.** Measured with `-worldeditor-stresstest` (three long, wide drags: snow, a 20-tile raise,
+a 16-tile smooth) and the `[editprofile]` log (every frame over 45 ms while editing, with what ran in it, plus each
+rebuild batch's timeline). Painting itself never stalled; the ground's rebuild after each drag did: each terrain chunk
+took ~650 ms on the worker, so 15-20 chunks took 6-13 s, and the first stroke in a region stalled ~470 ms on the main
+thread. Both were the same cause: `MapFile.GetLand` reads and copies a whole 8x8 block on every call, and the
+smoothing asks for each tile tens of thousands of times. Chunk builds now keep their blocks for the build
+(`TerrainLandChunk.Land`), and a region's local copy reads its tiles once. Chunks build in ~33 ms (about 20x),
+a 20-chunk rebuild lands in 0.7 s, and the first-stroke stall is gone. Left: an occasional untimed 70-170 ms frame
+during a rebuild (inside Unity's terrain, not ours).

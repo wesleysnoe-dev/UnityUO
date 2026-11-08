@@ -50,7 +50,7 @@ namespace UOClient.LiveGroundCompare
             {
                 if (x < 0 || y < 0 || x >= map.Width || y >= map.Height)
                     return false;
-                IO.Formats.LandCell cell = map.GetLand(x, y);
+                IO.Formats.LandCell cell = Land(map, x, y);
                 ushort g = cell.Graphic;
                 if (g < 3 || g == 0x1DB || (g >= 0x1AE && g <= 0x1B5) || WaterTiles.Lookup(_water, g))
                     return false; // no-draw land (IsoCompositor.IsNoDrawLand) or water land
@@ -113,9 +113,9 @@ namespace UOClient.LiveGroundCompare
                             top = Math.Max(top ?? int.MinValue, s.Z);
                 if (top.HasValue)
                     result = (true, top.Value);
-                else if (WaterTiles.Lookup(_water, map.GetLand(x, y).Graphic))
+                else if (WaterTiles.Lookup(_water, Land(map, x, y).Graphic))
                     // Its own height: a neighbour's corner may be the sea floor under ocean statics (Z -15 against -5).
-                    result = (true, map.GetLand(x, y).Z);
+                    result = (true, Land(map, x, y).Z);
                 tiles[key] = result;
                 return result;
             };
@@ -150,7 +150,7 @@ namespace UOClient.LiveGroundCompare
             TerrainMaterialSet set = _presenter.Materials;
             return (x, y) => map == null || set == null || x < 0 || y < 0 || x >= map.Width || y >= map.Height
                 ? TerrainMaterials.Art
-                : set.MaterialOf(map.GetLand(x, y).Graphic);
+                : set.MaterialOf(Land(map, x, y).Graphic);
         }
 
         // Land as before, plus the ocean statics: drawn by the water surface, not as flat tiled sprites over it.
@@ -159,8 +159,24 @@ namespace UOClient.LiveGroundCompare
             || !baked && item.Kind == ArtPipeline.DrawKind.Static
                && (WaterTiles.Lookup(_staticWater, item.Graphic) || _shoreEdge != null && WaterTiles.Lookup(_shoreEdge, item.Graphic));
 
+        // One chunk build's land blocks (worker thread): MapFile.GetLand reads and copies a whole 8x8 block on every
+        // call, and a build asks for the same tiles tens of thousands of times (smooth heights, water bed, coast).
+        [ThreadStatic] private static Dictionary<long, IO.Formats.LandCell[]> _buildBlocks;
+
+        private static IO.Formats.LandCell Land(IO.Formats.MapFile map, int x, int y)
+        {
+            Dictionary<long, IO.Formats.LandCell[]> blocks = _buildBlocks;
+            if (blocks == null)
+                return map.GetLand(x, y);
+            long key = ((long)(x >> 3) << 32) | (uint)(y >> 3);
+            if (!blocks.TryGetValue(key, out IO.Formats.LandCell[] cells))
+                blocks[key] = cells = map.ReadLandBlock(x >> 3, y >> 3);
+            return cells[((y & 7) << 3) | (x & 7)];
+        }
+
         public ILandChunk BuildLand(int chunkX, int chunkY, List<LandPlacement> land)
         {
+            _buildBlocks = new Dictionary<long, IO.Formats.LandCell[]>();
             try
             {
                 int x0 = chunkX * WorldStreamer.ChunkSize, y0 = chunkY * WorldStreamer.ChunkSize;
@@ -184,7 +200,7 @@ namespace UOClient.LiveGroundCompare
                             long key = ((long)cx << 32) | (uint)cy;
                             if (raw.TryGetValue(key, out float hit))
                                 return hit;
-                            int mapZ = map.GetLand(cx, cy).Z;
+                            int mapZ = Land(map, cx, cy).Z;
                             float z = _water != null ? WaterBed.Corner(mapZ, tileWater, cx, cy) : mapZ;
                             // Under water the bed and the bank wander a little (world-fixed noise), so the shallows
                             // and the waterline are not straight tile rows.
@@ -235,7 +251,7 @@ namespace UOClient.LiveGroundCompare
                         Func<float, float, float> ground = (wx, wy) => TerrainLandBuilder.SmoothZ(cornerZ, wx, wy);
                         // The water bed's drop at a point (0 away from water): the painted shape is drawn this much lower.
                         Func<int, int, float> pure = (x, y) =>
-                            map.GetLand(Math.Max(0, Math.Min(map.Width - 1, x)), Math.Max(0, Math.Min(map.Height - 1, y))).Z;
+                            Land(map, Math.Max(0, Math.Min(map.Width - 1, x)), Math.Max(0, Math.Min(map.Height - 1, y))).Z;
                         bedAt = (wx, wy) => Math.Min(0f, TerrainLandBuilder.SmoothZ(cornerZ, wx, wy) - TerrainLandBuilder.SmoothZ(pure, wx, wy));
 
                         // World editor: a painted region draws its own shape (plus the same water bed under water).
@@ -328,6 +344,10 @@ namespace UOClient.LiveGroundCompare
             {
                 _presenter.ReportFailure($"terrain chunk {chunkX},{chunkY}: {e.GetType().Name}: {e.Message}");
                 return null;
+            }
+            finally
+            {
+                _buildBlocks = null;
             }
         }
     }

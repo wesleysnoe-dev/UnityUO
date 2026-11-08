@@ -46,6 +46,76 @@ namespace UOClient.Unity
         private int _testStep = -1;
         private float _testAt;
 
+        // -worldeditor-stresstest: long, wide drags like painting by hand (snow, a big raise, a big smooth), started
+        // once the world has settled, with pauses between drags; for the frame timing in the log ([editprofile]).
+        private static readonly bool StressTest = Array.Exists(Environment.GetCommandLineArgs(),
+            a => string.Equals(a, "-worldeditor-stresstest", StringComparison.OrdinalIgnoreCase));
+        private int _stressStep = -1;
+        private float _stressAt = -1f;
+        private int _stressX, _stressY;
+        private const int StressEnd = 330;
+
+        private void RunStressTest(UI.UiManager ui, WorldLayerClient layer)
+        {
+            if (!layer.CanEdit)
+                return;
+            if (_stressAt < 0f)
+            {
+                _stressAt = Time.unscaledTime + 15f;
+                return;
+            }
+            if (Time.unscaledTime < _stressAt)
+                return;
+            WorldBrushSettings b = layer.Brush;
+            _stressAt = Time.unscaledTime + 0.1f; // 10 strokes a second, the panel's default flow
+            _stressStep++;
+            int s = _stressStep;
+            if (s == 0)
+            {
+                _stressX = _ctx.Player.X;
+                _stressY = _ctx.Player.Y;
+                if (ui.Find(UI.WorldEditorWindow.WindowKey) == null)
+                    ui.Open(new UI.WorldEditorWindow(layer));
+                Debug.Log("[editprofile] stress test: start");
+            }
+            else if (s <= 120) // drag 1: snow, 6 tiles wide, 30 tiles across
+            {
+                b.Current = WorldBrushSettings.Mode.Paint; b.Ground = 0; b.Material = WorldMaterials.Snow;
+                b.Size = 6f; b.Softness = 0.6f; b.Strength = 0.5f;
+                layer.Stroke(_stressX - 15f + s * 0.25f, _stressY + 6.5f);
+            }
+            else if (s == 121)
+            {
+                layer.EndStroke();
+                Debug.Log("[editprofile] stress test: drag 1 done");
+                _stressAt = Time.unscaledTime + 4f;
+            }
+            else if (s <= 221) // drag 2: a big raise, slowly across
+            {
+                b.Current = WorldBrushSettings.Mode.Raise; b.Size = 20f; b.Softness = 0.8f; b.Strength = 0.5f;
+                layer.Stroke(_stressX - 8f + (s - 122) * 0.16f, _stressY - 6.5f);
+            }
+            else if (s == 222)
+            {
+                layer.EndStroke();
+                Debug.Log("[editprofile] stress test: drag 2 done");
+                _stressAt = Time.unscaledTime + 4f;
+            }
+            else if (s <= 302) // drag 3: a big smooth over both
+            {
+                b.Current = WorldBrushSettings.Mode.Soft; b.Size = 16f; b.Softness = 0.6f; b.Strength = 0.5f;
+                layer.Stroke(_stressX - 10f + (s - 223) * 0.25f, _stressY);
+            }
+            else if (s == 303)
+            {
+                layer.EndStroke();
+                Debug.Log("[editprofile] stress test: drag 3 done");
+                _stressAt = Time.unscaledTime + 12f;
+            }
+            else if (s == StressEnd)
+                Debug.Log("[editprofile] stress test: end");
+        }
+
         private void RunSelfTest(UI.UiManager ui, WorldLayerClient layer)
         {
             if (!layer.CanEdit || Time.unscaledTime < _testAt)
@@ -140,6 +210,8 @@ namespace UOClient.Unity
                 return;
             if (SelfTest && _testStep < TestEnd)
                 RunSelfTest(ui, layer);
+            if (StressTest && _stressStep < StressEnd)
+                RunStressTest(ui, layer);
 
             if (takesKeys && Input.GetKeyDown(KeyCode.F5))
             {
