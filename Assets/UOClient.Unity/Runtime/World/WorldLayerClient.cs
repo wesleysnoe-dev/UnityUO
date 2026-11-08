@@ -79,6 +79,19 @@ namespace UOClient.Unity
 
         private WorldRegion Live(int map, int rx, int ry) => _regions.TryGetValue((map, rx, ry), out WorldRegion r) ? r : null;
 
+        /// <summary>The live (being painted) copy of a region, for the in-place repaint. Main thread only.</summary>
+        public WorldRegion LiveRegion(int map, int rx, int ry) => Live(map, rx, ry);
+
+        /// <summary>
+        /// The terrain's in-place repaint (set by the natural terrain while it is on): a stroke's area is rewritten in the
+        /// chunks already on screen at once; the full rebuild (water, shadows) follows once the painting pauses.
+        /// </summary>
+        public static IPaintedTerrain PaintedTerrain { get; set; }
+
+        /// <summary>Seconds after the last stroke before the painted area is rebuilt in full.</summary>
+        private const float SettleAfter = 0.8f;
+        private float _lastStroke = -10f;
+
         /// <summary>Freezes the live regions under a tile rectangle for the redraw about to start.</summary>
         private void Snapshot(RectInt tiles)
         {
@@ -153,7 +166,10 @@ namespace UOClient.Unity
                 return;
             OverlayTiles(step.Tiles);
             int r = (int)Math.Ceiling(stroke.Radius) + 1;
-            MarkDirty(new RectInt((int)stroke.X - r, (int)stroke.Y - r, 2 * r + 1, 2 * r + 1));
+            var area = new RectInt((int)Math.Floor(stroke.X) - r, (int)Math.Floor(stroke.Y) - r, 2 * r + 1, 2 * r + 1);
+            PaintedTerrain?.Repaint(_session.World.Map, area); // on screen now, no rebuild
+            _lastStroke = Time.unscaledTime;
+            MarkDirty(area); // the full rebuild, once the painting pauses
         }
 
         /// <summary>The mouse let go: one undo step on the server, and its copy of the regions is taken.</summary>
@@ -203,7 +219,8 @@ namespace UOClient.Unity
                 _session.WorldHello();
             }
             // One redraw batch at a time: the next waits until the last has swapped in (edits pile up meanwhile).
-            if (_dirty is RectInt d && Time.unscaledTime >= _nextRebuild && _ctx.World != null && !_ctx.World.Rebuilding)
+            bool settled = PaintedTerrain == null || Time.unscaledTime - _lastStroke >= SettleAfter;
+            if (_dirty is RectInt d && settled && Time.unscaledTime >= _nextRebuild && _ctx.World != null && !_ctx.World.Rebuilding)
             {
                 _nextRebuild = Time.unscaledTime + RebuildEvery;
                 _dirty = null;
@@ -361,6 +378,13 @@ namespace UOClient.Unity
             if (Current == this)
                 Current = null;
         }
+    }
+
+    /// <summary>Rewrites painted ground already on screen in place (the natural terrain implements it).</summary>
+    public interface IPaintedTerrain
+    {
+        /// <summary>Main thread: redraw the heights and materials under a tile rectangle from the live layer.</summary>
+        void Repaint(int map, RectInt tiles);
     }
 
     /// <summary>What the editor panel sets: the mode and the brush (WORLD_EDITOR.md, the owner's mockup).</summary>

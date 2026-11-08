@@ -370,6 +370,12 @@ namespace UOClient.LiveGroundCompare
         /// </summary>
         public byte[][] Splat;
 
+        /// <summary>
+        /// World editor: the water bed's drop (UO Z, 0 away from water) per heightmap sample, in <see cref="Heights"/>'
+        /// layout; a stroke rewrites heights in place as painted height plus this. Null outside the natural terrain.
+        /// </summary>
+        public float[,] BedDelta;
+
         /// <summary>Sun visibility, <see cref="LiveGroundLighting.ShadowSize"/>² R8 rows bottom-up (null when there is no land).</summary>
         public byte[] SunMask;
 

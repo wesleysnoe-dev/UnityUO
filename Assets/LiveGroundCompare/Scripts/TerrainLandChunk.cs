@@ -168,6 +168,7 @@ namespace UOClient.LiveGroundCompare
                 var water = _water != null ? new WaterSurfaceBuilder(x0, y0) : null;
                 water?.SetOutside(OutsideLand());
                 WorldLayer.WorldRegion painted = null; // world editor: this chunk's painted region, if any
+                Func<float, float, float> bedAt = null; // natural terrain: the water bed's drop at a point
                 // Natural terrain: smooth heights, the bed lowered under water, and a flat water surface over it.
                 if (_presenter.Materials != null)
                 {
@@ -232,6 +233,10 @@ namespace UOClient.LiveGroundCompare
                         water?.UseFlatLevel(tileWater);
                         // The water's depth at any point = its level less this same smooth ground.
                         Func<float, float, float> ground = (wx, wy) => TerrainLandBuilder.SmoothZ(cornerZ, wx, wy);
+                        // The water bed's drop at a point (0 away from water): the painted shape is drawn this much lower.
+                        Func<int, int, float> pure = (x, y) =>
+                            map.GetLand(Math.Max(0, Math.Min(map.Width - 1, x)), Math.Max(0, Math.Min(map.Height - 1, y))).Z;
+                        bedAt = (wx, wy) => Math.Min(0f, TerrainLandBuilder.SmoothZ(cornerZ, wx, wy) - TerrainLandBuilder.SmoothZ(pure, wx, wy));
 
                         // World editor: a painted region draws its own shape (plus the same water bed under water).
                         (int prx, int pry) = WorldLayer.WorldRegion.RegionOfTile(x0, y0);
@@ -239,16 +244,14 @@ namespace UOClient.LiveGroundCompare
                         if (painted != null)
                         {
                             WorldLayer.WorldRegion region = painted;
-                            Func<int, int, float> pure = (x, y) =>
-                                map.GetLand(Math.Max(0, Math.Min(map.Width - 1, x)), Math.Max(0, Math.Min(map.Height - 1, y))).Z;
+                            Func<float, float, float> bedDrop = bedAt;
                             const int sp = WorldLayer.WorldRegion.SamplesPerTile;
                             Func<int, int, float> sampleZ = (sx, sy) =>
                             {
                                 int lx = Math.Max(0, Math.Min(WorldLayer.WorldRegion.N - 1, sx - region.SampleX0));
                                 int ly = Math.Max(0, Math.Min(WorldLayer.WorldRegion.N - 1, sy - region.SampleY0));
-                                float wx = sx / (float)sp, wy = sy / (float)sp;
-                                float bed = TerrainLandBuilder.SmoothZ(cornerZ, wx, wy) - TerrainLandBuilder.SmoothZ(pure, wx, wy);
-                                return region.Height[WorldLayer.WorldRegion.Index(lx, ly)] / (float)WorldLayer.WorldRegion.ZScale + Math.Min(0f, bed);
+                                return region.Height[WorldLayer.WorldRegion.Index(lx, ly)] / (float)WorldLayer.WorldRegion.ZScale
+                                       + bedDrop(sx / (float)sp, sy / (float)sp);
                             };
                             builder.UseSampleHeights(sampleZ);
                             ground = (wx, wy) =>
@@ -299,6 +302,15 @@ namespace UOClient.LiveGroundCompare
                 TerrainLandData data = builder.Finish();
                 if (_presenter.Materials != null && data.TileCount > 0)
                     data.Splat = painted != null ? PaintedSplat(painted, x0, y0) : SplatBuilder.Build(x0, y0, MaterialAt());
+                // World editor: the bed's drop per heightmap sample, kept so a stroke can rewrite heights in place.
+                if (bedAt != null && data.HeightmapResolution == TerrainLandBuilder.Tiles * TerrainLandBuilder.SmoothSamplesPerTile + 1)
+                {
+                    int n = data.HeightmapResolution, sp = TerrainLandBuilder.SmoothSamplesPerTile;
+                    data.BedDelta = new float[n, n];
+                    for (int row = 0; row < n; row++)
+                        for (int col = 0; col < n; col++)
+                            data.BedDelta[row, col] = bedAt(x0 + col / (float)sp, y0 + (n - 1 - row) / (float)sp);
+                }
                 // Sprite receive: the same heights and columns, as heights below which a point is in shadow.
                 if (_presenter.SpriteCeiling != null && data.TileCount > 0)
                 {
@@ -392,13 +404,18 @@ namespace UOClient.LiveGroundCompare
                             wrapMode = TextureWrapMode.Clamp
                         };
                         _splat[s].SetPixelData(d.Splat[s], 0);
-                        _splat[s].Apply(false, true);
+                        _splat[s].Apply(false, false); // kept readable: the world editor rewrites it in place (Repaint)
                         _material.SetTexture("_LGWeights" + s, _splat[s]); // not _SplatN: Unity's Terrain overwrites those every frame
                     }
                     set.PublishTint();
+                    _splatBytes = d.Splat;
                 }
                 else
                     _material = new Material(_presenter.Shader) { mainTexture = _texture, name = $"UO land terrain {name}" };
+                _bedDelta = d.BedDelta;
+                _x0 = d.ChunkX0;
+                _y0 = d.ChunkY0;
+                _resolution = d.HeightmapResolution;
                 if (_presenter.SharedLight && d.SunMask != null)
                 {
                     _sunMask = new Texture2D(LiveGroundLighting.ShadowSize, LiveGroundLighting.ShadowSize, TextureFormat.R8, false, true)
@@ -430,6 +447,8 @@ namespace UOClient.LiveGroundCompare
                 t.allowAutoConnect = false;
 
                 _presenter.ChunkCount++;
+                if (_bedDelta != null && _splatBytes != null)
+                    Painter.Chunks[(_x0, _y0)] = this; // the world editor repaints it in place
                 _occluderTiles = d.OccluderTiles;
                 _presenter.OccluderTileCount += _occluderTiles;
                 _counted = true;
@@ -539,8 +558,89 @@ namespace UOClient.LiveGroundCompare
             }
         }
 
+        // ---- world editor: repaint in place ----
+
+        private byte[][] _splatBytes;
+        private float[,] _bedDelta;
+        private int _x0, _y0, _resolution;
+
+        /// <summary>
+        /// The world editor's in-place repaint (WorldLayerClient.PaintedTerrain): the chunks on screen that can be
+        /// rewritten, by their first tile. Main thread only.
+        /// </summary>
+        internal sealed class Painter : IPaintedTerrain
+        {
+            public static readonly Dictionary<(int, int), TerrainLandChunk> Chunks = new Dictionary<(int, int), TerrainLandChunk>();
+            public static readonly Painter Instance = new Painter();
+
+            public void Repaint(int map, RectInt tiles)
+            {
+                WorldLayerClient layer = WorldLayerClient.Current;
+                if (layer == null)
+                    return;
+                const int c = WorldStreamer.ChunkSize;
+                for (int cy = Mathf.FloorToInt(tiles.yMin / (float)c); cy <= tiles.yMax / c; cy++)
+                    for (int cx = Mathf.FloorToInt(tiles.xMin / (float)c); cx <= tiles.xMax / c; cx++)
+                        if (Chunks.TryGetValue((cx * c, cy * c), out TerrainLandChunk chunk))
+                            chunk.Repaint(layer, map, tiles);
+            }
+        }
+
+        /// <summary>
+        /// Rewrites this chunk's heights and material weights under a tile rectangle from the editor's live layer (no
+        /// rebuild): heights into the TerrainData, weights into the splat textures. Water, the sun mask and the occlusion
+        /// proxy catch up at the next full rebuild, a moment after the painting stops.
+        /// </summary>
+        private void Repaint(WorldLayerClient layer, int map, RectInt tiles)
+        {
+            if (_terrainData == null || _bedDelta == null || _splatBytes == null || _splat == null)
+                return;
+            const int sp = TerrainLandBuilder.SmoothSamplesPerTile, size = SplatBuilder.Size;
+            int n = _resolution;
+            (int rx, int ry) = WorldLayer.WorldRegion.RegionOfTile(_x0, _y0);
+            WorldLayer.WorldRegion region = layer.LiveRegion(map, rx, ry);
+            if (region == null)
+                return;
+            // Sample range (chunk-local, inclusive) under the rectangle.
+            int s0x = Math.Max(0, (tiles.xMin - _x0) * sp), s1x = Math.Min(n - 1, (tiles.xMax - _x0) * sp);
+            int s0y = Math.Max(0, (tiles.yMin - _y0) * sp), s1y = Math.Min(n - 1, (tiles.yMax - _y0) * sp);
+            if (s0x > s1x || s0y > s1y)
+                return;
+
+            // Heights: rows run along +Z, i.e. tile y descending (row = n - 1 - local sample y).
+            int r0 = n - 1 - s1y, r1 = n - 1 - s0y;
+            var heights = new float[r1 - r0 + 1, s1x - s0x + 1];
+            for (int row = r0; row <= r1; row++)
+                for (int col = s0x; col <= s1x; col++)
+                {
+                    int sy = n - 1 - row;
+                    int i = WorldLayer.WorldRegion.Index(_x0 * sp + col - region.SampleX0, _y0 * sp + sy - region.SampleY0);
+                    float z = region.Height[i] / (float)WorldLayer.WorldRegion.ZScale + _bedDelta[row, col];
+                    heights[row - r0, col - s0x] = TerrainLandBuilder.Normalize(z);
+                }
+            _terrainData.SetHeights(s0x, r0, heights);
+
+            // Weights: the splat's texels are the samples 0..63 (rows bottom-up, as PaintedSplat writes them).
+            var w = new float[WorldLayer.WorldMaterials.Count];
+            for (int sy = s0y; sy <= Math.Min(size - 1, s1y); sy++)
+                for (int sx = s0x; sx <= Math.Min(size - 1, s1x); sx++)
+                {
+                    region.GetWeights(WorldLayer.WorldRegion.Index(_x0 * sp + sx - region.SampleX0, _y0 * sp + sy - region.SampleY0), w);
+                    int o = ((size - 1 - sy) * size + sx) * 4;
+                    for (int k = 0; k <= TerrainMaterials.Art && k < w.Length; k++)
+                        _splatBytes[k / 4][o + k % 4] = (byte)Math.Round(255f * Math.Min(1f, w[k]));
+                }
+            for (int s = 0; s < _splat.Length; s++)
+            {
+                _splat[s].SetPixelData(_splatBytes[s], 0);
+                _splat[s].Apply(false, false);
+            }
+        }
+
         public void Dispose()
         {
+            if (Painter.Chunks.TryGetValue((_x0, _y0), out TerrainLandChunk registered) && registered == this)
+                Painter.Chunks.Remove((_x0, _y0));
             _data = null;
             _waterData = null;
             _proxyData = null;

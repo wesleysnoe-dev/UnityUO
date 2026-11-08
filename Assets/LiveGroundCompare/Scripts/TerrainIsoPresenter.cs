@@ -126,6 +126,8 @@ namespace UOClient.LiveGroundCompare
                     Materials = TerrainMaterialSet.TryCreate(world.Data, out MaterialsError);
                 else
                     MaterialsError = "needs the shared light shader";
+                if (Materials != null)
+                    WorldLayerClient.PaintedTerrain = TerrainLandChunk.Painter.Instance;
                 Debug.Log(Materials != null
                     ? $"UOClient LiveGround terrain style: natural ({TerrainMaterials.Count} materials, {Materials.Albedo.width}px, splat {SplatBuilder.SamplesPerTile}/tile)"
                     : $"UOClient LiveGround terrain style: classic art ({MaterialsError})");
@@ -328,6 +330,9 @@ namespace UOClient.LiveGroundCompare
             Water = null;
             Materials?.Dispose();
             Materials = null;
+            if (WorldLayerClient.PaintedTerrain == TerrainLandChunk.Painter.Instance)
+                WorldLayerClient.PaintedTerrain = null;
+            TerrainLandChunk.Painter.Chunks.Clear();
             SpriteCeiling?.Dispose(); // keyword, globals and MeshBuilder.FootMetadata back as they were
             SpriteCeiling = null;
             _root = null;
