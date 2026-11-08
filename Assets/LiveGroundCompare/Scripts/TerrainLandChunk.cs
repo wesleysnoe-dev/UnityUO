@@ -114,8 +114,8 @@ namespace UOClient.LiveGroundCompare
                 if (top.HasValue)
                     result = (true, top.Value);
                 else if (WaterTiles.Lookup(_water, map.GetLand(x, y).Graphic))
-                    result = (true, Math.Min(Math.Min(map.GetLand(x, y).Z, map.GetLand(x + 1, y).Z),
-                                             Math.Min(map.GetLand(x + 1, y + 1).Z, map.GetLand(x, y + 1).Z)));
+                    // Its own height: a neighbour's corner may be the sea floor under ocean statics (Z -15 against -5).
+                    result = (true, map.GetLand(x, y).Z);
                 tiles[key] = result;
                 return result;
             };
@@ -154,13 +154,62 @@ namespace UOClient.LiveGroundCompare
                     if (map != null)
                     {
                         Func<int, int, (bool Water, int Level)> tileWater = TileWater(map);
-                        builder.UseSmoothHeights((x, y) =>
+                        var raw = new Dictionary<long, float>();
+                        Func<int, int, float> rawZ = (x, y) =>
                         {
                             int cx = Math.Max(0, Math.Min(map.Width - 1, x)), cy = Math.Max(0, Math.Min(map.Height - 1, y));
+                            long key = ((long)cx << 32) | (uint)cy;
+                            if (raw.TryGetValue(key, out float hit))
+                                return hit;
                             int mapZ = map.GetLand(cx, cy).Z;
-                            return _water != null ? WaterBed.Corner(mapZ, tileWater, cx, cy) : mapZ;
+                            float z = _water != null ? WaterBed.Corner(mapZ, tileWater, cx, cy) : mapZ;
+                            // Under water the bed and the bank wander a little (world-fixed noise), so the shallows
+                            // and the waterline are not straight tile rows.
+                            if (z < mapZ)
+                                z += (SplatBuilder.Noise(cx * 0.37f, cy * 0.37f, 5) - 0.5f) * 3.5f;
+                            raw[key] = z;
+                            return z;
+                        };
+                        // Banks: a corner with water within a tile but not under open water is averaged with its
+                        // neighbours (tent 3x3), which rounds the map's tile-staircase coastlines off.
+                        var corners = new Dictionary<long, float>();
+                        Func<int, int, float> cornerZ = (x, y) =>
+                        {
+                            long key = ((long)x << 32) | (uint)y;
+                            if (corners.TryGetValue(key, out float hit))
+                                return hit;
+                            float z = rawZ(x, y);
+                            int near = 0;
+                            for (int tx = x - 2; tx <= x + 1; tx++)
+                                for (int ty = y - 2; ty <= y + 1; ty++)
+                                    if (tileWater(tx, ty).Water)
+                                        near++;
+                            if (near > 0 && near < 16)
+                            {
+                                float sum = 0, weight = 0;
+                                for (int dx = -1; dx <= 1; dx++)
+                                    for (int dy = -1; dy <= 1; dy++)
+                                    {
+                                        float w = (2 - Math.Abs(dx)) * (2 - Math.Abs(dy));
+                                        sum += rawZ(x + dx, y + dy) * w;
+                                        weight += w;
+                                    }
+                                z = sum / weight;
+                            }
+                            corners[key] = z;
+                            return z;
+                        };
+                        builder.UseSmoothHeights(cornerZ);
+                        // Sun mask: a corner under water is shaded as the water's surface (no shadows of the bed's steps).
+                        builder.UseShadeHeights((x, y) =>
+                        {
+                            float ground = cornerZ(x, y);
+                            float? level = WaterSurfaceBuilder.FlatLevel(tileWater, x, y);
+                            return level.HasValue && ground < level.Value ? Math.Max(ground, level.Value) : (float?)null;
                         });
                         water?.UseFlatLevel(tileWater);
+                        // The water's depth at any point = its level less this same smooth ground.
+                        water?.UseGround((wx, wy) => TerrainLandBuilder.SmoothZ(cornerZ, wx, wy));
                     }
                 }
                 foreach (LandPlacement p in land)
@@ -184,6 +233,16 @@ namespace UOClient.LiveGroundCompare
                 }
                 // Under water the ground bakes flat (no classic water pattern through the surface).
                 water?.ForEachBed((x, y, argb) => builder.SetFlat(x, y, argb));
+                // Natural terrain: water over no-draw land still gets a bed (no hole showing through the water).
+                if (_presenter.Materials != null && water != null && _presenter.World?.Data?.GetMap(_presenter.World.Map) is { } bedMap)
+                {
+                    Func<int, int, (bool Water, int Level)> wet = TileWater(bedMap);
+                    uint bed = water.ChunkBed;
+                    for (int i = 0; i < WorldStreamer.ChunkSize; i++)
+                        for (int j = 0; j < WorldStreamer.ChunkSize; j++)
+                            if (wet(x0 + i, y0 + j).Water)
+                                builder.ForceBed(x0 + i, y0 + j, bed);
+                }
                 int[,] occluders = _presenter.SharedLight ? Occluders(x0, y0) : null;
                 builder.SetOccluders(occluders);
                 TerrainLandData data = builder.Finish();

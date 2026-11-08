@@ -110,6 +110,59 @@ switch (argList[0])
         Console.WriteLine($"  map: {onMap} placements still on this data's map, {missing} no longer there");
         return 0;
     }
+    case "area" when argList.Count >= 5:
+    {
+        // area <x0> <y0> <x1> <y1> [map]: every static graphic in the rectangle with its tiledata, how many, and how many
+        // stand on a tile next to water land (a quick survey of what lines a coast or a river).
+        int ax0 = int.Parse(argList[1]), ay0 = int.Parse(argList[2]), ax1 = int.Parse(argList[3]), ay1 = int.Parse(argList[4]);
+        MapFile am = data.GetMap(argList.Count > 5 ? int.Parse(argList[5]) : 0);
+        bool Wet(int x, int y) => (data.TileData.Land[am.GetLand(x, y).Graphic & 0x3FFF].Flags & TileFlags.Wet) != 0;
+        var seen = new Dictionary<int, (int All, int Shore, int MinZ, int MaxZ)>();
+        for (int x = ax0; x <= ax1; x++)
+            for (int y = ay0; y <= ay1; y++)
+            {
+                bool shore = Wet(x - 1, y) || Wet(x + 1, y) || Wet(x, y - 1) || Wet(x, y + 1) || Wet(x, y);
+                foreach (StaticCell s in am.ReadStaticBlock(x >> 3, y >> 3).Where(s => s.X == (x & 7) && s.Y == (y & 7)))
+                {
+                    seen.TryGetValue(s.Graphic, out var v);
+                    seen[s.Graphic] = (v.All + 1, v.Shore + (shore ? 1 : 0), v.All == 0 ? s.Z : Math.Min(v.MinZ, s.Z), v.All == 0 ? s.Z : Math.Max(v.MaxZ, s.Z));
+                }
+            }
+        foreach (var kv in seen.OrderByDescending(k => k.Value.All))
+        {
+            StaticTileData sd = data.TileData.GetStatic(kv.Key);
+            Console.WriteLine($"0x{kv.Key:X4} x{kv.Value.All,-4} shore {kv.Value.Shore,-4} z {kv.Value.MinZ}..{kv.Value.MaxZ} '{sd.Name}' h {sd.Height} {sd.Flags}");
+        }
+        // Land beside any water (wet land or a wet static on a neighbouring tile), by graphic.
+        bool AnyWet(int x, int y) => Wet(x, y) || am.ReadStaticBlock(x >> 3, y >> 3)
+            .Any(s => s.X == (x & 7) && s.Y == (y & 7) && (data.TileData.GetStatic(s.Graphic).Flags & TileFlags.Wet) != 0);
+        var land = new Dictionary<int, int>();
+        for (int x = ax0; x <= ax1; x++)
+            for (int y = ay0; y <= ay1; y++)
+                if (!AnyWet(x, y) && (AnyWet(x - 1, y) || AnyWet(x + 1, y) || AnyWet(x, y - 1) || AnyWet(x, y + 1)))
+                {
+                    int g = am.GetLand(x, y).Graphic & 0x3FFF;
+                    land[g] = land.TryGetValue(g, out int n) ? n + 1 : 1;
+                }
+        // A character map: S ocean/water static, w water land, . other wet static, n no-draw land, # other land.
+        Console.WriteLine("-- map (S water static, w water land, n no-draw land, # land)");
+        for (int y = ay0; y <= ay1; y++)
+        {
+            var row = new System.Text.StringBuilder();
+            for (int x = ax0; x <= ax1; x++)
+            {
+                int g = am.GetLand(x, y).Graphic & 0x3FFF;
+                bool st = am.ReadStaticBlock(x >> 3, y >> 3).Any(s => s.X == (x & 7) && s.Y == (y & 7) && s.Graphic >= 0x1796 && s.Graphic <= 0x17B2);
+                bool nodraw = g < 3 || g == 0x1DB || (g >= 0x1AE && g <= 0x1B5);
+                row.Append(st ? 'S' : Wet(x, y) ? 'w' : nodraw ? 'n' : '#');
+            }
+            Console.WriteLine($"{y} {row}");
+        }
+        Console.WriteLine("-- land beside water");
+        foreach (var kv in land.OrderByDescending(k => k.Value))
+            Console.WriteLine($"land 0x{kv.Key:X4} x{kv.Value,-4} '{data.TileData.Land[kv.Key].Name}' {data.TileData.Land[kv.Key].Flags}");
+        return 0;
+    }
     case "tile" when argList.Count >= 3:
     {
         // tile <x> <y> [map]: what stands on a tile (land, then statics with their tiledata).

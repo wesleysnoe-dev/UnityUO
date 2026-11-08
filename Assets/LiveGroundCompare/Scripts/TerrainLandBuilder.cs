@@ -50,6 +50,21 @@ namespace UOClient.LiveGroundCompare
             _flat[i, j] = argb | 0xFF000000u;
         }
 
+        /// <summary>
+        /// Natural terrain: makes tile (world x, y) solid ground in one flat colour even though no land was diverted there
+        /// (the map's no-draw land under ocean statics), so the water has a bed instead of a hole. Needs smooth heights
+        /// (its corners come from <see cref="UseSmoothHeights"/>); a tile that already has land is left alone.
+        /// </summary>
+        public void ForceBed(int x, int y, uint argb)
+        {
+            int i = x - _x0, j = y - _y0;
+            if (i < 0 || j < 0 || i >= Tiles || j >= Tiles || _present[i, j])
+                return;
+            _present[i, j] = true;
+            TileCount++;
+            _flat[i, j] = argb | 0xFF000000u;
+        }
+
         private static float[,] NewDepth()
         {
             var d = new float[Tiles, Tiles];
@@ -129,6 +144,15 @@ namespace UOClient.LiveGroundCompare
         /// </summary>
         public void UseSmoothHeights(Func<int, int, float> cornerZ) => _smoothCorner = cornerZ;
 
+        private Func<int, int, float?> _shadeCorner;
+
+        /// <summary>
+        /// With smooth heights: the height the sun mask uses at a world corner, where it differs from the drawn ground
+        /// (null: the drawn ground). Under water the light stops at the surface, so the bed's own steps (the sea floor
+        /// under ocean statics against the shallower bed beside it) must not cast tile-shaped shadows through it.
+        /// </summary>
+        public void UseShadeHeights(Func<int, int, float?> cornerZ) => _shadeCorner = cornerZ;
+
         /// <summary>
         /// Height at world tile coordinates on a Catmull-Rom surface through the corners (it passes through every corner
         /// exactly), clamped to the lowest and highest of the cell's four corners so cliffs never overshoot into ripples.
@@ -206,7 +230,17 @@ namespace UOClient.LiveGroundCompare
                     d.Solid[row, col] = _present[col / samples, Tiles - 1 - row / samples];
 
             d.Rgba = BakeTexture(d.TextureSize);
-            d.SunMask = LiveGroundLighting.ShadowMask(d.CornerZ, _occluderTop);
+            // The sun mask follows the drawn ground: with smooth heights, the lowered bed and banks, not the map's steps
+            // (the sea floor under ocean statics would otherwise shadow a strip of the water beside it).
+            int[,] shadeZ = d.CornerZ;
+            if (corner != null)
+            {
+                shadeZ = new int[Tiles + 1, Tiles + 1];
+                for (int i = 0; i <= Tiles; i++)
+                    for (int j = 0; j <= Tiles; j++)
+                        shadeZ[i, j] = (int)Math.Round(_shadeCorner?.Invoke(_x0 + i, _y0 + j) ?? corner(_x0 + i, _y0 + j));
+            }
+            d.SunMask = LiveGroundLighting.ShadowMask(shadeZ, _occluderTop);
             d.OccluderTiles = StaticOccluders.Count(_occluderTop);
             d.TileDepth = (float[,])_depth.Clone();
             return d;

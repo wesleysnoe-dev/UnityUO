@@ -172,3 +172,40 @@ public class NaturalHeightsTests
         Assert.Equal(12 * 16 * 6 + 16 * 6, d.Indices.Length);      // 12 water columns + 1 skirt column
     }
 }
+
+public class WaterByDepthTests
+{
+    private static (bool, int) Sea(int x, int y) => x >= 20 ? (true, -5) : (false, 0);
+
+    [Fact]
+    public void ByDepth_ShoreValueIsTheWaterDepthAndDryCellsAreLeftOut()
+    {
+        // Ground: a smooth beach rising from the bed (-13) at x = 24 to +3 at x = 16.
+        Func<float, float, float> ground = (x, _) => Math.Max(-13f, Math.Min(3f, 3f - (x - 16f) * 2f));
+        var wb = new WaterSurfaceBuilder(16, 0);
+        var art = new UOClient.IO.Formats.Bitmap32(44, 44);
+        for (int p = 0; p < art.Pixels.Length; p++) art.Pixels[p] = 0xFF204080u;
+        for (int j = 0; j < 16; j++)
+            for (int i = 0; i < 16; i++)
+            {
+                int x = 16 + i;
+                bool w = x >= 20;
+                wb.AddTile(LiveGroundProjection.LandItem(x, j, (ushort)(w ? 0xA8 : 3), -5, -5, -5, -5, hasTexmap: false), art, false, w);
+            }
+        wb.UseFlatLevel(Sea);
+        wb.UseGround(ground);
+        WaterSurfaceData d = wb.Finish();
+        float level = -5f - WaterBed.SurfaceDrop;
+        for (int v = 0; v < d.VertexCount; v++)
+        {
+            float depth = level - ground(d.X[v], -d.Z[v]);
+            Assert.Equal(Math.Clamp(depth / WaterSurfaceBuilder.OpenDepth, 0f, 1f), d.Shore[v], 4);
+        }
+        // The shoreline (depth 0) falls inside a tile, at x = 20.2: the mesh's vertices step by a quarter tile there.
+        Assert.Contains(d.X, px => Math.Abs(px - 20.25f) < 1e-4);
+        Assert.True(d.Indices.Length > 0);
+        // No cell lies wholly on dry ground (x < 20.2).
+        for (int t = 0; t < d.Indices.Length; t += 6)
+            Assert.True(Math.Max(d.X[d.Indices[t + 1]], d.X[d.Indices[t]]) > 20.2f - 0.25f);
+    }
+}

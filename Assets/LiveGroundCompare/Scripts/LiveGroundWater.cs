@@ -210,6 +210,8 @@ namespace UOClient.LiveGroundCompare
             d.Graphics.Sort();
             if (WaterTileCount == 0 && _flatLevel == null) // flat: a skirt can reach in from water in the next chunk
                 return d;
+            if (_flatLevel != null && _groundAt != null)
+                return FinishByDepth(d);
 
             // Shore: drawn ground that no water (land or ocean static) covers; around the chunk, what the map says.
             var shoreLand = new bool[Tiles, Tiles];
@@ -296,6 +298,133 @@ namespace UOClient.LiveGroundCompare
         /// </summary>
         public void UseFlatLevel(Func<int, int, (bool Water, int Level)> tileWater) => _flatLevel = tileWater;
 
+        private Func<float, float, float> _groundAt;
+
+        /// <summary>
+        /// With the flat level: the drawn ground's height at any world point (the terrain's own smooth surface), so the
+        /// mesh is finer (<see cref="DepthSamplesPerTile"/> per tile) and each point carries the water's depth there
+        /// instead of a per-corner shore distance: foam and clarity then follow the real shoreline, not tile corners.
+        /// </summary>
+        public void UseGround(Func<float, float, float> groundAt) => _groundAt = groundAt;
+
+        public const int DepthSamplesPerTile = 4;
+
+        /// <summary>Depth (UO Z) at which the water reads as open (the shader's shore value 1); shallower is shore.</summary>
+        public const float OpenDepth = 4f;
+
+        /// <summary>
+        /// The flat surface by depth: a grid of <see cref="DepthSamplesPerTile"/>² cells per covered tile, each vertex at
+        /// the (bilinear) flat level, its shore value = depth / <see cref="OpenDepth"/> clamped to 0..1 (0 where the
+        /// ground reaches the surface), cells wholly under the ground left out.
+        /// </summary>
+        private WaterSurfaceData FinishByDepth(WaterSurfaceData d)
+        {
+            Func<int, int, (bool Water, int Level)> flat = _flatLevel;
+            var mesh = new bool[Tiles, Tiles];
+            for (int i = 0; i < Tiles; i++)
+                for (int j = 0; j < Tiles; j++)
+                {
+                    mesh[i, j] = _water[i, j];
+                    for (int di = -1; di <= 1 && !mesh[i, j]; di++)
+                        for (int dj = -1; dj <= 1 && !mesh[i, j]; dj++)
+                            mesh[i, j] = flat(_x0 + i + di, _y0 + j + dj).Water;
+                }
+            // Flat level per tile corner (null: no water near).
+            var level = new float?[Tiles + 1, Tiles + 1];
+            for (int i = 0; i <= Tiles; i++)
+                for (int j = 0; j <= Tiles; j++)
+                    if (Touches(mesh, i, j))
+                        level[i, j] = FlatLevel(flat, _x0 + i, _y0 + j);
+            uint chunkTint = MeanTint();
+
+            const int s = DepthSamplesPerTile, n = Tiles * s + 1;
+            var index = new int[n, n];
+            var depth = new float[n, n];
+            var x = new List<float>();
+            var y = new List<float>();
+            var z = new List<float>();
+            var shore = new List<float>();
+            var tint = new List<uint>();
+            for (int gi = 0; gi < n; gi++)
+                for (int gj = 0; gj < n; gj++)
+                {
+                    index[gi, gj] = -1;
+                    int ti = Math.Min(Tiles - 1, gi / s), tj = Math.Min(Tiles - 1, gj / s);
+                    // A vertex is needed if any cell around it lies on a covered tile.
+                    bool used = false;
+                    for (int a = Math.Max(0, (gi - 1) / s); a <= Math.Min(Tiles - 1, gi / s) && !used; a++)
+                        for (int b = Math.Max(0, (gj - 1) / s); b <= Math.Min(Tiles - 1, gj / s) && !used; b++)
+                            used = mesh[a, b];
+                    if (!used)
+                        continue;
+                    float u = (float)(gi - ti * s) / s, v = (float)(gj - tj * s) / s;
+                    float? l00 = level[ti, tj], l10 = level[ti + 1, tj], l01 = level[ti, tj + 1], l11 = level[ti + 1, tj + 1];
+                    float? lv = Bilinear(l00, l10, l01, l11, u, v);
+                    if (lv == null)
+                        continue;
+                    float wx = _x0 + (float)gi / s, wy = _y0 + (float)gj / s;
+                    float dep = lv.Value - _groundAt(wx, wy);
+                    depth[gi, gj] = dep;
+                    index[gi, gj] = x.Count;
+                    (float px, float py, float pz) = TerrainLandBuilder.TerrainPoint(wx, wy, lv.Value);
+                    x.Add(px);
+                    y.Add(py);
+                    z.Add(pz);
+                    shore.Add(Math.Max(0f, Math.Min(1f, dep / OpenDepth)));
+                    int ci = Math.Min(Tiles - 1, (int)Math.Round(wx - _x0 - 0.5f)), cj = Math.Min(Tiles - 1, (int)Math.Round(wy - _y0 - 0.5f));
+                    ci = Math.Max(0, ci);
+                    cj = Math.Max(0, cj);
+                    tint.Add(_water[ci, cj] ? _mean[ci, cj] : chunkTint);
+                }
+
+            var tri = new List<int>();
+            for (int gi = 0; gi < n - 1; gi++)
+                for (int gj = 0; gj < n - 1; gj++)
+                {
+                    if (!mesh[gi / s, gj / s])
+                        continue;
+                    int top = index[gi, gj], right = index[gi + 1, gj], bottom = index[gi + 1, gj + 1], left = index[gi, gj + 1];
+                    if (top < 0 || right < 0 || bottom < 0 || left < 0)
+                        continue;
+                    // Wholly under the ground (a bank above the water): nothing to draw.
+                    if (depth[gi, gj] < 0 && depth[gi + 1, gj] < 0 && depth[gi + 1, gj + 1] < 0 && depth[gi, gj + 1] < 0)
+                        continue;
+                    tri.Add(top); tri.Add(right); tri.Add(left);
+                    tri.Add(right); tri.Add(bottom); tri.Add(left);
+                }
+
+            d.X = x.ToArray();
+            d.Y = y.ToArray();
+            d.Z = z.ToArray();
+            d.Shore = shore.ToArray();
+            d.Tint = tint.ToArray();
+            d.Indices = tri.ToArray();
+            if (d.Indices.Length == 0)
+            {
+                d.X = d.Y = d.Z = d.Shore = new float[0];
+                d.Tint = new uint[0];
+            }
+            return d;
+        }
+
+        // Bilinear over the corners that exist (a missing corner borrows the mean of the others).
+        private static float? Bilinear(float? a, float? b, float? c, float? e, float u, float v)
+        {
+            float sum = 0;
+            int k = 0;
+            foreach (float? f in new[] { a, b, c, e })
+                if (f.HasValue)
+                {
+                    sum += f.Value;
+                    k++;
+                }
+            if (k == 0)
+                return null;
+            float m = sum / k;
+            float fa = a ?? m, fb = b ?? m, fc = c ?? m, fe = e ?? m;
+            return (fa * (1 - u) + fb * u) * (1 - v) + (fc * (1 - u) + fe * u) * v;
+        }
+
         /// <summary>The flat surface's height at world corner (x, y): the mean level of the water tiles around it, else of
         /// those within two tiles (a skirt corner); null when there is no water near.</summary>
         public static float? FlatLevel(Func<int, int, (bool Water, int Level)> tileWater, int x, int y)
@@ -317,6 +446,9 @@ namespace UOClient.LiveGroundCompare
             }
             return null;
         }
+
+        /// <summary>The bed colour for ground the map leaves empty under water (<see cref="TerrainLandBuilder.ForceBed"/>).</summary>
+        public uint ChunkBed => Bed(MeanTint());
 
         /// <summary>The mean colour of the chunk's water tiles (for skirt corners, which touch none).</summary>
         private uint MeanTint()
