@@ -1,9 +1,12 @@
-// LiveGroundCompare grass (-grass with -terrainstyle natural): generated blades over the natural terrain (TerrainGrass.cs).
-// Colour: the grass material's own mean albedo and UO tint (_LGAlbedoArray / _LGMatTint, globals from TerrainMaterialSet),
-// darker at the root, lighter and warmer at the tip; jungle (vertex alpha) deeper and more saturated.
-// Wind: the tips sway along one wind direction in long rolling waves with slow gusts, from _Time only (no script per frame).
-// Light: the terrain's (LiveGroundLight.cginc): time-of-day ambient, the chunk's sun mask and the shadow ceiling, the
-// player's and item lights, the ghost grey.
+// LiveGroundCompare grass (-grass with -terrainstyle natural): generated blades over the natural terrain (GrassBuilder,
+// TerrainGrass). Drawn by the MAIN camera among the sprites: each vertex is already at its projected Unity position and
+// its tile's depth key (a hair nearer than that tile's land), so blades in front of a character cover its feet, those
+// behind stay behind, and the terrain's depth proxy hides grass behind hills. Cutout-opaque like WorldSprite (ZWrite).
+// Colour: the grass material's own mean albedo and UO tint (_LGAlbedoArray / _LGMatTint, globals from
+// TerrainMaterialSet), darker at the root, lighter at the tip; jungle (vertex alpha) deeper.
+// Wind: tips sway across the screen (_WindVec, Unity per terrain unit) in rolling waves with gusts, from _Time only.
+// Light: the terrain's (LiveGroundLight.cginc) at the blade's terrain position (UV3): ambient, sun mask and shadow
+// ceiling, player and item lights, ghost.
 Shader "LiveGroundCompare/Grass"
 {
     Properties
@@ -14,11 +17,13 @@ Shader "LiveGroundCompare/Grass"
         _WaveScale ("Wave length (1 / tiles)", Range(0.02, 1)) = 0.22
         _RootDark ("Root darkness", Range(0, 1)) = 0.55
         _TipLight ("Tip brightness", Range(0.5, 2)) = 1.3
+        [HideInInspector] _WindVec ("Unity per terrain unit across the screen", Vector) = (1, 0, 0, 0)
+        [HideInInspector] _UpVec ("Unity per terrain height unit", Vector) = (0, 1, 0, 0)
     }
 
     SubShader
     {
-        Tags { "Queue" = "Geometry+10" "RenderType" = "Opaque" "IgnoreProjector" = "True" }
+        Tags { "Queue" = "AlphaTest" "RenderType" = "TransparentCutout" "IgnoreProjector" = "True" }
 
         Pass
         {
@@ -39,13 +44,15 @@ Shader "LiveGroundCompare/Grass"
             UNITY_DECLARE_TEX2DARRAY(_LGAlbedoArray);
             float4 _LGMatTint[8];
             float _Sway, _WaveSpeed, _WaveScale, _RootDark, _TipLight;
+            float4 _WindVec, _UpVec;
 
             struct appdata
             {
-                float4 vertex : POSITION;
+                float4 vertex : POSITION;   // Unity position and depth key (TerrainGrass)
                 float4 color : COLOR;
-                float2 uv : TEXCOORD0;  // x: 0 root .. 1 tip, y: blade seed
-                float2 uv2 : TEXCOORD1; // the chunk's terrain UV
+                float2 uv : TEXCOORD0;      // x: 0 root .. 1 tip, y: blade seed
+                float2 uv2 : TEXCOORD1;     // the chunk's terrain UV (sun mask)
+                float3 terrain : TEXCOORD2; // terrain-space position (wind phase, light)
             };
 
             struct v2f
@@ -60,10 +67,9 @@ Shader "LiveGroundCompare/Grass"
             v2f vert(appdata v)
             {
                 v2f o;
-                float3 w = mul(unity_ObjectToWorld, v.vertex).xyz;
-                // Wind along terrain (+x, -z) (screen right and a little down), in waves rolling across the field.
-                float2 dir = normalize(float2(1.0, -0.45));
-                float along = dot(w.xz, dir);
+                float3 w = v.terrain;
+                // Waves roll across the screen along the wind (terrain (1, 0, 1)).
+                float along = (w.x + w.z) * 0.70710678;
                 float t = _Time.y * _WaveSpeed;
                 float wave = sin(along * _WaveScale * 6.2831 - t * 2.2) * 0.55 + 0.45;
                 float gust = sin(along * 0.05 - _Time.y * 0.35) * 0.5 + 0.5;
@@ -71,9 +77,9 @@ Shader "LiveGroundCompare/Grass"
                 float flutter = sin(t * 7.0 + v.uv.y * 40.0) * 0.12;
                 float bend = v.uv.x * v.uv.x;
                 float sway = (wave * (0.6 + gust * 0.9) + flutter) * _Sway * bend;
-                w.xz += dir * sway;
-                w.y -= abs(sway) * 0.35 * v.uv.x; // a bent blade is a little shorter
-                o.pos = mul(UNITY_MATRIX_VP, float4(w, 1.0));
+                float4 p = v.vertex;
+                p.xy += _WindVec.xy * sway - _UpVec.xy * abs(sway) * 0.35 * v.uv.x; // a bent blade is a little shorter
+                o.pos = UnityObjectToClipPos(p);
                 o.world = w;
                 o.color = v.color;
                 o.uv = v.uv;
@@ -83,7 +89,6 @@ Shader "LiveGroundCompare/Grass"
 
             fixed4 frag(v2f i) : SV_Target
             {
-                // The ground's own grass colour (layer 0, jungle 3), its average at a low mip, tinted toward UO's.
                 float lush = i.color.a;
                 float3 grass = UNITY_SAMPLE_TEX2DARRAY_LOD(_LGAlbedoArray, float3(0.5, 0.5, 0), 8).rgb * _LGMatTint[0].rgb;
                 float3 jungle = UNITY_SAMPLE_TEX2DARRAY_LOD(_LGAlbedoArray, float3(0.5, 0.5, 3), 8).rgb * _LGMatTint[3].rgb;

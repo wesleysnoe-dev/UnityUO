@@ -319,7 +319,10 @@ namespace UOClient.LiveGroundCompare
                 if (_presenter.Materials != null && data.TileCount > 0)
                     data.Splat = painted != null ? PaintedSplat(painted, x0, y0) : SplatBuilder.Build(x0, y0, MaterialAt());
                 if (_presenter.GrassShader != null && data.Splat != null)
+                {
                     data.Grass = GrassBuilder.Build(data);
+                    GrassBuilder.Project(data.Grass, data.TileDepth, x0, y0, _scale);
+                }
                 // World editor: the bed's drop per heightmap sample, kept so a stroke can rewrite heights in place.
                 if (bedAt != null && data.HeightmapResolution == TerrainLandBuilder.Tiles * TerrainLandBuilder.SmoothSamplesPerTile + 1)
                 {
@@ -487,19 +490,19 @@ namespace UOClient.LiveGroundCompare
                 return;
             }
             AttachWater(name);
-            AttachGrass(d.Grass, name);
+            AttachGrass(d.Grass, chunk, world, name);
             AttachProxy(chunk, world, name);
         }
 
         private TerrainGrass _grass;
 
-        private void AttachGrass(GrassData g, string name)
+        private void AttachGrass(GrassData g, Transform chunk, IWorldSpace world, string name)
         {
-            if (g == null || _presenter.GrassShader == null)
+            if (g == null || _presenter.GrassShader == null || chunk == null)
                 return;
             try
             {
-                _grass = TerrainGrass.Attach(_presenter.Root, _presenter.GrassShader, _sunMask, g, name);
+                _grass = TerrainGrass.Attach(chunk, world, _presenter.GrassShader, _sunMask, g, name);
             }
             catch (Exception e)
             {

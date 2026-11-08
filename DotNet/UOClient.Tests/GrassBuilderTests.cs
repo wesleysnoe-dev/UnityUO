@@ -75,6 +75,31 @@ public class GrassBuilderTests
     }
 
     [Fact]
+    public void Project_EachBladeSortsJustNearerThanItsOwnTilesLand()
+    {
+        TerrainLandData d = Chunk(TerrainMaterials.Grass, 255);
+        GrassData g = GrassBuilder.Build(d);
+        var tileDepth = new float[Tiles, Tiles];
+        for (int i = 0; i < Tiles; i++)
+            for (int j = 0; j < Tiles; j++)
+                tileDepth[i, j] = i == 3 && j == 5 ? float.NaN : -(i + j) * 30.72f; // one diagonal per DepthKey.PerDiagonal * Step
+        GrassBuilder.Project(g, tileDepth, d.ChunkX0, d.ChunkY0, 1);
+        Assert.Equal(g.VertexCount, g.Depth.Length);
+        for (int v = 0; v < g.VertexCount; v += 3)
+        {
+            float x = (g.Positions[v * 3] + g.Positions[(v + 1) * 3]) * 0.5f, z = (g.Positions[v * 3 + 2] + g.Positions[(v + 1) * 3 + 2]) * 0.5f;
+            int i = (int)Math.Floor(x) - d.ChunkX0, j = (int)Math.Floor(-z) - d.ChunkY0;
+            float nearHalf = (x - (float)Math.Floor(x)) + (-z - (float)Math.Floor(-z)) > 1f ? GrassBuilder.DiagonalDepth : 0f;
+            if (i == 3 && j == 5)
+                Assert.True(float.IsNaN(g.Depth[v]));
+            else
+                Assert.Equal(tileDepth[i, j] - nearHalf - GrassBuilder.NearerSteps * GrassBuilder.DepthStep, g.Depth[v], 4);
+            Assert.Equal(g.Depth[v], g.Depth[v + 2]); // the whole blade sorts as one
+            Assert.True(g.ScreenY[v + 2] < g.ScreenY[v]); // its tip is above its root on screen
+        }
+    }
+
+    [Fact]
     public void SameChunk_SameBlades()
     {
         GrassData a = GrassBuilder.Build(Chunk(TerrainMaterials.Grass, 200));

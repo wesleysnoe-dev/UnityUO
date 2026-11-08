@@ -73,6 +73,53 @@ namespace UOClient.LiveGroundCompare
             return data.Count == 0 ? null : data;
         }
 
+        /// <summary>
+        /// Worker: each vertex's world-screen pixel (at the art scale) and depth, so the grass is drawn by the MAIN camera
+        /// among the sprites: a blade takes its tile's land depth (TileDepth, relative to the chunk's base diagonal) a hair
+        /// nearer, as a static on that tile would sort. A blade on the row of tiles in front of a character then covers its
+        /// feet; blades on the character's own tile and behind stay behind it; hills in front (the depth proxy) hide grass.
+        /// Blades on a tile with no land depth are dropped.
+        /// </summary>
+        public static void Project(GrassData g, float[,] tileDepth, int x0, int y0, int scale)
+        {
+            if (g == null || tileDepth == null)
+                return;
+            int n = g.VertexCount;
+            g.ScreenX = new float[n];
+            g.ScreenY = new float[n];
+            g.Depth = new float[n];
+            g.Scale = scale;
+            int ti = tileDepth.GetLength(0), tj = tileDepth.GetLength(1);
+            for (int b = 0; b < g.Count; b++)
+            {
+                int root = b * 3;
+                // Where it was planted: the middle of its two root corners.
+                float rx = (g.Positions[root * 3] + g.Positions[(root + 1) * 3]) * 0.5f;
+                float rz = (g.Positions[root * 3 + 2] + g.Positions[(root + 1) * 3 + 2]) * 0.5f;
+                int i = (int)Math.Floor(rx) - x0, j = (int)Math.Floor(-rz) - y0;
+                float depth = i >= 0 && j >= 0 && i < ti && j < tj ? tileDepth[i, j] : float.NaN;
+                // A character stands at its tile's centre: grass in the near half of the tile (in front of that centre on
+                // screen) sorts one diagonal nearer, so it covers the feet of whoever stands on this tile.
+                float within = (rx - (float)Math.Floor(rx)) + (-rz - (float)Math.Floor(-rz));
+                if (within > 1f)
+                    depth -= DiagonalDepth;
+                for (int v = root; v < root + 3; v++)
+                {
+                    (g.ScreenX[v], g.ScreenY[v]) = TerrainLandBuilder.ToWorldScreen(g.Positions[v * 3], g.Positions[v * 3 + 1], g.Positions[v * 3 + 2], scale);
+                    g.Depth[v] = depth - NearerSteps * DepthStep;
+                }
+            }
+        }
+
+        /// <summary>How much nearer than its tile's land a blade sorts (DepthKey steps; a static on the tile is 8 nearer).</summary>
+        public const int NearerSteps = 2;
+
+        /// <summary>UOClient.Unity.DepthKey.Step (not referenced: this file is Unity-free).</summary>
+        public const float DepthStep = 0.005f;
+
+        /// <summary>One diagonal of depth: DepthKey.PerDiagonal (256 * 3 * 8) * Step.</summary>
+        public const float DiagonalDepth = 256 * 3 * 8 * DepthStep;
+
         /// <summary>Bilinear heightmap value (0..1) at chunk-local tile units; rows run along +Z (tile y descending).</summary>
         private static float Height(float[,] heights, int n, int hp, float lx, float ly)
         {
@@ -108,6 +155,12 @@ namespace UOClient.LiveGroundCompare
 
         /// <summary>Per vertex: 0 root .. 1 tip (sway and gradient), the blade's seed, then the terrain's UV (sun mask).</summary>
         public readonly List<float> Uv, ChunkUv;
+
+        /// <summary>Per vertex, from <see cref="GrassBuilder.Project"/>: world-screen pixels and the main camera's depth (NaN: drop).</summary>
+        public float[] ScreenX, ScreenY, Depth;
+
+        /// <summary>The art scale the pixels were projected at.</summary>
+        public int Scale = 1;
 
         public GrassData(int capacity)
         {
