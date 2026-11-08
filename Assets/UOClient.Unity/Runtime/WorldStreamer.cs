@@ -193,27 +193,39 @@ namespace UOClient.Unity
 
         /// <summary>
         /// Rebuilds the chunks covering tiles (x0, y0) .. (x1, y1) inclusive (the world editor changed the ground there):
-        /// they are dropped now and requested again on the next update; builds already running for them are discarded.
+        /// a loaded chunk stays on screen and is swapped for its new build in one frame when that is ready (no gap);
+        /// builds already running for them are discarded.
         /// </summary>
         public void RebuildArea(int x0, int y0, int x1, int y1)
         {
+            bool added = false;
             for (int cy = Math.Max(0, y0 / ChunkSize); cy <= y1 / ChunkSize; cy++)
                 for (int cx = Math.Max(0, x0 / ChunkSize); cx <= x1 / ChunkSize; cx++)
                 {
                     var key = (cx, cy);
+                    bool loaded = _chunks.ContainsKey(key);
                     lock (_queue)
                     {
                         _chunkSeq[key] = (_chunkSeq.TryGetValue(key, out int s) ? s : 0) + 1;
                         _queue.Remove(key);
+                        if (loaded)
+                            _queue.Add(key); // a loaded chunk is not requested by Update: ask for its new build here
                     }
-                    if (_chunks.TryGetValue(key, out Chunk chunk))
+                    if (loaded)
                     {
-                        chunk.Dispose();
-                        _chunks.Remove(key);
+                        _replacing.Add(key);
+                        _requested.Add(key);
+                        added = true;
                     }
-                    _requested.Remove(key);
+                    else
+                        _requested.Remove(key);
                 }
+            if (added)
+                _wake.Set();
         }
+
+        // Loaded chunks whose new build (RebuildArea) replaces them when it is ready.
+        private readonly HashSet<(int, int)> _replacing = new HashSet<(int, int)>();
 
         private void Rebuild()
         {
@@ -222,6 +234,7 @@ namespace UOClient.Unity
                 c.Dispose();
             _chunks.Clear();
             _requested.Clear();
+            _replacing.Clear();
             lock (_queue)
                 _queue.Clear();
         }
@@ -287,6 +300,7 @@ namespace UOClient.Unity
                 {
                     _chunks[key].Dispose();
                     _chunks.Remove(key);
+                    _replacing.Remove(key);
                 }
         }
 
@@ -302,14 +316,26 @@ namespace UOClient.Unity
             int currentSeq;
             lock (_queue)
                 currentSeq = _chunkSeq.TryGetValue((build.ChunkX, build.ChunkY), out int cs) ? cs : 0;
+            var chunkKey = (build.ChunkX, build.ChunkY);
+            bool replacing = _replacing.Contains(chunkKey);
             bool stale = build.Generation != _generation
                          || build.Seq != currentSeq
                          || Math.Max(Math.Abs(build.ChunkX - pcx), Math.Abs(build.ChunkY - pcy)) > r + 1
-                         || _chunks.ContainsKey((build.ChunkX, build.ChunkY));
+                         || _chunks.ContainsKey(chunkKey) && !replacing;
             if (stale)
             {
                 build.Land?.Dispose();
                 return;
+            }
+            // RebuildArea: the old chunk stayed on screen until now; the new one takes its place in this frame.
+            if (replacing)
+            {
+                _replacing.Remove(chunkKey);
+                if (_chunks.TryGetValue(chunkKey, out Chunk old))
+                {
+                    old.Dispose();
+                    _chunks.Remove(chunkKey);
+                }
             }
 
             var chunk = new Chunk(_root, build.ChunkX, build.ChunkY, build.BaseDiagonal);

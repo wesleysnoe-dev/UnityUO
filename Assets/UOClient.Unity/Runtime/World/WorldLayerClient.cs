@@ -252,29 +252,61 @@ namespace UOClient.Unity
             }
             _serverPainted.Add(key);
             _asked[key] = region.Version;
-            bool same = _regions.TryGetValue(key, out WorldRegion mine) && Same(mine, region);
+            // Redraw only where the server's copy really differs from ours (none, after our own strokes, but for
+            // rounding): a whole region is 25 chunks, which stalls the game if they all rebuild at once.
+            RectInt? changed = _regions.TryGetValue(key, out WorldRegion mine) ? Difference(mine, region) : AllOf(region);
             _regions[key] = region;
             if (_store != null && _storeMap == map)
                 _store.Put(region);
-            if (same)
-                return; // what we painted here already: nothing to redraw
+            if (changed is not RectInt rect)
+                return;
             var tiles = new List<(int, int)>();
-            for (int i = 0; i < region.Edited.Length; i++)
-                if (region.Edited[i])
-                    tiles.Add((region.TileX0 + i % WorldRegion.Tiles, region.TileY0 + i / WorldRegion.Tiles));
+            for (int y = rect.yMin; y < rect.yMax; y++)
+                for (int x = rect.xMin; x < rect.xMax; x++)
+                {
+                    int lx = x - region.TileX0, ly = y - region.TileY0;
+                    if (lx >= 0 && ly >= 0 && lx < WorldRegion.Tiles && ly < WorldRegion.Tiles && region.Edited[ly * WorldRegion.Tiles + lx])
+                        tiles.Add((x, y));
+                }
             OverlayTiles(tiles);
-            MarkDirty(new RectInt(region.TileX0 - 1, region.TileY0 - 1, WorldRegion.Tiles + 2, WorldRegion.Tiles + 2));
+            MarkDirty(rect);
         }
 
-        private static bool Same(WorldRegion a, WorldRegion b)
+        private static RectInt AllOf(WorldRegion r) => new RectInt(r.TileX0 - 1, r.TileY0 - 1, WorldRegion.Tiles + 2, WorldRegion.Tiles + 2);
+
+        /// <summary>
+        /// The tiles (with a tile's margin) where two copies of a region differ by more than rounding: a height by over a
+        /// quarter Z, a material weight by over 8/255. Null when they agree.
+        /// </summary>
+        public static RectInt? Difference(WorldRegion a, WorldRegion b)
         {
-            for (int i = 0; i < a.Height.Length; i++)
-                if (a.Height[i] != b.Height[i])
-                    return false;
-            for (int i = 0; i < a.MatW.Length; i++)
-                if (a.MatW[i] != b.MatW[i] || a.MatId[i] != b.MatId[i])
-                    return false;
-            return true;
+            int x0 = int.MaxValue, y0 = int.MaxValue, x1 = int.MinValue, y1 = int.MinValue;
+            var wa = new float[WorldMaterials.Count];
+            var wb = new float[WorldMaterials.Count];
+            for (int ly = 0; ly < WorldRegion.N; ly++)
+                for (int lx = 0; lx < WorldRegion.N; lx++)
+                {
+                    int i = WorldRegion.Index(lx, ly);
+                    bool differs = Math.Abs(a.Height[i] - b.Height[i]) > WorldRegion.ZScale / 4;
+                    if (!differs)
+                    {
+                        a.GetWeights(i, wa);
+                        b.GetWeights(i, wb);
+                        for (int m = 0; m < wa.Length && !differs; m++)
+                            differs = Math.Abs(wa[m] - wb[m]) > 8f / 255f;
+                    }
+                    if (!differs)
+                        continue;
+                    x0 = Math.Min(x0, lx);
+                    y0 = Math.Min(y0, ly);
+                    x1 = Math.Max(x1, lx);
+                    y1 = Math.Max(y1, ly);
+                }
+            if (x1 < 0)
+                return null;
+            const int s = WorldRegion.SamplesPerTile;
+            int tx0 = a.TileX0 + x0 / s - 1, ty0 = a.TileY0 + y0 / s - 1, tx1 = a.TileX0 + x1 / s + 1, ty1 = a.TileY0 + y1 / s + 1;
+            return new RectInt(tx0, ty0, tx1 - tx0 + 1, ty1 - ty0 + 1);
         }
 
         /// <summary>The server's tiles for edited tiles, put on this client's map (same rules, same code).</summary>
