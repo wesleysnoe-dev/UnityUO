@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
@@ -17,6 +17,9 @@ namespace UOClient.Editor
 
         /// <summary>Touch this file (relative to the project) to have the editor build the player; the result goes to build-result.txt.</summary>
         public const string BuildRequestFile = "Library/UOClient/build-player";
+
+        /// <summary>Survives domain reload so the refresh-then-build handshake cannot drop the request.</summary>
+        public const string BuildRefreshedFile = "Library/UOClient/build-refreshed";
 
         private static string ProjectRoot => Path.GetDirectoryName(Application.dataPath);
 
@@ -131,7 +134,6 @@ namespace UOClient.Editor
         }
 
         private static double _nextPoll;
-        private static bool _refreshed;
 
         [InitializeOnLoadMethod]
         private static void WatchForRequests()
@@ -148,6 +150,8 @@ namespace UOClient.Editor
             BuildGroundCompareIfRequested();
 
             string request = Path.Combine(ProjectRoot, BuildRequestFile);
+            string refreshed = Path.Combine(ProjectRoot, BuildRefreshedFile);
+            string resultPath = Path.Combine(ProjectRoot, "Library", "UOClient", "build-result.txt");
             if (!File.Exists(request) || EditorApplication.isCompiling)
                 return;
             if (EditorApplication.isPlaying)
@@ -157,20 +161,29 @@ namespace UOClient.Editor
             }
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 return;
-            if (!_refreshed)
+
+            // File flag survives domain reload (static fields do not). Write it BEFORE Refresh.
+            if (!File.Exists(refreshed))
             {
-                _refreshed = true; // import changed scripts before building (see WorldDemoLauncher)
+                Directory.CreateDirectory(Path.GetDirectoryName(refreshed));
+                File.WriteAllText(refreshed, System.DateTime.UtcNow.ToString("o"));
                 AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
                 return;
             }
-            _refreshed = false;
-            File.Delete(request);
 
-            EditorApplication.delayCall += () =>
+            // Keep the request until the result is written so a failed/interrupted build can be retried.
+            try
             {
                 string result = Build();
-                File.WriteAllText(Path.Combine(ProjectRoot, "Library", "UOClient", "build-result.txt"), result);
-            };
+                File.WriteAllText(resultPath, result);
+                if (File.Exists(request))
+                    File.Delete(request);
+            }
+            finally
+            {
+                if (File.Exists(refreshed))
+                    File.Delete(refreshed);
+            }
         }
     }
 }
