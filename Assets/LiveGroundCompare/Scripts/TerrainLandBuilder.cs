@@ -144,6 +144,14 @@ namespace UOClient.LiveGroundCompare
         /// </summary>
         public void UseSmoothHeights(Func<int, int, float> cornerZ) => _smoothCorner = cornerZ;
 
+        private Func<int, int, float> _sampleZ;
+
+        /// <summary>
+        /// World editor: the heightmap comes straight from painted samples (world sample (sx, sy), 4 per tile, UO Z) instead
+        /// of the smooth surface through the map's corners. Needs <see cref="UseSmoothHeights"/> too (for the sun mask).
+        /// </summary>
+        public void UseSampleHeights(Func<int, int, float> sampleZ) => _sampleZ = sampleZ;
+
         private Func<int, int, float?> _shadeCorner;
 
         /// <summary>
@@ -221,7 +229,9 @@ namespace UOClient.LiveGroundCompare
                 for (int col = 0; col < resolution; col++)
                 {
                     float tx = (float)col / samples;
-                    d.Heights[row, col] = Normalize(corner != null ? SmoothZ(corner, _x0 + tx, _y0 + ty) : SampleZ(d.CornerZ, tx, ty));
+                    d.Heights[row, col] = Normalize(_sampleZ != null && samples == SmoothSamplesPerTile
+                        ? _sampleZ(_x0 * samples + col, _y0 * samples + (resolution - 1 - row))
+                        : corner != null ? SmoothZ(corner, _x0 + tx, _y0 + ty) : SampleZ(d.CornerZ, tx, ty));
                 }
             }
 

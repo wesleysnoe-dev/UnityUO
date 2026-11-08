@@ -149,6 +149,26 @@ internal static class Online
             };
         }
 
+        // --worldlayer: the world editor's messages (WORLD_EDITOR.md, step 1) against a server that has them: hello,
+        // raise and paint sand at our feet, request the region, check the server's answer, then undo it.
+        bool worldTest = args.Remove("--worldlayer");
+        int worldStage = 0;
+        double worldAt = 0;
+        UOClient.WorldLayer.WorldRegion? worldRegion = null;
+        if (worldTest)
+        {
+            session.WorldEditorReady += can => Console.WriteLine($"         world editor: hello answered, can edit = {can}");
+            session.WorldEditResult += (ok, msg) => Console.WriteLine($"         world editor: result {(ok ? "ok" : "refused")}: {msg}");
+            session.WorldRegionChanged += (m, rx, ry, v) => Console.WriteLine($"         world editor: region {m}:{rx},{ry} changed to version {v}");
+            session.WorldRegionReceived += (m, rx, ry, v, data) =>
+            {
+                worldRegion = data == null ? null : UOClient.WorldLayer.WorldRegion.Deserialize(data);
+                Console.WriteLine(data == null
+                    ? $"         world editor: region {m}:{rx},{ry} unpainted"
+                    : $"         world editor: region {m}:{rx},{ry} version {v}, {data.Length} bytes, {worldRegion!.Edited.Count(e => e)} edited tile(s)");
+            };
+        }
+
         double enteredAt = -1, nextStep = 0;
         int sent = 0;
         int[] route = { 3, 3, 1, 1, 7, 7, 5, 5 }; // a small loop: down, right, up, left (screen directions)
@@ -163,6 +183,43 @@ internal static class Online
             {
                 if (enteredAt < 0)
                     enteredAt = now;
+                if (worldTest && now - enteredAt > 1 && now >= worldAt && session.World.Player is { } wme)
+                {
+                    int map = session.World.Map;
+                    (int rx, int ry) = UOClient.WorldLayer.WorldRegion.RegionOfTile(wme.X, wme.Y);
+                    worldAt = now + 1.5;
+                    switch (worldStage++)
+                    {
+                        case 0:
+                            Console.WriteLine($"         -> world editor hello at {wme.X},{wme.Y} (region {map}:{rx},{ry})");
+                            session.WorldHello();
+                            break;
+                        case 1:
+                            Console.WriteLine("         -> raise x3 and paint sand at our feet (radius 3), end stroke");
+                            for (int k = 0; k < 3; k++)
+                                session.SendWorldStroke(map, new UOClient.WorldLayer.BrushStroke { Tool = UOClient.WorldLayer.BrushTool.Raise, X = wme.X + 0.5f, Y = wme.Y + 0.5f, Radius = 3, Softness = 0.6f, Strength = 1 });
+                            session.SendWorldStroke(map, new UOClient.WorldLayer.BrushStroke { Tool = UOClient.WorldLayer.BrushTool.Paint, X = wme.X + 0.5f, Y = wme.Y + 0.5f, Radius = 3, Softness = 0.5f, Strength = 1, Material = UOClient.WorldLayer.WorldMaterials.Sand });
+                            session.EndWorldStroke();
+                            break;
+                        case 2:
+                            Console.WriteLine("         -> request the region");
+                            session.RequestWorldRegion(map, rx, ry, -1);
+                            break;
+                        case 3:
+                            if (worldRegion != null)
+                            {
+                                int s = UOClient.WorldLayer.WorldRegion.SamplesPerTile;
+                                int i = UOClient.WorldLayer.WorldRegion.Index(wme.X * s - worldRegion.SampleX0, wme.Y * s - worldRegion.SampleY0);
+                                Console.WriteLine($"         region at our feet: height {worldRegion.Height[i] / 8f:0.0} Z (we stand at {wme.Z}), dominant material {UOClient.WorldLayer.WorldMaterials.Names[worldRegion.Dominant(i)]}");
+                            }
+                            Console.WriteLine("         -> undo");
+                            session.UndoWorld(false);
+                            break;
+                        case 4:
+                            session.RequestWorldRegion(map, rx, ry, -1);
+                            break;
+                    }
+                }
                 if (interact && !interacted && now - enteredAt > 1)
                 {
                     interacted = true;

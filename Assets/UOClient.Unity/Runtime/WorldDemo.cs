@@ -550,6 +550,9 @@ namespace UOClient.Unity
             _ctx.Session = new GameSession(login);
             // Every handler below is guarded: once the session ends (TearDownSession) none of them runs again.
             _life.Begin(_ctx.Session);
+            // World editor (-worldeditor, WORLD_EDITOR.md): painted regions from the server, drawn and walked on.
+            if (WorldLayerClient.Requested())
+                _worldLayer = new WorldLayerClient(_ctx, _ctx.Session);
             string cliloc = Path.Combine(_ctx.Data.Directory, "Cliloc.enu");
             if (File.Exists(cliloc))
                 _ctx.Session.Cliloc = new Cliloc(cliloc);
@@ -618,6 +621,7 @@ namespace UOClient.Unity
         // ---- the session's end ----
 
         private readonly SessionLifecycle _life = new SessionLifecycle();
+        private WorldLayerClient _worldLayer;
 
         /// <summary>
         /// Frees everything built for the session (its windows and their bindings, entity and effect views, overheads, the
@@ -627,6 +631,8 @@ namespace UOClient.Unity
         private string TearDownSession()
         {
             string message = _life.End();
+            _worldLayer?.Dispose();
+            _worldLayer = null;
             _ctx.Session?.Dispose(); // already disposed when it was the lifecycle's; harmless again
             _ctx.Session = null;
             _journalFile.Attach(null, null);
@@ -694,6 +700,7 @@ namespace UOClient.Unity
                 return;
             if (_liveGround?.Tick() is string groundStatus)
                 _ctx.Hud.Log(null, groundStatus);
+            _worldLayer?.Update();
 
             if (_ctx.Session != null && _ctx.Session.World.Map != _ctx.World.Map)
             {

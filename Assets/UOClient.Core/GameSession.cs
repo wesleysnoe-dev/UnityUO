@@ -977,7 +977,7 @@ namespace UOClient.Core
         {
             int sub = r.ReadUInt16();
             if (TradeExtended(sub, r) || HousingExtended(sub, r) || PartyExtended(sub, r) || ExtendedStats(sub, r)
-                || ActiveSpellExtended(sub, r) || WeaponAbilityExtended(sub))
+                || ActiveSpellExtended(sub, r) || WeaponAbilityExtended(sub) || WorldLayerExtended(sub, r))
                 return;
             if (sub == 0x08) // set map
                 World.Map = r.ReadByte();

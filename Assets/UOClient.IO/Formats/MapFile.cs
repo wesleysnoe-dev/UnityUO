@@ -94,8 +94,40 @@ namespace UOClient.IO.Formats
 
         public int GetBlockIndex(int blockX, int blockY) => blockX * BlockHeight + blockY;
 
-        /// <summary>Reads the 64 land cells of a block, indexed [cellY * 8 + cellX].</summary>
+        // World editor: land cells the server derived from the painted world layer, by block then cell.
+        private readonly object _overrideLock = new object();
+        private readonly System.Collections.Generic.Dictionary<long, System.Collections.Generic.Dictionary<int, LandCell>> _landOverride =
+            new System.Collections.Generic.Dictionary<long, System.Collections.Generic.Dictionary<int, LandCell>>();
+
+        /// <summary>
+        /// World editor: tile (x, y) reads as <paramref name="cell"/> from now on (the server's tile derived from the
+        /// painted world layer), for every reader of this map; <see cref="ReadOriginalLandBlock"/> still gives the file's.
+        /// </summary>
+        public void SetLandOverride(int x, int y, LandCell cell)
+        {
+            long key = ((long)(x >> 3) << 32) | (uint)(y >> 3);
+            lock (_overrideLock)
+            {
+                if (!_landOverride.TryGetValue(key, out var cells))
+                    _landOverride[key] = cells = new System.Collections.Generic.Dictionary<int, LandCell>();
+                cells[((y & 7) << 3) | (x & 7)] = cell;
+            }
+        }
+
+        /// <summary>Reads the 64 land cells of a block, indexed [cellY * 8 + cellX], with the world editor's overrides.</summary>
         public LandCell[] ReadLandBlock(int blockX, int blockY)
+        {
+            LandCell[] cells = ReadOriginalLandBlock(blockX, blockY);
+            long key = ((long)blockX << 32) | (uint)blockY;
+            lock (_overrideLock)
+                if (_landOverride.TryGetValue(key, out var over))
+                    foreach (var kv in over)
+                        cells[kv.Key] = kv.Value;
+            return cells;
+        }
+
+        /// <summary>Reads the 64 land cells of a block as the map file has them (no world editor overrides).</summary>
+        public LandCell[] ReadOriginalLandBlock(int blockX, int blockY)
         {
             var cells = new LandCell[64];
             if ((uint)blockX >= (uint)BlockWidth || (uint)blockY >= (uint)BlockHeight)

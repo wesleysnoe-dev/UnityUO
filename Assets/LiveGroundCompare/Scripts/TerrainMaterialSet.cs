@@ -49,6 +49,9 @@ namespace UOClient.LiveGroundCompare
         /// <summary>Whether the command line asks for the natural terrain (<c>-terrainstyle natural</c>).</summary>
         public static bool Requested()
         {
+            // The world editor draws its painted regions with the natural terrain, so -worldeditor turns it on too.
+            if (UOClient.Unity.WorldLayerClient.Requested())
+                return true;
             string[] args = Environment.GetCommandLineArgs();
             for (int i = 0; i + 1 < args.Length; i++)
                 if (string.Equals(args[i], "-terrainstyle", StringComparison.OrdinalIgnoreCase))

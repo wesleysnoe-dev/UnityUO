@@ -22,7 +22,12 @@ namespace UOClient.WorldLayer
 
         // Server -> client (same subcommand numbers, other direction).
         public const ushort HelloReply = 0xD0;     // version: int, canEdit: bool, materialCount: byte
-        public const ushort RegionData = 0xD1;     // map: byte, rx: ushort, ry: ushort, version: int, length: int, bytes (WorldRegion.Serialize); length 0: no region (unpainted)
+        // map: byte, rx: ushort, ry: ushort, version: int, total: int, offset: int, then this part's bytes to the packet's end.
+        // The parts of WorldRegion.Serialize() in order (a UO packet holds at most 64 KB); total 0: no painted region there.
+        public const ushort RegionData = 0xD1;
+
+        /// <summary>Bytes of region data per RegionData packet.</summary>
+        public const int RegionPart = 60000;
         public const ushort Result = 0xD2;         // ok: bool, message: ascii (byte length + bytes)
         public const ushort RegionChanged = 0xD5;  // map: byte, rx: ushort, ry: ushort, version: int (re-request it)
 

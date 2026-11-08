@@ -4,7 +4,8 @@
     "references": [
         "UOClient.IO",
         "UOClient.ArtPipeline",
-        "UOClient.Unity"
+        "UOClient.Unity",
+        "UOClient.Core"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

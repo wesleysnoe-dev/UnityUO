@@ -121,6 +121,27 @@ namespace UOClient.LiveGroundCompare
             };
         }
 
+        /// <summary>
+        /// World editor: a chunk's splat images straight from its painted region's weights (the same material ids as
+        /// <see cref="TerrainMaterials"/>, classic = the art weight), in <see cref="SplatBuilder"/>'s layout.
+        /// </summary>
+        private static byte[][] PaintedSplat(WorldLayer.WorldRegion region, int x0, int y0)
+        {
+            const int size = SplatBuilder.Size, sp = WorldLayer.WorldRegion.SamplesPerTile;
+            var images = new[] { new byte[size * size * 4], new byte[size * size * 4], new byte[size * size * 4] };
+            var w = new float[WorldLayer.WorldMaterials.Count];
+            for (int sy = 0; sy < size; sy++)
+                for (int sx = 0; sx < size; sx++)
+                {
+                    int lx = x0 * sp + sx - region.SampleX0, ly = y0 * sp + sy - region.SampleY0;
+                    region.GetWeights(WorldLayer.WorldRegion.Index(lx, ly), w);
+                    int o = ((size - 1 - sy) * size + sx) * 4;
+                    for (int k = 0; k <= TerrainMaterials.Art && k < w.Length; k++)
+                        images[k / 4][o + k % 4] = (byte)Math.Round(255f * Math.Min(1f, w[k]));
+                }
+            return images;
+        }
+
         /// <summary>The map's material at any tile (natural terrain), off the map or unreadable: classic art.</summary>
         private Func<int, int, int> MaterialAt()
         {
@@ -146,6 +167,7 @@ namespace UOClient.LiveGroundCompare
                 var builder = new TerrainLandBuilder(x0, y0, _texels);
                 var water = _water != null ? new WaterSurfaceBuilder(x0, y0) : null;
                 water?.SetOutside(OutsideLand());
+                WorldLayer.WorldRegion painted = null; // world editor: this chunk's painted region, if any
                 // Natural terrain: smooth heights, the bed lowered under water, and a flat water surface over it.
                 if (_presenter.Materials != null)
                 {
@@ -209,7 +231,36 @@ namespace UOClient.LiveGroundCompare
                         });
                         water?.UseFlatLevel(tileWater);
                         // The water's depth at any point = its level less this same smooth ground.
-                        water?.UseGround((wx, wy) => TerrainLandBuilder.SmoothZ(cornerZ, wx, wy));
+                        Func<float, float, float> ground = (wx, wy) => TerrainLandBuilder.SmoothZ(cornerZ, wx, wy);
+
+                        // World editor: a painted region draws its own shape (plus the same water bed under water).
+                        (int prx, int pry) = WorldLayer.WorldRegion.RegionOfTile(x0, y0);
+                        painted = WorldLayerClient.Current?.Region(world.Map, prx, pry);
+                        if (painted != null)
+                        {
+                            WorldLayer.WorldRegion region = painted;
+                            Func<int, int, float> pure = (x, y) =>
+                                map.GetLand(Math.Max(0, Math.Min(map.Width - 1, x)), Math.Max(0, Math.Min(map.Height - 1, y))).Z;
+                            const int sp = WorldLayer.WorldRegion.SamplesPerTile;
+                            Func<int, int, float> sampleZ = (sx, sy) =>
+                            {
+                                int lx = Math.Max(0, Math.Min(WorldLayer.WorldRegion.N - 1, sx - region.SampleX0));
+                                int ly = Math.Max(0, Math.Min(WorldLayer.WorldRegion.N - 1, sy - region.SampleY0));
+                                float wx = sx / (float)sp, wy = sy / (float)sp;
+                                float bed = TerrainLandBuilder.SmoothZ(cornerZ, wx, wy) - TerrainLandBuilder.SmoothZ(pure, wx, wy);
+                                return region.Height[WorldLayer.WorldRegion.Index(lx, ly)] / (float)WorldLayer.WorldRegion.ZScale + Math.Min(0f, bed);
+                            };
+                            builder.UseSampleHeights(sampleZ);
+                            ground = (wx, wy) =>
+                            {
+                                float fx = wx * sp, fy = wy * sp;
+                                int ix = (int)Math.Floor(fx), iy = (int)Math.Floor(fy);
+                                float u = fx - ix, v = fy - iy;
+                                return (sampleZ(ix, iy) * (1 - u) + sampleZ(ix + 1, iy) * u) * (1 - v)
+                                     + (sampleZ(ix, iy + 1) * (1 - u) + sampleZ(ix + 1, iy + 1) * u) * v;
+                            };
+                        }
+                        water?.UseGround(ground);
                     }
                 }
                 foreach (LandPlacement p in land)
@@ -247,7 +298,7 @@ namespace UOClient.LiveGroundCompare
                 builder.SetOccluders(occluders);
                 TerrainLandData data = builder.Finish();
                 if (_presenter.Materials != null && data.TileCount > 0)
-                    data.Splat = SplatBuilder.Build(x0, y0, MaterialAt());
+                    data.Splat = painted != null ? PaintedSplat(painted, x0, y0) : SplatBuilder.Build(x0, y0, MaterialAt());
                 // Sprite receive: the same heights and columns, as heights below which a point is in shadow.
                 if (_presenter.SpriteCeiling != null && data.TileCount > 0)
                 {

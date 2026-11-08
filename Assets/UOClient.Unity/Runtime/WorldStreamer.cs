@@ -188,6 +188,33 @@ namespace UOClient.Unity
             }
         }
 
+        // Per-chunk rebuild counts (RebuildArea), read by the worker under the queue lock.
+        private readonly Dictionary<(int, int), int> _chunkSeq = new Dictionary<(int, int), int>();
+
+        /// <summary>
+        /// Rebuilds the chunks covering tiles (x0, y0) .. (x1, y1) inclusive (the world editor changed the ground there):
+        /// they are dropped now and requested again on the next update; builds already running for them are discarded.
+        /// </summary>
+        public void RebuildArea(int x0, int y0, int x1, int y1)
+        {
+            for (int cy = Math.Max(0, y0 / ChunkSize); cy <= y1 / ChunkSize; cy++)
+                for (int cx = Math.Max(0, x0 / ChunkSize); cx <= x1 / ChunkSize; cx++)
+                {
+                    var key = (cx, cy);
+                    lock (_queue)
+                    {
+                        _chunkSeq[key] = (_chunkSeq.TryGetValue(key, out int s) ? s : 0) + 1;
+                        _queue.Remove(key);
+                    }
+                    if (_chunks.TryGetValue(key, out Chunk chunk))
+                    {
+                        chunk.Dispose();
+                        _chunks.Remove(key);
+                    }
+                    _requested.Remove(key);
+                }
+        }
+
         private void Rebuild()
         {
             _generation++;
@@ -272,7 +299,11 @@ namespace UOClient.Unity
             _requested.Remove((build.ChunkX, build.ChunkY));
             WorkerMs += build.BuildMs;
             ChunksBuilt++;
+            int currentSeq;
+            lock (_queue)
+                currentSeq = _chunkSeq.TryGetValue((build.ChunkX, build.ChunkY), out int cs) ? cs : 0;
             bool stale = build.Generation != _generation
+                         || build.Seq != currentSeq
                          || Math.Max(Math.Abs(build.ChunkX - pcx), Math.Abs(build.ChunkY - pcy)) > r + 1
                          || _chunks.ContainsKey((build.ChunkX, build.ChunkY));
             if (stale)
@@ -371,7 +402,7 @@ namespace UOClient.Unity
             while (!_stopping)
             {
                 (int, int) next;
-                int generation, map;
+                int generation, map, seq;
                 ILandEmitter landEmitter;
                 lock (_queue)
                 {
@@ -396,6 +427,7 @@ namespace UOClient.Unity
                     generation = _generation;
                     map = _map;
                     landEmitter = _landEmitter;
+                    seq = _chunkSeq.TryGetValue(next, out int s) ? s : 0;
                 }
 
                 if (next.Item1 < 0)
@@ -408,7 +440,9 @@ namespace UOClient.Unity
                 {
                     compositor ??= _compositorFactory();
                     tileData ??= _data.TileData;
-                    _results.Enqueue(BuildChunk(compositor, tileData, map, next.Item1, next.Item2, generation, landEmitter));
+                    ChunkBuild built = BuildChunk(compositor, tileData, map, next.Item1, next.Item2, generation, landEmitter);
+                    built.Seq = seq;
+                    _results.Enqueue(built);
                 }
                 catch (Exception e)
                 {
@@ -699,6 +733,9 @@ namespace UOClient.Unity
         private sealed class ChunkBuild
         {
             public int ChunkX, ChunkY, Generation, BaseDiagonal;
+
+            /// <summary>The chunk's rebuild count when this build started (<see cref="RebuildArea"/>); older: stale.</summary>
+            public int Seq;
             public readonly List<ChunkQuad> Quads = new List<ChunkQuad>();
             public readonly List<StaticLight> Lights = new List<StaticLight>();
             public readonly List<AnimatedBuild> Animated = new List<AnimatedBuild>();

@@ -96,3 +96,24 @@ map files. At startup the server loads every region and applies the derived tile
    files for TazUO.
 
 Each step is usable on the clone on its own.
+
+## Status
+
+**Step 1 (foundation) done, 2026-11-08.**
+
+- Shared core: `Assets/UOClient.Core/WorldLayer/` (regions, materials, store, init from the map, brushes, undo,
+  derivation, message payloads); 12 tests in `DotNet/UOClient.Tests/WorldLayerTests.cs`.
+- Server (clone only, not committed there; the clone's tree carries the live shard's uncommitted work):
+  `G:/UOShardClone/ModernUO/Projects/UOContent/WorldEditor/` holds `WorldLayerSystem.cs` (load, derive into the live
+  map, messages, undo, save every 5 s to `Distribution/Data/WorldLayer/map{N}/`), `WorldEditorTestAccount.cs` (a
+  local test Administrator from `Distribution/Data/WorldLayer/test-admin.txt`; clone only) and `Shared/` (a copy of
+  the core, refreshed by `E:/UOOverhaul/tools/sync_worldlayer.sh`).
+- Client: `GameSession.WorldLayer.cs` (messages), `World/WorldLayerClient.cs` (under `-worldeditor`: hello, regions
+  around the player, the server's tiles overlaid on the client's map via `MapFile.SetLandOverride`, affected chunks
+  rebuilt via `WorldStreamer.RebuildArea`), and the terrain draws a painted region's own heights and materials
+  (`TerrainLandChunk`, `TerrainLandBuilder.UseSampleHeights`). `-worldeditor` turns the natural terrain on.
+- Checked end to end against the clone with the headless client (`uoclient online --worldlayer`, account file
+  `G:/UOShardClone/local/worldeditor-account.json`): hello answered as an editor, three raises and a sand paint at
+  the character's feet (+6 Z, sand dominant, 33 tiles edited, both regions the brush crossed bumped), the region
+  fetched in parts, undo restored it, regions saved to their own files; the map files untouched.
+- Not yet seen in the Unity client itself (it needs the editor panel of step 2 to paint, and a login to the clone).
