@@ -40,6 +40,17 @@ namespace UOClient.WorldLayer
             Ry = ry;
         }
 
+        /// <summary>A copy (the client's redraw reads a snapshot while painting goes on in the original).</summary>
+        public WorldRegion Clone()
+        {
+            var c = new WorldRegion(Map, Rx, Ry) { Version = Version };
+            Array.Copy(Height, c.Height, Height.Length);
+            Array.Copy(MatId, c.MatId, MatId.Length);
+            Array.Copy(MatW, c.MatW, MatW.Length);
+            Array.Copy(Edited, c.Edited, Edited.Length);
+            return c;
+        }
+
         public int TileX0 => Rx * Tiles;
         public int TileY0 => Ry * Tiles;
         public int SampleX0 => Rx * SamplesPerRegion;

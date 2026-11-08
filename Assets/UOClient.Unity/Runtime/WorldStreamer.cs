@@ -235,6 +235,9 @@ namespace UOClient.Unity
             _chunks.Clear();
             _requested.Clear();
             _replacing.Clear();
+            foreach (ChunkBuild b in _held.Values)
+                b.Land?.Dispose();
+            _held.Clear();
             lock (_queue)
                 _queue.Clear();
         }
@@ -301,7 +304,11 @@ namespace UOClient.Unity
                     _chunks[key].Dispose();
                     _chunks.Remove(key);
                     _replacing.Remove(key);
+                    if (_held.Remove(key, out ChunkBuild heldBuild))
+                        heldBuild.Land?.Dispose();
                 }
+            if (unload != null && _replacing.Count > 0)
+                FlushBatchIfReady();
         }
 
         private void Integrate(ChunkBuild build, int pcx, int pcy, int r)
@@ -325,19 +332,54 @@ namespace UOClient.Unity
             if (stale)
             {
                 build.Land?.Dispose();
+                // A batch member that will not come (out of range now, or the world moved on): the old chunk stays.
+                if (replacing && build.Seq == currentSeq)
+                {
+                    _replacing.Remove(chunkKey);
+                    FlushBatchIfReady();
+                }
                 return;
             }
-            // RebuildArea: the old chunk stayed on screen until now; the new one takes its place in this frame.
+            // RebuildArea: the old chunks stay on screen until every new build of the batch is in; then they all swap in
+            // this frame, so neighbouring chunks never show a crack between old and new edges.
             if (replacing)
             {
-                _replacing.Remove(chunkKey);
-                if (_chunks.TryGetValue(chunkKey, out Chunk old))
+                _held[chunkKey] = build;
+                FlushBatchIfReady();
+                return;
+            }
+            Attach(build);
+        }
+
+        // Rebuilt chunks waiting for the rest of their batch (RebuildArea).
+        private readonly Dictionary<(int, int), ChunkBuild> _held = new Dictionary<(int, int), ChunkBuild>();
+
+        /// <summary>Whether a RebuildArea batch is still being built (the world editor waits before sending the next).</summary>
+        public bool Rebuilding => _replacing.Count > 0;
+
+        private void FlushBatchIfReady()
+        {
+            foreach ((int, int) k in _replacing)
+                if (!_held.ContainsKey(k))
+                    return; // still waiting for others
+            var ready = new List<ChunkBuild>(_held.Values);
+            _held.Clear();
+            _replacing.Clear();
+            foreach (ChunkBuild b in ready)
+            {
+                var bk = (b.ChunkX, b.ChunkY);
+                if (_chunks.TryGetValue(bk, out Chunk old))
                 {
                     old.Dispose();
-                    _chunks.Remove(chunkKey);
+                    _chunks.Remove(bk);
                 }
+                Attach(b);
             }
+        }
 
+        /// <summary>Puts a finished, current build on screen as its chunk.</summary>
+        private void Attach(ChunkBuild build)
+        {
             var chunk = new Chunk(_root, build.ChunkX, build.ChunkY, build.BaseDiagonal);
             Texture2D unique = null;
             if (build.UniqueColors != null)

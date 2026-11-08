@@ -68,8 +68,28 @@ namespace UOClient.Unity
         /// <summary>The last message from the server or the editor, for the panel.</summary>
         public string Status { get; private set; } = "";
 
-        /// <summary>A region the terrain should draw from (painted, or made here to paint on), or null. Worker threads too.</summary>
-        public WorldRegion Region(int map, int rx, int ry) => _regions.TryGetValue((map, rx, ry), out WorldRegion r) ? r : null;
+        /// <summary>
+        /// The region the terrain draws from: a snapshot taken when its redraw batch started (<see cref="Snapshot"/>), so
+        /// every chunk of a batch is built from the same data while painting goes on in the live copy. Null where nothing
+        /// is painted or made. Worker threads too.
+        /// </summary>
+        public WorldRegion Region(int map, int rx, int ry) => _render.TryGetValue((map, rx, ry), out WorldRegion r) ? r : null;
+
+        private readonly ConcurrentDictionary<(int, int, int), WorldRegion> _render = new ConcurrentDictionary<(int, int, int), WorldRegion>();
+
+        private WorldRegion Live(int map, int rx, int ry) => _regions.TryGetValue((map, rx, ry), out WorldRegion r) ? r : null;
+
+        /// <summary>Freezes the live regions under a tile rectangle for the redraw about to start.</summary>
+        private void Snapshot(RectInt tiles)
+        {
+            int map = _session.World.Map;
+            (int rx0, int ry0) = WorldRegion.RegionOfTile(tiles.xMin, tiles.yMin);
+            (int rx1, int ry1) = WorldRegion.RegionOfTile(tiles.xMax, tiles.yMax);
+            for (int ry = ry0; ry <= ry1; ry++)
+                for (int rx = rx0; rx <= rx1; rx++)
+                    if (Live(map, rx, ry) is WorldRegion live)
+                        _render[(map, rx, ry)] = live.Clone();
+        }
 
         // ---- the local copy ----
 
@@ -112,7 +132,7 @@ namespace UOClient.Unity
             const int s = WorldRegion.SamplesPerTile;
             int sx = (int)Math.Round(x * s), sy = (int)Math.Round(y * s);
             (int rx, int ry) = WorldRegion.RegionOfSample(sx, sy);
-            WorldRegion r = Region(_session.World.Map, rx, ry);
+            WorldRegion r = Live(_session.World.Map, rx, ry);
             if (r == null)
                 return null;
             return r.Height[WorldRegion.Index(sx - r.SampleX0, sy - r.SampleY0)] / (float)WorldRegion.ZScale;
@@ -182,10 +202,12 @@ namespace UOClient.Unity
                 _hello = true;
                 _session.WorldHello();
             }
-            if (_dirty is RectInt d && Time.unscaledTime >= _nextRebuild)
+            // One redraw batch at a time: the next waits until the last has swapped in (edits pile up meanwhile).
+            if (_dirty is RectInt d && Time.unscaledTime >= _nextRebuild && _ctx.World != null && !_ctx.World.Rebuilding)
             {
                 _nextRebuild = Time.unscaledTime + RebuildEvery;
                 _dirty = null;
+                Snapshot(d); // every chunk of this batch reads the same frozen data
                 _ctx.World?.RebuildArea(d.xMin, d.yMin, d.xMax, d.yMax);
             }
             if (Time.unscaledTime < _nextAsk || Time.unscaledTime < _quietUntil)
