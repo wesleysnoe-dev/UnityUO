@@ -132,6 +132,9 @@ namespace UOClient.Unity
             return Math.Abs(zTop - zBottom) <= Math.Abs(zLeft - zRight) ? (zTop + zBottom) >> 1 : (zLeft + zRight) >> 1;
         }
 
+        /// <summary>The map statics and house / boat parts on a tile (for a click naming what is there).</summary>
+        public StaticCell[] StaticsOn(int x, int y) => StaticsAt(x, y);
+
         private StaticCell[] StaticsAt(int x, int y)
         {
             long key = ((long)(x >> 3) << 32) | (uint)(y >> 3);

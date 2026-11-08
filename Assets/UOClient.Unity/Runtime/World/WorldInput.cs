@@ -27,6 +27,7 @@ namespace UOClient.Unity
         private uint _pressedMobile; // a mobile under the held left button: dragging it pulls out its health bar
         private bool _tabHolding;    // HoldDownKeyTab: this Tab press asked for war, so its release asks for peace
         private uint _rightPressedPlate; // the nameplate a right press went down on: releasing over it closes it
+        private EntityViews.PickedStatic? _pendingStatic; // a click on a map static: named once the double-click time passes
 
         /// <summary>The options' HoldDownKeyTab (TazUO's): war mode while Tab is held (GameOptions.TabWarMode); off, Tab toggles.</summary>
         public bool HoldDownKeyTab { get; set; } = GameOptions.Defaults().holdDownKeyTab;
@@ -92,6 +93,12 @@ namespace UOClient.Unity
                 if (_ctx.Session.Target == null)
                     _ctx.Session.SingleClick(_pendingClick, _ctx.Data.TileData);
                 _pendingClick = 0;
+            }
+            if (_pendingStatic is EntityViews.PickedStatic clicked && Time.realtimeSinceStartup - _lastWorldClick >= DoubleClickTime)
+            {
+                _pendingStatic = null;
+                if (_ctx.Session.Target == null)
+                    NameStatic(clicked);
             }
             // A held Tab's release ends its war mode wherever the keys are by then (a window may have taken them meanwhile).
             if (Input.GetKeyUp(KeyCode.Tab))
@@ -247,9 +254,23 @@ namespace UOClient.Unity
             // A quick click elsewhere replaces the waiting one, as TazUO's DelayedObjectClickManager.Set does, so two
             // vendors clicked in a row pop one menu, not two racing each other.
             _pendingClick = doubleClick ? 0 : picked;
+            // Nothing with a serial there: a map static (tree, wall, sign) is named locally, as the classic client does.
+            _pendingStatic = picked == 0 && !doubleClick ? _entities.PickStatic(mouse) : null;
             if (picked == 0 || !doubleClick)
                 return; // a single click goes out once the double-click time passes
             _ctx.Session.DoubleClick(picked);
+        }
+
+        /// <summary>
+        /// A static's name over it: tiledata's name in the singular (TileNames), else cliloc 1020000 + graphic, as
+        /// ClassicUO's static label. Nothing goes to the server: map statics have no serial.
+        /// </summary>
+        private void NameStatic(EntityViews.PickedStatic st)
+        {
+            string name = Core.TileNames.Singular(_ctx.Data.TileData.GetStatic(st.Graphic).Name)
+                          ?? Core.TileNames.Singular(_ui()?.Cliloc?.Get(1020000 + st.Graphic));
+            if (name != null)
+                _entities.StaticNamed?.Invoke(st.LabelSerial, name);
         }
 
         /// <summary>Tab pressed or released: the war mode it asks for, if any (GameOptions.TabWarMode).</summary>

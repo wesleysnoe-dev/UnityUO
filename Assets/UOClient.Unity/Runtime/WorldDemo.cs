@@ -92,7 +92,12 @@ namespace UOClient.Unity
         private void Start()
         {
             _ctx.Root = transform;
-            _entities = new EntityViews(_ctx) { PlayerNamed = name => characterName = name };
+            _entities = new EntityViews(_ctx)
+            {
+                PlayerNamed = name => characterName = name,
+                // A clicked static's name over it, in the classic client's label grey (hue 0x03B2).
+                StaticNamed = (serial, text) => _overheads.Add(serial, text, new Color(0.71f, 0.71f, 0.71f), 14, _overheads.SpeechSeconds(text), false)
+            };
             _movement = new PlayerMovement(_ctx);
             _hudPresenter = new HudPresenter(_ctx, _entities);
             _input = new WorldInput(_ctx, _entities, _tooltip, _chatLine, _lighting, _roofs, () => _ui, () => Hotkeys);

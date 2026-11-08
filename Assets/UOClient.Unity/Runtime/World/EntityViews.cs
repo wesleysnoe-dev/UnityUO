@@ -298,6 +298,8 @@ namespace UOClient.Unity
         /// <summary>The drawn rectangle (world units) overhead text for a serial goes over, or null if it's not drawn.</summary>
         public Rect? DrawnRect(uint serial)
         {
+            if (serial >= StaticLabelBase && _staticLabels.TryGetValue(serial, out StaticLabel label))
+                return StaticRect(label.Item, label.Width, label.Height);
             if (_ctx.Session != null && serial == _ctx.Session.World.PlayerSerial)
                 return _ctx.Player.LastRect;
             if (_others.TryGetValue(serial, out Avatar a) && a.Visible)
@@ -366,6 +368,119 @@ namespace UOClient.Unity
             (float cx, float cy) = MousePick.PixelCenter(screen.x, screen.y);
             (float x, float y) = MousePick.ScreenToWorld(cx, cy, c.x, c.y, cam.orthographicSize, view.x, view.y, view.width, view.height);
             return new Vector2(x, y);
+        }
+
+        // ---- map statics under the mouse (a click names them, as the classic client and ClassicUO do) ----
+
+        /// <summary>A clicked static's name, to show over it (label serial, text): WorldDemo puts it in the overhead text.</summary>
+        public Action<uint, string> StaticNamed { get; set; }
+
+        /// <summary>Overhead labels on statics use serials from here up (never a real item or mobile serial).</summary>
+        public const uint StaticLabelBase = 0xC0000000;
+
+        private struct StaticLabel
+        {
+            public UOClient.ArtPipeline.DrawItem Item;
+            public int Width, Height;
+        }
+
+        private readonly Dictionary<uint, StaticLabel> _staticLabels = new Dictionary<uint, StaticLabel>();
+        private readonly Dictionary<long, uint> _staticLabelKeys = new Dictionary<long, uint>();
+        private readonly Dictionary<int, Bitmap32> _staticArt = new Dictionary<int, Bitmap32>();
+        private uint _nextStaticLabel = StaticLabelBase;
+
+        /// <summary>A static picked by <see cref="PickStatic"/>: where it is, its graphic, and the label serial its name goes over.</summary>
+        public struct PickedStatic
+        {
+            public int X, Y, Z, Graphic;
+            public uint LabelSerial;
+        }
+
+        private Bitmap32 StaticArt(int graphic)
+        {
+            if (!_staticArt.TryGetValue(graphic, out Bitmap32 art))
+                _staticArt[graphic] = art = _ctx.Data.GetStatic(graphic);
+            return art;
+        }
+
+        private Rect StaticRect(UOClient.ArtPipeline.DrawItem it, int width, int height)
+        {
+            var (left, top, w, h) = UOClient.ArtPipeline.IsoCompositor.PlacementRect(it, _ctx.ArtScale, width, height);
+            return _ctx.World.ToUnityRect(left, top, w, h);
+        }
+
+        private static UOClient.ArtPipeline.DrawItem StaticItem(int x, int y, int z, int graphic, StaticTileData td) =>
+            new UOClient.ArtPipeline.DrawItem
+            {
+                Kind = UOClient.ArtPipeline.DrawKind.Static, Graphic = (ushort)graphic, X = x, Y = y, Z = (sbyte)z,
+                PriorityZ = z + (td.IsBackground ? -1 : 0) + (td.Height > 0 ? 1 : 0) // as ItemView orders them
+            };
+
+        /// <summary>
+        /// The map static or house / boat part drawn in front under a screen point (bottom-left origin), on a pixel of its
+        /// art (not its transparent box, not cut away by the roof / upper-floor cut), or null. Statics stand on tiles below
+        /// the point on screen, so the tiles from a little above the mouse's tile to well below it are searched.
+        /// </summary>
+        public PickedStatic? PickStatic(Vector2 screen)
+        {
+            if (_ctx.World == null || _ctx.Data == null || _ctx.Walk == null || _ctx.Player == null || _ctx.Camera == null)
+                return null;
+            Vector2 wp = ScreenToWorld(screen);
+            Vector2Int t = _ctx.World.TileAt(_ctx.World.FromUnity(wp), _ctx.Player.Z);
+            float cutZ = Shader.GetGlobalFloat("_UOCutZ");
+            PickedStatic? best = null;
+            float bestDepth = float.MaxValue;
+            UOClient.ArtPipeline.DrawItem bestItem = default;
+            Bitmap32 bestArt = null;
+            for (int dy = -3; dy <= 14; dy++)
+                for (int dx = -3; dx <= 14; dx++)
+                {
+                    int x = t.x + dx, y = t.y + dy;
+                    if (x < 0 || y < 0)
+                        continue;
+                    foreach (StaticCell cell in _ctx.Walk.StaticsOn(x, y))
+                    {
+                        Bitmap32 art = StaticArt(cell.Graphic);
+                        if (art == null || art.Width <= 0 || art.Height <= 0)
+                            continue;
+                        UOClient.ArtPipeline.DrawItem it = StaticItem(x, y, cell.Z, cell.Graphic, _ctx.Data.TileData.GetStatic(cell.Graphic));
+                        float depth = _ctx.World.DepthFor(it);
+                        if (depth > bestDepth)
+                            continue;
+                        Rect r = StaticRect(it, art.Width, art.Height);
+                        var sprite = new MousePick.Sprite
+                        {
+                            Left = r.xMin, Bottom = r.yMin, Width = r.width, Height = r.height,
+                            SpriteWidth = art.Width, SpriteHeight = art.Height, Depth = depth, CutHeight = MeshBuilder.CutHeight(cell.Z)
+                        };
+                        Bitmap32 a = art;
+                        if (!MousePick.Hits(sprite, wp.x, wp.y, cutZ, (px, py) => (byte)(a.Pixels[py * a.Width + px] >> 24)))
+                            continue;
+                        bestDepth = depth;
+                        bestArt = art;
+                        bestItem = it;
+                        best = new PickedStatic { X = x, Y = y, Z = cell.Z, Graphic = cell.Graphic };
+                    }
+                }
+            if (best is not PickedStatic p)
+                return null;
+
+            // One label serial per static, so clicking it again stacks its lines as speech does.
+            long key = ((long)(p.X & 0xFFFF) << 40) | ((long)(p.Y & 0xFFFF) << 24) | ((long)(p.Z & 0xFF) << 16) | (long)(p.Graphic & 0xFFFF);
+            if (!_staticLabelKeys.TryGetValue(key, out uint serial))
+            {
+                if (_staticLabelKeys.Count >= 256 || _nextStaticLabel == 0) // old labels are long gone by now
+                {
+                    _staticLabelKeys.Clear();
+                    _staticLabels.Clear();
+                    _nextStaticLabel = StaticLabelBase;
+                }
+                serial = _nextStaticLabel++;
+                _staticLabelKeys[key] = serial;
+            }
+            _staticLabels[serial] = new StaticLabel { Item = bestItem, Width = bestArt.Width, Height = bestArt.Height };
+            p.LabelSerial = serial;
+            return p;
         }
 
         /// <summary>
