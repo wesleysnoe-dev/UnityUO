@@ -45,3 +45,5 @@ unity-uo-hotkeys.json
 /[Ee]xports/
 DotNet/**/[Bb]in/
 DotNet/**/[Oo]bj/
+
+_build_backups/
