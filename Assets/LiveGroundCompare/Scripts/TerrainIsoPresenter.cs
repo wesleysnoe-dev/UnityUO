@@ -119,6 +119,18 @@ namespace UOClient.LiveGroundCompare
                 ? $"UOClient LiveGround water: on ({WaterTiles.WaterName} land rows with Wet: {CountWater(Water.Table)})"
                 : $"UOClient LiveGround water: off ({waterError})");
 
+            // Natural terrain (-terrainstyle natural): blended CC0 materials instead of the per-tile art. Needs the lit path.
+            if (TerrainMaterialSet.Requested())
+            {
+                if (SharedLight)
+                    Materials = TerrainMaterialSet.TryCreate(world.Data, out MaterialsError);
+                else
+                    MaterialsError = "needs the shared light shader";
+                Debug.Log(Materials != null
+                    ? $"UOClient LiveGround terrain style: natural ({TerrainMaterials.Count} materials, {Materials.Albedo.width}px, splat {SplatBuilder.SamplesPerTile}/tile)"
+                    : $"UOClient LiveGround terrain style: classic art ({MaterialsError})");
+            }
+
             // Occlusion is optional too: without its shader the terrain draws behind every sprite, as before, and says so.
             Shader depth = Resources.Load<Shader>(DepthShaderResource);
             if (depth == null)
@@ -185,6 +197,11 @@ namespace UOClient.LiveGroundCompare
 
         /// <summary>Null when water is off (see <see cref="WaterError"/>).</summary>
         public TerrainWaterSupport Water { get; private set; }
+
+        /// <summary>Natural terrain materials; null for the classic per-tile art (not asked for, or <see cref="MaterialsError"/>).</summary>
+        public TerrainMaterialSet Materials { get; private set; }
+
+        public string MaterialsError;
 
         public string WaterError { get; }
 
@@ -309,6 +326,8 @@ namespace UOClient.LiveGroundCompare
             UnityEngine.Object.Destroy(_root); // camera, light and any terrain chunk not yet disposed
             Water?.Dispose();
             Water = null;
+            Materials?.Dispose();
+            Materials = null;
             SpriteCeiling?.Dispose(); // keyword, globals and MeshBuilder.FootMetadata back as they were
             SpriteCeiling = null;
             _root = null;

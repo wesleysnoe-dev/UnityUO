@@ -77,6 +77,17 @@ namespace UOClient.LiveGroundCompare
             }
         }
 
+        /// <summary>The map's material at any tile (natural terrain), off the map or unreadable: classic art.</summary>
+        private Func<int, int, int> MaterialAt()
+        {
+            WorldStreamer world = _presenter.World;
+            IO.Formats.MapFile map = world?.Data?.GetMap(world.Map);
+            TerrainMaterialSet set = _presenter.Materials;
+            return (x, y) => map == null || set == null || x < 0 || y < 0 || x >= map.Width || y >= map.Height
+                ? TerrainMaterials.Art
+                : set.MaterialOf(map.GetLand(x, y).Graphic);
+        }
+
         // Land as before, plus the ocean statics: drawn by the water surface, not as flat tiled sprites over it.
         public bool Diverts(in ArtPipeline.DrawItem item, bool baked) =>
             GroundBackend.Diverts(GroundBackendKind.Terrain, item, baked)
@@ -99,12 +110,22 @@ namespace UOClient.LiveGroundCompare
                     }
                     builder.AddTile(p.Item, p.Art, p.Texmap, _occlusion ? p.Depth : float.NaN);
                     water?.AddTile(p.Item, p.Art, p.Texmap, WaterTiles.Lookup(_water, p.Item.Graphic));
+                    // Natural terrain: UO's own colour for this ground, for the tint (until enough tiles are seen).
+                    TerrainMaterialSet set = _presenter.Materials;
+                    if (set != null && p.Art != null)
+                    {
+                        int material = set.MaterialOf(p.Item.Graphic);
+                        if (set.NeedsSamples(material))
+                            set.AddUoSample(material, WaterSurfaceBuilder.MeanColor(p.Art, p.Texmap));
+                    }
                 }
                 // Under water the ground bakes flat (no classic water pattern through the surface).
                 water?.ForEachBed((x, y, argb) => builder.SetFlat(x, y, argb));
                 int[,] occluders = _presenter.SharedLight ? Occluders(x0, y0) : null;
                 builder.SetOccluders(occluders);
                 TerrainLandData data = builder.Finish();
+                if (_presenter.Materials != null && data.TileCount > 0)
+                    data.Splat = SplatBuilder.Build(x0, y0, MaterialAt());
                 // Sprite receive: the same heights and columns, as heights below which a point is in shadow.
                 if (_presenter.SpriteCeiling != null && data.TileCount > 0)
                 {
@@ -135,6 +156,7 @@ namespace UOClient.LiveGroundCompare
         private TerrainData _terrainData;
         private Texture2D _texture;
         private Texture2D _sunMask;
+        private Texture2D[] _splat; // natural terrain weights (3 RGBA), null for the classic art
         private Material _material;
         private GameObject _go;
         private bool _counted;
@@ -180,7 +202,27 @@ namespace UOClient.LiveGroundCompare
                 };
                 _texture.SetPixelData(d.Rgba, 0);
                 _texture.Apply(false, true);
-                _material = new Material(_presenter.Shader) { mainTexture = _texture, name = $"UO land terrain {name}" };
+                TerrainMaterialSet set = _presenter.Materials;
+                if (set != null && d.Splat != null)
+                {
+                    _material = new Material(set.Shader) { mainTexture = _texture, name = $"UO land terrain (natural) {name}" };
+                    _splat = new Texture2D[d.Splat.Length];
+                    for (int s = 0; s < d.Splat.Length; s++)
+                    {
+                        _splat[s] = new Texture2D(SplatBuilder.Size, SplatBuilder.Size, TextureFormat.RGBA32, false, true)
+                        {
+                            name = $"UO land splat {s} {name}",
+                            filterMode = FilterMode.Bilinear,
+                            wrapMode = TextureWrapMode.Clamp
+                        };
+                        _splat[s].SetPixelData(d.Splat[s], 0);
+                        _splat[s].Apply(false, true);
+                        _material.SetTexture("_Splat" + s, _splat[s]);
+                    }
+                    set.PublishTint();
+                }
+                else
+                    _material = new Material(_presenter.Shader) { mainTexture = _texture, name = $"UO land terrain {name}" };
                 if (_presenter.SharedLight && d.SunMask != null)
                 {
                     _sunMask = new Texture2D(LiveGroundLighting.ShadowSize, LiveGroundLighting.ShadowSize, TextureFormat.R8, false, true)
@@ -348,6 +390,10 @@ namespace UOClient.LiveGroundCompare
             if (_material != null) UnityEngine.Object.Destroy(_material);
             if (_texture != null) UnityEngine.Object.Destroy(_texture);
             if (_sunMask != null) UnityEngine.Object.Destroy(_sunMask);
+            if (_splat != null)
+                foreach (Texture2D s in _splat)
+                    if (s != null) UnityEngine.Object.Destroy(s);
+            _splat = null;
             _go = null;
             _sunMask = null;
             _terrainData = null;

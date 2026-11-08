@@ -263,6 +263,12 @@ namespace UOClient.LiveGroundCompare
         public byte[] Rgba;
         public int TextureSize;
 
+        /// <summary>
+        /// Natural terrain (<c>-terrainstyle natural</c>): the chunk's splat weights, three RGBA images of
+        /// <see cref="SplatBuilder.Size"/>² (<see cref="SplatBuilder.Build"/>); null for the classic tile art.
+        /// </summary>
+        public byte[][] Splat;
+
         /// <summary>Sun visibility, <see cref="LiveGroundLighting.ShadowSize"/>² R8 rows bottom-up (null when there is no land).</summary>
         public byte[] SunMask;
 
