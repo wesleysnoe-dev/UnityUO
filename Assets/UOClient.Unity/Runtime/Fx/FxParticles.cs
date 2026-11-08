@@ -149,17 +149,19 @@ namespace UOClient.Unity.Fx
         }
 
         /// <summary>A missile's trail: glowing puffs left behind in the effect's colour.</summary>
-        public static ParticleSystem Trail(Color color, float scale)
+        public static ParticleSystem Trail(Vector3 at, Color color, float scale)
         {
             ParticleSystem ps = Make("Trail", null, 200);
+            ps.transform.position = at; // placed before it plays: no streak from the world origin
             var main = ps.main;
             main.startLifetime = new ParticleSystem.MinMaxCurve(0.25f, 0.45f);
             main.startSpeed = 0f;
             main.startSize = new ParticleSystem.MinMaxCurve(7f * scale, 12f * scale);
             main.startColor = Color.white;
             var em = ps.emission;
-            em.rateOverTime = 0f;
-            em.rateOverDistance = 0.35f / scale;
+            // by time, not distance: a jump (the world re-centring as the player walks) must not spray puffs along it
+            em.rateOverTime = 80f;
+            em.rateOverDistance = 0f;
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Sphere;
             shape.radius = 2f * scale;
@@ -179,17 +181,19 @@ namespace UOClient.Unity.Fx
             ParticleSystem ps = Make("Burst", null, 80);
             ps.transform.position = at;
             var main = ps.main;
-            main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.7f);
-            main.startSpeed = new ParticleSystem.MinMaxCurve(30f * scale, 80f * scale);
-            main.startSize = new ParticleSystem.MinMaxCurve(4f * scale, 10f * scale);
+            // a billow of fire round the blast, not a ring thrown out across the screen
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.65f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(6f * scale, 22f * scale);
+            main.startSize = new ParticleSystem.MinMaxCurve(6f * scale, 13f * scale);
             main.startColor = Color.white;
+            main.gravityModifier = -2f * scale; // the heat lifts it
             main.stopAction = ParticleSystemStopAction.Destroy;
             var em = ps.emission;
             em.rateOverTime = 0f;
-            em.SetBursts(new[] { new ParticleSystem.Burst(0f, 30) });
+            em.SetBursts(new[] { new ParticleSystem.Burst(0f, 22) });
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Circle;
-            shape.radius = 3f * scale;
+            shape.radius = 8f * scale;
             var col = ps.colorOverLifetime;
             col.enabled = true;
             col.color = Ramp(Color.Lerp(color, Color.white, 0.3f), color, color * 0.2f, 0.5f);

@@ -144,11 +144,12 @@ namespace UOClient.Unity
             _renderer.enabled = true;
 
             // FX: a trail behind missiles, a burst when an explosion starts, and the effect's own light.
-            var centre = new Vector3(r.center.x, r.center.y, depth - 1f);
+            // just in front of the effect's own art (as an outline is), so whatever hides the art hides its FX too
+            var centre = new Vector3(r.center.x, r.center.y, depth - DepthKey.Step * 0.2f);
             if (_style.Trail)
             {
                 if (_trail == null)
-                    _trail = Fx.FxParticles.Trail(_style.Light, _scale);
+                    _trail = Fx.FxParticles.Trail(centre, _style.Light, _scale);
                 _trail.transform.position = centre;
             }
             if (_style.Burst && !_burst)

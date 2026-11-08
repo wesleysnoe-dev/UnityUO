@@ -114,8 +114,8 @@ namespace UOClient.Unity.Fx
                     return new EffectStyle { Glow = true, Trail = true, Light = Fire, Radius = graphic == 0x36D4 ? 4f : 2.5f };
                 case 0x36B0: case 0x36BD: case 0x36CB: // explosions
                     return new EffectStyle { Unlit = true, Burst = true, Light = Fire, Radius = 7f };
-                case 0x3709: // flame strike
-                    return new EffectStyle { Unlit = true, Burst = true, Light = Fire, Radius = 6f };
+                case 0x3709: // flame column: flame strike, but also fire procs on mobiles (Tunic of Fire, pet moves, ...): light only
+                    return new EffectStyle { Unlit = true, Light = Fire, Radius = 5f };
                 case 0x379F: // energy bolt
                     return new EffectStyle { Glow = true, Trail = true, Light = Energy, Radius = 4f };
                 case 0x3779: case 0x37B9: case 0x376A: case 0x375A: case 0x373A: case 0x374A: // sparkles: heal, cure, bless, ...
