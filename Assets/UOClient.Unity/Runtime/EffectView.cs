@@ -28,6 +28,9 @@ namespace UOClient.Unity
         private readonly Material _material;
         private readonly MeshRenderer _renderer;
         private Vector3Int _from, _to;
+        private readonly Fx.FxCatalog.EffectStyle _style;
+        private ParticleSystem _trail;
+        private bool _burst;
 
         public EffectView(UOData data, MobileArt art, Transform parent, Shader shader, int scale, GraphicEffect e, Func<uint, Vector3Int?> locate)
         {
@@ -58,6 +61,17 @@ namespace UOClient.Unity
             _mesh = new Mesh();
             _go.AddComponent<MeshFilter>().sharedMesh = _mesh;
             _material = new Material(shader);
+            _style = Fx.FxCatalog.Effect(e.Graphic);
+            if (_style.Glow)
+            {
+                // Spell light is light: added onto the scene, not lit by it (a fireball at night stays bright).
+                _material.SetFloat("_Unlit", 1f);
+                _material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.One);
+                _material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
+                _material.renderQueue = 3050;
+            }
+            else if (_style.Unlit) // explosions: full colour at night, but solid (additive art this big blows out to white)
+                _material.SetFloat("_Unlit", 1f);
             _renderer = _go.AddComponent<MeshRenderer>();
             _renderer.sharedMaterial = _material;
             _renderer.enabled = false;
@@ -125,12 +139,34 @@ namespace UOClient.Unity
             float half = 22f * _scale;
             Rect r = world.ToUnityRect(left + (fx - fy) * half, top + (fx + fy) * half, w, h);
             _material.mainTexture = _art.Atlas.Page(sprite.Slot.Page);
-            MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(sprite.Slot), world.DepthFor(At(x0 + 1, y0 + 1)), false);
+            float depth = world.DepthFor(At(x0 + 1, y0 + 1));
+            MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(sprite.Slot), depth, false);
             _renderer.enabled = true;
+
+            // FX: a trail behind missiles, a burst when an explosion starts, and the effect's own light.
+            var centre = new Vector3(r.center.x, r.center.y, depth - 1f);
+            if (_style.Trail)
+            {
+                if (_trail == null)
+                    _trail = Fx.FxParticles.Trail(_style.Light, _scale);
+                _trail.transform.position = centre;
+            }
+            if (_style.Burst && !_burst)
+            {
+                _burst = true;
+                Fx.FxParticles.Burst(centre, _style.Light, _scale);
+            }
+            if (_style.Radius > 0f)
+            {
+                float age = Time.realtimeSinceStartup - _born;
+                float fade = _style.Burst ? Mathf.Clamp01(1f - age / Mathf.Max(0.2f, _life)) : 1f;
+                ItemLights.Glows.Add((Position, _style.Light * (0.6f + 0.6f * fade), _style.Radius * (0.6f + 0.4f * fade)));
+            }
         }
 
         public void Dispose()
         {
+            Fx.FxParticles.Release(_trail);
             UnityEngine.Object.Destroy(_material);
             UnityEngine.Object.Destroy(_mesh);
             UnityEngine.Object.Destroy(_go);

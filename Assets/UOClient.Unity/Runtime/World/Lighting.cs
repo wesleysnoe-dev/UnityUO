@@ -7,7 +7,19 @@ namespace UOClient.Unity
     public sealed class Lighting
     {
         // Time of day: index into Times; -1 follows the server's light level.
-        private int _timeOverride = -1;
+        private int _timeOverride = StartOverride();
+
+        /// <summary>-time day|golden|dusk|night: start with that light (as the T key sets it).</summary>
+        private static int StartOverride()
+        {
+            string[] args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i + 1 < args.Length; i++)
+                if (string.Equals(args[i], "-time", System.StringComparison.OrdinalIgnoreCase))
+                    for (int k = 0; k < Times.Length; k++)
+                        if (Times[k].Name.ToLowerInvariant().StartsWith(args[i + 1].ToLowerInvariant()))
+                            return k;
+            return -1;
+        }
         private TimeOfDay _timeCurrent = Times[0];
         private float _dead;
 

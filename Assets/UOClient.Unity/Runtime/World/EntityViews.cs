@@ -143,11 +143,38 @@ namespace UOClient.Unity
         /// <summary>Item, static and multi-part lights near the player (bounded, see <see cref="ItemLights"/>).</summary>
         public ItemLights Lights { get; } = new ItemLights();
 
+        private readonly Fx.FlameFx _flames = new Fx.FlameFx();
+        private static readonly bool FxTestOn = Fx.FxCatalog.HasArg("-fx-test");
+        private float _fxTestNext;
+
+        /// <summary>
+        /// -fx-test (local only, nothing sent): a campfire flame two tiles south-east of the player and a fire field to the west, and every 3 s a fireball
+        /// thrown from the player to a spot 6 tiles east that explodes, so the FX can be seen without casting.
+        /// </summary>
+        private void FxTest()
+        {
+            if (!FxTestOn)
+                return;
+            int x = _ctx.Player.X, y = _ctx.Player.Y, z = _ctx.Player.Z;
+            _flames.Add(x + 2, y + 2, z, 0x0DE3);
+            _flames.Add(x - 3, y + 1, z, 0x398C); // a fire field
+            if (Time.time < _fxTestNext || EffectsLayer.Instance == null)
+                return;
+            _fxTestNext = Time.time + 3f;
+            EffectsLayer.Instance.Start(new UOClient.Core.GraphicEffect
+            {
+                Type = UOClient.Core.GraphicEffect.Moving, Graphic = 0x36D4, Explode = true,
+                SourceX = x, SourceY = y, SourceZ = z, TargetX = x + 6, TargetY = y - 2, TargetZ = z
+            });
+        }
+        private System.Action<int, int, int, int> _addFlame;
+
         private void UpdateLights()
         {
             if (_ctx.World == null || _ctx.Player == null || _ctx.Data == null)
             {
                 Lights.Clear();
+                _flames.Clear();
                 return;
             }
             Lights.Begin();
@@ -159,7 +186,13 @@ namespace UOClient.Unity
                     if (v.GivesLight)
                         Lights.Add(v.TileX, v.TileY, v.TileZ, v.Graphic, v.LightId);
             _ctx.World.AddStaticLights(Lights);
+            Fx.FxCatalog.Data = _ctx.Data;
             Lights.Apply(_ctx.World, _ctx.Data.LightShapes, _ctx.ArtScale, _ctx.Player.X, _ctx.Player.Y, Lighting.LocalLightScale);
+            // Living flames on the fire art among the light sources (Fx.FlameFx), by day too.
+            _flames.Begin();
+            Lights.ForEachSource(_addFlame ??= (x, y, z, g) => _flames.Add(x, y, z, g));
+            FxTest();
+            _flames.Apply(_ctx.Data, _ctx.World, _ctx.ArtScale, _ctx.Player.X, _ctx.Player.Y);
         }
 
         // RankTies' buffers, reused every frame.

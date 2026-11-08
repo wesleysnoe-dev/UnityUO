@@ -15,7 +15,11 @@ namespace UOClient.Unity
         public EffectsLayer(Func<GraphicEffect, EffectView> makeView)
         {
             _makeView = makeView;
+            Instance = this;
         }
+
+        /// <summary>The running layer (the FX test switch starts effects through it).</summary>
+        public static EffectsLayer Instance { get; private set; }
 
         /// <summary>Effects alive right now.</summary>
         public int Count => _effects.Count;
@@ -31,6 +35,7 @@ namespace UOClient.Unity
 
         public void Update(WorldStreamer world)
         {
+            ItemLights.Glows.Clear(); // the live effects add theirs as they render (EffectView)
             for (int i = _effects.Count - 1; i >= 0; i--)
             {
                 EffectView v = _effects[i];

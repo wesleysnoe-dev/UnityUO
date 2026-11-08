@@ -420,3 +420,22 @@ Checked against ModernUO's incoming handlers (`TargetResponse`, `DropReq`, `Equi
    - **Re-checked:** 851 tests pass. Tests, Cli, GumpPreview and EditorCheck (`--no-incremental`, 170 script metas OK) build with 0 warnings. `LoginMedia.cs.meta` / `LoginMedia.Rules.cs.meta` have `MonoImporter` blocks; the StreamingAssets metas are Unity's own (`DefaultImporter` for the mp4). No uncommitted `Assets/` changes. Code re-read for login-time nulls: `_ctx.Hud` exists before `ShowLoginScreen`, Options' Macros page and `ApplyCombatOptions` handle no session, the login `UiManager` only dereferences `Session` on item drags (none there); the Options window is an IMGUI `GUI.Window`, so its clicks don't reach the login panel under it. No code change needed.
    - **Editor (read only, nothing refreshed): compiled.** `UOClient.Unity.dll` / `UOClient.Editor.dll` went from 20:26:31 / 20:26:33 to **20:39:52** while watched, after the last script edit (20:34:54). `Editor.log`: `Tundra build success` (2.22 s), domain reload, no `error CS`. An earlier play-mode run (~20:31) used the old DLL, so it does not test this batch.
    - **Still not verified:** play mode with the new DLL, and live. Next step for Wes: LIVE_PARITY re-test item 0.
+## Session: world FX pilot (2026-11-08)
+
+1. **FX layer** (`Runtime/Fx/`; `-no-fx` turns it all off):
+   - `FlameFx` + `FxParticles`: living particle flames (tongues, embers on big fires) on fire art among the gathered
+     light sources (torches, candles, braziers, campfires, fireplaces, "Field of fire"), sited on each graphic's own
+     flame-coloured pixels (`FxCatalog.Spot`), the nearest 40 within 15 tiles; by day too.
+   - `ItemLights`: fire lights flicker (brightness wavers, Perlin); effect lights (`ItemLights.Glows`) take the slots
+     after the item lights.
+   - `EffectView` / `FxCatalog.Effect`: fireball, magic arrow, energy bolt, sparkles drawn additive and unlit, with a
+     particle trail and their own light; explosions / flame strike unlit (solid) with a particle burst and a flash of light.
+   - `FxBloom` (built-in RP `OnRenderImage`, `Resources/FxBloom.shader`) on the world camera via `CameraRig`; strong at
+     night, faint by day. Particles: `Resources/FxAdditive.shader`.
+   - `-time day|golden|dusk|night` starts with that light; `-fx-test` (local only, nothing sent) puts a campfire and a
+     fire field flame by the player and throws a fireball every 3 s.
+2. **Verified:** 1456 tests pass; EditorCheck builds (new metas have MonoImporter blocks); player built
+   (`Builds/Windows`, previous build in `_build_backups/pre-fx-20261108-012037`). The look was checked at night in the
+   fractional TEST client running the same FX files (torch flames, fireball trail and ground light, explosion).
+3. **Not verified:** live (real spells and fire fields on the shard), performance in a crowded fight.
+4. **Left alone:** the uncommitted Options / NamePlates / packages work already in this tree.

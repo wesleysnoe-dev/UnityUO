@@ -27,6 +27,8 @@ namespace UOClient.Unity
             // Depth keys span roughly +-5000 units around the depth origin (see DepthKey).
             camera.nearClipPlane = 0.1f;
             camera.farClipPlane = 20000f;
+            if (Fx.FxCatalog.Enabled && camera.GetComponent<Fx.FxBloom>() == null)
+                camera.gameObject.AddComponent<Fx.FxBloom>(); // flames, spells and lit windows bleed light
             return camera;
         }
 
