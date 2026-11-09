@@ -11,10 +11,13 @@ public class TerrainMaterialsTests
     [InlineData("decimated_grass", TerrainMaterials.Grass)]
     [InlineData("embank", TerrainMaterials.Dirt)]
     [InlineData("tree", TerrainMaterials.Forest)]
-    [InlineData("sand stone", TerrainMaterials.Sand)]
+    [InlineData("sand", TerrainMaterials.Sand)]
     [InlineData("snow grass path", TerrainMaterials.Snow)]
-    [InlineData("cobblestones", TerrainMaterials.Cobble)] // town paving: the natural cobble
-    [InlineData("flagstone", TerrainMaterials.Cobble)]
+    [InlineData("cobblestones", TerrainMaterials.Cobble)] // plain streets: the natural cobble
+    [InlineData("sand stone", TerrainMaterials.Art)]      // Luna's patterned sandstone paving stays classic
+    [InlineData("stone", TerrainMaterials.Art)]
+    [InlineData("flagstone", TerrainMaterials.Art)]
+    [InlineData("stone_paver", TerrainMaterials.Art)]
     [InlineData("wooden floor", TerrainMaterials.Art)]
     [InlineData("noname", TerrainMaterials.Art)]
     [InlineData(null, TerrainMaterials.Art)]

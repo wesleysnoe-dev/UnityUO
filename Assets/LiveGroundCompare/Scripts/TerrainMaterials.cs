@@ -43,7 +43,6 @@ namespace UOClient.LiveGroundCompare
                 case "jungle":
                     return Jungle;
                 case "sand":
-                case "sand stone":
                     return Sand;
                 case "rock":
                     return Rock;
@@ -53,15 +52,11 @@ namespace UOClient.LiveGroundCompare
                 case "snow stone path":
                 case "snow sand path":
                     return Snow;
-                // Town paving is the natural cobble (light, mossy), as the world editor paints it; its splat shader keeps
-                // one stone size (a near second scale) and does not stretch it up slopes (triplanar).
+                // Plain cobblestone streets (Britain's) are the natural cobble (light, mossy), as the world editor paints
+                // it; its splat shader keeps one stone size and does not stretch it up slopes (triplanar). Patterned town
+                // paving (Luna's sandstone, flagstones, pavers, mossy stone) keeps its classic art: a texture would lose it.
                 case "cobblestones":
                 case "cobbleston":
-                case "stone":
-                case "stone moss":
-                case "stone moss2":
-                case "flagstone":
-                case "stone_paver":
                     return Cobble;
                 default:
                     return Art;

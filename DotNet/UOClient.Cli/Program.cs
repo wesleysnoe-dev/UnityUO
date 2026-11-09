@@ -154,6 +154,23 @@ switch (argList[0])
             })));
         return 0;
     }
+    case "landhist" when argList.Count >= 5:
+    {
+        // landhist <x0> <y0> <x1> <y1> [map]: every land graphic in the rectangle, how many, and its tiledata name (what the
+        // natural terrain style classifies it by, TerrainMaterials.Classify).
+        int hx0 = int.Parse(argList[1]), hy0 = int.Parse(argList[2]), hx1 = int.Parse(argList[3]), hy1 = int.Parse(argList[4]);
+        MapFile hm = data.GetMap(argList.Count > 5 ? int.Parse(argList[5]) : 0);
+        var counts = new Dictionary<int, int>();
+        for (int x = hx0; x <= hx1; x++)
+            for (int y = hy0; y <= hy1; y++)
+            {
+                int g = hm.GetLand(x, y).Graphic & 0x3FFF;
+                counts[g] = counts.TryGetValue(g, out int n) ? n + 1 : 1;
+            }
+        foreach (var kv in counts.OrderByDescending(k => k.Value))
+            Console.WriteLine($"0x{kv.Key:X4} {kv.Value,6}  '{data.TileData.Land[kv.Key].Name}'");
+        return 0;
+    }
     case "area" when argList.Count >= 5:
     {
         // area <x0> <y0> <x1> <y1> [map]: every static graphic in the rectangle with its tiledata, how many, and how many
