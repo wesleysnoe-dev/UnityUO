@@ -34,9 +34,10 @@ Shader "UOClient/CharacterShadow"
             // and 1 - the sun's shadow strength. Unset (0): the reference sun at full strength.
             float4 _UOSunShift;
             float _UOSunFade;
+            float _UOCutZ; // RoofController's upper-floor cut, as UOClient/WorldSprite: 0 = none
 
             struct appdata { float4 vertex : POSITION; float2 uv : TEXCOORD0; float2 height : TEXCOORD1; float4 color : COLOR; };
-            struct v2f { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; float4 color : COLOR; };
+            struct v2f { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; float4 color : COLOR; float cut : TEXCOORD1; };
 
             v2f vert(appdata v)
             {
@@ -46,11 +47,15 @@ Shader "UOClient/CharacterShadow"
                 o.pos = mul(UNITY_MATRIX_VP, world);
                 o.uv = v.uv;
                 o.color = v.color;
+                o.cut = v.height.y;
                 return o;
             }
 
             fixed4 frag(v2f i) : SV_Target
             {
+                // A caster on a floor the roof cut hides (the player is below it) casts nothing: as WorldSprite's cut.
+                if (_UOCutZ > 0.5 && i.cut > 0.5 && i.cut >= _UOCutZ)
+                    discard;
                 float a = tex2D(_MainTex, i.uv).a;
                 clip(a - _Cutoff);
                 // Daylight: the ambient's brightness (unset reads 0 in some setups: treat as full day).

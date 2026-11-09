@@ -553,7 +553,7 @@ namespace UOClient.Unity
                     groups[texture] = g = (new List<Vector3>(), new List<Vector2>(), new List<int>(), new List<Color32>(), new List<Vector2>());
                 // An object stands on the bottom of its art (statics are drawn with their foot on the tile's lower corner).
                 CharacterShadow.AddQuad(g.V, g.Uv, g.I, g.C, CharacterShadow.Tint(strength, sun), this, perPixel, uv, false,
-                    q.Left, q.Top, q.Width, q.Height, q.Top + q.Height, q.Depth, g.H);
+                    q.Left, q.Top, q.Width, q.Height, q.Top + q.Height, q.Depth, g.H, q.CutHeight);
             }
             foreach (KeyValuePair<int, (List<Vector3> V, List<Vector2> Uv, List<int> I, List<Color32> C, List<Vector2> H)> g in groups)
             {

@@ -170,19 +170,20 @@ namespace UOClient.Unity
             System.Collections.Generic.List<int> indices, System.Collections.Generic.List<Color32> colors, Color32 tint,
             IWorldSpace view, Vector2 perPixel, Vector4 uv, bool mirror,
             float left, float top, float width, float height, float baseY, float depth,
-            System.Collections.Generic.List<Vector2> heights = null)
+            System.Collections.Generic.List<Vector2> heights = null, float cutHeight = 0f)
         {
             int n = vertices.Count;
             for (int k = 0; k < 4; k++)
                 colors.Add(tint);
             if (heights != null)
             {
-                // Each corner's height above the foot line: the shader's lever for the moving sun (SetSun).
+                // x: each corner's height above the foot line, the shader's lever for the moving sun (SetSun);
+                // y: the caster's cut height (MeshBuilder.CutHeight), so the shadow hides with it under an upper floor.
                 float bottom = baseY - (top + height), upper = baseY - top;
-                heights.Add(new Vector2(bottom, 0f));
-                heights.Add(new Vector2(upper, 0f));
-                heights.Add(new Vector2(upper, 0f));
-                heights.Add(new Vector2(bottom, 0f));
+                heights.Add(new Vector2(bottom, cutHeight));
+                heights.Add(new Vector2(upper, cutHeight));
+                heights.Add(new Vector2(upper, cutHeight));
+                heights.Add(new Vector2(bottom, cutHeight));
             }
             var foot = new Vector2(0f, baseY);
             vertices.Add(Ground(view, left, top + height, foot, perPixel, depth));
@@ -247,8 +248,9 @@ namespace UOClient.Unity
             Uvs[1] = new Vector2(u0, uv.w);
             Uvs[2] = new Vector2(u1, uv.w);
             Uvs[3] = new Vector2(u1, uv.y);
-            Heights[0] = Heights[3] = new Vector2(foot.y - (top + height), 0f);
-            Heights[1] = Heights[2] = new Vector2(foot.y - top, 0f);
+            float cut = MeshBuilder.CutHeight(tileZ); // hidden with the caster when the floor above is cut away
+            Heights[0] = Heights[3] = new Vector2(foot.y - (top + height), cut);
+            Heights[1] = Heights[2] = new Vector2(foot.y - top, cut);
             if (_mesh.vertexCount != 4)
             {
                 _mesh.Clear();
