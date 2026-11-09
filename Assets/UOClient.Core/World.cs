@@ -289,6 +289,9 @@ namespace UOClient.Core
 
         public event Action<Mobile> MobileUpdated;
         public event Action<Mobile> MobileMoved;
+
+        /// <summary>A boat carried a mobile to a new place (0xF6): placed there, not walked.</summary>
+        public event Action<Mobile> MobileCarried;
         public event Action<uint> EntityRemoved;
         public event Action<WorldItem> ItemUpdated;
         public event Action<JournalEntry> JournalAdded;
@@ -321,6 +324,7 @@ namespace UOClient.Core
 
         internal void RaiseMobileUpdated(Mobile m) => MobileUpdated?.Invoke(m);
         internal void RaiseMobileMoved(Mobile m) => MobileMoved?.Invoke(m);
+        internal void RaiseMobileCarried(Mobile m) => MobileCarried?.Invoke(m);
         internal void RaiseItemUpdated(WorldItem i) => ItemUpdated?.Invoke(i);
 
         internal void Remove(uint serial)

@@ -56,6 +56,7 @@ namespace UOClient.Unity
             s.World.MultiExtent = _extentOf;
             s.World.MobileUpdated += OnMobileUpdated;
             s.World.MobileMoved += OnMobileMoved;
+            s.World.MobileCarried += OnMobileCarried;
             s.World.EntityRemoved += OnEntityRemoved;
             s.World.ItemUpdated += OnItemUpdated;
             s.World.ContainerChanged += OnContainerChanged;
@@ -71,6 +72,7 @@ namespace UOClient.Unity
                 _attached.World.MultiExtent = null;
             _attached.World.MobileUpdated -= OnMobileUpdated;
             _attached.World.MobileMoved -= OnMobileMoved;
+            _attached.World.MobileCarried -= OnMobileCarried;
             _attached.World.EntityRemoved -= OnEntityRemoved;
             _attached.World.ItemUpdated -= OnItemUpdated;
             _attached.World.ContainerChanged -= OnContainerChanged;
@@ -542,6 +544,22 @@ namespace UOClient.Unity
             }
             a.SetCombat(m.WarMode, m.IsDead);
             a.MoveTo(m.X, m.Y, m.Z, m.Direction, m.Running);
+        }
+
+        /// <summary>A boat moved a character (0xF6): placed at the new tile without a walking step, the player too.</summary>
+        private void OnMobileCarried(Core.Mobile m)
+        {
+            if (_ctx.World == null)
+                return;
+            if (m.Serial == _ctx.Session.World.PlayerSerial)
+            {
+                _ctx.Player?.Teleport(m.X, m.Y, m.Z);
+                return;
+            }
+            if (_others.TryGetValue(m.Serial, out Avatar a))
+                a.Teleport(m.X, m.Y, m.Z);
+            else
+                OnMobileUpdated(m);
         }
 
         private void OnMobileMoved(Core.Mobile m)

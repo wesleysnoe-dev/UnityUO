@@ -107,6 +107,7 @@ namespace UOClient.Core
             _handlers[0xC1] = ClilocMessage;
             _handlers[0xCC] = ClilocMessageAffix;
             _handlers[0xBF] = Extended;
+            RegisterBoatHandlers();
             _handlers[0x73] = _ => { };
             _handlers[0x97] = r => { }; // move player (forced step); position follows in 0x20
             _handlers[0x98] = MobileName;
