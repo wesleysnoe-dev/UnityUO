@@ -23,7 +23,7 @@ Shader "LiveGroundCompare/Grass"
 
     SubShader
     {
-        Tags { "Queue" = "AlphaTest" "RenderType" = "TransparentCutout" "IgnoreProjector" = "True" }
+        Tags { "Queue" = "AlphaTest-20" "RenderType" = "TransparentCutout" "IgnoreProjector" = "True" }
 
         Pass
         {

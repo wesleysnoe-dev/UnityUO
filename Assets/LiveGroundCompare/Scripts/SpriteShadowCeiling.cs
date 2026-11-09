@@ -168,6 +168,9 @@ namespace UOClient.LiveGroundCompare
 
         public void Mobile(object key, Vector2 anchorPixels, float footZ)
         {
+            // Characters cast their own frame (CharacterShadow), not a tile-wide column (that read as a blob off the feet).
+            if (CharacterShadow.Enabled)
+                return;
             (int x, int y) = DynamicShadow.FootTile(anchorPixels.x, anchorPixels.y, footZ, _scale);
             _core.Report(key, x, y, Mathf.RoundToInt(footZ), DynamicShadow.MobileHeight, mobile: true);
         }

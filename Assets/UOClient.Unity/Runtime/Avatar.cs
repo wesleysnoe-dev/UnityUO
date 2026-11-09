@@ -52,7 +52,10 @@ namespace UOClient.Unity
             _renderer.sharedMaterial = _material;
             _renderer.shadowCastingMode = ShadowCastingMode.Off;
             _outline = new OutlineQuad(_go.transform, shader);
+            _shadow = new CharacterShadow(_go.transform);
         }
+
+        private readonly CharacterShadow _shadow;
 
         private readonly OutlineQuad _outline;
 
@@ -373,6 +376,7 @@ namespace UOClient.Unity
             {
                 _renderer.enabled = false;
                 _outline.Update(false, _art, default, default, false, 0, 0);
+                _shadow.Update(false, view, null, default, false, 0, 0, 0, 0, default, 0);
                 return;
             }
             _lastFrames = frames;
@@ -406,6 +410,9 @@ namespace UOClient.Unity
             LastMirror = mirror;
             LastRect = r;
             LastDepth = view.DepthFor(SortItem);
+            // The sun shadow: this frame laid on the ground from the feet (none for a ghost).
+            _shadow.Update(!Dead, view, _art.Atlas.Page(f.Slot.Page), _art.Atlas.Uv(f.Slot), mirror,
+                left, top, f.Slot.Width, f.Slot.Height, anchor, LastDepth);
             LastCut = MeshBuilder.CutHeight(Z);
             // Characters on a floor above us are cut away with it (we ourselves always stand below the cut).
             if (MeshBuilder.FootMetadata)
@@ -432,6 +439,7 @@ namespace UOClient.Unity
         public void Dispose()
         {
             _outline.Dispose();
+            _shadow.Dispose();
             UnityEngine.Object.Destroy(_material);
             UnityEngine.Object.Destroy(_mesh);
             UnityEngine.Object.Destroy(_go);
