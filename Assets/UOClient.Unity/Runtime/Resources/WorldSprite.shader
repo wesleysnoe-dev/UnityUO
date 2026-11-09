@@ -46,6 +46,9 @@ Shader "UOClient/WorldSprite"
             float4 _UOLightPos;    // xy: world position, z: radius
             float _UOCutZ;         // upper-floor cut: hide statics at or above this height (+1000); 0 = no cut
             float _UODead;         // 0..1: how far the world is drained to grey (the player is a ghost)
+            float _UOFoliageSway;  // plants' lean at full weight, Unity units (FoliageWind); unset 0: still
+            float _UOWindBoost;    // WeatherView: rain and storms blow harder (unset 0)
+            float _UOFoliageSeason; // leaves' season (FoliageWind.SeasonCode): 0 as drawn, 1 spring, 2 fall, 3 winter, 4 desolation
             #ifdef LG_SPRITE_SHADOW
             // LiveGroundCompare (TEST only; LiveGroundLighting.cs, SpriteShadow, mirrors this line for line): sun-shadow
             // receive. Each pixel is put back into the world from its sprite's foot anchor and tested against the CPU
@@ -101,7 +104,7 @@ Shader "UOClient/WorldSprite"
                 float4 color : COLOR;
                 float2 world : TEXCOORD1;
                 float height : TEXCOORD2;
-                float water : TEXCOORD5;   // 1: UO water art (land or ocean static): animated shimmer
+                float water : TEXCOORD5;   // second UV y: 1 UO water art (shimmer); 2..3 leafy, 4..5 woody, 6..7 evergreen (PlantKind)
             #ifdef LG_SPRITE_SHADOW
                 float4 foot : TEXCOORD3;
             #endif
@@ -127,9 +130,49 @@ Shader "UOClient/WorldSprite"
                 return rgb * light + glint * float3(0.8, 0.9, 1.0);
             }
 
+            // A plant's lean (PlantKind): its top moves with slow sweeping gusts and a quicker flutter, its foot stays.
+            // The phase comes from the vertex's world position at a long wavelength, so a sprite's two top corners move
+            // together (the art keeps its shape) while trees across the screen sway out of step.
+            float4 PlantSway(float4 vertex, float code)
+            {
+                float weight = frac(code);
+                if (code < 1.5 || weight <= 0.0 || _UOFoliageSway <= 0.0)
+                    return vertex;
+                float2 w = mul(unity_ObjectToWorld, vertex).xy;
+                float t = _Time.y;
+                float gust = 0.55 + 0.45 * sin(w.x * 0.0021 - t * 0.55) * sin(w.y * 0.0017 + t * 0.4);
+                float sway = sin(t * 1.3 + (w.x + w.y) * 0.0023) * 0.75 + sin(t * 3.1 + w.x * 0.0041) * 0.25;
+                vertex.x += weight * _UOFoliageSway * (1.0 + _UOWindBoost) * gust * sway;
+                return vertex;
+            }
+
+            // The season on a leafy plant's green pixels (FoliageWind.SeasonCode); trunks, petals and fruit keep their colour.
+            // Fall picks gold, orange or red with a slow drift across the world, so neighbouring trees differ.
+            float3 FoliageSeason(float3 c, float2 world)
+            {
+                float lum = dot(c, float3(0.299, 0.587, 0.114));
+                float green = saturate((c.g - max(c.r, c.b)) * 7.0 + 0.1);
+                float3 t;
+                if (_UOFoliageSeason < 1.5)
+                    t = c * float3(1.0, 1.12, 0.9) + float3(0.02, 0.035, 0.0);           // spring: fresh, light
+                else if (_UOFoliageSeason < 2.5)
+                {
+                    float n = 0.5 + 0.5 * sin(world.x * 0.0037 + 1.7) * sin(world.y * 0.0043 - 0.6);
+                    float3 hue = n < 0.4 ? lerp(float3(1.0, 0.78, 0.28), float3(1.0, 0.56, 0.18), n / 0.4)   // gold to orange
+                                         : lerp(float3(1.0, 0.56, 0.18), float3(0.86, 0.3, 0.14), (n - 0.4) / 0.6); // to red
+                    t = lum * 1.6 * hue;
+                }
+                else if (_UOFoliageSeason < 3.5)
+                    t = lerp(lum * float3(0.86, 0.9, 1.0), float3(0.9, 0.93, 0.98), 0.4); // winter: frosted
+                else
+                    t = lum * float3(0.78, 0.7, 0.55);                                      // desolation: withered
+                return lerp(c, t, green);
+            }
+
             v2f vert(appdata v)
             {
                 v2f o;
+                v.vertex = PlantSway(v.vertex, v.height.y);
                 o.pos = UnityObjectToClipPos(v.vertex);
                 o.uv = v.uv;
                 o.color = v.color;
@@ -151,8 +194,10 @@ Shader "UOClient/WorldSprite"
                 clip(c.a - _Cutoff);
                 if (_Unlit > 0.5)
                     return c * i.color;
-                if (i.water > 0.5)
+                if (i.water > 0.5 && i.water < 1.5)
                     c.rgb = UOWaterShimmer(c.rgb, i.world);
+                else if (_UOFoliageSeason > 0.5 && (i.water >= 1.5 && i.water < 3.5 || i.water >= 5.5 && _UOFoliageSeason > 2.5))
+                    c.rgb = FoliageSeason(c.rgb, i.world); // leaves every season; evergreens only winter and desolation
 
                 float d = distance(i.world, _UOLightPos.xy) / max(_UOLightPos.z, 1.0);
                 float falloff = saturate(1.0 - d);

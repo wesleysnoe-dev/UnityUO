@@ -89,6 +89,7 @@ namespace UOClient.Unity
 
         private readonly Lighting _lighting = new Lighting();
         private WeatherView _weather;
+        private AmbientLife _ambient;
 
         private void Start()
         {
@@ -652,6 +653,8 @@ namespace UOClient.Unity
             _effects.Dispose();
             _weather?.Dispose();
             _weather = null;
+            _ambient?.Dispose();
+            _ambient = null;
             _overheads.Clear();
             _chatLine.Close();
             _placement.Clear();
@@ -759,6 +762,9 @@ namespace UOClient.Unity
             _weather ??= new WeatherView(_ctx.Camera);
             _weather.Update(_ctx.Session, _ctx.Camera, _lighting.Sun.Hour); // before the light: its overcast dims it
             _lighting.Update(_ctx.Session, _ctx.World.ToUnity(_ctx.Player.AnchorPixels), _ctx.ArtScale, _ctx.Hud);
+            FoliageWind.Apply(_ctx.Session, _ctx.ArtScale); // plants lean in the wind, leaves take the season
+            _ambient ??= new AmbientLife(_ctx.Root);
+            _ambient.Update(_ctx, _lighting.Sun, FoliageWind.Current(_ctx.Session), _weather.Rain, _weather.Wind);
             if (_weather.Status != "clear")
                 _ctx.Hud.TimeName += ", " + _weather.Status;
             _hudPresenter.Update();

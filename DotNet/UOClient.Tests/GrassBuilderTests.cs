@@ -27,13 +27,25 @@ public class GrassBuilderTests
         return new TerrainLandData { ChunkX0 = 160, ChunkY0 = 320, HeightmapResolution = n, Heights = heights, Splat = splat, TileCount = Tiles * Tiles };
     }
 
+    /// <summary>A flower's head (two triangles at its stem's tip, in its own colour) is not a blade standing on the ground.</summary>
+    private static bool IsFlowerHead(GrassData g, int vertex) => g.Colors[vertex * 4 + 3] == GrassBuilder.FlowerAlpha;
+
+    private static int Blades(GrassData g)
+    {
+        int n = 0;
+        for (int v = 0; v < g.VertexCount; v += 3)
+            if (!IsFlowerHead(g, v))
+                n++;
+        return n;
+    }
+
     [Fact]
     public void FullGrass_GrowsAboutTheCandidateCount()
     {
         GrassData g = GrassBuilder.Build(Chunk(TerrainMaterials.Grass, 255));
         Assert.NotNull(g);
         int candidates = Tiles * Tiles * GrassBuilder.BladesPerTile;
-        Assert.InRange(g.Count, (int)(candidates * 0.97), candidates);
+        Assert.InRange(Blades(g), (int)(candidates * 0.97), candidates); // a flower's stem is one of them
         Assert.Equal(g.Count * 3, g.VertexCount);
         Assert.Equal(g.VertexCount * 4, g.Colors.Count);
     }
@@ -66,6 +78,8 @@ public class GrassBuilderTests
         float ground = posY + 0.75f * sizeY;
         for (int v = 0; v < g.VertexCount; v += 3) // each blade's first root vertex
         {
+            if (IsFlowerHead(g, v))
+                continue;
             float x = g.Positions[v * 3], y = g.Positions[v * 3 + 1], z = g.Positions[v * 3 + 2];
             Assert.InRange(y, ground - 0.05f, ground + 0.001f);
             Assert.InRange(x, d.ChunkX0 - 0.1f, d.ChunkX0 + Tiles + 0.1f);
@@ -87,6 +101,8 @@ public class GrassBuilderTests
         Assert.Equal(g.VertexCount, g.Depth.Length);
         for (int v = 0; v < g.VertexCount; v += 3)
         {
+            if (IsFlowerHead(g, v))
+                continue;
             float x = (g.Positions[v * 3] + g.Positions[(v + 1) * 3]) * 0.5f, z = (g.Positions[v * 3 + 2] + g.Positions[(v + 1) * 3 + 2]) * 0.5f;
             int i = (int)Math.Floor(x) - d.ChunkX0, j = (int)Math.Floor(-z) - d.ChunkY0;
             float nearHalf = (x - (float)Math.Floor(x)) + (-z - (float)Math.Floor(-z)) > 1f ? GrassBuilder.DiagonalDepth : 0f;
@@ -97,6 +113,33 @@ public class GrassBuilderTests
             Assert.Equal(g.Depth[v], g.Depth[v + 2]); // the whole blade sorts as one
             Assert.True(g.ScreenY[v + 2] < g.ScreenY[v]); // its tip is above its root on screen
         }
+    }
+
+    [Fact]
+    public void Meadows_HaveWildflowerPatches_OneColourEach()
+    {
+        // Somewhere in a big meadow there are patches (some tiles in none), and a patch's flowers share a colour.
+        int inPatch = 0, outside = 0;
+        for (int x = 0; x < 200; x++)
+            for (int y = 0; y < 200; y++)
+                if (GrassBuilder.Patch(x, y) > 0f) inPatch++; else outside++;
+        Assert.InRange(inPatch, 200 * 200 / 20, 200 * 200 / 2);
+        Assert.True(outside > inPatch);
+        Assert.Equal(GrassBuilder.PatchColour(18, 27), GrassBuilder.PatchColour(19, 28)); // the same coarse cell (9 tiles a side)
+        GrassData g = GrassBuilder.Build(Chunk(TerrainMaterials.Grass, 255));
+        Assert.True(Blades(g) * 3 <= g.VertexCount);
+    }
+
+    [Fact]
+    public void ForestFloor_GrowsFerns()
+    {
+        GrassData g = GrassBuilder.Build(Chunk(TerrainMaterials.Forest, 255));
+        Assert.NotNull(g);
+        int fern = 0;
+        for (int v = 0; v < g.VertexCount; v += 3)
+            if (g.Colors[v * 4 + 3] == GrassBuilder.FernAlpha)
+                fern++;
+        Assert.InRange(fern / 5, Tiles * Tiles / 8, Tiles * Tiles / 2); // five fronds a fern, on about a third of the tiles
     }
 
     [Fact]

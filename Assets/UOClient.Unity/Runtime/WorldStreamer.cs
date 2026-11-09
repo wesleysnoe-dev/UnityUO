@@ -465,10 +465,10 @@ namespace UOClient.Unity
                 if (MeshBuilder.FootMetadata) // LiveGroundCompare sprite shadow (TEST); false by default
                 {
                     Vector2 foot = ToUnity(new Vector2(q.FootX, q.FootY));
-                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, new Vector4(foot.x, foot.y, q.FootZ, q.FootKind), q.Water);
+                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, new Vector4(foot.x, foot.y, q.FootZ, q.FootKind), q.Water, q.Plant);
                 }
                 else
-                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, q.Water);
+                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, q.Water, q.Plant);
             }
 
             AttachShadows(build, chunk, unique);
@@ -751,6 +751,7 @@ namespace UOClient.Unity
                         : it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2,
                     Traced = TraceTile.HasValue && it.X == TraceTile.Value.x && it.Y == TraceTile.Value.y,
                     Water = it.Kind == DrawKind.Land ? WaterArt.IsWater(tileData.Land[it.Graphic & 0x3FFF]) : it.Kind == DrawKind.Static && WaterArt.IsWater(tileData.GetStatic(it.Graphic)),
+                    Plant = it.Kind == DrawKind.Static ? PlantKind.Of(tileData.GetStatic(it.Graphic)) : 0f,
                     TileX = it.X,
                     TileY = it.Y,
                     TileZ = it.Z,
@@ -922,6 +923,7 @@ namespace UOClient.Unity
             public bool Shadow; // casts its own outline as a sun shadow (ShadowRules, CharacterShadow)
             public bool Traced; // diagnosis (-tiletrace): on the traced tile
             public bool Water;  // UO water art: shimmers (WorldSprite)
+            public float Plant; // PlantKind code: sways in the wind, leaves take the season (WorldSprite)
             public int TileX, TileY, TileZ; // the static's tile (shadows)
             public bool Indoors;            // a roof or a floor over it: no sun shadow, only a lamp's (CharacterShadow.Cast)
         }

@@ -93,6 +93,19 @@ namespace UOClient.LiveGroundCompare
                     if (d.GrassCovered != null && d.GrassCovered[tx, ty])
                         continue; // a floor, step or wall stands here
                     int wx = d.ChunkX0 + tx, wy = d.ChunkY0 + ty;
+                    // A fern or two on the forest floor (the tile's centre decides).
+                    {
+                        int so = ((size - 1 - Math.Min(size - 1, (int)((ty + 0.5f) * sp))) * size + Math.Min(size - 1, (int)((tx + 0.5f) * sp))) * 4;
+                        float forestHere = w0[so + 2] / 255f * (1f - (wArt != null ? wArt[so] / 255f : 0f));
+                        uint hf = Hash(wx * 5 + 1, wy * 3 + 7, 911);
+                        if (forestHere > 0.45f && (hf & 0xFFFF) / 65536f < FernChance * forestHere)
+                        {
+                            float fx = tx + 0.2f + 0.6f * ((hf >> 16) & 0xFF) / 255f, fy = ty + 0.2f + 0.6f * (hf >> 24) / 255f;
+                            data.AddFern(d.ChunkX0 + fx, posY + Height(d.Heights, n, hp, fx, fy) * sizeY, -(d.ChunkY0 + fy), hf, fx / tiles, 1f - fy / tiles);
+                        }
+                    }
+                    // Wildflowers grow in patches (world noise), one colour to a patch.
+                    float patch = Patch(wx, wy);
                     for (int b = 0; b < BladesPerTile; b++)
                     {
                         uint h = Hash(wx, wy, b);
@@ -107,7 +120,10 @@ namespace UOClient.LiveGroundCompare
                         if ((h2 & 0xFFFF) / 65536f >= density)
                             continue;
                         float y = posY + Height(d.Heights, n, hp, lx, ly) * sizeY;
-                        data.AddBlade(d.ChunkX0 + lx, y, -(d.ChunkY0 + ly), h2, jungle > grass, lx / tiles, 1f - ly / tiles);
+                        if (patch > 0f && grass > 0.6f && jungle < 0.2f && (h2 >> 24) / 255f < FlowerShare * patch)
+                            data.AddFlower(d.ChunkX0 + lx, y, -(d.ChunkY0 + ly), h2, PatchColour(wx, wy), lx / tiles, 1f - ly / tiles);
+                        else
+                            data.AddBlade(d.ChunkX0 + lx, y, -(d.ChunkY0 + ly), h2, jungle > grass, lx / tiles, 1f - ly / tiles);
                     }
                 }
             return data.Count == 0 ? null : data;
@@ -171,6 +187,43 @@ namespace UOClient.LiveGroundCompare
             return a + (b - a) * v;
         }
 
+        /// <summary>Of a meadow patch's blades, at most this share are flowers.</summary>
+        public const float FlowerShare = 0.12f;
+
+        /// <summary>Chance of a fern on a forest-floor tile (scaled by how much forest it is).</summary>
+        public const float FernChance = 0.32f;
+
+        /// <summary>The colour vertex alpha marking a flower (its head carries its own colour) and a fern frond.</summary>
+        public const byte FlowerAlpha = 128, FernAlpha = 64;
+
+        // Petal colours: poppy red, buttercup yellow, daisy white, heather purple, cornflower blue.
+        private static readonly (byte R, byte G, byte B)[] Petals =
+        {
+            (214, 46, 40), (238, 204, 52), (236, 234, 222), (156, 86, 196), (92, 124, 226)
+        };
+
+        /// <summary>How much of a wildflower patch tile (x, y) is in, 0 (none) to 1: a few tiles across, a third of meadows.</summary>
+        public static float Patch(int x, int y)
+        {
+            float n = ValueNoise(x / 7f, y / 7f, 4441) * 0.7f + ValueNoise(x / 3f, y / 3f, 977) * 0.3f;
+            return Math.Max(0f, (n - 0.58f) / 0.42f);
+        }
+
+        /// <summary>The patch's colour around tile (x, y): one per coarse cell, so a patch is mostly one flower.</summary>
+        public static (byte R, byte G, byte B) PatchColour(int x, int y) =>
+            Petals[Hash((int)Math.Floor(x / 9f), (int)Math.Floor(y / 9f), 1301) % (uint)Petals.Length];
+
+        private static float ValueNoise(float x, float y, int k)
+        {
+            int ix = (int)Math.Floor(x), iy = (int)Math.Floor(y);
+            float fx = x - ix, fy = y - iy;
+            fx = fx * fx * (3f - 2f * fx);
+            fy = fy * fy * (3f - 2f * fy);
+            float a = (Hash(ix, iy, k) & 0xFFFF) / 65535f, b = (Hash(ix + 1, iy, k) & 0xFFFF) / 65535f;
+            float c = (Hash(ix, iy + 1, k) & 0xFFFF) / 65535f, e = (Hash(ix + 1, iy + 1, k) & 0xFFFF) / 65535f;
+            return a + (b - a) * fx + (c - a) * fy + (a - b - c + e) * fx * fy;
+        }
+
         private static uint Hash(int x, int y, int k)
         {
             unchecked
@@ -232,6 +285,46 @@ namespace UOClient.LiveGroundCompare
             Vertex(x - dx, y - 0.02f, z - dz, 0f, r1, u, v, cr, cg, cb, ca);
             Vertex(x + dx, y - 0.02f, z + dz, 0f, r1, u, v, cr, cg, cb, ca);
             Vertex(tx, y + height, tz, 1f, r1, u, v, cr, cg, cb, ca);
+        }
+
+        /// <summary>A wildflower: a stem a little taller than the grass, and a small petal head in its own colour on top.</summary>
+        public void AddFlower(float x, float y, float z, uint seed, (byte R, byte G, byte B) petal, float u, float v)
+        {
+            float r1 = (seed & 0xFF) / 255f, r2 = ((seed >> 8) & 0xFF) / 255f;
+            float height = 0.42f + 0.18f * r1;
+            const float stem = 0.016f;
+            // The stem: a thin green blade (alpha 0: drawn as grass).
+            Vertex(x - stem, y - 0.02f, z - stem, 0f, r1, u, v, 205, 215, 190, 0);
+            Vertex(x + stem, y - 0.02f, z + stem, 0f, r1, u, v, 205, 215, 190, 0);
+            Vertex(x, y + height, z, 1f, r1, u, v, 205, 215, 190, 0);
+            // The head: a small diamond across the screen at the stem's tip, its petals' own colour (FlowerAlpha).
+            float hw = 0.05f + 0.025f * r2, hh = 0.045f;
+            float ax = hw * 0.7071f, az = hw * 0.7071f; // across the screen: terrain (1, 0, 1)
+            float top = y + height;
+            Vertex(x - ax, top, z - az, 1f, r1, u, v, petal.R, petal.G, petal.B, GrassBuilder.FlowerAlpha);
+            Vertex(x, top + hh, z, 1f, r1, u, v, petal.R, petal.G, petal.B, GrassBuilder.FlowerAlpha);
+            Vertex(x + ax, top, z + az, 1f, r1, u, v, petal.R, petal.G, petal.B, GrassBuilder.FlowerAlpha);
+            Vertex(x - ax, top, z - az, 1f, r1, u, v, petal.R, petal.G, petal.B, GrassBuilder.FlowerAlpha);
+            Vertex(x + ax, top, z + az, 1f, r1, u, v, petal.R, petal.G, petal.B, GrassBuilder.FlowerAlpha);
+            Vertex(x, top - hh, z, 0.9f, r1, u, v, petal.R, petal.G, petal.B, GrassBuilder.FlowerAlpha);
+        }
+
+        /// <summary>A fern: five broad fronds arching out from one root, a deeper green (FernAlpha).</summary>
+        public void AddFern(float x, float y, float z, uint seed, float u, float v)
+        {
+            float spin = (seed & 0xFF) / 255f * 6.2832f;
+            for (int k = 0; k < 5; k++)
+            {
+                double a = spin + k * 1.2566;
+                float len = 0.34f + 0.1f * (((seed >> (k * 3)) & 7) / 7f);
+                float ox = (float)Math.Cos(a), oz = (float)Math.Sin(a);
+                float px = -oz * 0.07f, pz = ox * 0.07f; // half the frond's width, across it
+                float tx = x + ox * len * 0.85f, tz = z + oz * len * 0.85f;
+                float r1 = ((seed >> (k * 5)) & 0xFF) / 255f;
+                Vertex(x + px, y, z + pz, 0f, r1, u, v, 190, 205, 175, GrassBuilder.FernAlpha);
+                Vertex(x - px, y, z - pz, 0f, r1, u, v, 190, 205, 175, GrassBuilder.FernAlpha);
+                Vertex(tx, y + len * 0.55f, tz, 1f, r1, u, v, 190, 205, 175, GrassBuilder.FernAlpha);
+            }
         }
 
         private void Vertex(float x, float y, float z, float tip, float seed, float u, float v, byte r, byte g, byte b, byte a)

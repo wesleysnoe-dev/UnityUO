@@ -2139,14 +2139,27 @@ public sealed class LiveGroundSpriteShadowSourceTests
         string waterFunction = "            // UO's water art, animated without moving its pixels (that would pull neighbours in from the atlas): slow\n            // rolling light swells crossing each other, a finer ripple, and sharp moving glints on the crests.\n            // world: Unity units (world pixels at the art scale).\n            float3 UOWaterShimmer(float3 rgb, float2 world)\n            {\n                float t = _Time.y;\n                float2 p = world * 0.011;\n                float w1 = sin(p.x * 1.7 + p.y * 0.6 + t * 1.05);\n                float w2 = sin(-p.x * 0.8 + p.y * 1.9 - t * 0.8);\n                float w3 = sin((p.x + p.y) * 3.3 + t * 2.2);\n                float swell = (w1 + w2) * 0.5;\n                float light = 1.0 + 0.08 * swell + 0.035 * w3;\n                // Glints: small sparkles where two fine, fast ripples crest together, brighter on the swells' crests.\n                float2 q = world * 0.07;\n                float g1 = sin(q.x * 1.3 + q.y * 0.9 + t * 3.1);\n                float g2 = sin(-q.x * 0.7 + q.y * 1.6 - t * 2.6);\n                float glint = pow(saturate(g1 * g2), 24.0) * (0.25 + 0.2 * saturate(swell)) ;\n                return rgb * light + glint * float3(0.8, 0.9, 1.0);\n            }\n\n";
         string[] water =
         {
-            "                float water : TEXCOORD5;   // 1: UO water art (land or ocean static): animated shimmer",
+            "                float water : TEXCOORD5;   // second UV y: 1 UO water art (shimmer); 2..3 leafy, 4..5 woody, 6..7 evergreen (PlantKind)",
             "                o.water = v.height.y;",
-            "                if (i.water > 0.5)",
+            "                if (i.water > 0.5 && i.water < 1.5)",
             "                    c.rgb = UOWaterShimmer(c.rgb, i.world);",
         };
+        // Then plants (PlantKind, FoliageWind): their lean in the wind and the leaves' season, two functions and these lines.
+        string plantFunctions = "            // A plant's lean (PlantKind): its top moves with slow sweeping gusts and a quicker flutter, its foot stays.\n            // The phase comes from the vertex's world position at a long wavelength, so a sprite's two top corners move\n            // together (the art keeps its shape) while trees across the screen sway out of step.\n            float4 PlantSway(float4 vertex, float code)\n            {\n                float weight = frac(code);\n                if (code < 1.5 || weight <= 0.0 || _UOFoliageSway <= 0.0)\n                    return vertex;\n                float2 w = mul(unity_ObjectToWorld, vertex).xy;\n                float t = _Time.y;\n                float gust = 0.55 + 0.45 * sin(w.x * 0.0021 - t * 0.55) * sin(w.y * 0.0017 + t * 0.4);\n                float sway = sin(t * 1.3 + (w.x + w.y) * 0.0023) * 0.75 + sin(t * 3.1 + w.x * 0.0041) * 0.25;\n                vertex.x += weight * _UOFoliageSway * (1.0 + _UOWindBoost) * gust * sway;\n                return vertex;\n            }\n\n            // The season on a leafy plant's green pixels (FoliageWind.SeasonCode); trunks, petals and fruit keep their colour.\n            // Fall picks gold, orange or red with a slow drift across the world, so neighbouring trees differ.\n            float3 FoliageSeason(float3 c, float2 world)\n            {\n                float lum = dot(c, float3(0.299, 0.587, 0.114));\n                float green = saturate((c.g - max(c.r, c.b)) * 7.0 + 0.1);\n                float3 t;\n                if (_UOFoliageSeason < 1.5)\n                    t = c * float3(1.0, 1.12, 0.9) + float3(0.02, 0.035, 0.0);           // spring: fresh, light\n                else if (_UOFoliageSeason < 2.5)\n                {\n                    float n = 0.5 + 0.5 * sin(world.x * 0.0037 + 1.7) * sin(world.y * 0.0043 - 0.6);\n                    float3 hue = n < 0.4 ? lerp(float3(1.0, 0.78, 0.28), float3(1.0, 0.56, 0.18), n / 0.4)   // gold to orange\n                                         : lerp(float3(1.0, 0.56, 0.18), float3(0.86, 0.3, 0.14), (n - 0.4) / 0.6); // to red\n                    t = lum * 1.6 * hue;\n                }\n                else if (_UOFoliageSeason < 3.5)\n                    t = lerp(lum * float3(0.86, 0.9, 1.0), float3(0.9, 0.93, 0.98), 0.4); // winter: frosted\n                else\n                    t = lum * float3(0.78, 0.7, 0.55);                                      // desolation: withered\n                return lerp(c, t, green);\n            }\n\n";
+        string[] plants =
+        {
+            "            float _UOFoliageSway;  // plants' lean at full weight, Unity units (FoliageWind); unset 0: still",
+            "            float _UOWindBoost;    // WeatherView: rain and storms blow harder (unset 0)",
+            "            float _UOFoliageSeason; // leaves' season (FoliageWind.SeasonCode): 0 as drawn, 1 spring, 2 fall, 3 winter, 4 desolation",
+            "                v.vertex = PlantSway(v.vertex, v.height.y);",
+            "                else if (_UOFoliageSeason > 0.5 && (i.water >= 1.5 && i.water < 3.5 || i.water >= 5.5 && _UOFoliageSeason > 2.5))",
+            "                    c.rgb = FoliageSeason(c.rgb, i.world); // leaves every season; evergreens only winter and desolation",
+        };
+        water = water.Concat(plants).ToArray();
         string variant = DefaultVariant(now).Replace("\r\n", "\n");
         Assert.Contains(waterFunction, variant);
-        variant = variant.Replace(waterFunction, "");
+        Assert.Contains(plantFunctions, variant);
+        variant = variant.Replace(waterFunction, "").Replace(plantFunctions, "");
         string[] lines = variant.Split('\n');
         foreach (string s in spectral.Concat(water))
             Assert.Single(lines, l => l.TrimEnd('\r') == s);
@@ -2173,7 +2186,7 @@ public sealed class LiveGroundSpriteShadowSourceTests
     {
         string streamer = Source("Assets", "UOClient.Unity", "Runtime", "WorldStreamer.cs");
         Assert.Contains("if (MeshBuilder.FootMetadata)", streamer);
-        Assert.Contains("mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, q.Water);", streamer); // today's call (plus the water flag), kept for the default
+        Assert.Contains("mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, q.Water, q.Plant);", streamer); // today's call (plus the water and plant codes), kept for the default
         foreach (string f in new[] { Path.Combine("Runtime", "Avatar.cs"), Path.Combine("Runtime", "World", "ItemView.cs") })
         {
             string s = Source("Assets", "UOClient.Unity", f);

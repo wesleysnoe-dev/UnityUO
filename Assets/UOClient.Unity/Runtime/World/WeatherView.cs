@@ -42,6 +42,10 @@ namespace UOClient.Unity
 
         public string Status { get; private set; } = "clear";
 
+        /// <summary>The rain falling now (eased), 0..1, and the wind's slant (AmbientLife reads them).</summary>
+        public float Rain => _rain;
+        public float Wind => _wind + _storm * 0.5f;
+
         private static string Forced()
         {
             string[] args = Environment.GetCommandLineArgs();

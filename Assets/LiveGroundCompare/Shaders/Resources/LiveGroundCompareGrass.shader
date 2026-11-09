@@ -48,6 +48,7 @@ Shader "LiveGroundCompare/Grass"
             float _UOWindBoost; // WeatherView: rain and storms bend the grass harder and faster (unset 0)
             sampler2D _LGGrassCover; // GrassCover: house parts' tiles (r 1), world-wrapped every GrassCover.Wrap tiles
             float _LGGrassCoverOn;
+            float _UOFoliageSeason; // FoliageWind: 0 as drawn, 1 spring, 2 fall, 3 winter, 4 desolation
 
             struct appdata
             {
@@ -99,12 +100,29 @@ Shader "LiveGroundCompare/Grass"
                     if (tex2Dlod(_LGGrassCover, float4(coverUv, 0, 0)).r > 0.5)
                         discard;
                 }
-                float lush = i.color.a;
+                // Vertex alpha (GrassBuilder): 0 grass, 1 jungle, 0.5 a flower's head (its own colour), 0.25 a fern frond.
+                float kind = i.color.a;
+                bool flower = abs(kind - 0.5) < 0.1, fern = abs(kind - 0.25) < 0.1;
+                float lush = kind > 0.9 ? 1.0 : 0.0;
                 float3 grass = UNITY_SAMPLE_TEX2DARRAY_LOD(_LGAlbedoArray, float3(0.5, 0.5, 0), 8).rgb * _LGMatTint[0].rgb;
                 float3 jungle = UNITY_SAMPLE_TEX2DARRAY_LOD(_LGAlbedoArray, float3(0.5, 0.5, 3), 8).rgb * _LGMatTint[3].rgb;
                 float3 base = lerp(grass, jungle * 1.1, lush);
+                if (fern)
+                    base = grass * float3(0.72, 0.9, 0.78); // a deeper, cooler green than the grass
                 float3 tip = base * _TipLight + float3(0.05, 0.05, 0.0);
-                float3 col = lerp(base * (1.0 - _RootDark), tip, saturate(i.uv.x * 1.15)) * i.color.rgb;
+                float3 col = lerp(base * (1.0 - _RootDark), tip, saturate(i.uv.x * 1.15)) * (flower || fern ? 1.0 : i.color.rgb);
+                if (flower)
+                    col = i.color.rgb * (0.85 + 0.15 * i.uv.x); // petals: their own colour, the centre a touch darker
+                // The season, gentler than the trees' (FoliageWind): fresher in spring, straw in fall, frosted tips in winter.
+                if (_UOFoliageSeason > 0.5)
+                {
+                    float lum = dot(col, float3(0.299, 0.587, 0.114));
+                    float3 t = _UOFoliageSeason < 1.5 ? col * float3(1.0, 1.08, 0.92)
+                             : _UOFoliageSeason < 2.5 ? lum * float3(1.35, 1.12, 0.55)
+                             : _UOFoliageSeason < 3.5 ? lerp(col, float3(0.85, 0.88, 0.92), saturate(i.uv.x) * 0.6)
+                             : lum * float3(0.85, 0.78, 0.6);
+                    col = lerp(col, t, 0.55);
+                }
 
                 float visibility = min(tex2D(_LGShadowTex, i.chunkUv).r, LGCeilVisibility(i.world));
                 float3 rgb = col * LGLitShadowed(float3(0, 1, 0), visibility, i.world);
