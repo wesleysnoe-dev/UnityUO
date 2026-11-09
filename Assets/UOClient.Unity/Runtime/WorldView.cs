@@ -24,7 +24,10 @@ namespace UOClient.Unity
     /// </summary>
     public static class DepthKey
     {
-        public const int PriorityMin = -64, PriorityLevels = 256, Kinds = 3, TieLevels = 8;
+        // Priority Z spans the whole UO height range: Z is -128..127, land sits a step or two below it, characters +2 and
+        // effects +30 above it. A narrower range clamped low towns (Luna on Malas stands at Z -90) to one priority, so a
+        // house's foundation, floor and walls on one tile tied and drew in arrival order (floors over walls).
+        public const int PriorityMin = -132, PriorityLevels = 292, Kinds = 3, TieLevels = 8;
         public const int PerDiagonal = PriorityLevels * Kinds * TieLevels;
         public const float Step = 0.005f;
 

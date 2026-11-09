@@ -46,13 +46,6 @@ namespace UOClient.Unity
                 SetCorpseLook(corpseLook, CorpseDraw.Action(data.AnimationLibrary, item));
             }
             StaticTileData td = data.TileData.GetStatic(item.Graphic);
-            // A house wall sorts one diagonal later, at its floor's priority and last among those floors: UO wall art runs
-            // from its tile's centre to the centre of the next tile along the wall, so the floor there (a house's board
-            // lip outside its front walls, or the floor beside a partition), drawn a diagonal after the wall, cut wedges
-            // into each panel's foot. Its own diagonal's other tiles lie a full tile left and right of it, so moving it
-            // past them changes little; items on the floor and characters on the next diagonal still draw after it.
-            // Doors stay put (a character stands in a doorway).
-            _wallLater = multiPart && (td.Flags & TileFlags.Wall) != 0 && (td.Flags & TileFlags.Door) == 0 && td.Height >= MinLaterWallHeight;
             // A coin pile's art and a stack's second copy (ItemStack); the view is remade when the amount changes.
             _shown = item.IsMulti || item.IsCorpse ? item.Graphic : ItemStack.DisplayedGraphic(item.Graphic, item.Amount);
             _twice = !item.IsMulti && !item.IsCorpse && ItemStack.DrawsTwice(item.Graphic, item.Amount, td.Flags);
@@ -341,23 +334,7 @@ namespace UOClient.Unity
         }
 
         // DepthKey's tie levels are its last digit: tie t is t steps nearer than tie 0.
-        private float Depth(IWorldSpace world)
-        {
-            if (_wallLater)
-            {
-                DrawItem later = _item;
-                later.X += 1;                  // the next diagonal
-                later.PriorityZ = _item.Z - 1; // a floor's priority there (Background: Z - 1)
-                return world.DepthFor(later) - (DepthKey.TieLevels - 1) * DepthKey.Step; // after those floors
-            }
-            return world.DepthFor(_item) - Mathf.Clamp(Tie, 0, DepthKey.TieLevels - 1) * DepthKey.Step;
-        }
-
-        // A house wall that sorts with the next diagonal's floors (see the constructor).
-        // Foundation blocks (stone wall, height 5) stand below the floor and stay put, or they show through it.
-        private const int MinLaterWallHeight = 10;
-
-        private readonly bool _wallLater;
+        private float Depth(IWorldSpace world) => world.DepthFor(_item) - Mathf.Clamp(Tie, 0, DepthKey.TieLevels - 1) * DepthKey.Step;
 
         /// <summary>The upper-floor cut height the quad is drawn with (WorldSprite.shader hides it under the cut).</summary>
         public float LastCut => MeshBuilder.CutHeight(_item.Z);

@@ -157,8 +157,8 @@ namespace UOClient.LiveGroundCompare
         /// <summary>UOClient.Unity.DepthKey.Step (not referenced: this file is Unity-free).</summary>
         public const float DepthStep = 0.005f;
 
-        /// <summary>One diagonal of depth: DepthKey.PerDiagonal (256 * 3 * 8) * Step.</summary>
-        public const float DiagonalDepth = 256 * 3 * 8 * DepthStep;
+        /// <summary>One diagonal of depth: DepthKey.PerDiagonal (292 * 3 * 8) * Step.</summary>
+        public const float DiagonalDepth = 292 * 3 * 8 * DepthStep;
 
         /// <summary>Bilinear heightmap value (0..1) at chunk-local tile units; rows run along +Z (tile y descending).</summary>
         private static float Height(float[,] heights, int n, int hp, float lx, float ly)

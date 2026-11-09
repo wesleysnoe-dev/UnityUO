@@ -82,7 +82,7 @@ public class GrassBuilderTests
         var tileDepth = new float[Tiles, Tiles];
         for (int i = 0; i < Tiles; i++)
             for (int j = 0; j < Tiles; j++)
-                tileDepth[i, j] = i == 3 && j == 5 ? float.NaN : -(i + j) * 30.72f; // one diagonal per DepthKey.PerDiagonal * Step
+                tileDepth[i, j] = i == 3 && j == 5 ? float.NaN : -(i + j) * GrassBuilder.DiagonalDepth; // one diagonal per DepthKey.PerDiagonal * Step
         GrassBuilder.Project(g, tileDepth, d.ChunkX0, d.ChunkY0, 1);
         Assert.Equal(g.VertexCount, g.Depth.Length);
         for (int v = 0; v < g.VertexCount; v += 3)
