@@ -327,8 +327,37 @@ namespace UOClient.Unity
             }
         }
 
+        /// <summary>The seat graphic on a tile at about a Z (a chair, bench or stool in Core.Seats), or -1; set by the world.</summary>
+        public static Func<int, int, int, int> SeatAt;
+
+        // The seat under this character, looked up when its tile changes (and every second, for chairs set down or moved).
+        private (int X, int Y, int Z) _seatTile = (int.MinValue, 0, 0);
+        private float _seatCheckedAt = -10f;
+        private int _seatGraphic = -1;
+
+        /// <summary>Whether it is sitting now (a person, on foot, still, on a seat), and the seat.</summary>
+        private bool Seated(out Core.Seats.Seat seat)
+        {
+            seat = default;
+            if (SeatAt == null || _look == null || _look.Mounted || _look.Group != AnimGroup.Human || Dead || Dying
+                || _stepDuration > 0 || _server != null || !MobileLook.IsHumanGraphic(_look.Body))
+                return false;
+            if ((X, Y, Z) != _seatTile || Time.time - _seatCheckedAt > 1f)
+            {
+                _seatTile = (X, Y, Z);
+                _seatCheckedAt = Time.time;
+                _seatGraphic = SeatAt(X, Y, Z);
+            }
+            return _seatGraphic >= 0 && Core.Seats.TryGet(_seatGraphic, out seat);
+        }
+
         public void Render(IWorldSpace view)
         {
+            // Sitting (Core.Seats, ClassicUO MobileView): on a seat a person faces the way the seat allows and is drawn from
+            // the standing frame folded at the hips, or, seen from behind (file direction 3), the riding pose.
+            bool seated = Seated(out Core.Seats.Seat seat);
+            if (seated)
+                Direction = Core.Seats.Facing(seat, Direction) & 7;
             // Worn layers stack by the facing itself (TazUO's layerDir, taken before GetAnimDirection; MobileView.cs:151-154).
             int layerDir = Direction & 7;
             int fileDir = AnimationFile.FileDirection(layerDir, out bool mirror);
@@ -377,7 +406,19 @@ namespace UOClient.Unity
                 }
                 _serverPending = 0;               // still being built: the clock waits, the normal action shows meanwhile
             }
-            if (!falling && !serverAnim)
+            bool sitBack = false;
+            if (!falling && !serverAnim && seated)
+            {
+                sitBack = fileDir == 3;
+                var peace = MobileArt.Actions(_look);
+                frames = _art.Get(_look, _lookKey, sitBack ? SitBackAction : peace.Stand, fileDir, layerDir);
+                if (frames != null && frames.Length == 0)
+                {
+                    sitBack = false;
+                    frames = _art.Get(_look, _lookKey, peace.Stand, fileDir, layerDir); // no riding pose: fold the standing one
+                }
+            }
+            else if (!falling && !serverAnim)
             {
                 // War actions a body lacks fall back to the peace ones, then to standing.
                 var peace = MobileArt.Actions(_look);
@@ -412,6 +453,8 @@ namespace UOClient.Unity
             }
             else if (serverAnim)
                 f = frames[_server.Frame(frames.Length)];
+            else if (seated)
+                f = frames[0];
             else
             {
                 // Walk/run cycles span two tiles; standing idles slowly.
@@ -422,6 +465,23 @@ namespace UOClient.Unity
             Vector2 anchor = AnchorPixels;
             float left = anchor.x - (mirror ? f.Slot.Width - f.AnchorX : f.AnchorX);
             float top = anchor.y - f.AnchorY;
+            if (seated)
+            {
+                // Lowered onto the seat and drawn back over it (ClassicUO FixSittingDirection's offsets, art pixels).
+                float dx, dy;
+                if (mirror)
+                {
+                    dx = fileDir == 3 ? 4f : 0f;
+                    dy = fileDir == 3 ? 25 + seat.MirrorOffsetY : seat.OffsetY + 9;
+                }
+                else
+                {
+                    dx = fileDir == 3 ? -3f : -9f;
+                    dy = fileDir == 3 ? 23 + seat.MirrorOffsetY : 10 + seat.OffsetY;
+                }
+                left += dx * _scale;
+                top += (dy + SitOffsetY) * _scale;
+            }
             Rect r = view.ToUnityRect(left, top, f.Slot.Width, f.Slot.Height);
 
             _material.mainTexture = _art.Atlas.Page(f.Slot.Page);
@@ -446,9 +506,65 @@ namespace UOClient.Unity
             }
             else
                 MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut);
+            if (seated && !sitBack)
+                SetSitQuads(r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut, view.ToUnity(anchor));
             // The frame is every worn layer composited, so its outline is the whole equipped silhouette.
             _outline.Update(ObjectHighlight.OutlinesInWorld(Selected, true, false, ObjectHighlight.HighlightGameObjects),
                 _art, f.Slot, r, mirror, LastDepth, LastCut);
+        }
+
+        // People's riding action (group 25), frame 0: a person seen from behind sitting (ClassicUO uses it for file dir 3).
+        private const int SitBackAction = 25;
+
+        private const int SitOffsetY = 4;
+
+        // ClassicUO's sitting split: the frame's upper body, hips and legs (fractions of its height), the feet left out.
+        private const float UpperBody = 0.35f, MidBody = 0.60f, LowerBody = 0.94f, SitShift = 8f;
+
+        private static readonly Vector3[] SitVertices = new Vector3[12];
+        private static readonly Vector2[] SitUvs = new Vector2[12];
+        private static readonly Vector2[] SitHeights = new Vector2[12];
+        private static readonly Vector4[] SitFeet = new Vector4[12];
+        private static readonly int[] SitIndices = { 0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11 };
+
+        /// <summary>
+        /// The seated frame as three quads (ClassicUO Batcher2D.DrawCharacterSitted): the upper body moved back over the
+        /// seat, the hips slanting from it to the knees, the shins straight, the feet left out (under the seat).
+        /// </summary>
+        private void SetSitQuads(Rect r, Vector4 uv, float depth, bool mirror, float cut, Vector2 foot)
+        {
+            float shift = (mirror ? -SitShift : SitShift) * _scale;
+            float top = r.yMax, h = r.height;
+            float u0 = mirror ? uv.z : uv.x, u1 = mirror ? uv.x : uv.z;
+            float V(float f) => uv.w + (uv.y - uv.w) * f; // a fraction of the frame from its top
+            void Quad(int k, float fTop, float fBottom, float topShift, float bottomShift)
+            {
+                float yTop = top - h * fTop, yBottom = top - h * fBottom;
+                SitVertices[k] = new Vector3(r.xMin + bottomShift, yBottom, depth);
+                SitVertices[k + 1] = new Vector3(r.xMin + topShift, yTop, depth);
+                SitVertices[k + 2] = new Vector3(r.xMax + topShift, yTop, depth);
+                SitVertices[k + 3] = new Vector3(r.xMax + bottomShift, yBottom, depth);
+                SitUvs[k] = new Vector2(u0, V(fBottom));
+                SitUvs[k + 1] = new Vector2(u0, V(fTop));
+                SitUvs[k + 2] = new Vector2(u1, V(fTop));
+                SitUvs[k + 3] = new Vector2(u1, V(fBottom));
+            }
+            Quad(0, 0f, UpperBody, shift, shift);
+            Quad(4, UpperBody, MidBody, shift, 0f);
+            Quad(8, MidBody, LowerBody, 0f, 0f);
+            for (int k = 0; k < 12; k++)
+            {
+                SitHeights[k] = new Vector2(cut, 0f);
+                SitFeet[k] = new Vector4(foot.x, foot.y, Z, 1f);
+            }
+            _mesh.Clear();
+            _mesh.vertices = SitVertices;
+            _mesh.uv = SitUvs;
+            _mesh.uv2 = SitHeights;
+            if (MeshBuilder.FootMetadata)
+                _mesh.SetUVs(2, SitFeet);
+            _mesh.triangles = SitIndices;
+            _mesh.RecalculateBounds();
         }
 
         private Vector2 TileAnchor(int x, int y, int z)

@@ -87,7 +87,8 @@ namespace UOClient.Unity
             Vector2Int d = Avatar.Delta(direction);
             int nx = _ctx.Player.X + d.x, ny = _ctx.Player.Y + d.y;
             int? z = _ctx.Walk.TryStep(nx, ny, _ctx.Player.Z);
-            if (!z.HasValue)
+            // Someone stands there: below full stamina they block you; at full you shove through (Core.Shove).
+            if (!z.HasValue || _ctx.Session != null && Core.Shove.Blocker(_ctx.Session.World, nx, ny, z.Value) != null)
             {
                 _ctx.Player.Face(direction);
                 return false;

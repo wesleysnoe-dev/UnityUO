@@ -203,12 +203,30 @@ namespace UOClient.Unity
             _ctx.MobileArt = new MobileArt(_ctx.Data, _ctx.ArtScale);
         }
 
+        /// <summary>
+        /// The seat on a tile within a step of Z (ClassicUO Mobile.TryGetSittingInfo: a map static, a house part or an
+        /// item there in Core.Seats), or -1.
+        /// </summary>
+        private int SeatAt(int x, int y, int z)
+        {
+            if (_ctx.Walk != null)
+                foreach (IO.Formats.StaticCell s in _ctx.Walk.StaticsOn(x, y))
+                    if (Math.Abs(s.Z - z) <= 1 && Core.Seats.TryGet(s.Graphic, out _))
+                        return s.Graphic;
+            if (_ctx.Session != null)
+                foreach (Core.WorldItem it in _ctx.Session.World.Items.Values)
+                    if (it.X == x && it.Y == y && !it.IsMulti && Math.Abs(it.Z - z) <= 1 && Core.Seats.TryGet(it.Graphic, out _))
+                        return it.Graphic;
+            return -1;
+        }
+
         private void CreateWorld(int mapIndex, int x, int y)
         {
             _liveGround?.Detach();
             _ctx.World?.Dispose();
             _ctx.World = new WorldStreamer(_ctx.Data, _ctx.Root, _ctx.Shader, _ctx.ArtScale, _compositorFactory, mapIndex, x, y) { LoadRadius = loadRadius };
             Lighting.SunStepped = () => _ctx.World?.RebuildLoaded(); // the terrain's baked sun moved
+            Avatar.SeatAt = SeatAt; // characters sit on chairs, benches and stools
             _ctx.Walk = new Walkability(_ctx.Data, mapIndex);
             _ctx.Hud.Summary = $"streaming {WorldStreamer.ChunkSize}x{WorldStreamer.ChunkSize} chunks, radius {loadRadius}, {_bakedCount} baked placements available, {_ctx.ArtScale}x art";
             if (_liveGround?.Attach(_ctx.World, _ctx.Session != null ? _sessionHost : Settings.host) is string groundStatus)
