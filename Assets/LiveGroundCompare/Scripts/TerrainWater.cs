@@ -40,9 +40,10 @@ namespace UOClient.LiveGroundCompare
             error = null;
             try
             {
-                if (Array.Exists(Environment.GetCommandLineArgs(), a => string.Equals(a, "-noterrain-water", StringComparison.OrdinalIgnoreCase)))
+                // UO's own water art is drawn (and animated by WorldSprite) unless -terrainwater asks for this surface.
+                if (!Array.Exists(Environment.GetCommandLineArgs(), a => string.Equals(a, "-terrainwater", StringComparison.OrdinalIgnoreCase)))
                 {
-                    error = "-noterrain-water"; // diagnosis
+                    error = "UO water art (start with -terrainwater for the water surface)";
                     return null;
                 }
                 if (!WaterTiles.TryLand(world?.Data, out var land, out error))

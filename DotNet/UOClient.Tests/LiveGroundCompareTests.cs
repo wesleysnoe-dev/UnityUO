@@ -2135,10 +2135,22 @@ public sealed class LiveGroundSpriteShadowSourceTests
             "        [HideInInspector] _DstBlend (\"Dst blend\", Float) = 0",
             "        Blend [_SrcBlend] [_DstBlend]",
         };
-        string[] lines = DefaultVariant(now).Split('\n');
-        foreach (string s in spectral)
+        // Since then UO's water art shimmers (WaterArt, the 3D water surface made opt-in): one function and four lines.
+        string waterFunction = "            // UO's water art, animated without moving its pixels (that would pull neighbours in from the atlas): slow\n            // rolling light swells crossing each other, a finer ripple, and sharp moving glints on the crests.\n            // world: Unity units (world pixels at the art scale).\n            float3 UOWaterShimmer(float3 rgb, float2 world)\n            {\n                float t = _Time.y;\n                float2 p = world * 0.011;\n                float w1 = sin(p.x * 1.7 + p.y * 0.6 + t * 1.05);\n                float w2 = sin(-p.x * 0.8 + p.y * 1.9 - t * 0.8);\n                float w3 = sin((p.x + p.y) * 3.3 + t * 2.2);\n                float swell = (w1 + w2) * 0.5;\n                float light = 1.0 + 0.08 * swell + 0.035 * w3;\n                // Glints: small sparkles where two fine, fast ripples crest together, brighter on the swells' crests.\n                float2 q = world * 0.07;\n                float g1 = sin(q.x * 1.3 + q.y * 0.9 + t * 3.1);\n                float g2 = sin(-q.x * 0.7 + q.y * 1.6 - t * 2.6);\n                float glint = pow(saturate(g1 * g2), 24.0) * (0.25 + 0.2 * saturate(swell)) ;\n                return rgb * light + glint * float3(0.8, 0.9, 1.0);\n            }\n\n";
+        string[] water =
+        {
+            "                float water : TEXCOORD5;   // 1: UO water art (land or ocean static): animated shimmer",
+            "                o.water = v.height.y;",
+            "                if (i.water > 0.5)",
+            "                    c.rgb = UOWaterShimmer(c.rgb, i.world);",
+        };
+        string variant = DefaultVariant(now).Replace("\r\n", "\n");
+        Assert.Contains(waterFunction, variant);
+        variant = variant.Replace(waterFunction, "");
+        string[] lines = variant.Split('\n');
+        foreach (string s in spectral.Concat(water))
             Assert.Single(lines, l => l.TrimEnd('\r') == s);
-        Assert.Equal(head, string.Join("\n", lines.Where(l => !spectral.Contains(l.TrimEnd('\r')))));
+        Assert.Equal(head, string.Join("\n", lines.Where(l => !spectral.Contains(l.TrimEnd('\r')) && !water.Contains(l.TrimEnd('\r')))));
         Assert.DoesNotContain("_LG", DefaultVariant(now));
         Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(now, "multi_compile").Count); // LG_SPRITE_SHADOW, UO_ITEM_LIGHTS
     }
@@ -2161,7 +2173,7 @@ public sealed class LiveGroundSpriteShadowSourceTests
     {
         string streamer = Source("Assets", "UOClient.Unity", "Runtime", "WorldStreamer.cs");
         Assert.Contains("if (MeshBuilder.FootMetadata)", streamer);
-        Assert.Contains("mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight);", streamer); // today's call, kept for the default
+        Assert.Contains("mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, q.Water);", streamer); // today's call (plus the water flag), kept for the default
         foreach (string f in new[] { Path.Combine("Runtime", "Avatar.cs"), Path.Combine("Runtime", "World", "ItemView.cs") })
         {
             string s = Source("Assets", "UOClient.Unity", f);

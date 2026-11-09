@@ -716,6 +716,7 @@ namespace UOClient.Unity
             }
 
             _sections.Begin("chunks");
+            _ctx.World.LoadRadius = VisibleRadius();
             _ctx.World.Update(_ctx.Player.X, _ctx.Player.Y);
             _sections.Begin("minimap");
             _minimap.Update(_ctx.Data, _ctx.World.Map, _ctx.Player.X, _ctx.Player.Y, _ctx.Hud);
@@ -822,6 +823,32 @@ namespace UOClient.Unity
                     $"{_frames.Summary()}\nchunks {_ctx.World.LoadedChunks} loaded, {_ctx.World.PendingChunks} pending, worker {_ctx.World.WorkerMs / Math.Max(1, _ctx.World.ChunksBuilt):F1} ms/chunk; " +
                     $"art {_ctx.MobileArt.Built} built, {_ctx.MobileArt.PendingRequests} pending{lastHitch}");
             }
+        }
+
+        /// <summary>The most the load radius grows to fill the screen when zoomed far out (tiles).</summary>
+        private const int MaxLoadRadius = 96;
+
+        /// <summary>
+        /// How far (tiles) chunks must load around the player for the window's corners to show world, not black: each
+        /// screen corner back through the iso projection at the player's height, the furthest of them in x or y, plus a
+        /// margin for art standing above or below that height. Never under the configured <see cref="loadRadius"/>.
+        /// </summary>
+        private int VisibleRadius()
+        {
+            Camera cam = _ctx.Camera;
+            if (cam == null || _ctx.Player == null)
+                return loadRadius;
+            float s = _ctx.ArtScale, z = _ctx.Player.Z, far = 0f;
+            foreach (Vector2 corner in new[] { Vector2.zero, new Vector2(Screen.width, 0), new Vector2(0, Screen.height), new Vector2(Screen.width, Screen.height) })
+            {
+                Vector2 px = _ctx.World.FromUnity(cam.ScreenToWorldPoint(corner));
+                float u = px.x / (22f * s), v = (px.y / s + z * 4f) / 22f;
+                float x = (v + u) * 0.5f, y = (v - u) * 0.5f;
+                far = Mathf.Max(far, Mathf.Abs(x - _ctx.Player.X), Mathf.Abs(y - _ctx.Player.Y));
+            }
+            // Margin: hills and towers drawn from beyond the corner (128 Z up is 23 tiles of screen), and a chunk.
+            int needed = Mathf.CeilToInt(far) + 12;
+            return Mathf.Clamp(needed, loadRadius, MaxLoadRadius);
         }
 
         /// <summary>Nearest walkable tile to (x, y) whose indoor state matches; spirals outward.</summary>

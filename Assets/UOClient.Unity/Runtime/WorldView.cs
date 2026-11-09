@@ -100,10 +100,10 @@ namespace UOClient.Unity
 
         /// <param name="uv">x = left, y = bottom, z = right, w = top.</param>
         /// <param name="height">The tile height for the upper-floor cut (<see cref="CutHeight"/>), or <see cref="NeverCut"/>.</param>
-        public void AddQuad(Rect r, Vector4 uv, float z, bool mirror, float height = NeverCut)
+        public void AddQuad(Rect r, Vector4 uv, float z, bool mirror, float height = NeverCut, bool water = false)
         {
             int i = _vertices.Count;
-            var h = new Vector2(height, 0);
+            var h = new Vector2(height, water ? 1f : 0f); // y: UO water art (WorldSprite's water shimmer)
             _heights.Add(h);
             _heights.Add(h);
             _heights.Add(h);
@@ -134,9 +134,9 @@ namespace UOClient.Unity
         /// LiveGroundCompare sprite shadow: the foot anchor (Unity x, y; UO Z; kind, 0 = none). Written only while
         /// <see cref="FootMetadata"/> is set; otherwise this is the overload without it.
         /// </param>
-        public void AddQuad(Rect r, Vector4 uv, float z, bool mirror, float height, Vector4 foot)
+        public void AddQuad(Rect r, Vector4 uv, float z, bool mirror, float height, Vector4 foot, bool water = false)
         {
-            AddQuad(r, uv, z, mirror, height);
+            AddQuad(r, uv, z, mirror, height, water);
             if (!FootMetadata)
                 return;
             if (_feet == null)

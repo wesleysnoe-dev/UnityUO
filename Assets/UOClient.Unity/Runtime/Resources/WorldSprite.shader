@@ -100,10 +100,31 @@ Shader "UOClient/WorldSprite"
                 float4 color : COLOR;
                 float2 world : TEXCOORD1;
                 float height : TEXCOORD2;
+                float water : TEXCOORD5;   // 1: UO water art (land or ocean static): animated shimmer
             #ifdef LG_SPRITE_SHADOW
                 float4 foot : TEXCOORD3;
             #endif
             };
+
+            // UO's water art, animated without moving its pixels (that would pull neighbours in from the atlas): slow
+            // rolling light swells crossing each other, a finer ripple, and sharp moving glints on the crests.
+            // world: Unity units (world pixels at the art scale).
+            float3 UOWaterShimmer(float3 rgb, float2 world)
+            {
+                float t = _Time.y;
+                float2 p = world * 0.011;
+                float w1 = sin(p.x * 1.7 + p.y * 0.6 + t * 1.05);
+                float w2 = sin(-p.x * 0.8 + p.y * 1.9 - t * 0.8);
+                float w3 = sin((p.x + p.y) * 3.3 + t * 2.2);
+                float swell = (w1 + w2) * 0.5;
+                float light = 1.0 + 0.08 * swell + 0.035 * w3;
+                // Glints: small sparkles where two fine, fast ripples crest together, brighter on the swells' crests.
+                float2 q = world * 0.07;
+                float g1 = sin(q.x * 1.3 + q.y * 0.9 + t * 3.1);
+                float g2 = sin(-q.x * 0.7 + q.y * 1.6 - t * 2.6);
+                float glint = pow(saturate(g1 * g2), 24.0) * (0.25 + 0.2 * saturate(swell)) ;
+                return rgb * light + glint * float3(0.8, 0.9, 1.0);
+            }
 
             v2f vert(appdata v)
             {
@@ -113,6 +134,7 @@ Shader "UOClient/WorldSprite"
                 o.color = v.color;
                 o.world = mul(unity_ObjectToWorld, v.vertex).xy;
                 o.height = v.height.x;
+                o.water = v.height.y;
             #ifdef LG_SPRITE_SHADOW
                 o.foot = float4(mul(unity_ObjectToWorld, float4(v.foot.xy, v.vertex.z, 1.0)).xy, v.foot.zw);
             #endif
@@ -128,6 +150,8 @@ Shader "UOClient/WorldSprite"
                 clip(c.a - _Cutoff);
                 if (_Unlit > 0.5)
                     return c * i.color;
+                if (i.water > 0.5)
+                    c.rgb = UOWaterShimmer(c.rgb, i.world);
 
                 float d = distance(i.world, _UOLightPos.xy) / max(_UOLightPos.z, 1.0);
                 float falloff = saturate(1.0 - d);

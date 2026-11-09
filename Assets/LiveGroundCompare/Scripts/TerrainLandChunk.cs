@@ -21,6 +21,7 @@ namespace UOClient.LiveGroundCompare
             _scale = scale;
             _texels = TerrainLandBuilder.TexelsFor(scale);
             _water = presenter.Water?.Table;
+            _waterLand = WaterTiles.TryLand(presenter.World?.Data, out var landRows, out _) ? WaterTiles.Table(landRows) : null;
             _staticWater = presenter.Water?.StaticTable;
             _occlusion = presenter.DepthShader != null;
             // Natural terrain cuts the shoreline from the ground itself: the classic shoreline edge statics (the other
@@ -34,6 +35,7 @@ namespace UOClient.LiveGroundCompare
         }
 
         private readonly bool[] _shoreEdge; // natural terrain: shoreline edge statics, dropped
+        private readonly bool[] _waterLand; // water land graphics (kept as sprites without the water surface)
 
         /// <summary>Diagnosis (-tiletrace=x,y): log what the terrain makes of that tile.</summary>
         private static readonly (int, int)? TraceTile = ParseTrace();
@@ -166,6 +168,8 @@ namespace UOClient.LiveGroundCompare
         // Land as before, plus the ocean statics: drawn by the water surface, not as flat tiled sprites over it.
         public bool Diverts(in ArtPipeline.DrawItem item, bool baked) =>
             GroundBackend.Diverts(GroundBackendKind.Terrain, item, baked)
+            // Without the water surface, UO's water land stays a sprite (its own art, animated by WorldSprite).
+            && !(_water == null && item.Kind == ArtPipeline.DrawKind.Land && WaterTiles.Lookup(_waterLand, item.Graphic))
             || !baked && item.Kind == ArtPipeline.DrawKind.Static
                && (WaterTiles.Lookup(_staticWater, item.Graphic) || _shoreEdge != null && WaterTiles.Lookup(_shoreEdge, item.Graphic));
 

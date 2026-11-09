@@ -446,10 +446,10 @@ namespace UOClient.Unity
                 if (MeshBuilder.FootMetadata) // LiveGroundCompare sprite shadow (TEST); false by default
                 {
                     Vector2 foot = ToUnity(new Vector2(q.FootX, q.FootY));
-                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, new Vector4(foot.x, foot.y, q.FootZ, q.FootKind));
+                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, new Vector4(foot.x, foot.y, q.FootZ, q.FootKind), q.Water);
                 }
                 else
-                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight);
+                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, q.Water);
             }
 
             AttachShadows(build, chunk, unique);
@@ -699,6 +699,7 @@ namespace UOClient.Unity
                     FootZ = it.Z,
                     FootKind = it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2, // upright : ground
                     Traced = TraceTile.HasValue && it.X == TraceTile.Value.x && it.Y == TraceTile.Value.y,
+                    Water = it.Kind == DrawKind.Land ? WaterArt.IsWater(tileData.Land[it.Graphic & 0x3FFF]) : it.Kind == DrawKind.Static && WaterArt.IsWater(tileData.GetStatic(it.Graphic)),
                     Shadow = _outlineShadows && it.Kind == DrawKind.Static && ShadowRules.CastsOutline(tileData.GetStatic(it.Graphic), (int)(it.Height / _scale))
                 };
                 if (unique)
@@ -865,6 +866,7 @@ namespace UOClient.Unity
             public float FootX, FootY, FootZ, FootKind; // foot anchor (world-screen pixels, UO Z, kind) for the TEST sprite shadow
             public bool Shadow; // casts its own outline as a sun shadow (ShadowRules, CharacterShadow)
             public bool Traced; // diagnosis (-tiletrace): on the traced tile
+            public bool Water;  // UO water art: shimmers (WorldSprite)
         }
 
         private struct SharedSprite
