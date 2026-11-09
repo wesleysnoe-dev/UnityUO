@@ -6,6 +6,7 @@
 //   _WFog    0..1  rolling banks of mist and an even haze
 //   _WWind   slant of rain and drift of snow and fog (screen x per screen y)
 //   _WFlash  0..1  lightning
+//   _WClouds 0..1  shadows of clouds drifting over the ground (only while the sun casts: 1 - _UOSunFade)
 // Lit by the time of day (_UOAmbient), so night rain is dark and dawn mist is warm.
 Shader "UOClient/Weather"
 {
@@ -16,6 +17,7 @@ Shader "UOClient/Weather"
         _WFog ("Fog", Range(0, 1)) = 0
         _WWind ("Wind", Range(-1, 1)) = 0.2
         _WFlash ("Lightning", Range(0, 1)) = 0
+        _WClouds ("Cloud shadows", Range(0, 1)) = 0
         _WOrigin ("Camera in world pixels", Vector) = (0, 0, 0, 0)
         _WScale ("Pixels per art pixel", Float) = 1
     }
@@ -36,7 +38,8 @@ Shader "UOClient/Weather"
             #pragma fragment frag
             #include "UnityCG.cginc"
 
-            float _WRain, _WSnow, _WFog, _WWind, _WFlash, _WScale;
+            float _WRain, _WSnow, _WFog, _WWind, _WFlash, _WScale, _WClouds;
+            float _UOSunFade; // CharacterShadow.SetSun: the sun's shadows fade (night, low sun, overcast)
             float4 _WOrigin, _UOAmbient;
 
             struct appdata { float4 vertex : POSITION; float2 uv : TEXCOORD0; };
@@ -139,7 +142,20 @@ Shader "UOClient/Weather"
                 float3 col = 0;
                 float a = 0;
 
-                // Fog first (furthest back): banks rolling with the wind over an even haze.
+                // Cloud shadows first (on the ground and everything on it): big soft shapes drifting with the wind, a
+                // few tiles to a screen across, only while the sun casts shadows (none by night or under full overcast).
+                float sunCast = 1.0 - saturate(_UOSunFade);
+                if (_WClouds > 0.001 && sunCast > 0.01)
+                {
+                    float2 drift = float2(1.0, 0.35 + _WWind) * _Time.y * 14.0;
+                    float2 q = (world - drift) * 0.00085;
+                    float n = Fbm(q) * 0.7 + Fbm(q * 2.3 + 41.0) * 0.3;
+                    float shade = smoothstep(0.50, 0.68, n) * 0.30 * _WClouds * sunCast;
+                    col = col * (1.0 - shade);
+                    a = a + shade * (1.0 - a);
+                }
+
+                // Fog (behind rain and snow): banks rolling with the wind over an even haze.
                 if (_WFog > 0.001)
                 {
                     float2 q = world * 0.0022 + float2(_Time.y * 0.018 * (0.4 + _WWind), _Time.y * 0.004);
@@ -147,8 +163,8 @@ Shader "UOClient/Weather"
                     float fog = _WFog * (0.35 + 0.65 * smoothstep(0.35, 0.75, banks));
                     float3 fogCol = lerp(float3(0.62, 0.66, 0.72), float3(0.86, 0.88, 0.9), light) * amb;
                     fog = saturate(fog * 0.75);
-                    col = fogCol * fog;
-                    a = fog;
+                    col = col * (1.0 - fog) + fogCol * fog;
+                    a = a + fog * (1.0 - a);
                 }
 
                 if (_WRain > 0.001)

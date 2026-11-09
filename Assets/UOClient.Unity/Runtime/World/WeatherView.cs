@@ -26,7 +26,11 @@ namespace UOClient.Unity
         private static readonly int RainId = Shader.PropertyToID("_WRain"), SnowId = Shader.PropertyToID("_WSnow"),
             FogId = Shader.PropertyToID("_WFog"), WindId = Shader.PropertyToID("_WWind"), FlashId = Shader.PropertyToID("_WFlash"),
             OriginId = Shader.PropertyToID("_WOrigin"), ScaleId = Shader.PropertyToID("_WScale"),
-            WindBoostId = Shader.PropertyToID("_UOWindBoost");
+            WindBoostId = Shader.PropertyToID("_UOWindBoost"), CloudsId = Shader.PropertyToID("_WClouds");
+
+        /// <summary>-noclouds: no drifting cloud shadows.</summary>
+        public static readonly bool Clouds = !Array.Exists(Environment.GetCommandLineArgs(),
+            a => string.Equals(a, "-noclouds", StringComparison.OrdinalIgnoreCase));
 
         private readonly GameObject _go;
         private readonly Material _material;
@@ -71,7 +75,7 @@ namespace UOClient.Unity
             _renderer.receiveShadows = false;
             _renderer.enabled = false;
             Active = true;
-            Debug.Log($"UOClient weather: on (server weather 0x65, morning mist{(_forced != null ? $", fixed: {_forced}" : "")})");
+            Debug.Log($"UOClient weather: on (server weather 0x65, morning mist, cloud shadows {(Clouds ? "on" : "off (-noclouds)")}{(_forced != null ? $", fixed: {_forced}" : "")})");
         }
 
         /// <summary>Every frame: eases toward the weather now and draws it over <paramref name="camera"/>'s view.</summary>
@@ -136,9 +140,11 @@ namespace UOClient.Unity
             if (_flashAge < 0.6f)
                 flash = Mathf.Max(Pulse(_flashAge, 0.0f, 0.09f), Pulse(_flashAge, 0.18f, 0.35f) * 0.8f);
 
-            bool show = _rain > 0.01f || _snow > 0.01f || _fog > 0.01f || flash > 0f;
+            // Cloud shadows: a fair-weather sky by day (the shader fades them with the sun's shadows, so not by night).
+            float clouds = Clouds ? 1f : 0f;
+            bool show = _rain > 0.01f || _snow > 0.01f || _fog > 0.01f || flash > 0f || clouds > 0f;
             _renderer.enabled = show;
-            Status = !show ? "clear"
+            Status = !(_rain > 0.01f || _snow > 0.01f || _fog > 0.01f || _storm > 0.01f) ? "clear"
                 : $"{(_rain > 0.01f ? $"rain {_rain:0.00} " : "")}{(_snow > 0.01f ? $"snow {_snow:0.00} " : "")}{(_fog > 0.01f ? $"fog {_fog:0.00} " : "")}{(_storm > 0.01f ? $"storm {_storm:0.00}" : "")}".Trim();
             if (!show)
                 return;
@@ -149,6 +155,7 @@ namespace UOClient.Unity
             _material.SetFloat(FogId, _fog);
             _material.SetFloat(WindId, _wind);
             _material.SetFloat(FlashId, flash);
+            _material.SetFloat(CloudsId, clouds);
             Vector3 p = camera.transform.position;
             _material.SetVector(OriginId, new Vector4(p.x - wdt / 2f, p.y + h / 2f, 0f, 0f)); // the view's top left, Unity units
             _material.SetFloat(ScaleId, Screen.height / Mathf.Max(1f, h));
