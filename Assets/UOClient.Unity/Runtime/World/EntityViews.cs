@@ -142,6 +142,7 @@ namespace UOClient.Unity
 
         /// <summary>Item, static and multi-part lights near the player (bounded, see <see cref="ItemLights"/>).</summary>
         public ItemLights Lights { get; } = new ItemLights();
+        private System.Action<int, int, int, int> _addShadowLight;
 
         private readonly Fx.FlameFx _flames = new Fx.FlameFx();
         private static readonly bool FxTestOn = Fx.FxCatalog.HasArg("-fx-test");
@@ -191,6 +192,17 @@ namespace UOClient.Unity
             // Living flames on the fire art among the light sources (Fx.FlameFx), by day too.
             _flames.Begin();
             Lights.ForEachSource(_addFlame ??= (x, y, z, g) => _flames.Add(x, y, z, g));
+            // Indoor shadows (CharacterShadow): this frame's light sources, and the indoor check.
+            // Only lights that are themselves indoors: a street lamp outside does not shine through the wall.
+            CharacterShadow.Indoors ??= (x, y, z) => _ctx.Walk != null && _ctx.Walk.IsUnderRoof(x, y, z);
+            CharacterShadow.WallBetween ??= (lx, ly, x, y, z) => _ctx.Walk != null && _ctx.Walk.WallBetween(lx, ly, x, y, z);
+            CharacterShadow.LightSources.Clear();
+            Lights.ForEachSource(_addShadowLight ??= (x, y, z, g) =>
+            {
+                // A flame casts shadows; a window (UO flags them light sources: light coming in) does not.
+                if ((_ctx.Data.TileData.GetStatic(g).Flags & TileFlags.Window) == 0 && CharacterShadow.Indoors(x, y, z))
+                    CharacterShadow.LightSources.Add(new Vector3Int(x, y, z));
+            });
             FxTest();
             _flames.Apply(_ctx.Data, _ctx.World, _ctx.ArtScale, _ctx.Player.X, _ctx.Player.Y);
         }

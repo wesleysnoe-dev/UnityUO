@@ -83,6 +83,30 @@ namespace UOClient.Unity
             return lowest;
         }
 
+        /// <summary>
+        /// Whether a wall stands between a light on (lx, ly) and a tile (x, y) at about Z <paramref name="z"/>: any tile on
+        /// the straight line from the light (its own tile left out: wall sconces hang on wall tiles) to the tile, the tile
+        /// itself included, with a wall, window or door static spanning z + 2 .. z + 14.
+        /// </summary>
+        public bool WallBetween(int lx, int ly, int x, int y, int z)
+        {
+            int dx = Math.Abs(x - lx), dy = Math.Abs(y - ly), sx = lx < x ? 1 : -1, sy = ly < y ? 1 : -1, err = dx - dy;
+            int cx = lx, cy = ly;
+            while (cx != x || cy != y)
+            {
+                int e2 = 2 * err;
+                if (e2 > -dy) { err -= dy; cx += sx; }
+                if (e2 < dx) { err += dx; cy += sy; }
+                foreach (StaticCell s in StaticsAt(cx, cy))
+                {
+                    StaticTileData td = _tileData.GetStatic(s.Graphic);
+                    if ((td.Flags & (TileFlags.Wall | TileFlags.Window | TileFlags.Door)) != 0 && s.Z <= z + 14 && s.Z + Math.Max(1, (int)td.Height) >= z + 2)
+                        return true;
+                }
+            }
+            return false;
+        }
+
         /// <summary>True when something overhead (a roof, or a floor above) covers the tile, like the classic client's indoor check.</summary>
         public bool IsUnderRoof(int x, int y, int z)
         {

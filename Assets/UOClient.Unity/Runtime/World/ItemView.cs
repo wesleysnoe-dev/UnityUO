@@ -221,7 +221,8 @@ namespace UOClient.Unity
             {
                 bool drawn = _renderer.enabled && _sprite != null;
                 _shadow.Update(drawn, world, drawn ? _art.Atlas.Page(LastSlot.Page) : null, drawn ? _art.Atlas.Uv(LastSlot) : default, false,
-                    _item.Left, _item.Top, _item.Width, _item.Height, new Vector2(0f, _item.Top + _item.Height), LastDepth);
+                    _item.Left, _item.Top, _item.Width, _item.Height, new Vector2(0f, _item.Top + _item.Height), LastDepth,
+                    _item.X, _item.Y, _item.Z);
             }
         }
 

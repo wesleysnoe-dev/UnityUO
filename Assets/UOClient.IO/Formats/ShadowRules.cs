@@ -27,6 +27,10 @@ namespace UOClient.IO.Formats
         {
             if ((td.Flags & (BuildingParts | TileFlags.Wet | TileFlags.Internal)) != 0)
                 return false;
+            // Wall pieces whose flags do not say so (posts and panels of a wall, wall trim): named for it.
+            string name = td.Name ?? "";
+            if (name.IndexOf("wall", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return false;
             return td.Height >= MinHeight || (td.Flags & TileFlags.Foliage) != 0 || artHeight >= MinArtHeight;
         }
     }

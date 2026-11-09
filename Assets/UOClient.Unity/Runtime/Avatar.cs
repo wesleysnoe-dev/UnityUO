@@ -376,7 +376,7 @@ namespace UOClient.Unity
             {
                 _renderer.enabled = false;
                 _outline.Update(false, _art, default, default, false, 0, 0);
-                _shadow.Update(false, view, null, default, false, 0, 0, 0, 0, default, 0);
+                _shadow.Update(false, view, null, default, false, 0, 0, 0, 0, default, 0, X, Y, Z);
                 return;
             }
             _lastFrames = frames;
@@ -412,7 +412,7 @@ namespace UOClient.Unity
             LastDepth = view.DepthFor(SortItem);
             // The sun shadow: this frame laid on the ground from the feet (none for a ghost).
             _shadow.Update(!Dead, view, _art.Atlas.Page(f.Slot.Page), _art.Atlas.Uv(f.Slot), mirror,
-                left, top, f.Slot.Width, f.Slot.Height, anchor, LastDepth);
+                left, top, f.Slot.Width, f.Slot.Height, anchor, LastDepth, X, Y, Z);
             LastCut = MeshBuilder.CutHeight(Z);
             // Characters on a floor above us are cut away with it (we ourselves always stand below the cut).
             if (MeshBuilder.FootMetadata)

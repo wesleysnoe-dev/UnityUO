@@ -71,13 +71,38 @@ namespace UOClient.Unity
         private bool _shadowSent;
 
         private float _shadowLogAt;
+        private bool _nearLightSent;
 
         private void RunShadowTest(WorldLayerClient layer)
         {
+            // -shadow-nearlight: once there, go and stand beside the nearest indoor flame (a lamp shadow to look at).
+            if (_shadowSent && !_nearLightSent && Time.unscaledTime >= _shadowAt + 10f && _ctx.Session != null
+                && Array.Exists(Environment.GetCommandLineArgs(), a => string.Equals(a, "-shadow-nearlight", StringComparison.OrdinalIgnoreCase)))
+            {
+                _nearLightSent = true;
+                Vector3Int? best = null;
+                var me = new Vector3Int(_ctx.Player.X, _ctx.Player.Y, _ctx.Player.Z);
+                foreach (Vector3Int l in CharacterShadow.LightSources)
+                    if (best == null || (l - me).sqrMagnitude < (best.Value - me).sqrMagnitude)
+                        best = l;
+                if (best is Vector3Int light)
+                {
+                    _ctx.Session.Say($"[go {light.x + 2} {light.y + 1} {light.z}");
+                    Debug.Log($"[shadowtest] beside the indoor light at {light}");
+                }
+            }
             if (_shadowSent && Time.unscaledTime >= _shadowLogAt)
             {
                 _shadowLogAt = Time.unscaledTime + 3f;
-                Debug.Log($"[shadowtest] player {_ctx.Player.X},{_ctx.Player.Y},{_ctx.Player.Z} cutZ {Shader.GetGlobalFloat("_UOCutZ")}");
+                int px = _ctx.Player.X, py = _ctx.Player.Y, pz = _ctx.Player.Z;
+                bool indoors = CharacterShadow.Indoors != null && CharacterShadow.Indoors(px, py, pz);
+                Vector3Int? nearest = null;
+                foreach (Vector3Int l in CharacterShadow.LightSources)
+                    if (nearest == null || (l - new Vector3Int(px, py, pz)).sqrMagnitude < (nearest.Value - new Vector3Int(px, py, pz)).sqrMagnitude)
+                        nearest = l;
+                bool casts = CharacterShadow.Cast(px, py, pz, indoors, CharacterShadow.LightSources, out Vector2 pp, out float strength, out bool sun);
+                Debug.Log($"[shadowtest] player {px},{py},{pz} cutZ {Shader.GetGlobalFloat("_UOCutZ")} indoors {indoors} lights {CharacterShadow.LightSources.Count} " +
+                          $"nearest {nearest?.ToString() ?? "-"} casts {casts} strength {strength:0.00} sun {sun} perPixel {pp}");
             }
             if (!layer.CanEdit || _shadowSent || _ctx.Session == null)
                 return;

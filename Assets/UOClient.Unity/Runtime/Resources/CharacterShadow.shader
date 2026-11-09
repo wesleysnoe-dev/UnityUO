@@ -31,14 +31,15 @@ Shader "UOClient/CharacterShadow"
             float _Strength, _Cutoff;
             float4 _UOAmbient;
 
-            struct appdata { float4 vertex : POSITION; float2 uv : TEXCOORD0; };
-            struct v2f { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
+            struct appdata { float4 vertex : POSITION; float2 uv : TEXCOORD0; float4 color : COLOR; };
+            struct v2f { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; float4 color : COLOR; };
 
             v2f vert(appdata v)
             {
                 v2f o;
                 o.pos = UnityObjectToClipPos(v.vertex);
                 o.uv = v.uv;
+                o.color = v.color;
                 return o;
             }
 
@@ -49,7 +50,9 @@ Shader "UOClient/CharacterShadow"
                 // Daylight: the ambient's brightness (unset reads 0 in some setups: treat as full day).
                 float sun = dot(_UOAmbient.rgb, float3(0.3, 0.59, 0.11));
                 sun = sun <= 0.0001 ? 1.0 : saturate(sun * 1.25);
-                return fixed4(0, 0, 0, _Strength * sun);
+                // Vertex colour (CharacterShadow.Tint): a the shadow's strength; g 1 a sun shadow (fades with daylight),
+                // 0 a lamp's indoor shadow (by day and night alike).
+                return fixed4(0, 0, 0, _Strength * i.color.a * lerp(1.5, sun, i.color.g)); // a lamp shadow, close to its flame, reads darker
             }
             ENDCG
         }

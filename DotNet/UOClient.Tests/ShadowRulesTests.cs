@@ -35,6 +35,17 @@ public class ShadowRulesTests
     [InlineData(TileFlags.None, 2)] // flat: papers, rugs
     public void BuildingPartsWaterAndFlatThings_DoNot(TileFlags flags, int height) => Assert.False(ShadowRules.CastsOutline(Td(flags, (byte)height)));
 
+    [Theory]
+    [InlineData("stone wall")]
+    [InlineData("wooden wall")]
+    [InlineData("Wall Trim")]
+    public void WallPiecesWithoutTheWallFlag_DoNot(string name) =>
+        Assert.False(ShadowRules.CastsOutline(new StaticTileData { Flags = TileFlags.Impassable, Height = 20, Name = name }));
+
+    [Fact]
+    public void WalnutTrees_StillCast() =>
+        Assert.True(ShadowRules.CastsOutline(new StaticTileData { Flags = TileFlags.Impassable | TileFlags.Background, Height = 20, Name = "walnut tree" }));
+
     [Fact]
     public void OutlineCasters_MakeNoColumn_OnlyWhileOn()
     {

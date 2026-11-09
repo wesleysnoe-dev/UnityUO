@@ -500,12 +500,24 @@ namespace UOClient.Unity
             Shader shader = CharacterShadow.ShadowShader;
             if (shader == null)
                 return;
-            Vector2 perPixel = CharacterShadow.PerPixel();
-            var groups = new Dictionary<int, (List<Vector3> V, List<Vector2> Uv, List<int> I)>();
+            // Indoor shadows fall away from the light statics of this chunk and the loaded ones around it.
+            var lights = new List<Vector3Int>();
+            foreach (StaticLight l in build.Lights)
+                if (l.Indoors)
+                    lights.Add(new Vector3Int(l.X, l.Y, l.Z));
+            for (int cy = build.ChunkY - 1; cy <= build.ChunkY + 1; cy++)
+                for (int cx = build.ChunkX - 1; cx <= build.ChunkX + 1; cx++)
+                    if ((cx != build.ChunkX || cy != build.ChunkY) && _chunks.TryGetValue((cx, cy), out Chunk near) && near.Lights != null)
+                        foreach (StaticLight l in near.Lights)
+                            if (l.Indoors)
+                                lights.Add(new Vector3Int(l.X, l.Y, l.Z));
+            var groups = new Dictionary<int, (List<Vector3> V, List<Vector2> Uv, List<int> I, List<Color32> C)>();
             foreach (ChunkQuad q in build.Quads)
             {
                 if (!q.Shadow)
                     continue;
+                if (!CharacterShadow.Cast(q.TileX, q.TileY, q.TileZ, q.Indoors, lights, out Vector2 perPixel, out float strength, out bool sun))
+                    continue; // indoors with no lamp near
                 int texture;
                 Vector4 uv;
                 if (q.Unique)
@@ -522,11 +534,12 @@ namespace UOClient.Unity
                     uv = _shared.Uv(slot);
                 }
                 if (!groups.TryGetValue(texture, out var g))
-                    groups[texture] = g = (new List<Vector3>(), new List<Vector2>(), new List<int>());
+                    groups[texture] = g = (new List<Vector3>(), new List<Vector2>(), new List<int>(), new List<Color32>());
                 // An object stands on the bottom of its art (statics are drawn with their foot on the tile's lower corner).
-                CharacterShadow.AddQuad(g.V, g.Uv, g.I, this, perPixel, uv, false, q.Left, q.Top, q.Width, q.Height, q.Top + q.Height, q.Depth);
+                CharacterShadow.AddQuad(g.V, g.Uv, g.I, g.C, CharacterShadow.Tint(strength, sun), this, perPixel, uv, false,
+                    q.Left, q.Top, q.Width, q.Height, q.Top + q.Height, q.Depth);
             }
-            foreach (KeyValuePair<int, (List<Vector3> V, List<Vector2> Uv, List<int> I)> g in groups)
+            foreach (KeyValuePair<int, (List<Vector3> V, List<Vector2> Uv, List<int> I, List<Color32> C)> g in groups)
             {
                 Material material;
                 if (g.Key < 0)
@@ -544,6 +557,7 @@ namespace UOClient.Unity
                 var mesh = new Mesh { name = $"Chunk {build.ChunkX},{build.ChunkY} shadows", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
                 mesh.SetVertices(g.Value.V);
                 mesh.SetUVs(0, g.Value.Uv);
+                mesh.SetColors(g.Value.C);
                 mesh.SetTriangles(g.Value.I, 0);
                 mesh.RecalculateBounds();
                 chunk.AddMesh(mesh, material, false);
@@ -630,6 +644,16 @@ namespace UOClient.Unity
             var build = new ChunkBuild { ChunkX = cx, ChunkY = cy, Generation = generation, BaseDiagonal = x0 + y0 };
             build.DrawListMs = watch.Elapsed.TotalMilliseconds;
 
+            // What is overhead per tile (roofs and floors): a static under one at least 16 Z above is indoors.
+            var overhead = new Dictionary<(int, int), int>(); // tile -> the highest roof or floor Z on it
+            if (_outlineShadows)
+                foreach (IsoCompositor.DrawEntry e in entries)
+                    if (e.Item.Kind == DrawKind.Static && (tileData.GetStatic(e.Item.Graphic).Flags & (TileFlags.Roof | TileFlags.Surface)) != 0)
+                    {
+                        var t = (e.Item.X, e.Item.Y);
+                        overhead[t] = overhead.TryGetValue(t, out int top) ? Math.Max(top, e.Item.Z) : e.Item.Z;
+                    }
+
             // Unique art (sloped land, baked placements) is packed into the chunk's own texture.
             var uniques = new List<(Bitmap32 Bitmap, int Quad)>();
             int tie = 0, lastDiagonal = int.MinValue, lastPriority = int.MinValue;
@@ -669,7 +693,10 @@ namespace UOClient.Unity
 
                 // A light source (LightSources): a map static lights by its tiledata Layer (ItemLights picks the nearest).
                 if (it.Kind == DrawKind.Static && LightSources.IsLight(tileData.GetStatic(it.Graphic).Flags))
-                    build.Lights.Add(new StaticLight { X = it.X, Y = it.Y, Z = it.Z, Graphic = it.Graphic, Id = tileData.GetStatic(it.Graphic).Layer });
+                    build.Lights.Add(new StaticLight { X = it.X, Y = it.Y, Z = it.Z, Graphic = it.Graphic, Id = tileData.GetStatic(it.Graphic).Layer,
+                                                       // a window (light coming in) casts no indoor shadows; a flame does
+                                                       Indoors = (tileData.GetStatic(it.Graphic).Flags & TileFlags.Window) == 0
+                                                                 && overhead.TryGetValue((it.X, it.Y), out int lightOver) && lightOver >= it.Z + 16 });
 
                 // Animated art (ArtAnimation): out of the baked mesh into its own quad, every frame's sprite sent now, so
                 // the main thread only swaps one quad's rect and UV when its frame changes. Baked (HD placement) art stays.
@@ -701,9 +728,16 @@ namespace UOClient.Unity
                     FootX = (it.X - it.Y) * 22f * _scale,
                     FootY = ((it.X + it.Y) * 22f + 22f - it.Z * 4f) * _scale,
                     FootZ = it.Z,
-                    FootKind = it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2, // upright : ground
+                    // Upright : ground; building parts take no per-piece sun shade (0): their tiles' shade differs piece by
+                    // piece and striped the walls.
+                    FootKind = it.Kind == DrawKind.Static && (tileData.GetStatic(it.Graphic).Flags & (TileFlags.Wall | TileFlags.Roof | TileFlags.Window | TileFlags.Door)) != 0 ? 0
+                        : it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2,
                     Traced = TraceTile.HasValue && it.X == TraceTile.Value.x && it.Y == TraceTile.Value.y,
                     Water = it.Kind == DrawKind.Land ? WaterArt.IsWater(tileData.Land[it.Graphic & 0x3FFF]) : it.Kind == DrawKind.Static && WaterArt.IsWater(tileData.GetStatic(it.Graphic)),
+                    TileX = it.X,
+                    TileY = it.Y,
+                    TileZ = it.Z,
+                    Indoors = overhead.TryGetValue((it.X, it.Y), out int over) && over >= it.Z + 16,
                     Shadow = _outlineShadows && it.Kind == DrawKind.Static && ShadowRules.CastsOutline(tileData.GetStatic(it.Graphic), (int)(it.Height / _scale))
                 };
                 if (unique)
@@ -871,6 +905,8 @@ namespace UOClient.Unity
             public bool Shadow; // casts its own outline as a sun shadow (ShadowRules, CharacterShadow)
             public bool Traced; // diagnosis (-tiletrace): on the traced tile
             public bool Water;  // UO water art: shimmers (WorldSprite)
+            public int TileX, TileY, TileZ; // the static's tile (shadows)
+            public bool Indoors;            // a roof or a floor over it: no sun shadow, only a lamp's (CharacterShadow.Cast)
         }
 
         private struct SharedSprite
@@ -911,6 +947,7 @@ namespace UOClient.Unity
         private struct StaticLight
         {
             public int X, Y, Z, Graphic, Id;
+            public bool Indoors; // under a roof or floor: it casts indoor shadows (CharacterShadow)
         }
 
         /// <summary>The light-source statics of the loaded chunks, for <see cref="ItemLights"/> (main thread).</summary>
