@@ -110,6 +110,36 @@ switch (argList[0])
         Console.WriteLine($"  map: {onMap} placements still on this data's map, {missing} no longer there");
         return 0;
     }
+    case "landtex" when argList.Count >= 3:
+    {
+        // landtex <name part> <sheet.png>: land graphics whose tiledata name contains the part, their texmap id and size,
+        // and a contact sheet of the distinct texmaps (overrides included), each scaled to 128 px, in the listed order.
+        string part = argList[1].ToLowerInvariant();
+        var texIds = new List<int>();
+        LandTileData[] landRows = data.TileData.Land;
+        for (int g = 0; g < landRows.Length; g++)
+        {
+            string name = (landRows[g].Name ?? "").Trim();
+            if (!name.ToLowerInvariant().Contains(part))
+                continue;
+            Bitmap32 tex = data.GetTexmap(landRows[g].TexId);
+            Console.WriteLine($"0x{g:X4} '{name}' tex 0x{landRows[g].TexId:X4} {(tex == null ? "none" : $"{tex.Width}x{tex.Height}")}");
+            if (tex != null && !texIds.Contains(landRows[g].TexId))
+                texIds.Add(landRows[g].TexId);
+        }
+        const int cell = 128, cols = 8;
+        var sheet = new Bitmap32(cols * cell, Math.Max(1, (texIds.Count + cols - 1) / cols) * cell);
+        for (int k = 0; k < texIds.Count; k++)
+        {
+            Bitmap32 tex = data.GetTexmap(texIds[k]);
+            for (int y = 0; y < cell; y++)
+                for (int x = 0; x < cell; x++)
+                    sheet.Pixels[(k / cols * cell + y) * sheet.Width + k % cols * cell + x] = tex.Pixels[y * tex.Height / cell * tex.Width + x * tex.Width / cell];
+        }
+        Png.Write(argList[2], sheet);
+        Console.WriteLine($"sheet: {string.Join(" ", texIds.Select((t, k) => $"{k}=0x{t:X4}"))}");
+        return 0;
+    }
     case "landz" when argList.Count >= 5:
     {
         // landz <x0> <y0> <x1> <y1> [map]: each tile's land Z and graphic (rows are y), for reading heights under buildings.

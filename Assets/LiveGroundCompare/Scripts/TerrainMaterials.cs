@@ -53,8 +53,8 @@ namespace UOClient.LiveGroundCompare
                 case "snow stone path":
                 case "snow sand path":
                     return Snow;
-                // Town paving keeps UO's own tile art (classic towns, natural fields): the photographic cobble read far
-                // too large and unlike UO's streets. The cobble material stays for the world editor's TERRAIN palette.
+                // Town paving is the natural cobble (light, mossy), as the world editor paints it; its splat shader keeps
+                // one stone size (a near second scale) and does not stretch it up slopes (triplanar).
                 case "cobblestones":
                 case "cobbleston":
                 case "stone":
@@ -62,7 +62,7 @@ namespace UOClient.LiveGroundCompare
                 case "stone moss2":
                 case "flagstone":
                 case "stone_paver":
-                    return Art;
+                    return Cobble;
                 default:
                     return Art;
             }

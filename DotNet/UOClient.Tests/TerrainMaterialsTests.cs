@@ -13,8 +13,8 @@ public class TerrainMaterialsTests
     [InlineData("tree", TerrainMaterials.Forest)]
     [InlineData("sand stone", TerrainMaterials.Sand)]
     [InlineData("snow grass path", TerrainMaterials.Snow)]
-    [InlineData("cobblestones", TerrainMaterials.Art)] // town paving keeps UO's tile art
-    [InlineData("flagstone", TerrainMaterials.Art)]
+    [InlineData("cobblestones", TerrainMaterials.Cobble)] // town paving: the natural cobble
+    [InlineData("flagstone", TerrainMaterials.Cobble)]
     [InlineData("wooden floor", TerrainMaterials.Art)]
     [InlineData("noname", TerrainMaterials.Art)]
     [InlineData(null, TerrainMaterials.Art)]

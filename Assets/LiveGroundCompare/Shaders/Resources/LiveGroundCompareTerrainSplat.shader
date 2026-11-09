@@ -22,6 +22,7 @@ Shader "LiveGroundCompare/TerrainSplat"
         _HeightBlend ("Height blend sharpness", Range(0.02, 1)) = 0.18
         _Macro ("Large-scale variation", Range(0, 0.5)) = 0.22
         _Detail ("Detail contrast", Range(0.5, 3)) = 1.7
+        _ScaleB ("Second sample's scale (hides repeats; near 1 keeps one stone size)", Range(1, 3)) = 1.31
     }
 
     SubShader
@@ -49,7 +50,7 @@ Shader "LiveGroundCompare/TerrainSplat"
             UNITY_DECLARE_TEX2DARRAY(_LGAlbedoArray);
             UNITY_DECLARE_TEX2DARRAY(_LGNormalArray);
             float4 _LGMatTint[8];
-            float _Tiling, _NormalStrength, _HeightBlend, _Macro, _Detail;
+            float _Tiling, _NormalStrength, _HeightBlend, _Macro, _Detail, _ScaleB;
 
             // Explicit gradients: the samples sit in per-pixel branches, where implicit derivatives are undefined.
             float4 SampleA(float2 uv, float2 dx, float2 dy, float k) { return _LGAlbedoArray.SampleGrad(sampler_LGAlbedoArray, float3(uv, k), dx, dy); }
@@ -95,11 +96,23 @@ Shader "LiveGroundCompare/TerrainSplat"
                 float artW = tex2D(_LGWeights2, i.uv).r;
                 float w[8] = { s0.r, s0.g, s0.b, s0.a, s1.r, s1.g, s1.b, s1.a };
 
-                // World-space material UVs: tile (x, y) -> (x, y) / tiling; a second, rotated and rescaled set.
+                // World-space material UVs: tile (x, y) -> (x, y) / tiling; a second, rotated and slightly rescaled set
+                // (_ScaleB near 1: the repeat is hidden but the stones keep one size).
                 float2 tile = float2(i.world.x, -i.world.z);
+                float2x2 rotB = float2x2(0.8, -0.6, 0.6, 0.8);
                 float2 uvA = tile / _Tiling;
-                float2 uvB = mul(float2x2(0.8, -0.6, 0.6, 0.8), tile) / (_Tiling * 2.37) + float2(0.31, 0.57);
+                float2 uvB = mul(rotB, tile) / (_Tiling * _ScaleB) + float2(0.31, 0.57);
                 float2 dxA = ddx(uvA), dyA = ddy(uvA), dxB = ddx(uvB), dyB = ddy(uvB);
+                // Triplanar on slopes: a top-down projection stretches a material up a slope facing the camera, so steep
+                // ground also takes it from the side planes (terrain space is isotropic: 1 tile = 1 unit = 7.8 Z).
+                float3 gn = normalize(i.normal);
+                float3 bw = pow(abs(gn), 4.0);
+                bw /= (bw.x + bw.y + bw.z);
+                float2 frontP = float2(i.world.x, i.world.y), sideP = float2(-i.world.z, i.world.y);
+                float2 uvAf = frontP / _Tiling, uvBf = mul(rotB, frontP) / (_Tiling * _ScaleB) + float2(0.31, 0.57);
+                float2 uvAs = sideP / _Tiling, uvBs = mul(rotB, sideP) / (_Tiling * _ScaleB) + float2(0.31, 0.57);
+                float2 dxAf = ddx(uvAf), dyAf = ddy(uvAf), dxBf = ddx(uvBf), dyBf = ddy(uvBf);
+                float2 dxAs = ddx(uvAs), dyAs = ddy(uvAs), dxBs = ddx(uvBs), dyBs = ddy(uvBs);
                 float mix2 = smoothstep(0.25, 0.75, Noise(tile * 0.11 + 7.3));
                 float macro = 1.0 + _Macro * (Noise(tile * 0.045) * 2.0 - 1.0) + _Macro * 0.5 * (Noise(tile * 0.19 + 3.1) * 2.0 - 1.0);
 
@@ -115,7 +128,11 @@ Shader "LiveGroundCompare/TerrainSplat"
                     {
                         float4 a = SampleA(uvA, dxA, dyA, k);
                         float4 b = SampleA(uvB, dxB, dyB, k);
-                        alb[k] = lerp(a, b, mix2);
+                        alb[k] = lerp(a, b, mix2) * bw.y;
+                        if (bw.z > 0.01)
+                            alb[k] += lerp(SampleA(uvAf, dxAf, dyAf, k), SampleA(uvBf, dxBf, dyBf, k), mix2) * bw.z;
+                        if (bw.x > 0.01)
+                            alb[k] += lerp(SampleA(uvAs, dxAs, dyAs, k), SampleA(uvBs, dxBs, dyBs, k), mix2) * bw.x;
                         // More detail contrast around the local average, so clumps and stones read at game zoom.
                         float3 avg = lerp(SampleMean(uvA, k).rgb, SampleMean(uvB, k).rgb, mix2);
                         alb[k].rgb = saturate(avg + (alb[k].rgb - avg) * _Detail);
