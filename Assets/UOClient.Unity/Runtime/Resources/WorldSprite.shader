@@ -226,6 +226,18 @@ Shader "UOClient/WorldSprite"
                 return l && r && u && d;
             }
 
+            // Foam where water meets the shore (second UV y: 1 + half the nearness of dry land, MeshBuilder.AddQuad): a broken
+            // white edge that swells and ebbs as small waves roll in.
+            float3 UOShoreFoam(float3 rgb, float2 world, float shore)
+            {
+                float t = _Time.y;
+                float n = sin(world.x * 0.09 + t * 1.3) * sin(world.y * 0.11 - t * 1.1) * 0.5 + 0.5;
+                float n2 = sin(world.x * 0.23 - t * 0.7) * sin(world.y * 0.19 + t * 0.9) * 0.5 + 0.5;
+                float band = sin(shore * 12.0 - t * 1.8) * 0.5 + 0.5;
+                float f = smoothstep(0.35, 0.85, shore + (n - 0.5) * 0.35 + (n2 - 0.5) * 0.15) * (0.6 + 0.4 * band);
+                return lerp(rgb, float3(0.86, 0.92, 0.96), saturate(f * 0.8));
+            }
+
             v2f vert(appdata v)
             {
                 v2f o;
@@ -259,6 +271,8 @@ Shader "UOClient/WorldSprite"
                     c.rgb = UOWaterShimmer(c.rgb, i.world);
                 else if (_UOFoliageSeason > 0.5 && (i.water >= 1.5 && i.water < 3.5 || i.water >= 5.5 && i.water < 7.5 && _UOFoliageSeason > 2.5))
                     c.rgb = FoliageSeason(c.rgb, i.world); // leaves every season; evergreens only winter and desolation
+                if (i.water > 1.01 && i.water < 1.5)
+                    c.rgb = UOShoreFoam(c.rgb, i.world, (i.water - 1.0) * 2.0);
 
                 float d = distance(i.world, _UOLightPos.xy) / max(_UOLightPos.z, 1.0);
                 float falloff = saturate(1.0 - d);

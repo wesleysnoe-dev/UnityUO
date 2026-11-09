@@ -20,11 +20,17 @@ namespace UOClient.Unity
         public static readonly bool Enabled = !Array.Exists(Environment.GetCommandLineArgs(),
             a => string.Equals(a, "-noambient", StringComparison.OrdinalIgnoreCase));
 
-        private const int MaxParticles = 220;
+        private const int MaxParticles = 320;
         private const int Radius = 15;          // tiles around the player where life spawns
         private const int SamplesPerFrame = 10; // tiles looked at each frame
 
-        private enum Kind : byte { Firefly = 0, Leaf = 1, Pollen = 2 }
+        // 3 is a flame's halo (AddHalo), drawn but not a particle.
+        private enum Kind : byte { Firefly = 0, Leaf = 1, Pollen = 2, Dust = 4, Print = 5, Splash = 6 }
+
+        // Each character's last tile, to see it step: a step on sand, dirt or snow leaves a mark or a puff.
+        private readonly Dictionary<uint, (int X, int Y)> _lastTile = new Dictionary<uint, (int, int)>();
+        private readonly List<uint> _gone = new List<uint>();
+        private (int X, int Y) _playerTile = (-1, -1);
 
         private struct Particle
         {
@@ -132,6 +138,8 @@ namespace UOClient.Unity
                 }
             }
 
+            Steps(ctx, season, rain);
+
             float t = Time.time;
             for (int i = _particles.Count - 1; i >= 0; i--)
             {
@@ -161,6 +169,14 @@ namespace UOClient.Unity
                             p.Life = Mathf.Min(p.Life, p.Age + 2.5f);
                         }
                         break;
+                    case Kind.Dust: // a puff that spreads, rises a little and settles
+                        p.Vx *= 1f - dt * 2.5f;
+                        p.Vy *= 1f - dt * 2.5f;
+                        p.Vz = 1.2f * (1f - p.Age / p.Life);
+                        break;
+                    case Kind.Print:
+                    case Kind.Splash:
+                        break; // lie where they are
                     default: // pollen: drifts with the wind, rising and sinking a little
                         p.Vx = 0.25f + wind * 1.2f + Mathf.Sin(t * 0.7f + p.Seed * 3f) * 0.12f;
                         p.Vy = -0.08f + Mathf.Cos(t * 0.6f + p.Seed * 4f) * 0.1f;
@@ -210,6 +226,94 @@ namespace UOClient.Unity
             _indices.Add(n + 3);
         }
 
+        /// <summary>What the ground at a tile is for a step: 0 none, 1 dust (dirt, sand), 2 prints (sand, snow), 3 both.</summary>
+        private static int GroundKind(string land)
+        {
+            if (land.Contains("snow"))
+                return 2;
+            if (land.Contains("sand") && !land.Contains("stone"))
+                return 3;
+            if (land.Contains("dirt") || land.Contains("furrow") || land.Contains("embank"))
+                return 1;
+            return 0;
+        }
+
+        /// <summary>Characters that stepped onto a new tile since last frame: dust, footprints, a splash in a puddle of rain.</summary>
+        private void Steps(GameContext ctx, Season season, float rain)
+        {
+            var map = ctx.Data.GetMap(ctx.World.Map);
+            void Stepped(int fx, int fy, int x, int y, int z, bool run)
+            {
+                if (Math.Abs(x - ctx.Player.X) > Radius || Math.Abs(y - ctx.Player.Y) > Radius || _particles.Count >= MaxParticles - 4)
+                    return;
+                int landZ = ctx.Walk.LandZ(x, y);
+                if (z > landZ + 4)
+                    return; // on a floor or a bridge, not the ground
+                string land = (ctx.Data.TileData.Land[map.GetLand(x, y).Graphic & 0x3FFF].Name ?? "").ToLowerInvariant();
+                int kind = GroundKind(land);
+                if (season == Season.Winter && land.Contains("grass"))
+                    kind = 2; // a winter meadow takes prints like snow
+                float dx = x - fx, dy = y - fy;
+                float len = Mathf.Max(0.01f, Mathf.Sqrt(dx * dx + dy * dy));
+                if ((kind & 2) != 0)
+                {
+                    // Two prints, left and right of the line of travel, a little behind the tile's centre.
+                    float sx = -dy / len * 0.12f, sy = dx / len * 0.12f;
+                    Color32 c = land.Contains("snow") || season == Season.Winter ? new Color32(150, 165, 190, 255) : new Color32(120, 96, 64, 255);
+                    for (int k = -1; k <= 1; k += 2)
+                        _particles.Add(new Particle
+                        {
+                            Kind = Kind.Print, X = x + 0.5f - dx / len * 0.15f * (k + 2) + sx * k, Y = y + 0.5f - dy / len * 0.15f * (k + 2) + sy * k,
+                            Z = landZ, Life = 14f, Seed = Mathf.Atan2(dy, dx), Colour = c
+                        });
+                }
+                if ((kind & 1) != 0 && (run || _rng.NextDouble() < 0.35) && rain < 0.3f)
+                {
+                    Color32 c = land.Contains("sand") ? new Color32(214, 196, 150, 255) : new Color32(160, 132, 96, 255);
+                    for (int k = 0; k < (run ? 3 : 2); k++)
+                        _particles.Add(new Particle
+                        {
+                            Kind = Kind.Dust, X = x + 0.5f + (float)(_rng.NextDouble() - 0.5) * 0.4f, Y = y + 0.5f + (float)(_rng.NextDouble() - 0.5) * 0.4f,
+                            Z = landZ + 1f, Vx = -dx / len * 0.5f + (float)(_rng.NextDouble() - 0.5) * 0.4f, Vy = -dy / len * 0.5f + (float)(_rng.NextDouble() - 0.5) * 0.4f,
+                            Life = 0.9f + (float)_rng.NextDouble() * 0.5f, Seed = (float)_rng.NextDouble() * 100f, Colour = c
+                        });
+                }
+                if (rain > 0.3f && kind == 0 && (land.Contains("dirt") || land.Contains("grass") || land.Contains("cobble") || land.Contains("stone")))
+                    _particles.Add(new Particle
+                    {
+                        Kind = Kind.Splash, X = x + 0.5f, Y = y + 0.5f, Z = landZ, Life = 0.6f, Seed = (float)_rng.NextDouble() * 100f,
+                        Colour = new Color32(200, 215, 235, 255)
+                    });
+            }
+
+            // The player, from its own (predicted) position; everyone else from the server's.
+            (int X, int Y) now = (ctx.Player.X, ctx.Player.Y);
+            if (_playerTile.X >= 0 && now != _playerTile && Math.Max(Math.Abs(now.X - _playerTile.X), Math.Abs(now.Y - _playerTile.Y)) == 1)
+                Stepped(_playerTile.X, _playerTile.Y, now.X, now.Y, ctx.Player.Z, ctx.Player.Running);
+            _playerTile = now;
+            if (ctx.Session == null)
+                return;
+            uint me = ctx.Session.World.PlayerSerial;
+            foreach (Mobile m in ctx.Session.World.Mobiles.Values)
+            {
+                if (m.Serial == me)
+                    continue;
+                if (_lastTile.TryGetValue(m.Serial, out var was) && (was.X != m.X || was.Y != m.Y)
+                    && Math.Max(Math.Abs(m.X - was.X), Math.Abs(m.Y - was.Y)) == 1)
+                    Stepped(was.X, was.Y, m.X, m.Y, m.Z, m.Running);
+                _lastTile[m.Serial] = (m.X, m.Y);
+            }
+            if (_lastTile.Count > ctx.Session.World.Mobiles.Count + 64)
+            {
+                _gone.Clear();
+                foreach (uint serial in _lastTile.Keys)
+                    if (!ctx.Session.World.Mobiles.ContainsKey(serial))
+                        _gone.Add(serial);
+                foreach (uint serial in _gone)
+                    _lastTile.Remove(serial);
+            }
+        }
+
         private void Spawn(Kind kind, int x, int y, float z, Color32 colour)
         {
             float life = kind == Kind.Firefly ? 8f + (float)_rng.NextDouble() * 10f
@@ -253,6 +357,18 @@ namespace UOClient.Unity
                     case Kind.Leaf:
                         size = 6.5f;
                         break;
+                    case Kind.Dust:
+                        size = 10f + 14f * (p.Age / p.Life); // spreads as it settles
+                        fade = Mathf.Clamp01(p.Age * 8f) * (1f - p.Age / p.Life) * 0.55f;
+                        break;
+                    case Kind.Print:
+                        size = 4f;
+                        fade = Mathf.Clamp01(p.Life - p.Age) / 1f * Mathf.Min(1f, (p.Life - p.Age) / 6f);
+                        break;
+                    case Kind.Splash:
+                        size = 6f + 12f * (p.Age / p.Life);
+                        fade = 1f - p.Age / p.Life;
+                        break;
                     default:
                         fade *= 0.7f;
                         size = 2.6f;
@@ -263,16 +379,32 @@ namespace UOClient.Unity
                 Vector2 px = new Vector2((p.X - p.Y) * 22f, (p.X + p.Y) * 22f - p.Z * 4f) * s;
                 Vector2 u = ctx.World.ToUnity(px);
                 int tx = (int)p.X, ty = (int)p.Y, tz = Mathf.RoundToInt(p.Z);
-                float depth = ctx.World.DepthFor(new DrawItem { Kind = DrawKind.Mobile, X = tx, Y = ty, Z = (sbyte)Mathf.Clamp(tz, -128, 127), PriorityZ = tz + 2 });
+                bool flat = p.Kind == Kind.Print || p.Kind == Kind.Splash;
+                float depth = ctx.World.DepthFor(new DrawItem
+                {
+                    Kind = flat ? DrawKind.Static : DrawKind.Mobile, X = tx, Y = ty, Z = (sbyte)Mathf.Clamp(tz, -128, 127), PriorityZ = flat ? tz : tz + 2
+                });
                 float h = size * s * 0.5f;
                 // A leaf turns as it falls: its quad's corners rotate.
                 float angle = p.Kind == Kind.Leaf ? t * 2.5f + p.Seed : 0f;
                 float ca = Mathf.Cos(angle), sa = Mathf.Sin(angle);
+                // A footprint lies flat along its line of travel: in screen space a tile's x and y run diagonally.
+                float squash = 0.6f;
+                if (p.Kind == Kind.Print)
+                {
+                    float sxs = Mathf.Cos(p.Seed) - Mathf.Sin(p.Seed), sys = (Mathf.Cos(p.Seed) + Mathf.Sin(p.Seed)) * 0.5f;
+                    float a2 = Mathf.Atan2(-sys, sxs);
+                    ca = Mathf.Cos(a2);
+                    sa = Mathf.Sin(a2);
+                    squash = 0.45f;
+                }
+                else if (p.Kind == Kind.Splash || p.Kind == Kind.Dust)
+                    squash = p.Kind == Kind.Splash ? 0.5f : 0.7f;
                 int n = _vertices.Count;
                 for (int k = 0; k < 4; k++)
                 {
                     float cx = k == 0 || k == 1 ? -1f : 1f, cy = k == 0 || k == 3 ? -1f : 1f;
-                    float rx = cx * ca - cy * sa * 0.6f, ry = cx * sa + cy * ca * 0.6f; // a leaf is longer than it is wide
+                    float rx = cx * ca - cy * sa * squash, ry = cx * sa + cy * ca * squash; // a leaf or print is longer than wide
                     _vertices.Add(new Vector3(u.x + rx * h, u.y + ry * h, depth));
                     _uvs.Add(new Vector2(cx * 0.5f + 0.5f, cy * 0.5f + 0.5f));
                     _kinds.Add(new Vector2((float)p.Kind, fade));

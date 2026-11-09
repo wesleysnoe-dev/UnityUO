@@ -29,6 +29,8 @@ namespace UOClient.Unity
             camera.farClipPlane = 20000f;
             if (Fx.FxCatalog.Enabled && camera.GetComponent<Fx.FxBloom>() == null)
                 camera.gameObject.AddComponent<Fx.FxBloom>(); // flames, spells and lit windows bleed light
+            if (Fx.FxGrade.Enabled && camera.GetComponent<Fx.FxGrade>() == null)
+                camera.gameObject.AddComponent<Fx.FxGrade>(); // after the bloom: contrast, warm highlights, vignette
             return camera;
         }
 
@@ -43,7 +45,10 @@ namespace UOClient.Unity
             Vector2 smoothed = Vector2.Lerp(new Vector2(pos.x, pos.y), target, 1f - Mathf.Exp(-Time.deltaTime * 10f));
             if ((new Vector2(pos.x, pos.y) - target).sqrMagnitude > 4_000_000f || pos.z > -1)
                 smoothed = target;
-            _camera.transform.position = new Vector3(Mathf.Round(smoothed.x), Mathf.Round(smoothed.y), -10000f);
+            // Snapped to the screen's pixel grid (1 / zoom units), not whole units: zoomed in, whole units are several
+            // screen pixels and the view judders as it follows.
+            float z = Mathf.Max(zoom, 0.01f);
+            _camera.transform.position = new Vector3(Mathf.Round(smoothed.x * z) / z, Mathf.Round(smoothed.y * z) / z, -10000f);
         }
     }
 }

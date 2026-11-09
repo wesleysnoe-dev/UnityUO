@@ -465,10 +465,10 @@ namespace UOClient.Unity
                 if (MeshBuilder.FootMetadata) // LiveGroundCompare sprite shadow (TEST); false by default
                 {
                     Vector2 foot = ToUnity(new Vector2(q.FootX, q.FootY));
-                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, new Vector4(foot.x, foot.y, q.FootZ, q.FootKind), q.Water, q.Plant);
+                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, new Vector4(foot.x, foot.y, q.FootZ, q.FootKind), q.Water, q.Plant, q.Shore);
                 }
                 else
-                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, q.Water, q.Plant);
+                    mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight, q.Water, q.Plant, q.Shore);
             }
 
             AttachShadows(build, chunk, unique);
@@ -658,6 +658,32 @@ namespace UOClient.Unity
             var watch = System.Diagnostics.Stopwatch.StartNew();
             int x0 = cx * ChunkSize, y0 = cy * ChunkSize;
             List<IsoCompositor.DrawEntry> entries = compositor.BuildDrawList(map, x0, y0, ChunkSize, ChunkSize);
+            // Shore foam: whether a tile is dry, for a water tile's four neighbours. Most of UO's sea is water statics laid
+            // over ordinary land, so a tile is wet when its land or any static on it is UO water art.
+            MapFile shoreMap = _data.GetMap(map);
+            var wetCache = new Dictionary<(int, int), bool>();
+            var blockCache = new Dictionary<(int, int), StaticCell[]>();
+            bool Dry(int tx, int ty)
+            {
+                if (tx < 0 || ty < 0)
+                    return false;
+                if (wetCache.TryGetValue((tx, ty), out bool wet))
+                    return !wet;
+                wet = WaterArt.IsWater(tileData.Land[shoreMap.GetLand(tx, ty).Graphic & 0x3FFF]);
+                if (!wet)
+                {
+                    if (!blockCache.TryGetValue((tx >> 3, ty >> 3), out StaticCell[] cells))
+                        blockCache[(tx >> 3, ty >> 3)] = cells = shoreMap.ReadStaticBlock(tx >> 3, ty >> 3) ?? new StaticCell[0];
+                    foreach (StaticCell c in cells)
+                        if (c.X == (tx & 7) && c.Y == (ty & 7) && WaterArt.IsWater(tileData.GetStatic(c.Graphic)))
+                        {
+                            wet = true;
+                            break;
+                        }
+                }
+                wetCache[(tx, ty)] = wet;
+                return !wet;
+            }
             var build = new ChunkBuild { ChunkX = cx, ChunkY = cy, Generation = generation, BaseDiagonal = x0 + y0 };
             build.DrawListMs = watch.Elapsed.TotalMilliseconds;
 
@@ -752,6 +778,11 @@ namespace UOClient.Unity
                     Traced = TraceTile.HasValue && it.X == TraceTile.Value.x && it.Y == TraceTile.Value.y,
                     Water = it.Kind == DrawKind.Land ? WaterArt.IsWater(tileData.Land[it.Graphic & 0x3FFF]) : it.Kind == DrawKind.Static && WaterArt.IsWater(tileData.GetStatic(it.Graphic)),
                     Plant = it.Kind == DrawKind.Static ? PlantKind.SpriteCode(tileData.GetStatic(it.Graphic)) : 0f,
+                    // A water land tile's dry neighbours, by the quad corner facing them (WorldSprite's shore foam).
+                    Shore = it.Kind == DrawKind.Land && WaterArt.IsWater(tileData.Land[it.Graphic & 0x3FFF])
+                            || it.Kind == DrawKind.Static && WaterArt.IsWater(tileData.GetStatic(it.Graphic))
+                        ? new Vector4(Dry(it.X, it.Y + 1) ? 1f : 0f, Dry(it.X - 1, it.Y) ? 1f : 0f, Dry(it.X, it.Y - 1) ? 1f : 0f, Dry(it.X + 1, it.Y) ? 1f : 0f)
+                        : Vector4.zero,
                     TileX = it.X,
                     TileY = it.Y,
                     TileZ = it.Z,
@@ -924,6 +955,7 @@ namespace UOClient.Unity
             public bool Traced; // diagnosis (-tiletrace): on the traced tile
             public bool Water;  // UO water art: shimmers (WorldSprite)
             public float Plant; // PlantKind code: sways in the wind, leaves take the season (WorldSprite)
+            public Vector4 Shore; // water land: dry neighbours by quad corner (bottom-left, top-left, top-right, bottom-right)
             public int TileX, TileY, TileZ; // the static's tile (shadows)
             public bool Indoors;            // a roof or a floor over it: no sun shadow, only a lamp's (CharacterShadow.Cast)
         }

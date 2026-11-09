@@ -66,6 +66,28 @@ Shader "UOClient/AmbientLife"
                     float a = leaf * fade;
                     return fixed4(c * a, a);
                 }
+                if (i.kind.x > 3.5 && i.kind.x < 4.5)
+                {
+                    // Dust: a soft round puff, lit by the time of day.
+                    float puff = saturate(1.0 - r);
+                    puff *= puff;
+                    float a = puff * fade;
+                    return fixed4(i.color.rgb * amb * a, a);
+                }
+                if (i.kind.x > 4.5 && i.kind.x < 5.5)
+                {
+                    // A footprint: a darker sole pressed into the ground.
+                    float sole = 1.0 - smoothstep(0.6, 0.95, length(float2(d.x, d.y * 1.4)));
+                    float a = sole * fade * 0.5;
+                    return fixed4(i.color.rgb * amb * a, a);
+                }
+                if (i.kind.x > 5.5)
+                {
+                    // A splash: a thin bright ring widening on the wet ground.
+                    float ring = saturate(1.0 - abs(r - 0.75) * 6.0);
+                    float a = ring * fade * 0.6;
+                    return fixed4(i.color.rgb * amb * a, a);
+                }
                 // Pollen: a tiny soft mote.
                 float mote = saturate(1.0 - r);
                 mote *= mote;

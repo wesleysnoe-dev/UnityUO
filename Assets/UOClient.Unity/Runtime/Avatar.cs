@@ -89,6 +89,9 @@ namespace UOClient.Unity
 
         public bool IsMoving => _stepDuration > 0;
 
+        /// <summary>Whether the step under way (or the last one) is a run.</summary>
+        public bool Running => _running;
+
         /// <summary>Where the avatar was last drawn (Unity units) and its depth, for mouse picking. Empty if not drawn.</summary>
         public Rect LastRect { get; private set; }
         public float LastDepth { get; private set; }
@@ -200,9 +203,26 @@ namespace UOClient.Unity
                 return;
             }
             if (Math.Max(Math.Abs(x - X), Math.Abs(y - Y)) == 1)
-                StartMove(x, y, z, run);
+                StartMove(x, y, z, run, ServerStepDuration(run));
             else
                 Teleport(x, y, z);
+        }
+
+        // Server-driven steps (other characters): their moves arrive as the network delivers them, not on a clock. A
+        // fixed step length makes them stop when an update is late and lurch on; instead each step lasts about as long
+        // as the gap between their recent moves (eased), so a walker keeps gliding between updates.
+        private float _lastServerMoveAt = -1f, _serverGap;
+
+        private float ServerStepDuration(bool run)
+        {
+            float baseTime = StepTime(run), now = Time.time;
+            float gap = _lastServerMoveAt < 0f ? baseTime : now - _lastServerMoveAt;
+            _lastServerMoveAt = now;
+            if (gap > baseTime * 2.5f)
+                _serverGap = baseTime; // they had stopped: start afresh
+            else
+                _serverGap = _serverGap <= 0f ? gap : Mathf.Lerp(_serverGap, gap, 0.35f);
+            return Mathf.Clamp(_serverGap, baseTime * 0.85f, baseTime * 1.5f);
         }
 
         public void Face(int direction) => Direction = direction & 7;
@@ -215,7 +235,7 @@ namespace UOClient.Unity
             _stepDuration = 0;
         }
 
-        private void StartMove(int x, int y, int z, bool run)
+        private void StartMove(int x, int y, int z, bool run, float duration = 0f)
         {
             // Keep where the avatar is drawn right now, so a step that starts mid-step does not jump.
             Vector2 current = AnchorPixels;
@@ -231,7 +251,7 @@ namespace UOClient.Unity
             Z = z;
             _running = run;
             _stepTime = 0;
-            _stepDuration = StepTime(run);
+            _stepDuration = duration > 0f ? duration : StepTime(run);
             _server = null; // a step ends a server animation (Mobile.ProcessSteps, Mobile.cs:747-750)
         }
 
