@@ -18,7 +18,33 @@ namespace UOClient.LiveGroundCompare
     public static class LiveGroundLighting
     {
         /// <summary>The compositor's light, from the screen's upper left: x along +tile x, y along +tile y, up. Not unit length (as the compositor).</summary>
-        public const float SunX = -0.6f, SunY = -0.2f, SunUp = 0.77f;
+        public const float RefSunX = -0.6f, RefSunY = -0.2f, RefSunUp = 0.77f;
+
+        private sealed class SunVector
+        {
+            public readonly float X, Y, Up;
+            public SunVector(float x, float y, float up) { X = x; Y = y; Up = up; }
+        }
+
+        // The sun the masks and ceilings are built for: the reference until the time of day moves it (SetSun). One
+        // object, swapped whole, so a worker reading it mid-build never mixes two suns.
+        private static volatile SunVector _sun = new SunVector(RefSunX, RefSunY, RefSunUp);
+
+        /// <summary>The current sun (x, y, up), as <see cref="RefSunX"/> and so on until <see cref="SetSun"/> moves it.</summary>
+        public static float SunX => _sun.X;
+        public static float SunY => _sun.Y;
+        public static float SunUp => _sun.Up;
+
+        /// <summary>Moves the sun (time of day): chunks built from now on use it; the caller rebuilds those on screen.</summary>
+        public static void SetSun(float x, float y, float up)
+        {
+            if (Math.Abs(x * x + y * y) < 1e-8f || up <= 0f)
+                return;
+            _sun = new SunVector(x, y, up);
+        }
+
+        /// <summary>Back to the reference sun.</summary>
+        public static void ResetSun() => _sun = new SunVector(RefSunX, RefSunY, RefSunUp);
 
         /// <summary>The compositor's shade clamp.</summary>
         public const float MinShade = 0.7f, MaxShade = 1.25f;
@@ -35,15 +61,23 @@ namespace UOClient.LiveGroundCompare
         public const float ShadowStep = 0.25f;
 
         /// <summary>The sun direction in terrain space (x, up, -tile y): what the shaders get as <c>_LGSunDir</c>.</summary>
-        public static (float X, float Y, float Z) SunTerrain => (SunX, SunUp, -SunY);
+        public static (float X, float Y, float Z) SunTerrain
+        {
+            get
+            {
+                SunVector s = _sun;
+                return (s.X, s.Up, -s.Y);
+            }
+        }
 
         /// <summary>The sun's ground direction (unit, toward the sun: -x, -y) and its rise in UO Z per tile, as every ray here uses them.</summary>
         public static (float Ux, float Uy, float Rise) SunRay
         {
             get
             {
-                float hl = (float)Math.Sqrt(SunX * SunX + SunY * SunY);
-                return (SunX / hl, SunY / hl, SunUp / hl / TerrainLandBuilder.HeightUnitPerZ);
+                SunVector s = _sun;
+                float hl = (float)Math.Sqrt(s.X * s.X + s.Y * s.Y);
+                return (s.X / hl, s.Y / hl, s.Up / hl / TerrainLandBuilder.HeightUnitPerZ);
             }
         }
 
@@ -64,7 +98,7 @@ namespace UOClient.LiveGroundCompare
                 return 1f;
             (float lx, float ly, float lz) = SunTerrain;
             float dot = (nx * lx + ny * ly + nz * lz) / len;
-            float shade = Math.Max(MinShade, Math.Min(MaxShade, dot / SunUp));
+            float shade = Math.Max(MinShade, Math.Min(MaxShade, dot / ly));
             float v = Math.Max(0f, Math.Min(1f, visibility));
             return MinShade + (shade - MinShade) * v;
         }
@@ -105,9 +139,7 @@ namespace UOClient.LiveGroundCompare
         public static float SunVisibility(int[,] cornerZ, int[,] occluderTop, float tx, float ty, int maxZ)
         {
             const int t = TerrainLandBuilder.Tiles;
-            float hl = (float)Math.Sqrt(SunX * SunX + SunY * SunY);
-            float ux = SunX / hl, uy = SunY / hl;
-            float risePerTile = SunUp / hl / TerrainLandBuilder.HeightUnitPerZ; // UO Z per tile along the ray
+            (float ux, float uy, float risePerTile) = SunRay; // UO Z per tile along the ray
             float z0 = TerrainLandBuilder.SampleZ(cornerZ, tx, ty) + ShadowBiasZ;
             for (float s = ShadowStep; ; s += ShadowStep)
             {
@@ -173,9 +205,7 @@ namespace UOClient.LiveGroundCompare
         public static float CeilingAt(int[,] cornerZ, int[,] occluderTop, float tx, float ty, int maxZ)
         {
             const int t = TerrainLandBuilder.Tiles;
-            float hl = (float)Math.Sqrt(SunX * SunX + SunY * SunY);
-            float ux = SunX / hl, uy = SunY / hl;
-            float risePerTile = SunUp / hl / TerrainLandBuilder.HeightUnitPerZ;
+            (float ux, float uy, float risePerTile) = SunRay;
             int ownI = Math.Min(t - 1, (int)tx), ownJ = Math.Min(t - 1, (int)ty);
             float ceiling = NoCeiling;
             for (float s = ShadowStep; ; s += ShadowStep)

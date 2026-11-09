@@ -102,7 +102,7 @@ namespace UOClient.Unity
                         nearest = l;
                 bool casts = CharacterShadow.Cast(px, py, pz, indoors, CharacterShadow.LightSources, out Vector2 pp, out float strength, out bool sun);
                 Debug.Log($"[shadowtest] player {px},{py},{pz} cutZ {Shader.GetGlobalFloat("_UOCutZ")} indoors {indoors} lights {CharacterShadow.LightSources.Count} " +
-                          $"nearest {nearest?.ToString() ?? "-"} casts {casts} strength {strength:0.00} sun {sun} perPixel {pp}");
+                          $"nearest {nearest?.ToString() ?? "-"} casts {casts} strength {strength:0.00} sun {sun} perPixel {pp} now {CharacterShadow.CurrentPerPixel} sunShift {Shader.GetGlobalVector("_UOSunShift")} fade {Shader.GetGlobalFloat("_UOSunFade"):0.00}");
             }
             if (!layer.CanEdit || _shadowSent || _ctx.Session == null)
                 return;

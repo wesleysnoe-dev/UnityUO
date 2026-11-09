@@ -234,6 +234,22 @@ namespace UOClient.Unity
 
         private float _batchStarted;
 
+        /// <summary>Rebuilds every loaded chunk (the time of day moved the terrain's baked sun), swapped in as one batch.</summary>
+        public void RebuildLoaded()
+        {
+            if (_chunks.Count == 0)
+                return;
+            int x0 = int.MaxValue, y0 = int.MaxValue, x1 = int.MinValue, y1 = int.MinValue;
+            foreach ((int cx, int cy) in _chunks.Keys)
+            {
+                x0 = Math.Min(x0, cx);
+                y0 = Math.Min(y0, cy);
+                x1 = Math.Max(x1, cx);
+                y1 = Math.Max(y1, cy);
+            }
+            RebuildArea(x0 * ChunkSize, y0 * ChunkSize, x1 * ChunkSize + ChunkSize - 1, y1 * ChunkSize + ChunkSize - 1);
+        }
+
         // Loaded chunks whose new build (RebuildArea) replaces them when it is ready.
         private readonly HashSet<(int, int)> _replacing = new HashSet<(int, int)>();
 
@@ -511,7 +527,7 @@ namespace UOClient.Unity
                         foreach (StaticLight l in near.Lights)
                             if (l.Indoors)
                                 lights.Add(new Vector3Int(l.X, l.Y, l.Z));
-            var groups = new Dictionary<int, (List<Vector3> V, List<Vector2> Uv, List<int> I, List<Color32> C)>();
+            var groups = new Dictionary<int, (List<Vector3> V, List<Vector2> Uv, List<int> I, List<Color32> C, List<Vector2> H)>();
             foreach (ChunkQuad q in build.Quads)
             {
                 if (!q.Shadow)
@@ -534,12 +550,12 @@ namespace UOClient.Unity
                     uv = _shared.Uv(slot);
                 }
                 if (!groups.TryGetValue(texture, out var g))
-                    groups[texture] = g = (new List<Vector3>(), new List<Vector2>(), new List<int>(), new List<Color32>());
+                    groups[texture] = g = (new List<Vector3>(), new List<Vector2>(), new List<int>(), new List<Color32>(), new List<Vector2>());
                 // An object stands on the bottom of its art (statics are drawn with their foot on the tile's lower corner).
                 CharacterShadow.AddQuad(g.V, g.Uv, g.I, g.C, CharacterShadow.Tint(strength, sun), this, perPixel, uv, false,
-                    q.Left, q.Top, q.Width, q.Height, q.Top + q.Height, q.Depth);
+                    q.Left, q.Top, q.Width, q.Height, q.Top + q.Height, q.Depth, g.H);
             }
-            foreach (KeyValuePair<int, (List<Vector3> V, List<Vector2> Uv, List<int> I, List<Color32> C)> g in groups)
+            foreach (KeyValuePair<int, (List<Vector3> V, List<Vector2> Uv, List<int> I, List<Color32> C, List<Vector2> H)> g in groups)
             {
                 Material material;
                 if (g.Key < 0)
@@ -557,6 +573,7 @@ namespace UOClient.Unity
                 var mesh = new Mesh { name = $"Chunk {build.ChunkX},{build.ChunkY} shadows", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
                 mesh.SetVertices(g.Value.V);
                 mesh.SetUVs(0, g.Value.Uv);
+                mesh.SetUVs(1, g.Value.H);
                 mesh.SetColors(g.Value.C);
                 mesh.SetTriangles(g.Value.I, 0);
                 mesh.RecalculateBounds();

@@ -98,6 +98,7 @@ namespace UOClient.Unity
         private static Shader _shader;
         private static readonly Vector3[] Vertices = new Vector3[4];
         private static readonly Vector2[] Uvs = new Vector2[4];
+        private static readonly Vector2[] Heights = new Vector2[4];
         private static readonly Color32[] Colors = new Color32[4];
         private static readonly int[] Indices = { 0, 1, 2, 0, 2, 3 };
 
@@ -122,12 +123,44 @@ namespace UOClient.Unity
         /// </summary>
         public static Vector2 PerPixel()
         {
+            // The reference sun: what every quad is built with. The time of day moves it in the shader (SetSun).
             Vector3 sun = SunGround ?? DefaultSun;
             var g = new Vector2(sun.x, sun.y).normalized;
             float tilesPerPixel = 1f / (4f * Mathf.Max(0.5f, sun.z));
             var perPixel = new Vector2((g.x - g.y) * 22f, (g.x + g.y) * 22f) * tilesPerPixel;
             return perPixel.magnitude > MaxLength ? perPixel.normalized * MaxLength : perPixel;
         }
+
+        /// <summary>The reference sun's elevation (LiveGroundLighting's compositor light, 14:00 on the shard's clock).</summary>
+        private static readonly float RefElevation = Mathf.Atan2(0.77f, Mathf.Sqrt(0.6f * 0.6f + 0.2f * 0.2f));
+
+        private static readonly int SunShiftId = Shader.PropertyToID("_UOSunShift"), SunFadeId = Shader.PropertyToID("_UOSunFade");
+
+        /// <summary>
+        /// The time of day's sun: <paramref name="towardSun"/> its ground direction (tile space), <paramref name="elevation"/>
+        /// its height (radians), <paramref name="strength"/> 0..1. Sun shadows are built with the reference sun
+        /// (<see cref="PerPixel"/>) and carry each corner's height above the foot (uv2.x), so the shader moves them by
+        /// height x (now - reference) per pixel: they swing and stretch every frame with no rebuild. Lamp shadows stay put.
+        /// </summary>
+        public static void SetSun(Vector2 towardSun, float elevation, float strength)
+        {
+            Vector3 reference = SunGround ?? DefaultSun;
+            Vector2 g = towardSun.sqrMagnitude > 1e-8f ? -towardSun.normalized : new Vector2(reference.x, reference.y).normalized;
+            float rise = reference.z * Mathf.Tan(Mathf.Max(0.02f, elevation)) / Mathf.Tan(RefElevation);
+            var now = new Vector2((g.x - g.y) * 22f, (g.x + g.y) * 22f) / (4f * Mathf.Max(0.05f, rise));
+            if (now.magnitude > SunMaxLength)
+                now = now.normalized * SunMaxLength;
+            Vector2 shift = now - PerPixel();
+            Shader.SetGlobalVector(SunShiftId, new Vector4(shift.x, -shift.y, 0f, 0f)); // world pixels (y down) to Unity (y up)
+            Shader.SetGlobalFloat(SunFadeId, 1f - Mathf.Clamp01(strength));
+            CurrentPerPixel = now;
+        }
+
+        /// <summary>A low sun's longest shadow, per pixel of height (morning and evening; noon's is about 0.8).</summary>
+        public const float SunMaxLength = 2.2f;
+
+        /// <summary>The sun shadow's run per pixel of height as last set (<see cref="SetSun"/>).</summary>
+        public static Vector2 CurrentPerPixel { get; private set; }
 
         /// <summary>
         /// Appends the shadow of art drawn at world-screen pixel rect (left, top, width, height) standing on the line
@@ -136,11 +169,21 @@ namespace UOClient.Unity
         public static void AddQuad(System.Collections.Generic.List<Vector3> vertices, System.Collections.Generic.List<Vector2> uvs,
             System.Collections.Generic.List<int> indices, System.Collections.Generic.List<Color32> colors, Color32 tint,
             IWorldSpace view, Vector2 perPixel, Vector4 uv, bool mirror,
-            float left, float top, float width, float height, float baseY, float depth)
+            float left, float top, float width, float height, float baseY, float depth,
+            System.Collections.Generic.List<Vector2> heights = null)
         {
             int n = vertices.Count;
             for (int k = 0; k < 4; k++)
                 colors.Add(tint);
+            if (heights != null)
+            {
+                // Each corner's height above the foot line: the shader's lever for the moving sun (SetSun).
+                float bottom = baseY - (top + height), upper = baseY - top;
+                heights.Add(new Vector2(bottom, 0f));
+                heights.Add(new Vector2(upper, 0f));
+                heights.Add(new Vector2(upper, 0f));
+                heights.Add(new Vector2(bottom, 0f));
+            }
             var foot = new Vector2(0f, baseY);
             vertices.Add(Ground(view, left, top + height, foot, perPixel, depth));
             vertices.Add(Ground(view, left, top, foot, perPixel, depth));
@@ -204,11 +247,14 @@ namespace UOClient.Unity
             Uvs[1] = new Vector2(u0, uv.w);
             Uvs[2] = new Vector2(u1, uv.w);
             Uvs[3] = new Vector2(u1, uv.y);
+            Heights[0] = Heights[3] = new Vector2(foot.y - (top + height), 0f);
+            Heights[1] = Heights[2] = new Vector2(foot.y - top, 0f);
             if (_mesh.vertexCount != 4)
             {
                 _mesh.Clear();
                 _mesh.vertices = Vertices;
                 _mesh.uv = Uvs;
+                _mesh.uv2 = Heights;
                 _mesh.colors32 = Colors;
                 _mesh.triangles = Indices;
             }
@@ -216,6 +262,7 @@ namespace UOClient.Unity
             {
                 _mesh.vertices = Vertices;
                 _mesh.uv = Uvs;
+                _mesh.uv2 = Heights;
                 _mesh.colors32 = Colors;
             }
             _mesh.RecalculateBounds();

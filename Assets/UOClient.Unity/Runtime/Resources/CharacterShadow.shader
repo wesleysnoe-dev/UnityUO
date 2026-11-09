@@ -30,14 +30,20 @@ Shader "UOClient/CharacterShadow"
             sampler2D _MainTex;
             float _Strength, _Cutoff;
             float4 _UOAmbient;
+            // The moving sun (CharacterShadow.SetSun): Unity units per pixel of height to add to a sun shadow's corner,
+            // and 1 - the sun's shadow strength. Unset (0): the reference sun at full strength.
+            float4 _UOSunShift;
+            float _UOSunFade;
 
-            struct appdata { float4 vertex : POSITION; float2 uv : TEXCOORD0; float4 color : COLOR; };
+            struct appdata { float4 vertex : POSITION; float2 uv : TEXCOORD0; float2 height : TEXCOORD1; float4 color : COLOR; };
             struct v2f { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; float4 color : COLOR; };
 
             v2f vert(appdata v)
             {
                 v2f o;
-                o.pos = UnityObjectToClipPos(v.vertex);
+                float4 world = mul(unity_ObjectToWorld, float4(v.vertex.xyz, 1.0));
+                world.xy += v.height.x * _UOSunShift.xy * v.color.g; // sun shadows only (g 1); a lamp's stays
+                o.pos = mul(UNITY_MATRIX_VP, world);
                 o.uv = v.uv;
                 o.color = v.color;
                 return o;
@@ -52,6 +58,7 @@ Shader "UOClient/CharacterShadow"
                 sun = sun <= 0.0001 ? 1.0 : saturate(sun * 1.25);
                 // Vertex colour (CharacterShadow.Tint): a the shadow's strength; g 1 a sun shadow (fades with daylight),
                 // 0 a lamp's indoor shadow (by day and night alike).
+                sun *= 1.0 - _UOSunFade; // the sun low on the horizon, or the moon handing over
                 return fixed4(0, 0, 0, _Strength * i.color.a * lerp(1.5, sun, i.color.g)); // a lamp shadow, close to its flame, reads darker
             }
             ENDCG

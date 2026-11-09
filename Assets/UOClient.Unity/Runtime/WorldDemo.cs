@@ -206,6 +206,7 @@ namespace UOClient.Unity
             _liveGround?.Detach();
             _ctx.World?.Dispose();
             _ctx.World = new WorldStreamer(_ctx.Data, _ctx.Root, _ctx.Shader, _ctx.ArtScale, _compositorFactory, mapIndex, x, y) { LoadRadius = loadRadius };
+            Lighting.SunStepped = () => _ctx.World?.RebuildLoaded(); // the terrain's baked sun moved
             _ctx.Walk = new Walkability(_ctx.Data, mapIndex);
             _ctx.Hud.Summary = $"streaming {WorldStreamer.ChunkSize}x{WorldStreamer.ChunkSize} chunks, radius {loadRadius}, {_bakedCount} baked placements available, {_ctx.ArtScale}x art";
             if (_liveGround?.Attach(_ctx.World, _ctx.Session != null ? _sessionHost : Settings.host) is string groundStatus)

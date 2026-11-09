@@ -23,6 +23,39 @@ namespace UOClient.Unity
         private TimeOfDay _timeCurrent = Times[0];
         private float _dead;
 
+        /// <summary>-hour H (0-24): the sun stands at that UO hour, whatever the clock says (captures, checks).</summary>
+        private static float StartHour()
+        {
+            string[] args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i + 1 < args.Length; i++)
+                if (string.Equals(args[i], "-hour", System.StringComparison.OrdinalIgnoreCase)
+                    && float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float h))
+                    return Mathf.Repeat(h, 24f);
+            return float.NaN;
+        }
+
+        private readonly float _fixedHour = StartHour();
+
+        /// <summary>
+        /// The terrain's baked sun (LiveGroundLighting.SetSun), set by the LiveGround presenter: called with the sun's
+        /// (x, y, up) each time it moves a step (<see cref="SunStepHours"/>), then <see cref="SunStepped"/> asks for the
+        /// chunks on screen to be rebuilt with it. Null: no baked sun (the classic sprites).
+        /// </summary>
+        public static System.Action<float, float, float> TerrainSun;
+
+        /// <summary>The terrain's sun moved a step: rebuild what is on screen (its masks and ceilings were baked for the last).</summary>
+        public static System.Action SunStepped;
+
+        /// <summary>The baked sun moves in steps of this many UO hours (2.5 real minutes); the outline shadows move smoothly.</summary>
+        public const float SunStepHours = 0.5f;
+
+        private (float, float, float) _bakedSun = (float.NaN, 0f, 0f);
+
+        /// <summary>The sun now (for the HUD and checks).</summary>
+        public SunState Sun { get; private set; } = SunClock.At(14f);
+
+        private static readonly Color GoldenTint = new Color(1.10f, 0.92f, 0.74f);
+
         private static readonly TimeOfDay[] Times =
         {
             new TimeOfDay("Day", new Color(1.00f, 1.00f, 1.00f), Color.black, 0.10f),
@@ -67,6 +100,17 @@ namespace UOClient.Unity
             if (session != null && session.Season != Season.Summer)
                 target = new TimeOfDay(target.Name, target.Ambient * SeasonTint(session.Season), target.Light, target.Vignette);
 
+            // The sun: the shard's clock where the player stands (or the T key's time, or -hour). Golden light low in the sky.
+            double hour = !float.IsNaN(_fixedHour) ? _fixedHour
+                : _timeOverride >= 0 ? SunClock.HourFor(Times[_timeOverride].Name)
+                : session != null ? SunClock.Hour(System.DateTime.UtcNow, session.World.Map, session.World.Player?.X ?? 0)
+                : 14.0;
+            Sun = SunClock.At(hour);
+            if ((_timeOverride < 0 || !float.IsNaN(_fixedHour)) && Sun.Warmth > 0f)
+                target = new TimeOfDay(target.Name, target.Ambient * Color.Lerp(Color.white, GoldenTint, Sun.Warmth), target.Light, target.Vignette);
+            ApplySun(Sun);
+            StepTerrainSun(hour);
+
             _timeCurrent = TimeOfDay.Lerp(_timeCurrent, target, 1f - Mathf.Exp(-Time.deltaTime * 2f));
             ApplyLighting(_timeCurrent);
             // Item and static lights (ItemLights) as strong as the player's light is for this darkness (none by day), and
@@ -75,7 +119,9 @@ namespace UOClient.Unity
                             || LightSources.LightsOn(session.World.GlobalLight, session.World.PersonalLight);
             Color l = _timeCurrent.Light;
             LocalLightScale = lightsOn ? Mathf.Clamp01(Mathf.Max(l.r, Mathf.Max(l.g, l.b)) / NightLightPeak) : 0f;
-            hud.TimeName = target.Name + (_timeOverride < 0 && session != null ? $" (server light {session.World.GlobalLight})" : "")
+            int hh = (int)Sun.Hour, mm = (int)((Sun.Hour - hh) * 60f);
+            hud.TimeName = target.Name + $" {hh:00}:{mm:00}{(Sun.Moon ? " moon" : "")}"
+                           + (_timeOverride < 0 && session != null ? $" (server light {session.World.GlobalLight})" : "")
                            + (session != null && session.Season != Season.Summer ? $", {session.Season.ToString().ToLowerInvariant()}" : "");
             hud.Vignette = _timeCurrent.Vignette;
 
@@ -93,11 +139,36 @@ namespace UOClient.Unity
 
         private const float NightLightPeak = 0.95f; // Times' "Night" player light, the brightest
 
+        /// <summary>The outline shadows and the terrain's shading follow the sun every frame.</summary>
+        private static void ApplySun(SunState sun)
+        {
+            CharacterShadow.SetSun(new Vector2(sun.TowardX, sun.TowardY), sun.Elevation, sun.Strength);
+            (float x, float y, float up) = SunClock.Vector(sun);
+            Shader.SetGlobalVector("_LGSunDir", new Vector4(x, up, -y, 0f)); // terrain space: x, up, -tile y
+        }
+
+        /// <summary>Moves the terrain's baked sun when the hour crosses a step, and asks for the screen to be rebuilt.</summary>
+        private void StepTerrainSun(double hour)
+        {
+            if (TerrainSun == null)
+                return;
+            float stepped = Mathf.Floor((float)hour / SunStepHours) * SunStepHours + SunStepHours * 0.5f;
+            (float, float, float) v = SunClock.Vector(SunClock.At(stepped));
+            if (v == _bakedSun)
+                return; // the same sun (the moon stands still all night)
+            bool first = float.IsNaN(_bakedSun.Item1);
+            _bakedSun = v;
+            TerrainSun(v.Item1, v.Item2, v.Item3);
+            Debug.Log($"UOClient sun: baked terrain sun for {stepped:0.00} h ({v.Item1:0.00}, {v.Item2:0.00}, {v.Item3:0.00}){(first ? "" : ", rebuilding the screen")}");
+            SunStepped?.Invoke();
+        }
+
         /// <summary>Daylight, before there is a world to light.</summary>
         public static void ApplyDefault()
         {
             LocalLightScale = 0f;
             ApplyLighting(Times[0]);
+            ApplySun(SunClock.At(14f));
             Shader.SetGlobalFloat("_UODead", 0f);
         }
 

@@ -142,6 +142,10 @@ namespace UOClient.LiveGroundCompare
             (float sunUx, float sunUy, float sunRise) = LiveGroundLighting.SunRay;
             CharacterShadow.SunGround = new Vector3(-sunUx, -sunUy, sunRise);
             StaticOccluders.OutlineCasters = CharacterShadow.ShadowShader != null;
+            // The time of day moves the sun the masks and ceilings are baked with (Lighting steps it; the screen is rebuilt).
+            // The outline shadows keep the reference above (SunGround) as their base and move in the shader.
+            if (SharedLight)
+                Lighting.TerrainSun = LiveGroundLighting.SetSun;
 
             // Grass (-grass): only over the natural terrain, whose materials it reads.
             if (GrassBuilder.Enabled)
@@ -352,6 +356,7 @@ namespace UOClient.LiveGroundCompare
             DrawnGround.Uninstall();
             CharacterShadow.SunGround = null;
             StaticOccluders.OutlineCasters = false;
+            Lighting.TerrainSun = null;
             Camera.onPreCull -= OnPreCull;
             if (_main != null)
             {
