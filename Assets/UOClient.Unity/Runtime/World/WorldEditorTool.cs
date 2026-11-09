@@ -498,10 +498,50 @@ namespace UOClient.Unity
                 return;
             float r = brush.Current == WorldBrushSettings.Mode.Look ? 0.3f : brush.Size;
             float inner = r * (1f - brush.Softness);
-            DrawRing(at, r, new Color(0.75f, 0.95f, 0.45f, 0.95f), 64);
-            if (inner > 0.2f && inner < r - 0.1f)
-                DrawRing(at, inner, new Color(0.75f, 0.95f, 0.45f, 0.45f), 48);
+            var edge = brush.Current == WorldBrushSettings.Mode.Erase ? new Color(1f, 0.55f, 0.45f, 0.95f) : new Color(0.75f, 0.95f, 0.45f, 0.95f);
+            var soft = new Color(edge.r, edge.g, edge.b, 0.45f);
+            BrushShape shape = brush.Current == WorldBrushSettings.Mode.Look ? BrushShape.Circle : brush.Shape;
+            if (shape == BrushShape.Tile)
+            {
+                // The exact tiles: the footprint's outline, and the tile lines inside it.
+                (int x0, int y0, int n) = brush.StrokeAt(at.x, at.y).TileFootprint();
+                for (int k = 0; k <= n; k++)
+                {
+                    Color c = k == 0 || k == n ? edge : soft;
+                    DrawLine(new Vector2(x0 + k, y0), new Vector2(x0 + k, y0 + n), c, n * 8);
+                    DrawLine(new Vector2(x0, y0 + k), new Vector2(x0 + n, y0 + k), c, n * 8);
+                }
+            }
+            else if (shape == BrushShape.Square)
+            {
+                DrawSquare(at, r, edge);
+                if (inner > 0.2f && inner < r - 0.1f)
+                    DrawSquare(at, inner, soft);
+            }
+            else
+            {
+                DrawRing(at, r, edge, 64);
+                if (inner > 0.2f && inner < r - 0.1f)
+                    DrawRing(at, inner, soft, 48);
+            }
             DrawPoint(at, new Color(1f, 1f, 1f, 0.9f), 4f);
+        }
+
+        private void DrawSquare(Vector2 centre, float half, Color color)
+        {
+            Vector2 a = centre + new Vector2(-half, -half), b = centre + new Vector2(half, -half);
+            Vector2 c = centre + new Vector2(half, half), d = centre + new Vector2(-half, half);
+            int points = Mathf.Clamp(Mathf.RoundToInt(half * 12f), 8, 96);
+            DrawLine(a, b, color, points);
+            DrawLine(b, c, color, points);
+            DrawLine(c, d, color, points);
+            DrawLine(d, a, color, points);
+        }
+
+        private void DrawLine(Vector2 from, Vector2 to, Color color, int points)
+        {
+            for (int i = 0; i <= points; i++)
+                DrawPoint(Vector2.Lerp(from, to, i / (float)points), color, 3f);
         }
 
         /// <summary>OBJECTS: the selected object's tile outlined, and the object to place (or the one dragged) as a ghost.</summary>

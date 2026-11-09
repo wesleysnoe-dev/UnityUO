@@ -42,6 +42,28 @@ namespace UOClient.WorldLayer
         /// <summary>Puts a loaded region in (replacing any in memory).</summary>
         public void Put(WorldRegion region) => _regions[(region.Rx, region.Ry)] = region;
 
+        private readonly Dictionary<(int, int), WorldRegion> _pristine = new Dictionary<(int, int), WorldRegion>();
+
+        /// <summary>
+        /// A sample as the original map gives it (the region's factory, never the painted copy): the eraser's target.
+        /// False off the map.
+        /// </summary>
+        public bool GetPristine(int sx, int sy, out short height, float[] weights)
+        {
+            (int rx, int ry) = WorldRegion.RegionOfSample(sx, sy);
+            if (!_pristine.TryGetValue((rx, ry), out WorldRegion r))
+                _pristine[(rx, ry)] = r = _create(rx, ry);
+            if (r == null)
+            {
+                height = 0;
+                return false;
+            }
+            int i = WorldRegion.Index(sx - r.SampleX0, sy - r.SampleY0);
+            height = r.Height[i];
+            r.GetWeights(i, weights);
+            return true;
+        }
+
         private WorldRegion Owner(int sx, int sy, out int index)
         {
             (int rx, int ry) = WorldRegion.RegionOfSample(sx, sy);
@@ -251,7 +273,16 @@ namespace UOClient.WorldLayer
         Lower = 1,
         Smooth = 2,
         Flatten = 3, // toward TargetZ
-        Paint = 4
+        Paint = 4,
+        Erase = 5    // back toward the original map (heights, materials, painted UO ground)
+    }
+
+    /// <summary>The brush's footprint.</summary>
+    public enum BrushShape : byte
+    {
+        Circle = 0, // distance from the centre
+        Square = 1, // square in tile space (a diamond on screen)
+        Tile = 2    // whole tiles, hard edged: the diameter in tiles, snapped to the tile grid
     }
 
     /// <summary>One brush application, as the client sends it and the server applies it.</summary>
@@ -282,12 +313,25 @@ namespace UOClient.WorldLayer
         /// <summary>Flatten's target, in UO Z.</summary>
         public float TargetZ;
 
+        public BrushShape Shape;
+
         public const float MaxRadius = 24f;
+
+        /// <summary>
+        /// The Tile shape's footprint: N x N tiles from (X0, Y0), N the brush's diameter in tiles (at least 1), centred on the
+        /// tile under the brush (odd N) or the nearest tile corner (even N).
+        /// </summary>
+        public (int X0, int Y0, int N) TileFootprint()
+        {
+            int n = Math.Max(1, (int)Math.Round(Radius * 2f));
+            return ((int)Math.Floor(X - n / 2f + 0.5f), (int)Math.Floor(Y - n / 2f + 0.5f), n);
+        }
 
         /// <summary>The stroke with every field clamped to what the server accepts.</summary>
         public BrushStroke Clamped() => new BrushStroke
         {
-            Tool = Tool > BrushTool.Paint ? BrushTool.Raise : Tool,
+            Tool = Tool > BrushTool.Erase ? BrushTool.Raise : Tool,
+            Shape = Shape > BrushShape.Tile ? BrushShape.Circle : Shape,
             X = X,
             Y = Y,
             Radius = Math.Max(0.25f, Math.Min(MaxRadius, Radius)),
@@ -328,13 +372,49 @@ namespace UOClient.WorldLayer
             return t * t * (3f - 2f * t);
         }
 
+        /// <summary>The brush's weight (0..1, before strength) at a point in world tile units, by its shape.</summary>
+        public static float Weight(in BrushStroke b, float x, float y)
+        {
+            float dx = x - b.X, dy = y - b.Y;
+            switch (b.Shape)
+            {
+                case BrushShape.Square:
+                    return Falloff(Math.Max(Math.Abs(dx), Math.Abs(dy)), b.Radius, b.Softness);
+                case BrushShape.Tile:
+                {
+                    (int x0, int y0, int n) = b.TileFootprint();
+                    const float e = 1e-4f; // the footprint's edge samples (its tiles' corners) are in
+                    return x >= x0 - e && y >= y0 - e && x <= x0 + n + e && y <= y0 + n + e ? 1f : 0f;
+                }
+                default:
+                    return Falloff((float)Math.Sqrt(dx * dx + dy * dy), b.Radius, b.Softness);
+            }
+        }
+
+        /// <summary>The tiles a stroke's ground painting covers: whole tiles for Tile, else the centres at half weight or more.</summary>
+        private static bool CoversTile(in BrushStroke b, int tx, int ty)
+        {
+            if (b.Shape == BrushShape.Tile)
+            {
+                (int x0, int y0, int n) = b.TileFootprint();
+                return tx >= x0 && ty >= y0 && tx < x0 + n && ty < y0 + n;
+            }
+            return Weight(b, tx + 0.5f, ty + 0.5f) >= 0.5f;
+        }
+
         /// <summary>Applies a stroke; returns what changed (null if nothing did).</summary>
         public static EditStep Apply(WorldStore store, BrushStroke stroke)
         {
             BrushStroke b = stroke.Clamped();
             const int s = WorldRegion.SamplesPerTile;
-            int sx0 = (int)Math.Floor((b.X - b.Radius) * s), sx1 = (int)Math.Ceiling((b.X + b.Radius) * s);
-            int sy0 = (int)Math.Floor((b.Y - b.Radius) * s), sy1 = (int)Math.Ceiling((b.Y + b.Radius) * s);
+            float bx0 = b.X - b.Radius, bx1 = b.X + b.Radius, by0 = b.Y - b.Radius, by1 = b.Y + b.Radius;
+            if (b.Shape == BrushShape.Tile)
+            {
+                (int tx0, int ty0, int n) = b.TileFootprint();
+                (bx0, bx1, by0, by1) = (tx0, tx0 + n, ty0, ty0 + n);
+            }
+            int sx0 = (int)Math.Floor(bx0 * s), sx1 = (int)Math.Ceiling(bx1 * s);
+            int sy0 = (int)Math.Floor(by0 * s), sy1 = (int)Math.Ceiling(by1 * s);
             int w = sx1 - sx0 + 1, h = sy1 - sy0 + 1;
 
             // Read everything first, so smoothing reads the layer as it was before this stroke.
@@ -345,12 +425,12 @@ namespace UOClient.WorldLayer
 
             var step = new EditStep();
             var weights = new float[WorldMaterials.Count];
+            var pristine = new float[WorldMaterials.Count];
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < h; j++)
                 {
                     int sx = sx0 + i, sy = sy0 + j;
-                    float dx = sx / (float)s - b.X, dy = sy / (float)s - b.Y;
-                    float f = Falloff((float)Math.Sqrt(dx * dx + dy * dy), b.Radius, b.Softness) * b.Strength;
+                    float f = Weight(b, sx / (float)s, sy / (float)s) * b.Strength;
                     if (f <= 0f)
                         continue;
                     short before = height[i, j];
@@ -393,6 +473,20 @@ namespace UOClient.WorldLayer
                         weights[b.Material] += f;
                         painted = true;
                     }
+                    else if (b.Tool == BrushTool.Erase && store.GetPristine(sx, sy, out short original, pristine))
+                    {
+                        // Back toward the original map: the height and the materials, as far as the brush reaches.
+                        after = ClampHeight(before + f * (original - before));
+                        store.GetWeights(sx, sy, weights);
+                        bool differs = false;
+                        for (int m = 0; m < weights.Length; m++)
+                        {
+                            float back = weights[m] + f * (pristine[m] - weights[m]);
+                            differs |= Math.Abs(back - weights[m]) > 0.5f / 255f;
+                            weights[m] = back;
+                        }
+                        painted = differs;
+                    }
                     if (after == before && !painted)
                         continue;
                     step.Before.Add((sx, sy, before, ids, ws));
@@ -415,15 +509,14 @@ namespace UOClient.WorldLayer
                         step.Tiles.Add((tx - 1, ty - 1));
                 }
             // Painting lays (or, with a natural material, clears) the UO ground of the tiles whose centre the brush covers
-            // at least half strength.
-            if (b.Tool == BrushTool.Paint && b.Strength > 0f)
+            // at least half strength (whole tiles for the Tile shape); erasing clears it (the original tile shows again).
+            if ((b.Tool == BrushTool.Paint || b.Tool == BrushTool.Erase && b.Strength >= 0.5f) && b.Strength > 0f)
             {
-                ushort ground = b.Material == WorldMaterials.Classic ? b.Ground : (ushort)0;
-                for (int ty = (int)Math.Floor(b.Y - b.Radius); ty <= (int)Math.Ceiling(b.Y + b.Radius); ty++)
-                    for (int tx = (int)Math.Floor(b.X - b.Radius); tx <= (int)Math.Ceiling(b.X + b.Radius); tx++)
+                ushort ground = b.Tool == BrushTool.Paint && b.Material == WorldMaterials.Classic ? b.Ground : (ushort)0;
+                for (int ty = (int)Math.Floor(by0); ty <= (int)Math.Ceiling(by1); ty++)
+                    for (int tx = (int)Math.Floor(bx0); tx <= (int)Math.Ceiling(bx1); tx++)
                     {
-                        float dx = tx + 0.5f - b.X, dy = ty + 0.5f - b.Y;
-                        if (Falloff((float)Math.Sqrt(dx * dx + dy * dy), b.Radius, b.Softness) < 0.5f)
+                        if (!CoversTile(b, tx, ty))
                             continue;
                         ushort before = store.GetGround(tx, ty);
                         if (before == ground)

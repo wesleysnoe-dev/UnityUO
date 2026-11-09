@@ -179,3 +179,16 @@ Server fix found on the way (`WorldLayerSystem.Restand`): an edit now moves char
 ground (on the land: to the new average; buried under it: lifted onto it). Before, raising ground under a standing
 character buried it, unable to step out. Checked with `-groundfollow-selftest` (raises a hill, walks over it, logs each
 tile's server Z, land average and drawn Z). Grass also moved into the main camera with depth keys (characters stand in it).
+
+**Brush shapes and the eraser, 2026-11-08.** Modes in two rows (RAISE LOWER FLAT SOFT / PAINT ERASE LOOK) and a Shape
+row: CIRCLE (as before), SQUARE (square in tile space, a diamond on screen, with the same soft edge) and TILE (whole
+tiles, hard edged, N x N with N the diameter, snapped to the tile grid: Set Z flattens exact tiles, Paint lays exact
+tiles; the size slider reads in tiles). The outline under the mouse shows the shape (TILE draws the footprint and its
+tile lines; the eraser's outline is red). ERASE (BrushTool.Erase) moves heights and materials back toward the original
+map (WorldStore.GetPristine: the region's factory, never the painted copy) by the brush's strength, and at half strength
+or more clears painted UO ground; it is an ordinary undoable stroke. Protocol version 3 (strokes carry the shape).
+Checked headless against the clone (online --worldlayer: a 2x2 tile flatten to Z+10 reads back exactly, the eraser puts
+the original Z back) and by 8 tests.
+Found on the way: on arriving among several painted regions the client asked for all nine at once (up to ~60 KB each),
+the server's 256 KB send buffer overflowed and it dropped the client. Requests are now paced: nearest first, at most two
+unanswered (freed on the answer or after 4 s).

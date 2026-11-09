@@ -284,21 +284,42 @@ namespace UOClient.Unity
             _nextAsk = Time.unscaledTime + AskEvery;
             int map = _session.World.Map;
             (int prx, int pry) = WorldRegion.RegionOfTile(_ctx.Player.X, _ctx.Player.Y);
+            // At most MaxInFlight regions asked for and not answered (a region is up to ~60 KB: asking for all nine at
+            // once overran the server's send buffer and it dropped us). Nearest first; the rest on the next turn.
+            float now = Time.unscaledTime;
+            foreach (var stale in new List<(int, int, int)>(_inFlight.Keys))
+                if (now - _inFlight[stale] > InFlightTimeout)
+                    _inFlight.Remove(stale); // the server sends nothing when we already have its version
+            var around = new List<(int Rx, int Ry)>();
             for (int ry = pry - Reach; ry <= pry + Reach; ry++)
                 for (int rx = prx - Reach; rx <= prx + Reach; rx++)
+                    if (rx >= 0 && ry >= 0)
+                        around.Add((rx, ry));
+            around.Sort((a, b) => (Math.Abs(a.Rx - prx) + Math.Abs(a.Ry - pry)).CompareTo(Math.Abs(b.Rx - prx) + Math.Abs(b.Ry - pry)));
+            foreach ((int rx, int ry) in around)
+            {
+                var key = (map, rx, ry);
+                int have = _serverPainted.Contains(key) && _known.TryGetValue(key, out int v) ? v : -1;
+                int latest = _known.TryGetValue(key, out int k) ? k : int.MinValue;
+                // Ask once per region, and again whenever the server says it moved past what we have.
+                if (_asked.TryGetValue(key, out int askedWith) && askedWith == have && latest <= have)
+                    continue;
+                if (_inFlight.ContainsKey(key))
+                    continue;
+                if (_inFlight.Count >= MaxInFlight)
                 {
-                    if (rx < 0 || ry < 0)
-                        continue;
-                    var key = (map, rx, ry);
-                    int have = _serverPainted.Contains(key) && _known.TryGetValue(key, out int v) ? v : -1;
-                    int latest = _known.TryGetValue(key, out int k) ? k : int.MinValue;
-                    // Ask once per region, and again whenever the server says it moved past what we have.
-                    if (_asked.TryGetValue(key, out int askedWith) && askedWith == have && latest <= have)
-                        continue;
-                    _asked[key] = have;
-                    _session.RequestWorldRegion(map, rx, ry, have);
+                    _nextAsk = now + 0.2f; // the rest soon, as answers come in
+                    break;
                 }
+                _asked[key] = have;
+                _inFlight[key] = now;
+                _session.RequestWorldRegion(map, rx, ry, have);
+            }
         }
+
+        private const int MaxInFlight = 2;
+        private const float InFlightTimeout = 4f;
+        private readonly Dictionary<(int, int, int), float> _inFlight = new Dictionary<(int, int, int), float>();
 
         private void OnReady(bool canEdit)
         {
@@ -326,6 +347,7 @@ namespace UOClient.Unity
         {
             var key = (map, rx, ry);
             _known[key] = version;
+            _inFlight.Remove(key);
             if (data == null)
             {
                 _asked[key] = -1;
@@ -483,7 +505,10 @@ namespace UOClient.Unity
     public sealed class WorldBrushSettings
     {
         // Object (place the chosen object) and Select (pick, drag, nudge, delete) come from the OBJECTS tab.
-        public enum Mode { Raise, Lower, SetZ, Soft, Paint, Look, Object, Select }
+        public enum Mode { Raise, Lower, SetZ, Soft, Paint, Look, Object, Select, Erase }
+
+        /// <summary>The brush's footprint: circle, square (a diamond on screen) or whole tiles.</summary>
+        public BrushShape Shape = BrushShape.Circle;
 
         /// <summary>Whether the mode places or edits objects (no brush).</summary>
         public bool ObjectMode => Current == Mode.Object || Current == Mode.Select;
@@ -529,8 +554,10 @@ namespace UOClient.Unity
                 Mode.SetZ => BrushTool.Flatten,
                 Mode.Soft => BrushTool.Smooth,
                 Mode.Paint => BrushTool.Paint,
+                Mode.Erase => BrushTool.Erase,
                 _ => BrushTool.Raise
             },
+            Shape = Shape,
             X = x,
             Y = y,
             Radius = Size,

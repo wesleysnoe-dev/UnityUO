@@ -218,6 +218,29 @@ internal static class Online
                         case 4:
                             session.RequestWorldRegion(map, rx, ry, -1);
                             break;
+                        case 5:
+                            Console.WriteLine($"         -> tile brush: flatten a 2x2 tile footprint at our feet to Z {wme.Z + 10}");
+                            session.SendWorldStroke(map, new UOClient.WorldLayer.BrushStroke { Tool = UOClient.WorldLayer.BrushTool.Flatten, Shape = UOClient.WorldLayer.BrushShape.Tile, X = wme.X + 0.5f, Y = wme.Y + 0.5f, Radius = 1, Strength = 1, TargetZ = wme.Z + 10 });
+                            session.EndWorldStroke();
+                            break;
+                        case 6:
+                        case 9:
+                            session.RequestWorldRegion(map, rx, ry, -1);
+                            break;
+                        case 7:
+                        case 10:
+                            if (worldRegion != null)
+                            {
+                                int s = UOClient.WorldLayer.WorldRegion.SamplesPerTile;
+                                int i = UOClient.WorldLayer.WorldRegion.Index(wme.X * s - worldRegion.SampleX0, wme.Y * s - worldRegion.SampleY0);
+                                Console.WriteLine($"         region at our feet after the {(worldStage == 8 ? "tile flatten" : "erase")}: height {worldRegion.Height[i] / 8f:0.0} Z (we stand at {wme.Z})");
+                            }
+                            break;
+                        case 8:
+                            Console.WriteLine("         -> eraser: the same footprint back to the original map");
+                            session.SendWorldStroke(map, new UOClient.WorldLayer.BrushStroke { Tool = UOClient.WorldLayer.BrushTool.Erase, Shape = UOClient.WorldLayer.BrushShape.Tile, X = wme.X + 0.5f, Y = wme.Y + 0.5f, Radius = 1, Strength = 1 });
+                            session.EndWorldStroke();
+                            break;
                     }
                 }
                 if (interact && !interacted && now - enteredAt > 1)

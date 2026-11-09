@@ -274,3 +274,114 @@ public class WorldLayerGroundTests
         Assert.All(old.Ground, g => Assert.Equal(0, g));
     }
 }
+
+/// <summary>Brush shapes (circle, square, whole tiles) and the eraser.</summary>
+public class WorldLayerShapeTests
+{
+    private static int MapZ(int x, int y) => (int)Math.Round(3 * Math.Sin(x * 0.3) + 2 * Math.Cos(y * 0.2));
+    private static byte MapMaterial(int x, int y) => WorldMaterials.Grass;
+    private static WorldStore Store() => new WorldStore(0, (rx, ry) => rx < 0 || ry < 0 ? null : WorldInit.FromMap(0, rx, ry, MapZ, MapMaterial));
+    private const int S = WorldRegion.SamplesPerTile;
+
+    [Fact]
+    public void Square_ReachesTheCornersACircleMisses()
+    {
+        // (2.8, 2.8) from the centre: 3.96 away (outside a radius-3 circle), 2.8 along each axis (inside the square).
+        WorldStore circle = Store(), square = Store();
+        var stroke = new BrushStroke { Tool = BrushTool.Raise, X = 20, Y = 20, Radius = 3, Softness = 0, Strength = 1 };
+        WorldBrush.Apply(circle, stroke);
+        stroke.Shape = BrushShape.Square;
+        WorldBrush.Apply(square, stroke);
+        int sx = (int)Math.Round(22.8f * S), sy = (int)Math.Round(22.8f * S);
+        Assert.Equal(Store().GetHeight(sx, sy), circle.GetHeight(sx, sy));
+        Assert.NotEqual(Store().GetHeight(sx, sy), square.GetHeight(sx, sy));
+    }
+
+    [Theory]
+    [InlineData(0.5f, 1)]
+    [InlineData(1f, 2)]
+    [InlineData(1.5f, 3)]
+    public void Tile_FlattensExactlyTheFootprintsTiles(float radius, int n)
+    {
+        WorldStore store = Store();
+        var stroke = new BrushStroke { Tool = BrushTool.Flatten, Shape = BrushShape.Tile, X = 30.4f, Y = 30.6f, Radius = radius, Softness = 0.9f, Strength = 1, TargetZ = 9 };
+        (int x0, int y0, int fn) = stroke.TileFootprint();
+        Assert.Equal(n, fn);
+        WorldBrush.Apply(store, stroke);
+        WorldStore pristine = Store();
+        for (int sx = (x0 - 1) * S; sx <= (x0 + n + 1) * S; sx++)
+            for (int sy = (y0 - 1) * S; sy <= (y0 + n + 1) * S; sy++)
+            {
+                bool inside = sx >= x0 * S && sy >= y0 * S && sx <= (x0 + n) * S && sy <= (y0 + n) * S;
+                if (inside)
+                    Assert.Equal(9 * WorldRegion.ZScale, store.GetHeight(sx, sy)); // hard edge: softness does not apply
+                else
+                    Assert.Equal(pristine.GetHeight(sx, sy), store.GetHeight(sx, sy));
+            }
+    }
+
+    [Fact]
+    public void Tile_PaintsGroundOnWholeTilesOnly()
+    {
+        WorldStore store = Store();
+        var stroke = new BrushStroke { Tool = BrushTool.Paint, Shape = BrushShape.Tile, X = 10.9f, Y = 10.1f, Radius = 1, Strength = 1, Material = WorldMaterials.Classic, Ground = 0x0600 };
+        (int x0, int y0, int n) = stroke.TileFootprint();
+        WorldBrush.Apply(store, stroke);
+        for (int tx = x0 - 1; tx <= x0 + n; tx++)
+            for (int ty = y0 - 1; ty <= y0 + n; ty++)
+                Assert.Equal(tx >= x0 && ty >= y0 && tx < x0 + n && ty < y0 + n ? 0x0600 : 0, store.GetGround(tx, ty));
+    }
+
+    [Fact]
+    public void Erase_PutsTheOriginalMapBack()
+    {
+        WorldStore store = Store();
+        WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Raise, X = 15, Y = 15, Radius = 3, Strength = 1 });
+        WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Paint, X = 15, Y = 15, Radius = 3, Strength = 1, Material = WorldMaterials.Snow });
+        WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Paint, X = 15.5f, Y = 15.5f, Radius = 1, Softness = 0, Strength = 1, Material = WorldMaterials.Classic, Ground = 0x0700 });
+        Assert.Equal(0x0700, store.GetGround(15, 15));
+
+        EditStep erase = WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Erase, X = 15, Y = 15, Radius = 4, Softness = 0, Strength = 1 })!;
+        WorldStore pristine = Store();
+        var w = new float[WorldMaterials.Count];
+        var p = new float[WorldMaterials.Count];
+        for (int sx = 12 * S; sx <= 18 * S; sx++)
+            for (int sy = 12 * S; sy <= 18 * S; sy++)
+            {
+                Assert.Equal(pristine.GetHeight(sx, sy), store.GetHeight(sx, sy));
+                store.GetWeights(sx, sy, w);
+                pristine.GetWeights(sx, sy, p);
+                for (int m = 0; m < w.Length; m++)
+                    Assert.Equal(p[m], w[m], 2);
+            }
+        Assert.Equal(0, store.GetGround(15, 15));
+
+        // Undo brings the painting back.
+        WorldBrush.Restore(store, erase, after: false);
+        Assert.Equal(0x0700, store.GetGround(15, 15));
+        Assert.NotEqual(pristine.GetHeight(15 * S, 15 * S), store.GetHeight(15 * S, 15 * S));
+    }
+
+    [Fact]
+    public void Erase_AtHalfStrengthMovesHalfwayAndKeepsPaintedGround()
+    {
+        WorldStore store = Store();
+        WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Flatten, X = 15, Y = 15, Radius = 3, Softness = 0, Strength = 1, TargetZ = 20 });
+        WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Paint, X = 15.5f, Y = 15.5f, Radius = 1, Softness = 0, Strength = 1, Material = WorldMaterials.Classic, Ground = 0x0701 });
+        WorldBrush.Apply(store, new BrushStroke { Tool = BrushTool.Erase, X = 15, Y = 15, Radius = 3, Softness = 0, Strength = 0.4f });
+        int original = Store().GetHeight(15 * S, 15 * S);
+        Assert.Equal(20 * WorldRegion.ZScale + 0.4f * (original - 20 * WorldRegion.ZScale), store.GetHeight(15 * S, 15 * S), 0);
+        Assert.Equal(0x0701, store.GetGround(15, 15)); // a light erase leaves painted UO ground alone
+    }
+
+    [Fact]
+    public void ShapeAndEraser_TravelInTheStroke()
+    {
+        var s = new BrushStroke { Tool = BrushTool.Erase, Shape = BrushShape.Tile, X = 3, Y = 4, Radius = 1, Strength = 1 };
+        BrushStroke back = WorldProtocol.StrokeFrom(WorldProtocol.StrokeBytes(s), 0);
+        Assert.Equal(BrushTool.Erase, back.Tool);
+        Assert.Equal(BrushShape.Tile, back.Shape);
+        Assert.Equal(WorldProtocol.StrokeLength, WorldProtocol.StrokeBytes(s).Length);
+        Assert.Equal(BrushShape.Circle, new BrushStroke { Shape = (BrushShape)9 }.Clamped().Shape);
+    }
+}

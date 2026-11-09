@@ -17,7 +17,7 @@ namespace UOClient.Unity.UI
     public sealed class WorldEditorWindow : UiWindow
     {
         public const string WindowKey = "worldeditor";
-        private const float W = 372f, H = 660f;
+        private const float W = 372f, H = 726f;
 
         private readonly WorldLayerClient _layer;
         private static GUIStyle _title, _label, _value, _button, _active, _small, _listItem, _listActive, _field;
@@ -137,18 +137,33 @@ namespace UOClient.Unity.UI
             }
 
             // Modes.
-            string[] modes = { "RAISE", "LOWER", "FLAT", "SOFT", "PAINT", "LOOK" };
-            float y = 38f, bw = (Rect.width - 24f - 5 * 4f) / 6f;
-            for (int i = 0; i < modes.Length; i++)
+            // Modes, two rows: shaping, then painting, erasing (back to the original map) and picking a height.
+            (string Label, WorldBrushSettings.Mode Mode)[][] rows =
             {
-                var mode = (WorldBrushSettings.Mode)i;
-                if (GUI.Button(new Rect(12 + i * (bw + 4), y, bw, 26), modes[i], b.Current == mode ? _active : _button))
-                    b.Current = mode;
+                new[] { ("RAISE", WorldBrushSettings.Mode.Raise), ("LOWER", WorldBrushSettings.Mode.Lower), ("FLAT", WorldBrushSettings.Mode.SetZ), ("SOFT", WorldBrushSettings.Mode.Soft) },
+                new[] { ("PAINT", WorldBrushSettings.Mode.Paint), ("ERASE", WorldBrushSettings.Mode.Erase), ("LOOK", WorldBrushSettings.Mode.Look) },
+            };
+            float y = 38f, bw = (Rect.width - 24f - 3 * 4f) / 4f;
+            foreach (var row in rows)
+            {
+                for (int i = 0; i < row.Length; i++)
+                    if (GUI.Button(new Rect(12 + i * (bw + 4), y, bw, 24), row[i].Label, b.Current == row[i].Mode ? _active : _button))
+                        b.Current = row[i].Mode;
+                y += 28f;
             }
-            y += 36f;
+            // Brush shape: a circle, a square (a diamond on screen, on the tile grid) or whole tiles (hard edged).
+            GUI.Label(new Rect(12, y + 2, 60, 20), "Shape", _label);
+            (string Label, BrushShape Shape)[] shapes = { ("CIRCLE", BrushShape.Circle), ("SQUARE", BrushShape.Square), ("TILE", BrushShape.Tile) };
+            float sw = (Rect.width - 72f - 12f - 2 * 4f) / 3f;
+            for (int i = 0; i < shapes.Length; i++)
+                if (GUI.Button(new Rect(72 + i * (sw + 4), y, sw, 22), shapes[i].Label, b.Shape == shapes[i].Shape ? _active : _button))
+                    b.Shape = shapes[i].Shape;
+            y += 34f;
 
             // Brush.
-            b.Size = Slider(ref y, "Brush size", b.Size, 0.5f, BrushStroke.MaxRadius, $"{b.Size:0.0} tiles");
+            b.Size = b.Shape == BrushShape.Tile
+                ? Mathf.Max(0.5f, Mathf.Round(Slider(ref y, "Brush size", b.Size * 2f, 1f, 16f, $"{Mathf.Max(1, Mathf.RoundToInt(b.Size * 2f))} x {Mathf.Max(1, Mathf.RoundToInt(b.Size * 2f))} tiles")) / 2f)
+                : Slider(ref y, "Brush size", b.Size, 0.5f, BrushStroke.MaxRadius, $"{b.Size:0.0} tiles");
             b.Softness = Slider(ref y, "Edge softness", b.Softness, 0f, 1f, $"{b.Softness * 100:0}% fade");
             b.Flow = Slider(ref y, "Flow", b.Flow, 1f, 20f, $"{b.Flow:0.0}/sec");
             b.Strength = Slider(ref y, "Strength", b.Strength, 0.05f, 1f, $"{b.Strength * 100:0}%");
