@@ -333,6 +333,7 @@ public sealed class LiveGroundReliabilityTests
         ("TerrainGrass.cs", "g._material", "UnityEngine.Object.Destroy(_material);"),
         ("TerrainGrass.cs", "g._go", "UnityEngine.Object.Destroy(_go);"),
         ("SpriteShadowCeiling.cs", "_texture", "UnityEngine.Object.Destroy(_texture);"),
+        ("GrassCover.cs", "_texture", "UnityEngine.Object.Destroy(_texture);"),
         ("SpriteShadowCeiling.cs", "s = _staging[k]", "UnityEngine.Object.Destroy(_staging[k]);"),
         ("LiveGroundController.cs", "_texture", "Object.Destroy(_texture);"),
         ("LiveGroundController.cs", "_mesh", "Object.Destroy(_mesh);"),

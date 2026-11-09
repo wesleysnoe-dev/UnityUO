@@ -46,6 +46,8 @@ Shader "LiveGroundCompare/Grass"
             float _Sway, _WaveSpeed, _WaveScale, _RootDark, _TipLight;
             float4 _WindVec, _UpVec;
             float _UOWindBoost; // WeatherView: rain and storms bend the grass harder and faster (unset 0)
+            sampler2D _LGGrassCover; // GrassCover: house parts' tiles (r 1), world-wrapped every GrassCover.Wrap tiles
+            float _LGGrassCoverOn;
 
             struct appdata
             {
@@ -90,6 +92,13 @@ Shader "LiveGroundCompare/Grass"
 
             fixed4 frag(v2f i) : SV_Target
             {
+                // A house's floor, step or wall stands on this tile (GrassCover): no blade shows through it.
+                if (_LGGrassCoverOn > 0.5)
+                {
+                    float2 coverUv = (floor(float2(i.world.x, -i.world.z)) + 0.5) / 256.0; // GrassCover.Wrap
+                    if (tex2Dlod(_LGGrassCover, float4(coverUv, 0, 0)).r > 0.5)
+                        discard;
+                }
                 float lush = i.color.a;
                 float3 grass = UNITY_SAMPLE_TEX2DARRAY_LOD(_LGAlbedoArray, float3(0.5, 0.5, 0), 8).rgb * _LGMatTint[0].rgb;
                 float3 jungle = UNITY_SAMPLE_TEX2DARRAY_LOD(_LGAlbedoArray, float3(0.5, 0.5, 3), 8).rgb * _LGMatTint[3].rgb;

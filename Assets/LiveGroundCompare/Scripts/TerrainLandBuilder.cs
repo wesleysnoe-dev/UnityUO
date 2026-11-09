@@ -346,6 +346,9 @@ namespace UOClient.LiveGroundCompare
     {
         public int ChunkX0, ChunkY0, TileCount;
 
+        /// <summary>Tiles [i, j] a map static covers (GrassBuilder.CoverFromMap): no grass there. Null: none known.</summary>
+        public bool[,] GrassCovered;
+
         /// <summary>The map's corner heights, [i, j] = corner (x0 + i, y0 + j).</summary>
         public int[,] CornerZ;
 

@@ -178,6 +178,18 @@ namespace UOClient.Unity
         // Houses and boats: their fixed parts count as statics while they stand there.
         private readonly Dictionary<(int, int), List<(uint Owner, StaticCell Cell)>> _extra = new Dictionary<(int, int), List<(uint, StaticCell)>>();
 
+        /// <summary>House or boat parts changed on tiles (x0, y0)..(x1, y1) inclusive (the LiveGround grass keeps off them).</summary>
+        public static event Action<Walkability, int, int, int, int> PartsChanged;
+
+        /// <summary>Raises <see cref="PartsChanged"/> (after a house's parts are all added).</summary>
+        public void NotifyParts(int x0, int y0, int x1, int y1) => PartsChanged?.Invoke(this, x0, y0, x1, y1);
+
+        /// <summary>The tiledata this reads (for <see cref="PartsChanged"/> listeners).</summary>
+        public TileData TileData => _tileData;
+
+        /// <summary>The land's own Z at a tile.</summary>
+        public int LandZ(int x, int y) => _map.GetLand(x, y).Z;
+
         public void AddMultiPart(uint owner, int x, int y, int z, ushort graphic)
         {
             if (!_extra.TryGetValue((x, y), out var list))
@@ -187,8 +199,15 @@ namespace UOClient.Unity
 
         public void RemoveMulti(uint owner)
         {
-            foreach (var list in _extra.Values)
-                list.RemoveAll(e => e.Owner == owner);
+            int x0 = int.MaxValue, y0 = int.MaxValue, x1 = int.MinValue, y1 = int.MinValue;
+            foreach (KeyValuePair<(int, int), List<(uint Owner, StaticCell Cell)>> kv in _extra)
+                if (kv.Value.RemoveAll(e => e.Owner == owner) > 0)
+                {
+                    (int x, int y) = kv.Key;
+                    x0 = Math.Min(x0, x); y0 = Math.Min(y0, y); x1 = Math.Max(x1, x); y1 = Math.Max(y1, y);
+                }
+            if (x0 <= x1)
+                NotifyParts(x0, y0, x1, y1);
         }
     }
 }

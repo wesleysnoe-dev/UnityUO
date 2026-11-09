@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UOClient.IO.Formats;
 
 namespace UOClient.LiveGroundCompare
 {
@@ -22,6 +23,43 @@ namespace UOClient.LiveGroundCompare
 
         /// <summary>Blade candidates per tile at full grass weight.</summary>
         public const int BladesPerTile = 56;
+
+        /// <summary>How far below and above the land a floor, step or wall still keeps the grass off its tile (UO Z).</summary>
+        public const int CoverBelow = 6, CoverAbove = 24;
+
+        /// <summary>
+        /// Whether a static or house part at <paramref name="z"/> keeps grass off its tile: something to walk on (floors,
+        /// foundations, steps, bridges) or a wall, at ground level over land at <paramref name="landZ"/>. Plants, water and
+        /// anything high above (an upper floor, a roof) leave it be.
+        /// </summary>
+        public static bool Covers(in StaticTileData td, int z, int landZ) =>
+            (td.Flags & (TileFlags.Surface | TileFlags.Wall | TileFlags.Bridge)) != 0
+            && (td.Flags & (TileFlags.Foliage | TileFlags.Wet)) == 0
+            && z >= landZ - CoverBelow && z <= landZ + CoverAbove;
+
+        /// <summary>Worker: the chunk's tiles [i, j] (x0 + i, y0 + j) a map static covers (<see cref="Covers"/>); null without a map.</summary>
+        public static bool[,] CoverFromMap(MapFile map, TileData tileData, int x0, int y0)
+        {
+            if (map == null || tileData == null)
+                return null;
+            const int t = TerrainLandBuilder.Tiles, b = MapFile.BlockSize;
+            var cover = new bool[t, t];
+            for (int by = y0 / b; by < (y0 + t) / b; by++)
+                for (int bx = x0 / b; bx < (x0 + t) / b; bx++)
+                {
+                    StaticCell[] cells = map.ReadStaticBlock(bx, by);
+                    if (cells == null)
+                        continue;
+                    foreach (StaticCell c in cells)
+                    {
+                        int x = bx * b + c.X, y = by * b + c.Y, i = x - x0, j = y - y0;
+                        if ((uint)i >= t || (uint)j >= t || cover[i, j])
+                            continue;
+                        cover[i, j] = Covers(tileData.GetStatic(c.Graphic), c.Z, map.GetLand(x, y).Z);
+                    }
+                }
+            return cover;
+        }
 
         // TerrainMaterials order (WorldMaterials): grass 0, dirt 1, forest 2, jungle 3 in the first splat texture.
         private const float ForestShare = 0.3f, JungleShare = 1.15f;
@@ -52,6 +90,8 @@ namespace UOClient.LiveGroundCompare
                         if (!d.Solid[row, col])
                             continue;
                     }
+                    if (d.GrassCovered != null && d.GrassCovered[tx, ty])
+                        continue; // a floor, step or wall stands here
                     int wx = d.ChunkX0 + tx, wy = d.ChunkY0 + ty;
                     for (int b = 0; b < BladesPerTile; b++)
                     {

@@ -154,6 +154,17 @@ switch (argList[0])
             })));
         return 0;
     }
+    case "multiparts" when argList.Count >= 2:
+    {
+        // multiparts <hex id>: a house or boat's parts (offset, Z, graphic, tiledata name, height and the flags that order them).
+        int mid = Convert.ToInt32(argList[1], 16);
+        foreach (var p in data.Multis.Get(mid).OrderBy(p => p.X + p.Y).ThenBy(p => p.Z))
+        {
+            var td = data.TileData.GetStatic(p.Graphic);
+            Console.WriteLine($"{p.X,3},{p.Y,3} z{p.Z,3} 0x{p.Graphic:X4} {td.Name,-20} h{td.Height,2} {(p.Fixed ? "" : "(not fixed) ")}{td.Flags & (TileFlags.Background | TileFlags.Wall | TileFlags.Surface | TileFlags.Roof | TileFlags.Door | TileFlags.Window)}");
+        }
+        return 0;
+    }
     case "landhist" when argList.Count >= 5:
     {
         // landhist <x0> <y0> <x1> <y1> [map]: every land graphic in the rectangle, how many, and its tiledata name (what the

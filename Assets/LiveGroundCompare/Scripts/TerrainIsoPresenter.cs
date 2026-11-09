@@ -153,6 +153,8 @@ namespace UOClient.LiveGroundCompare
                 Shader grass = Materials != null ? Resources.Load<Shader>(GrassBuilder.ShaderResource) : null;
                 if (grass != null && grass.isSupported)
                     GrassShader = grass;
+                if (GrassShader != null)
+                    _grassCover = new GrassCover();
                 Debug.Log(GrassShader != null
                     ? $"UOClient LiveGround grass: on ({GrassBuilder.BladesPerTile} blades per tile at full grass)"
                     : $"UOClient LiveGround grass: off ({(Materials == null ? "needs -terrainstyle natural" : "shader missing or unsupported")})");
@@ -191,6 +193,9 @@ namespace UOClient.LiveGroundCompare
         public SpriteShadowCeiling SpriteCeiling { get; private set; }
 
         public string SpriteShadowError { get; }
+
+        // House parts' tiles, where the grass shader drops its blades (GrassCover).
+        private GrassCover _grassCover;
 
         /// <summary>The grass blades' shader (-grass over the natural terrain); null when grass is off.</summary>
         public Shader GrassShader { get; }
@@ -324,6 +329,7 @@ namespace UOClient.LiveGroundCompare
                 return;
             // Chunks attached since the last frame, queued margins, casters that moved or went: the main camera's sprites draw after this.
             SpriteCeiling?.Apply();
+            _grassCover?.Apply();
             float s = _scale, hz = 1f / TerrainLandBuilder.HeightUnitPerZ, k = DepthPerPixel;
             const float h = LiveGroundProjection.TileHalf, zs = LiveGroundProjection.ZStep;
             Vector3 camPos = _main.transform.position;
@@ -357,6 +363,8 @@ namespace UOClient.LiveGroundCompare
             CharacterShadow.SunGround = null;
             StaticOccluders.OutlineCasters = false;
             Lighting.TerrainSun = null;
+            _grassCover?.Dispose();
+            _grassCover = null;
             Camera.onPreCull -= OnPreCull;
             if (_main != null)
             {

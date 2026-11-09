@@ -583,6 +583,7 @@ namespace UOClient.Unity
             RemoveMulti(multi.Serial);
             var views = new List<ItemView>();
             int extent = 0;
+            int px0 = int.MaxValue, py0 = int.MaxValue, px1 = int.MinValue, py1 = int.MinValue;
             foreach (MultiComponent part in CustomHouses.PartsOf(_ctx.Data, _ctx.Session?.World, multi))
             {
                 extent = Math.Max(extent, Math.Max(Math.Abs((int)part.X), Math.Abs((int)part.Y)));
@@ -595,7 +596,10 @@ namespace UOClient.Unity
                 };
                 views.Add(new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, piece, multiPart: true));
                 _ctx.Walk?.AddMultiPart(multi.Serial, piece.X, piece.Y, piece.Z, piece.Graphic);
+                px0 = Math.Min(px0, piece.X); py0 = Math.Min(py0, piece.Y); px1 = Math.Max(px1, piece.X); py1 = Math.Max(py1, piece.Y);
             }
+            if (px0 <= px1)
+                _ctx.Walk?.NotifyParts(px0, py0, px1, py1);
             _multis[multi.Serial] = views;
             _multiExtent[multi.Serial] = extent;
         }

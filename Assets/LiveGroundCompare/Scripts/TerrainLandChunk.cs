@@ -388,6 +388,9 @@ namespace UOClient.LiveGroundCompare
                     data.Splat = painted != null ? PaintedSplat(painted, x0, y0) : SplatBuilder.Build(x0, y0, MaterialAt());
                 if (_presenter.GrassShader != null && data.Splat != null)
                 {
+                    // No grass through floors, steps and walls of the map's buildings (house multis: GrassCover).
+                    var world = _presenter.World;
+                    data.GrassCovered = world?.Data != null ? GrassBuilder.CoverFromMap(world.Data.GetMap(world.Map), world.Data.TileData, x0, y0) : null;
                     data.Grass = GrassBuilder.Build(data);
                     GrassBuilder.Project(data.Grass, data.TileDepth, x0, y0, _scale);
                 }
