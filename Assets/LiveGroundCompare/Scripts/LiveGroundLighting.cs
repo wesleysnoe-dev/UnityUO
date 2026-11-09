@@ -313,7 +313,14 @@ namespace UOClient.LiveGroundCompare
         /// <summary>Lower statics (rugs, papers, low fences) would darken their whole tile for a sliver of real shadow.</summary>
         public const int MinHeight = 3;
 
-        public static bool Casts(in StaticTileData td) => td.Height >= MinHeight && (td.Flags & TileFlags.Wet) == 0;
+        public static bool Casts(in StaticTileData td) =>
+            td.Height >= MinHeight && (td.Flags & TileFlags.Wet) == 0 && !(OutlineCasters && ShadowRules.CastsOutline(td));
+
+        /// <summary>
+        /// Set while free-standing objects cast their own outline shadow (the client's CharacterShadow, ShadowRules): they
+        /// then make no column here, so they are not shadowed twice. Off by default (and in the tests).
+        /// </summary>
+        public static volatile bool OutlineCasters;
 
         public static int[,] Empty()
         {

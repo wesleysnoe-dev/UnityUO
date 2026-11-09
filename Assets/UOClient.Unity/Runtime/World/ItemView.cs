@@ -90,8 +90,16 @@ namespace UOClient.Unity
                 _backRenderer.enabled = false;
             }
             _outline = new OutlineQuad(_go.transform, shader);
+            // A free-standing object (a tree, a sign, a lamp...) casts its own outline (ShadowRules, CharacterShadow):
+            // decided once its art is in (Render), since a low tiledata height can still be tall art.
+            _shadowTd = td;
+            _shadowPending = !item.IsCorpse && !item.IsMulti && CharacterShadow.ShadowShader != null;
             Placed = ++_placements;
         }
+
+        private CharacterShadow _shadow; // null: no outline shadow (the TEST column, if any, as before)
+        private readonly StaticTileData _shadowTd;
+        private bool _shadowPending;
 
         private readonly int _shown;          // the art drawn: ItemStack.DisplayedGraphic of the graphic as sent
         private readonly bool _animates;      // animdata frames (ArtAnimation)
@@ -202,6 +210,19 @@ namespace UOClient.Unity
             // The edge of what was drawn this frame: a corpse's body (every worn layer) or the item's art.
             bool show = _renderer.enabled && ObjectHighlight.OutlinesInWorld(Selected, IsBody, _locked, ObjectHighlight.HighlightGameObjects);
             _outline.Update(show, _art, LastSlot, LastRect, LastMirror, LastDepth, LastCut);
+            // Its sun shadow: the art laid on the ground from its base (statics stand on the bottom of their art).
+            if (_shadowPending && _sprite != null)
+            {
+                _shadowPending = false;
+                if (ShadowRules.CastsOutline(_shadowTd, _sprite.OriginalHeight))
+                    _shadow = new CharacterShadow(_go.transform);
+            }
+            if (_shadow != null)
+            {
+                bool drawn = _renderer.enabled && _sprite != null;
+                _shadow.Update(drawn, world, drawn ? _art.Atlas.Page(LastSlot.Page) : null, drawn ? _art.Atlas.Uv(LastSlot) : default, false,
+                    _item.Left, _item.Top, _item.Width, _item.Height, new Vector2(0f, _item.Top + _item.Height), LastDepth);
+            }
         }
 
         private void RenderCorpse(IWorldSpace world)
@@ -263,7 +284,8 @@ namespace UOClient.Unity
             // LiveGroundCompare sprite shadow (TEST): stands upright on its tile's centre (Avatar.TileAnchor).
             Vector2 foot = world.ToUnity(new Vector2((_item.X - _item.Y) * 22, (_item.X + _item.Y) * 22 + 22 - _item.Z * 4) * _scale);
             MeshBuilder.SetQuad(_mesh, LastRect, uv, LastDepth, mirror, LastCut, new Vector4(foot.x, foot.y, _item.Z, 1f));
-            MeshBuilder.ShadowCasters?.Item(this, _item.X, _item.Y, _item.Z, _graphic);
+            if (_shadow == null) // an outline caster does not also cast a column
+                MeshBuilder.ShadowCasters?.Item(this, _item.X, _item.Y, _item.Z, _graphic);
         }
 
         private void RenderArt(IWorldSpace world)
@@ -333,6 +355,7 @@ namespace UOClient.Unity
         public void Dispose()
         {
             _outline.Dispose();
+            _shadow?.Dispose();
             if (_backMesh != null)
                 UnityEngine.Object.Destroy(_backMesh);
             UnityEngine.Object.Destroy(_mesh);

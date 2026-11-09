@@ -446,6 +446,8 @@ namespace UOClient.Unity
                     mb.AddQuad(rect, uv, q.Depth, false, q.CutHeight);
             }
 
+            AttachShadows(build, chunk, unique);
+
             foreach (KeyValuePair<(int, bool), MeshBuilder> g in groups)
             {
                 Material material;
@@ -477,6 +479,66 @@ namespace UOClient.Unity
             chunk.SetDepthOrigin(_originDiagonal);
             chunk.SetRoofsVisible(_roofsVisible);
             _chunks[(build.ChunkX, build.ChunkY)] = chunk;
+        }
+
+        // Free-standing map objects' outline shadows (CharacterShadow): read by the worker, fixed for the session.
+        private readonly bool _outlineShadows = CharacterShadow.ShadowShader != null;
+        private readonly Dictionary<int, Material> _sharedShadowMaterials = new Dictionary<int, Material>();
+
+        /// <summary>The chunk's outline shadows: each casting static's art laid on the ground from its base, one mesh per texture.</summary>
+        private void AttachShadows(ChunkBuild build, Chunk chunk, Texture2D unique)
+        {
+            Shader shader = CharacterShadow.ShadowShader;
+            if (shader == null)
+                return;
+            Vector2 perPixel = CharacterShadow.PerPixel();
+            var groups = new Dictionary<int, (List<Vector3> V, List<Vector2> Uv, List<int> I)>();
+            foreach (ChunkQuad q in build.Quads)
+            {
+                if (!q.Shadow)
+                    continue;
+                int texture;
+                Vector4 uv;
+                if (q.Unique)
+                {
+                    texture = -1;
+                    float w = build.UniqueWidth, h = build.UniqueHeight;
+                    uv = new Vector4(q.U / w, 1f - (q.V + q.Height) / h, (q.U + q.Width) / w, 1f - q.V / h);
+                }
+                else
+                {
+                    if (!_sharedSlots.TryGetValue(q.Bitmap, out AtlasSlot slot))
+                        continue;
+                    texture = slot.Page;
+                    uv = _shared.Uv(slot);
+                }
+                if (!groups.TryGetValue(texture, out var g))
+                    groups[texture] = g = (new List<Vector3>(), new List<Vector2>(), new List<int>());
+                // An object stands on the bottom of its art (statics are drawn with their foot on the tile's lower corner).
+                CharacterShadow.AddQuad(g.V, g.Uv, g.I, this, perPixel, uv, false, q.Left, q.Top, q.Width, q.Height, q.Top + q.Height, q.Depth);
+            }
+            foreach (KeyValuePair<int, (List<Vector3> V, List<Vector2> Uv, List<int> I)> g in groups)
+            {
+                Material material;
+                if (g.Key < 0)
+                {
+                    if (unique == null)
+                        continue;
+                    material = new Material(shader) { mainTexture = unique, name = $"UO chunk shadows {build.ChunkX},{build.ChunkY}" };
+                    chunk.OwnedMaterials.Add(material);
+                }
+                else if (!_sharedShadowMaterials.TryGetValue(g.Key, out material))
+                {
+                    material = new Material(shader) { mainTexture = _shared.Page(g.Key), name = $"UO shared page {g.Key} shadows" };
+                    _sharedShadowMaterials[g.Key] = material;
+                }
+                var mesh = new Mesh { name = $"Chunk {build.ChunkX},{build.ChunkY} shadows", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+                mesh.SetVertices(g.Value.V);
+                mesh.SetUVs(0, g.Value.Uv);
+                mesh.SetTriangles(g.Value.I, 0);
+                mesh.RecalculateBounds();
+                chunk.AddMesh(mesh, material, false);
+            }
         }
 
         // ---- worker ----
@@ -608,7 +670,8 @@ namespace UOClient.Unity
                     FootX = (it.X - it.Y) * 22f * _scale,
                     FootY = ((it.X + it.Y) * 22f + 22f - it.Z * 4f) * _scale,
                     FootZ = it.Z,
-                    FootKind = it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2 // upright : ground
+                    FootKind = it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2, // upright : ground
+                    Shadow = _outlineShadows && it.Kind == DrawKind.Static && ShadowRules.CastsOutline(tileData.GetStatic(it.Graphic), (int)(it.Height / _scale))
                 };
                 if (unique)
                     uniques.Add((bmp, build.Quads.Count));
@@ -758,6 +821,8 @@ namespace UOClient.Unity
             _chunks.Clear();
             foreach (Material m in _sharedMaterials.Values)
                 UnityEngine.Object.Destroy(m);
+            foreach (Material m in _sharedShadowMaterials.Values)
+                UnityEngine.Object.Destroy(m);
             _shared.Dispose();
             if (_root != null)
                 UnityEngine.Object.Destroy(_root.gameObject);
@@ -770,6 +835,7 @@ namespace UOClient.Unity
             public Bitmap32 Bitmap; // shared art (key into the shared atlas)
             public int U, V;        // unique art position in the chunk texture
             public float FootX, FootY, FootZ, FootKind; // foot anchor (world-screen pixels, UO Z, kind) for the TEST sprite shadow
+            public bool Shadow; // casts its own outline as a sun shadow (ShadowRules, CharacterShadow)
         }
 
         private struct SharedSprite

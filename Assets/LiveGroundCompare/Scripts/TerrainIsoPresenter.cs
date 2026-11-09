@@ -141,6 +141,7 @@ namespace UOClient.LiveGroundCompare
             // Character shadows (CharacterShadow) fall the way this terrain's sun shades the ground.
             (float sunUx, float sunUy, float sunRise) = LiveGroundLighting.SunRay;
             CharacterShadow.SunGround = new Vector3(-sunUx, -sunUy, sunRise);
+            StaticOccluders.OutlineCasters = CharacterShadow.ShadowShader != null;
 
             // Grass (-grass): only over the natural terrain, whose materials it reads.
             if (GrassBuilder.Enabled)
@@ -344,6 +345,7 @@ namespace UOClient.LiveGroundCompare
                 return;
             DrawnGround.Uninstall();
             CharacterShadow.SunGround = null;
+            StaticOccluders.OutlineCasters = false;
             Camera.onPreCull -= OnPreCull;
             if (_main != null)
             {

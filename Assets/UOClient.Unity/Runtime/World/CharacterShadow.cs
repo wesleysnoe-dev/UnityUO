@@ -39,10 +39,59 @@ namespace UOClient.Unity
         private readonly Material _material;
         private readonly MeshRenderer _renderer;
 
+        /// <summary>The shadow shader (Resources/CharacterShadow.shader), or null when shadows are off or unsupported.</summary>
+        public static Shader ShadowShader
+        {
+            get
+            {
+                _shader ??= Resources.Load<Shader>("CharacterShadow");
+                return Enabled && _shader != null && _shader.isSupported ? _shader : null;
+            }
+        }
+
+        /// <summary>
+        /// Screen offset (world pixels, y down) per pixel of height above the base: h pixels is h / 4 Z (the Z step and
+        /// the tile at the same art scale), which casts h / 4 / rise tiles along the ground away from the sun.
+        /// </summary>
+        public static Vector2 PerPixel()
+        {
+            Vector3 sun = SunGround ?? DefaultSun;
+            var g = new Vector2(sun.x, sun.y).normalized;
+            float tilesPerPixel = 1f / (4f * Mathf.Max(0.5f, sun.z));
+            var perPixel = new Vector2((g.x - g.y) * 22f, (g.x + g.y) * 22f) * tilesPerPixel;
+            return perPixel.magnitude > MaxLength ? perPixel.normalized * MaxLength : perPixel;
+        }
+
+        /// <summary>
+        /// Appends the shadow of art drawn at world-screen pixel rect (left, top, width, height) standing on the line
+        /// <paramref name="baseY"/>: the quad laid away from the sun, corners as MeshBuilder.SetQuad's.
+        /// </summary>
+        public static void AddQuad(System.Collections.Generic.List<Vector3> vertices, System.Collections.Generic.List<Vector2> uvs,
+            System.Collections.Generic.List<int> indices, IWorldSpace view, Vector2 perPixel, Vector4 uv, bool mirror,
+            float left, float top, float width, float height, float baseY, float depth)
+        {
+            int n = vertices.Count;
+            var foot = new Vector2(0f, baseY);
+            vertices.Add(Ground(view, left, top + height, foot, perPixel, depth));
+            vertices.Add(Ground(view, left, top, foot, perPixel, depth));
+            vertices.Add(Ground(view, left + width, top, foot, perPixel, depth));
+            vertices.Add(Ground(view, left + width, top + height, foot, perPixel, depth));
+            float u0 = mirror ? uv.z : uv.x, u1 = mirror ? uv.x : uv.z;
+            uvs.Add(new Vector2(u0, uv.y));
+            uvs.Add(new Vector2(u0, uv.w));
+            uvs.Add(new Vector2(u1, uv.w));
+            uvs.Add(new Vector2(u1, uv.y));
+            indices.Add(n);
+            indices.Add(n + 1);
+            indices.Add(n + 2);
+            indices.Add(n);
+            indices.Add(n + 2);
+            indices.Add(n + 3);
+        }
+
         public CharacterShadow(Transform parent)
         {
-            _shader ??= Resources.Load<Shader>("CharacterShadow");
-            if (!Enabled || _shader == null || !_shader.isSupported)
+            if (ShadowShader == null)
                 return;
             _go = new GameObject("Shadow");
             _go.transform.SetParent(parent, false);
@@ -70,14 +119,7 @@ namespace UOClient.Unity
                 _renderer.enabled = false;
                 return;
             }
-            // Screen offset (world pixels, y down) per pixel of height above the feet: the height h pixels is h / 4 Z
-            // (at the art scale the Z step and the tile scale together), which casts h / 4 / rise tiles along the ground.
-            Vector3 sun = SunGround ?? DefaultSun;
-            var g = new Vector2(sun.x, sun.y).normalized;
-            float tilesPerPixel = 1f / (4f * Mathf.Max(0.5f, sun.z));
-            var perPixel = new Vector2((g.x - g.y) * 22f, (g.x + g.y) * 22f) * tilesPerPixel;
-            if (perPixel.magnitude > MaxLength)
-                perPixel = perPixel.normalized * MaxLength;
+            Vector2 perPixel = PerPixel();
 
             // Corners as the sprite's quad (MeshBuilder.SetQuad): bottom-left, top-left, top-right, bottom-right.
             Vertices[0] = Ground(view, left, top + height, foot, perPixel, depth);

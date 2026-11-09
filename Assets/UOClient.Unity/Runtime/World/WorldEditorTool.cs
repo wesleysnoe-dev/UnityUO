@@ -64,6 +64,29 @@ namespace UOClient.Unity
         private int _followX, _followY;
         private (int, int, int) _followLast;
 
+        // -shadow-selftest[=x,y]: the test admin goes to a wooded spot (walnut trees, 1700,1240 by default) for the shadows.
+        private static readonly string ShadowTestArg = Array.Find(Environment.GetCommandLineArgs(),
+            a => a.StartsWith("-shadow-selftest", StringComparison.OrdinalIgnoreCase));
+        private float _shadowAt = -1f;
+        private bool _shadowSent;
+
+        private void RunShadowTest(WorldLayerClient layer)
+        {
+            if (!layer.CanEdit || _shadowSent || _ctx.Session == null)
+                return;
+            if (_shadowAt < 0f)
+            {
+                _shadowAt = Time.unscaledTime + 6f;
+                return;
+            }
+            if (Time.unscaledTime < _shadowAt)
+                return;
+            _shadowSent = true;
+            string at = ShadowTestArg.Contains("=") ? ShadowTestArg.Substring(ShadowTestArg.IndexOf('=') + 1).Replace(',', ' ') : "1700 1240";
+            _ctx.Session.Say("[go " + at);
+            Debug.Log($"[shadowtest] going to {at}");
+        }
+
         private void RunFollowTest(UI.UiManager ui, WorldLayerClient layer)
         {
             if (!layer.CanEdit)
@@ -275,6 +298,8 @@ namespace UOClient.Unity
                 RunStressTest(ui, layer);
             if (FollowTest)
                 RunFollowTest(ui, layer);
+            if (ShadowTestArg != null)
+                RunShadowTest(layer);
 
             if (takesKeys && Input.GetKeyDown(KeyCode.F5))
             {
