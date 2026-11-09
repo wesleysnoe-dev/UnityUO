@@ -171,11 +171,12 @@ namespace UOClient.Unity.UI
             {
                 // FLAT: the height the ground is pulled to (LOOK picks it from the ground; Z 0 is the plain).
                 GUI.Label(new Rect(12, y, 110, 20), "Flatten to", _label);
-                b.TargetZ = Mathf.Round(GUI.HorizontalSlider(new Rect(122, y + 6, Rect.width - 122 - 104, 16), b.TargetZ, -60f, 100f));
-                GUI.Label(new Rect(Rect.width - 100, y, 44, 20), $"Z {b.TargetZ:0}", _value);
-                if (GUI.Button(new Rect(Rect.width - 52, y, 40, 20), "Z 0", b.TargetZ == 0f ? _active : _button))
+                // Relative to your height: 0 levels the ground to where you stand (the readout shows the map Z too).
+                b.TargetOffset = Mathf.Round(GUI.HorizontalSlider(new Rect(122, y + 6, Rect.width - 122 - 132, 16), b.TargetOffset, -60f, 60f));
+                GUI.Label(new Rect(Rect.width - 132, y, 76, 20), $"{b.TargetOffset:+0;-0;0} (Z {b.TargetZ:0})", _value);
+                if (GUI.Button(new Rect(Rect.width - 52, y, 40, 20), "MY Z", b.TargetOffset == 0f ? _active : _button))
                 {
-                    b.TargetZ = 0f;
+                    b.TargetOffset = 0f;
                     b.Current = WorldBrushSettings.Mode.SetZ;
                 }
                 y += 28f;

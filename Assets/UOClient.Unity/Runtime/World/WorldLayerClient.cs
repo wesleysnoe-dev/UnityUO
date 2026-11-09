@@ -173,6 +173,7 @@ namespace UOClient.Unity
         {
             if (!CanEdit || _session.State != SessionState.InWorld)
                 return;
+            Brush.PlayerZ = _ctx.Player.Z; // FLAT's target follows the player's height
             BrushStroke stroke = Brush.StrokeAt(x, y).Clamped();
             var watch = System.Diagnostics.Stopwatch.StartNew();
             EditStep step = WorldBrush.Apply(Store(), stroke);
@@ -543,8 +544,14 @@ namespace UOClient.Unity
         /// <summary>SURFACE: the UO land graphic Paint lays as is (0: paint the blended Material).</summary>
         public ushort Ground;
 
-        /// <summary>Set Z's target height (UO Z); Look picks it from the ground.</summary>
-        public float TargetZ;
+        /// <summary>FLAT's target, relative to the player's height (0: level the ground to where you stand); LOOK picks it.</summary>
+        public float TargetOffset;
+
+        /// <summary>The player's Z (the world editor tool sets it every frame and before each stroke).</summary>
+        public int PlayerZ;
+
+        /// <summary>FLAT's target in UO Z: the player's height plus <see cref="TargetOffset"/>.</summary>
+        public float TargetZ => PlayerZ + TargetOffset;
 
         public BrushStroke StrokeAt(float x, float y) => new BrushStroke
         {

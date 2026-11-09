@@ -219,7 +219,7 @@ namespace UOClient.Unity
             }
             else if (s <= 302) // drag 3: flatten back to the Z 0 plain across both
             {
-                b.Current = WorldBrushSettings.Mode.SetZ; b.TargetZ = 0f; b.Size = 10f; b.Softness = 0.5f; b.Strength = 1f;
+                b.Current = WorldBrushSettings.Mode.SetZ; b.TargetOffset = 0f; b.Size = 10f; b.Softness = 0.5f; b.Strength = 1f;
                 layer.Stroke(_stressX - 10f + (s - 223) * 0.25f, _stressY);
             }
             else if (s == 303)
@@ -354,6 +354,7 @@ namespace UOClient.Unity
                 layer.Undo(true);
 
             WorldBrushSettings brush = layer.Brush;
+            brush.PlayerZ = _ctx.Player.Z; // FLAT's target and the panel's readout follow you
             if (brush.ObjectMode && takesKeys)
                 ObjectKeys(layer, brush);
 
@@ -383,9 +384,9 @@ namespace UOClient.Unity
             {
                 if (Input.GetMouseButtonDown(0) && layer.HeightAt(at.x, at.y) is float picked)
                 {
-                    brush.TargetZ = Mathf.Round(picked);
+                    brush.TargetOffset = Mathf.Round(picked) - _ctx.Player.Z; // the height picked, relative to you
                     brush.Current = WorldBrushSettings.Mode.SetZ;
-                    _ctx.Hud?.Log(null, $"World editor: flatten to Z {brush.TargetZ:0}");
+                    _ctx.Hud?.Log(null, $"World editor: flatten to Z {brush.TargetZ:0} ({brush.TargetOffset:+0;-0;0} from you)");
                 }
                 return;
             }
