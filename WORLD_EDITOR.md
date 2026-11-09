@@ -192,3 +192,11 @@ the original Z back) and by 8 tests.
 Found on the way: on arriving among several painted regions the client asked for all nine at once (up to ~60 KB each),
 the server's 256 KB send buffer overflowed and it dropped the client. Requests are now paced: nearest first, at most two
 unanswered (freed on the answer or after 4 s).
+
+**Slope, 2026-11-08.** SLOPE (second mode row): press on the ground at one end, drag to the other, let go: one ramp
+(BrushTool.Slope) from the ground height under the press to the ground height under the release, the brush's size wide on
+each side, its edge softness blending the sides, its strength easing toward it (100%: exact). While dragging the outline
+shows the ramp's ends and sides and both heights. One ramp is one undo step. Strokes carry the far end and both heights
+(protocol version 4); a ramp is at most 64 tiles long. Checked headless against the clone (a 12-tile ramp from Z 0 to 12
+reads 0 / 6 / 12 at its west end, middle and east end) and by 4 tests.
+FLAT's target is relative to the player's height (MY Z = where you stand).

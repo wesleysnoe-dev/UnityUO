@@ -274,7 +274,8 @@ namespace UOClient.WorldLayer
         Smooth = 2,
         Flatten = 3, // toward TargetZ
         Paint = 4,
-        Erase = 5    // back toward the original map (heights, materials, painted UO ground)
+        Erase = 5,   // back toward the original map (heights, materials, painted UO ground)
+        Slope = 6    // a ramp from (X, Y) at Z1 to (X2, Y2) at Z2, Radius wide on each side
     }
 
     /// <summary>The brush's footprint.</summary>
@@ -315,7 +316,13 @@ namespace UOClient.WorldLayer
 
         public BrushShape Shape;
 
+        /// <summary>Slope: the ramp's other end (world tile units) and the heights (UO Z) at its two ends.</summary>
+        public float X2, Y2, Z1, Z2;
+
         public const float MaxRadius = 24f;
+
+        /// <summary>The longest ramp (tiles), so one stroke stays a bounded amount of work.</summary>
+        public const float MaxSlopeLength = 64f;
 
         /// <summary>
         /// The Tile shape's footprint: N x N tiles from (X0, Y0), N the brush's diameter in tiles (at least 1), centred on the
@@ -330,7 +337,7 @@ namespace UOClient.WorldLayer
         /// <summary>The stroke with every field clamped to what the server accepts.</summary>
         public BrushStroke Clamped() => new BrushStroke
         {
-            Tool = Tool > BrushTool.Erase ? BrushTool.Raise : Tool,
+            Tool = Tool > BrushTool.Slope ? BrushTool.Raise : Tool,
             Shape = Shape > BrushShape.Tile ? BrushShape.Circle : Shape,
             X = X,
             Y = Y,
@@ -339,8 +346,19 @@ namespace UOClient.WorldLayer
             Strength = Math.Max(0f, Math.Min(1f, Strength)),
             Material = Material < WorldMaterials.Count ? Material : WorldMaterials.Classic,
             Ground = Material < WorldMaterials.Count && Material == WorldMaterials.Classic ? Ground : (ushort)0,
-            TargetZ = Math.Max(-127f, Math.Min(127f, TargetZ))
+            TargetZ = Math.Max(-127f, Math.Min(127f, TargetZ)),
+            // Slope: the far end no further than MaxSlopeLength from the near one; heights in range.
+            X2 = X + ClampLength(X2 - X, Y2 - Y).Dx,
+            Y2 = Y + ClampLength(X2 - X, Y2 - Y).Dy,
+            Z1 = Math.Max(-127f, Math.Min(127f, Z1)),
+            Z2 = Math.Max(-127f, Math.Min(127f, Z2))
         };
+
+        private static (float Dx, float Dy) ClampLength(float dx, float dy)
+        {
+            float l = (float)Math.Sqrt(dx * dx + dy * dy);
+            return l <= MaxSlopeLength || l < 1e-6f ? (dx, dy) : (dx * MaxSlopeLength / l, dy * MaxSlopeLength / l);
+        }
     }
 
     /// <summary>What one stroke changed, enough to put it back exactly (undo) or re-apply it (redo).</summary>
@@ -375,6 +393,8 @@ namespace UOClient.WorldLayer
         /// <summary>The brush's weight (0..1, before strength) at a point in world tile units, by its shape.</summary>
         public static float Weight(in BrushStroke b, float x, float y)
         {
+            if (b.Tool == BrushTool.Slope)
+                return Falloff(SlopeDistance(b, x, y, out _), b.Radius, b.Softness);
             float dx = x - b.X, dy = y - b.Y;
             switch (b.Shape)
             {
@@ -402,13 +422,27 @@ namespace UOClient.WorldLayer
             return Weight(b, tx + 0.5f, ty + 0.5f) >= 0.5f;
         }
 
+        /// <summary>Slope: a point's distance (tiles) from the ramp's centre line, and how far along it (0 near end .. 1 far end).</summary>
+        public static float SlopeDistance(in BrushStroke b, float x, float y, out float t)
+        {
+            float ax = b.X2 - b.X, ay = b.Y2 - b.Y, len2 = ax * ax + ay * ay;
+            t = len2 < 1e-6f ? 0f : Math.Max(0f, Math.Min(1f, ((x - b.X) * ax + (y - b.Y) * ay) / len2));
+            float px = b.X + ax * t - x, py = b.Y + ay * t - y;
+            return (float)Math.Sqrt(px * px + py * py);
+        }
+
         /// <summary>Applies a stroke; returns what changed (null if nothing did).</summary>
         public static EditStep Apply(WorldStore store, BrushStroke stroke)
         {
             BrushStroke b = stroke.Clamped();
             const int s = WorldRegion.SamplesPerTile;
             float bx0 = b.X - b.Radius, bx1 = b.X + b.Radius, by0 = b.Y - b.Radius, by1 = b.Y + b.Radius;
-            if (b.Shape == BrushShape.Tile)
+            if (b.Tool == BrushTool.Slope)
+            {
+                (bx0, bx1) = (Math.Min(b.X, b.X2) - b.Radius, Math.Max(b.X, b.X2) + b.Radius);
+                (by0, by1) = (Math.Min(b.Y, b.Y2) - b.Radius, Math.Max(b.Y, b.Y2) + b.Radius);
+            }
+            else if (b.Shape == BrushShape.Tile)
             {
                 (int tx0, int ty0, int n) = b.TileFootprint();
                 (bx0, bx1, by0, by1) = (tx0, tx0 + n, ty0, ty0 + n);
@@ -463,6 +497,14 @@ namespace UOClient.WorldLayer
                         case BrushTool.Flatten:
                             after = ClampHeight(before + f * (b.TargetZ * WorldRegion.ZScale - before));
                             break;
+                        case BrushTool.Slope:
+                        {
+                            // Toward the ramp: the heights of its two ends, evenly in between along its line.
+                            SlopeDistance(b, sx / (float)s, sy / (float)s, out float along);
+                            float ramp = b.Z1 + (b.Z2 - b.Z1) * along;
+                            after = ClampHeight(before + f * (ramp * WorldRegion.ZScale - before));
+                            break;
+                        }
                     }
                     bool painted = false;
                     if (b.Tool == BrushTool.Paint)

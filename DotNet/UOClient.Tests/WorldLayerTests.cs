@@ -385,3 +385,61 @@ public class WorldLayerShapeTests
         Assert.Equal(BrushShape.Circle, new BrushStroke { Shape = (BrushShape)9 }.Clamped().Shape);
     }
 }
+
+/// <summary>The slope (ramp) brush.</summary>
+public class WorldLayerSlopeTests
+{
+    private static int MapZ(int x, int y) => 0;
+    private static byte MapMaterial(int x, int y) => WorldMaterials.Grass;
+    private static WorldStore Store() => new WorldStore(0, (rx, ry) => rx < 0 || ry < 0 ? null : WorldInit.FromMap(0, rx, ry, MapZ, MapMaterial));
+    private const int S = WorldRegion.SamplesPerTile;
+
+    private static BrushStroke Ramp(float radius = 2f, float softness = 0f) => new BrushStroke
+    {
+        Tool = BrushTool.Slope, X = 10, Y = 20, X2 = 30, Y2 = 20, Z1 = 0, Z2 = 20, Radius = radius, Softness = softness, Strength = 1
+    };
+
+    [Fact]
+    public void Slope_RisesEvenlyFromOneEndToTheOther()
+    {
+        WorldStore store = Store();
+        WorldBrush.Apply(store, Ramp());
+        for (int x = 10; x <= 30; x += 5)
+        {
+            float expected = (x - 10) / 20f * 20f;
+            Assert.Equal(expected, store.GetHeight(x * S, 20 * S) / (float)WorldRegion.ZScale, 1);
+            Assert.Equal(expected, store.GetHeight(x * S, 21 * S) / (float)WorldRegion.ZScale, 1); // across its width, the same
+        }
+    }
+
+    [Fact]
+    public void Slope_LeavesTheGroundBeyondItsWidthAlone()
+    {
+        WorldStore store = Store();
+        WorldBrush.Apply(store, Ramp(radius: 2f));
+        Assert.Equal(0, store.GetHeight(20 * S, 23 * S)); // 3 tiles off the centre line
+        Assert.Equal(0, store.GetHeight(34 * S, 20 * S)); // 4 tiles past the far end
+        Assert.NotEqual(0, store.GetHeight(20 * S, 21 * S));
+    }
+
+    [Fact]
+    public void Slope_SoftEdgesBlendIntoTheGroundBeside()
+    {
+        WorldStore store = Store();
+        WorldBrush.Apply(store, Ramp(radius: 4f, softness: 1f));
+        float centre = store.GetHeight(25 * S, 20 * S), side = store.GetHeight(25 * S, 23 * S);
+        Assert.True(side > 0 && side < centre);
+    }
+
+    [Fact]
+    public void Slope_TravelsInTheStrokeAndIsCapped()
+    {
+        var s = Ramp();
+        BrushStroke back = WorldProtocol.StrokeFrom(WorldProtocol.StrokeBytes(s), 0);
+        Assert.Equal(BrushTool.Slope, back.Tool);
+        Assert.Equal((30f, 20f, 0f, 20f), (back.X2, back.Y2, back.Z1, back.Z2));
+        Assert.Equal(WorldProtocol.StrokeLength, WorldProtocol.StrokeBytes(s).Length);
+        s.X2 = 500;
+        Assert.Equal(10 + BrushStroke.MaxSlopeLength, s.Clamped().X2, 3);
+    }
+}

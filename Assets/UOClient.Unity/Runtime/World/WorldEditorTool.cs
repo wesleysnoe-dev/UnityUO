@@ -365,8 +365,9 @@ namespace UOClient.Unity
                 {
                     StopPainting();
                     _dragging = 0;
+                    _sloping = false; // let go over a window: no ramp
                 }
-                if (!_painting && _dragging == 0)
+                if (!_painting && _dragging == 0 && !_sloping)
                     return;
             }
             Cursor = MouseTile();
@@ -387,6 +388,26 @@ namespace UOClient.Unity
                     brush.TargetOffset = Mathf.Round(picked) - _ctx.Player.Z; // the height picked, relative to you
                     brush.Current = WorldBrushSettings.Mode.SetZ;
                     _ctx.Hud?.Log(null, $"World editor: flatten to Z {brush.TargetZ:0} ({brush.TargetOffset:+0;-0;0} from you)");
+                }
+                return;
+            }
+            if (brush.Current == WorldBrushSettings.Mode.Slope)
+            {
+                // SLOPE: press at one end, let go at the other: one ramp between the two ground heights.
+                if (Input.GetMouseButtonDown(0) && overWorld)
+                {
+                    _sloping = true;
+                    _slopeStart = at;
+                    _slopeStartZ = GroundZ(at.x, at.y);
+                }
+                else if (_sloping && !Input.GetMouseButton(0))
+                {
+                    _sloping = false;
+                    if ((at - _slopeStart).magnitude >= 1f)
+                    {
+                        layer.StrokeSlope(_slopeStart, _slopeStartZ, at, GroundZ(at.x, at.y));
+                        layer.EndStroke();
+                    }
                 }
                 return;
             }
@@ -464,6 +485,11 @@ namespace UOClient.Unity
             }
         }
 
+        // SLOPE's drag: where it began and the ground height there.
+        private bool _sloping;
+        private Vector2 _slopeStart;
+        private float _slopeStartZ;
+
         private void StopPainting()
         {
             if (!_painting)
@@ -526,7 +552,22 @@ namespace UOClient.Unity
             float inner = r * (1f - brush.Softness);
             var edge = brush.Current == WorldBrushSettings.Mode.Erase ? new Color(1f, 0.55f, 0.45f, 0.95f) : new Color(0.75f, 0.95f, 0.45f, 0.95f);
             var soft = new Color(edge.r, edge.g, edge.b, 0.45f);
-            BrushShape shape = brush.Current == WorldBrushSettings.Mode.Look ? BrushShape.Circle : brush.Shape;
+            BrushShape shape = brush.Current == WorldBrushSettings.Mode.Look || brush.Current == WorldBrushSettings.Mode.Slope ? BrushShape.Circle : brush.Shape;
+            if (brush.Current == WorldBrushSettings.Mode.Slope && _sloping)
+            {
+                // The ramp to be: its two ends, its sides, and the heights it runs between.
+                Vector2 dir = at - _slopeStart;
+                Vector2 side = dir.sqrMagnitude > 1e-4f ? new Vector2(-dir.y, dir.x).normalized * r : Vector2.zero;
+                DrawRing(_slopeStart, r, edge, 48);
+                DrawRing(at, r, edge, 48);
+                int points = Mathf.Clamp(Mathf.RoundToInt(dir.magnitude * 6f), 6, 200);
+                DrawLine(_slopeStart + side, at + side, edge, points);
+                DrawLine(_slopeStart - side, at - side, edge, points);
+                DrawLine(_slopeStart, at, soft, points);
+                DrawLabel(_slopeStart, "Z " + _slopeStartZ.ToString("0"));
+                DrawLabel(at, "Z " + GroundZ(at.x, at.y).ToString("0"));
+                return;
+            }
             if (shape == BrushShape.Tile)
             {
                 // The exact tiles: the footprint's outline, and the tile lines inside it.
@@ -551,6 +592,17 @@ namespace UOClient.Unity
                     DrawRing(at, inner, soft, 48);
             }
             DrawPoint(at, new Color(1f, 1f, 1f, 0.9f), 4f);
+        }
+
+        private static GUIStyle _labelStyle;
+
+        private void DrawLabel(Vector2 tile, string text)
+        {
+            float z = GroundZ(tile.x, tile.y), s = _ctx.ArtScale;
+            Vector3 world = _ctx.World.ToUnity(new Vector2((tile.x - tile.y) * 22f, (tile.x + tile.y) * 22f - z * 4f) * s);
+            Vector3 screen = _ctx.Camera.WorldToScreenPoint(world);
+            _labelStyle ??= new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
+            GUI.Label(new Rect(screen.x + 8f, Screen.height - screen.y - 22f, 120f, 22f), text, _labelStyle);
         }
 
         private void DrawSquare(Vector2 centre, float half, Color color)

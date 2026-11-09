@@ -141,7 +141,7 @@ namespace UOClient.Unity.UI
             (string Label, WorldBrushSettings.Mode Mode)[][] rows =
             {
                 new[] { ("RAISE", WorldBrushSettings.Mode.Raise), ("LOWER", WorldBrushSettings.Mode.Lower), ("FLAT", WorldBrushSettings.Mode.SetZ), ("SOFT", WorldBrushSettings.Mode.Soft) },
-                new[] { ("PAINT", WorldBrushSettings.Mode.Paint), ("ERASE", WorldBrushSettings.Mode.Erase), ("LOOK", WorldBrushSettings.Mode.Look) },
+                new[] { ("PAINT", WorldBrushSettings.Mode.Paint), ("ERASE", WorldBrushSettings.Mode.Erase), ("SLOPE", WorldBrushSettings.Mode.Slope), ("LOOK", WorldBrushSettings.Mode.Look) },
             };
             float y = 38f, bw = (Rect.width - 24f - 3 * 4f) / 4f;
             foreach (var row in rows)
@@ -221,7 +221,9 @@ namespace UOClient.Unity.UI
             if (GUI.Button(new Rect(18 + hb, y, hb, 26), "REDO (Ctrl+Y)", _button))
                 _layer.Undo(true);
             y += 32f;
-            GUI.Label(new Rect(12, y, Rect.width - 24, 40), b.ObjectMode
+            GUI.Label(new Rect(12, y, Rect.width - 24, 40), b.Current == WorldBrushSettings.Mode.Slope
+                    ? "SLOPE: press on the ground at one end of the ramp, drag to the other end, let go: an even slope between the two ground heights, as wide as the brush."
+                    : b.ObjectMode
                     ? "PLACE: click the ground. SELECT: click an object, drag it to move. PgUp/PgDn height, Delete removes. Right mouse walks."
                     : "Hold the left mouse on the ground to use the brush; the right mouse still walks. Every stroke is saved on the server by itself.",
                 _small);

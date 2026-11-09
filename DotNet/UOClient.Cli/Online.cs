@@ -241,6 +241,24 @@ internal static class Online
                             session.SendWorldStroke(map, new UOClient.WorldLayer.BrushStroke { Tool = UOClient.WorldLayer.BrushTool.Erase, Shape = UOClient.WorldLayer.BrushShape.Tile, X = wme.X + 0.5f, Y = wme.Y + 0.5f, Radius = 1, Strength = 1 });
                             session.EndWorldStroke();
                             break;
+                        case 11:
+                            Console.WriteLine($"         -> slope: a ramp from 6 tiles west of us at Z {wme.Z} to 6 east at Z {wme.Z + 12}, 2 tiles wide each side");
+                            session.SendWorldStroke(map, new UOClient.WorldLayer.BrushStroke { Tool = UOClient.WorldLayer.BrushTool.Slope, X = wme.X - 6, Y = wme.Y, X2 = wme.X + 6, Y2 = wme.Y, Z1 = wme.Z, Z2 = wme.Z + 12, Radius = 2, Strength = 1 });
+                            session.EndWorldStroke();
+                            break;
+                        case 12:
+                            session.RequestWorldRegion(map, rx, ry, -1);
+                            break;
+                        case 14:
+                            if (worldRegion != null)
+                            {
+                                int s = UOClient.WorldLayer.WorldRegion.SamplesPerTile;
+                                float H(int x) => worldRegion.Height[UOClient.WorldLayer.WorldRegion.Index(x * s - worldRegion.SampleX0, wme.Y * s - worldRegion.SampleY0)] / 8f;
+                                Console.WriteLine($"         ramp on the server: west end {H(wme.X - 6):0.0}, middle {H(wme.X):0.0}, east end {H(wme.X + 6):0.0} Z");
+                            }
+                            Console.WriteLine("         -> undo the ramp");
+                            session.UndoWorld(false);
+                            break;
                     }
                 }
                 if (interact && !interacted && now - enteredAt > 1)

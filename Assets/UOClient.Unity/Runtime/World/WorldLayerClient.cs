@@ -174,7 +174,29 @@ namespace UOClient.Unity
             if (!CanEdit || _session.State != SessionState.InWorld)
                 return;
             Brush.PlayerZ = _ctx.Player.Z; // FLAT's target follows the player's height
-            BrushStroke stroke = Brush.StrokeAt(x, y).Clamped();
+            Stroke(Brush.StrokeAt(x, y));
+        }
+
+        /// <summary>SLOPE: one ramp from (ax, ay) at Z az to (bx, by) at Z bz, the brush's size wide on each side.</summary>
+        public void StrokeSlope(Vector2 a, float az, Vector2 b, float bz)
+        {
+            if (!CanEdit || _session.State != SessionState.InWorld)
+                return;
+            BrushStroke stroke = Brush.StrokeAt(a.x, a.y);
+            stroke.Tool = BrushTool.Slope;
+            stroke.X2 = b.x;
+            stroke.Y2 = b.y;
+            stroke.Z1 = az;
+            stroke.Z2 = bz;
+            Stroke(stroke);
+        }
+
+        /// <summary>A stroke applied here at once (the same shared code as the server), shown, and sent to the server.</summary>
+        private void Stroke(BrushStroke raw)
+        {
+            if (!CanEdit || _session.State != SessionState.InWorld)
+                return;
+            BrushStroke stroke = raw.Clamped();
             var watch = System.Diagnostics.Stopwatch.StartNew();
             EditStep step = WorldBrush.Apply(Store(), stroke);
             EditProfile.Add("stroke.apply", watch.Elapsed.TotalMilliseconds);
@@ -187,6 +209,12 @@ namespace UOClient.Unity
             EditProfile.Add("stroke.overlay", watch.Elapsed.TotalMilliseconds, step.Tiles.Count);
             int r = (int)Math.Ceiling(stroke.Radius) + 1;
             var area = new RectInt((int)Math.Floor(stroke.X) - r, (int)Math.Floor(stroke.Y) - r, 2 * r + 1, 2 * r + 1);
+            if (stroke.Tool == BrushTool.Slope) // the whole ramp
+            {
+                int x0 = (int)Math.Floor(Math.Min(stroke.X, stroke.X2)) - r, y0 = (int)Math.Floor(Math.Min(stroke.Y, stroke.Y2)) - r;
+                int x1 = (int)Math.Ceiling(Math.Max(stroke.X, stroke.X2)) + r, y1 = (int)Math.Ceiling(Math.Max(stroke.Y, stroke.Y2)) + r;
+                area = new RectInt(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+            }
             watch.Restart();
             PaintedTerrain?.Repaint(_session.World.Map, area); // on screen now, no rebuild
             EditProfile.Add("stroke.repaint", watch.Elapsed.TotalMilliseconds);
@@ -506,7 +534,7 @@ namespace UOClient.Unity
     public sealed class WorldBrushSettings
     {
         // Object (place the chosen object) and Select (pick, drag, nudge, delete) come from the OBJECTS tab.
-        public enum Mode { Raise, Lower, SetZ, Soft, Paint, Look, Object, Select, Erase }
+        public enum Mode { Raise, Lower, SetZ, Soft, Paint, Look, Object, Select, Erase, Slope }
 
         /// <summary>The brush's footprint: circle, square (a diamond on screen) or whole tiles.</summary>
         public BrushShape Shape = BrushShape.Circle;
