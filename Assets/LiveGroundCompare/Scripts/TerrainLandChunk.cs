@@ -35,6 +35,7 @@ namespace UOClient.LiveGroundCompare
         }
 
         private readonly bool[] _shoreEdge; // natural terrain: shoreline edge statics, dropped
+
         private readonly bool[] _waterLand; // water land graphics (kept as sprites without the water surface)
 
         /// <summary>Diagnosis (-tiletrace=x,y): log what the terrain makes of that tile.</summary>
@@ -316,7 +317,16 @@ namespace UOClient.LiveGroundCompare
                             water?.AddStaticWater(p.Item, p.Art);
                         continue;
                     }
-                    builder.AddTile(p.Item, p.Art, p.Texmap, _occlusion ? p.Depth : float.NaN);
+                    // A sloped tile is baked from its flat art too, not its texmap: the terrain's own surface does the
+                    // stretching, and texmaps draw their stones at another size (cobbles grew wherever ground tilted).
+                    IO.Formats.Bitmap32 art = p.Art;
+                    bool texmap = p.Texmap;
+                    if (texmap && p.Flat != null)
+                    {
+                        art = p.Flat;
+                        texmap = false;
+                    }
+                    builder.AddTile(p.Item, art, texmap, _occlusion ? p.Depth : float.NaN);
                     water?.AddTile(p.Item, p.Art, p.Texmap, WaterTiles.Lookup(_water, p.Item.Graphic));
                     // Natural terrain: UO's own colour for this ground, for the tint (until enough tiles are seen).
                     TerrainMaterialSet set = _presenter.Materials;

@@ -657,6 +657,9 @@ namespace UOClient.ArtPipeline
             return bmp;
         }
 
+        /// <summary>A land graphic's flat (diamond) sprite at <see cref="Scale"/>, as flat placements get it (overrides and HD first; cached).</summary>
+        public Bitmap32 LandSprite(int graphic) => GetLand(graphic & 0x3FFF);
+
         /// <summary>A static graphic's sprite at <see cref="Scale"/>, as placements get it (cached; null if there is no art).</summary>
         public Bitmap32 StaticSprite(int graphic) => GetStatic(graphic);
 

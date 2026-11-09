@@ -53,6 +53,9 @@ namespace UOClient.Unity
         public Bitmap32 Art;
         public bool Texmap;
         public float Depth;
+
+        /// <summary>A stretched (sloped) tile's flat diamond art, the picture its flat neighbours use; null when flat.</summary>
+        public Bitmap32 Flat;
     }
 
     /// <summary>
@@ -659,7 +662,8 @@ namespace UOClient.Unity
                 // LiveGroundCompare: diverted land keeps the exact depth it would have had as a sprite quad.
                 if (divert)
                 {
-                    land.Add(new LandPlacement { Item = it, Art = e.Sprite, Texmap = it.Stretched, Depth = DepthKey.Relative(it, build.BaseDiagonal, tie) });
+                    land.Add(new LandPlacement { Item = it, Art = e.Sprite, Texmap = it.Stretched, Depth = DepthKey.Relative(it, build.BaseDiagonal, tie),
+                                                 Flat = it.Stretched && it.Kind == DrawKind.Land ? compositor.LandSprite(it.Graphic) : null });
                     continue;
                 }
 
