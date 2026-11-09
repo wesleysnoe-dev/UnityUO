@@ -154,6 +154,23 @@ switch (argList[0])
             })));
         return 0;
     }
+    case "findname" when argList.Count >= 6:
+    {
+        // findname <text> <x0> <y0> <x1> <y1> [map]: every static whose tiledata name contains the text, with its tile and Z.
+        string want = argList[1].ToLowerInvariant();
+        int fx0 = int.Parse(argList[2]), fy0 = int.Parse(argList[3]), fx1 = int.Parse(argList[4]), fy1 = int.Parse(argList[5]);
+        MapFile fm = data.GetMap(argList.Count > 6 ? int.Parse(argList[6]) : 0);
+        for (int bx = fx0 >> 3; bx <= fx1 >> 3; bx++)
+            for (int by = fy0 >> 3; by <= fy1 >> 3; by++)
+                foreach (StaticCell s in fm.ReadStaticBlock(bx, by))
+                {
+                    int x = bx * 8 + s.X, y = by * 8 + s.Y;
+                    string nm = data.TileData.GetStatic(s.Graphic).Name ?? "";
+                    if (x >= fx0 && x <= fx1 && y >= fy0 && y <= fy1 && nm.ToLowerInvariant().Contains(want))
+                        Console.WriteLine($"{x},{y},{s.Z} 0x{s.Graphic:X4} {nm}");
+                }
+        return 0;
+    }
     case "multiparts" when argList.Count >= 2:
     {
         // multiparts <hex id>: a house or boat's parts (offset, Z, graphic, tiledata name, height and the flags that order them).

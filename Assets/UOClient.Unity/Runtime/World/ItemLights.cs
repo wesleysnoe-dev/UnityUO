@@ -14,7 +14,16 @@ namespace UOClient.Unity
     /// </summary>
     public sealed class ItemLights
     {
-        public const int Max = 16, RangeTiles = 18;
+        public const int Max = 32, RangeTiles = 18;
+
+        /// <summary>The window around a light whose tiles it may reach past walls (UOItemLights.cginc's UO_LIGHT_VIS_TILES).</summary>
+        public const int VisTiles = 24;
+
+        /// <summary>New lights whose walls are traced per frame (the rest show unblocked until their turn).</summary>
+        public const int VisBudget = 2;
+
+        /// <summary>The walls a light is stopped by (set each frame by its owner); null: light passes everything.</summary>
+        public Walkability Walk { get; set; }
         public const string Keyword = "UO_ITEM_LIGHTS";
 
         private struct Candidate
@@ -31,6 +40,17 @@ namespace UOClient.Unity
         private static readonly int LightsId = Shader.PropertyToID("_UOItemLights");
         private static readonly int ColorsId = Shader.PropertyToID("_UOItemLightColors");
         private static readonly int CountId = Shader.PropertyToID("_UOItemLightCount");
+        private static readonly int TilesId = Shader.PropertyToID("_UOItemLightTiles"), VisId = Shader.PropertyToID("_UOLightVis");
+        private static readonly int WindowGlowId = Shader.PropertyToID("_UOWindowGlow");
+
+        // Walls block light: each light's window of tiles (VisTiles square, 255 reached, 0 behind a wall), cached by the
+        // light's tile, Z and graphic (lamps do not move), and the windows of the lights drawn this frame packed 8 x 4.
+        private readonly Dictionary<long, byte[]> _visCache = new Dictionary<long, byte[]>();
+        private readonly long[] _slotKey = new long[Max];
+        private readonly Vector4[] _tiles = new Vector4[Max];
+        private readonly byte[] _visPixels = new byte[8 * VisTiles * 4 * VisTiles];
+        private Texture2D _vis;
+        private bool _visDirty;
 
         /// <summary>Candidates last frame, lights drawn, and the gather-to-upload cost (ms).</summary>
         public int Candidates { get; private set; }
@@ -72,6 +92,7 @@ namespace UOClient.Unity
             long start = System.Diagnostics.Stopwatch.GetTimestamp();
             Candidates = _candidates.Count;
             int n = 0;
+            int budget = VisBudget;
             if (strength > 0f && world != null)
             {
                 LightSources.Nearest(_candidates, At, playerX, playerY, RangeTiles, Max, _chosen);
@@ -80,6 +101,7 @@ namespace UOClient.Unity
                     IO.Formats.LightShape s = shapes.Get(c.Shape);
                     if (!s.Exists)
                         continue;
+                    SetVisibility(n, c, ref budget);
                     Vector2 at = world.ToUnity(new Vector2((c.X - c.Y) * 22f, (c.X + c.Y) * 22f + 22f - c.Z * 4f) * scale);
                     (float r, float g, float b) = LightSources.Rgb(c.Color);
                     float peak = s.Peak / 31f;
@@ -101,6 +123,8 @@ namespace UOClient.Unity
                         break;
                     Vector2 at = world.ToUnity(new Vector2((gl.Tile.x - gl.Tile.y) * 22f, (gl.Tile.x + gl.Tile.y) * 22f + 22f - gl.Tile.z * 4f) * scale);
                     float k = Mathf.Max(strength, 0.35f);
+                    _tiles[n] = Vector4.zero; // an effect's light is not traced (it moves)
+                    _slotKey[n] = 0;
                     _positions[n] = new Vector4(at.x, at.y, gl.Radius * 22f * scale, 1f);
                     _colors[n] = new Vector4(gl.Color.r * k, gl.Color.g * k, gl.Color.b * k, 0);
                     n++;
@@ -110,10 +134,122 @@ namespace UOClient.Unity
             {
                 Shader.SetGlobalVectorArray(LightsId, _positions);
                 Shader.SetGlobalVectorArray(ColorsId, _colors);
+                Shader.SetGlobalVectorArray(TilesId, _tiles);
+                UploadVisibility();
             }
+            // Lit windows (WorldSprite): their panes glow as the night deepens.
+            Shader.SetGlobalFloat(WindowGlowId, strength);
             Shader.SetGlobalFloat(CountId, n);
             SetKeyword(n > 0);
             LastMs = (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        }
+
+        private static long Key(in Candidate c) =>
+            ((long)(c.X & 0xFFFF) << 40) | ((long)(c.Y & 0xFFFF) << 24) | ((long)(c.Z & 0xFF) << 16) | (long)(c.Graphic & 0xFFFF);
+
+        /// <summary>Slot <paramref name="slot"/>'s window: from the cache, traced now if the budget allows, else none yet (lit).</summary>
+        private void SetVisibility(int slot, in Candidate c, ref int budget)
+        {
+            long key = Key(c);
+            if (Walk == null)
+            {
+                _tiles[slot] = Vector4.zero;
+                _slotKey[slot] = 0;
+                return;
+            }
+            if (!_visCache.TryGetValue(key, out byte[] vis))
+            {
+                if (budget <= 0)
+                {
+                    _tiles[slot] = Vector4.zero;
+                    _slotKey[slot] = 0;
+                    return;
+                }
+                budget--;
+                vis = Trace(Walk, c.X, c.Y, c.Z);
+                if (_visCache.Count > 2048)
+                    _visCache.Clear(); // a long trip: start over rather than grow without end
+                _visCache[key] = vis;
+            }
+            int half = VisTiles / 2;
+            _tiles[slot] = new Vector4(c.X - half, c.Y - half, 1f, 0f);
+            if (_slotKey[slot] == key)
+                return;
+            _slotKey[slot] = key;
+            int bx = slot % 8 * VisTiles, by = slot / 8 * VisTiles, w = 8 * VisTiles;
+            for (int j = 0; j < VisTiles; j++)
+                System.Buffer.BlockCopy(vis, j * VisTiles, _visPixels, (by + j) * w + bx, VisTiles);
+            _visDirty = true;
+        }
+
+        /// <summary>
+        /// Which tiles of the window around a light on (lx, ly) at Z it reaches: a straight line from its tile to each
+        /// crosses no wall or door spanning its height (windows let light through; the light's own tile is left out, as
+        /// wall sconces hang on wall tiles, and so is the target, so a wall facing the light is lit and what is behind it not).
+        /// </summary>
+        public static byte[] Trace(Walkability walk, int lx, int ly, int z)
+        {
+            var vis = new byte[VisTiles * VisTiles];
+            int half = VisTiles / 2;
+            TileData td = walk.TileData;
+            var blocks = new Dictionary<(int, int), bool>();
+            bool Blocks(int x, int y)
+            {
+                if (blocks.TryGetValue((x, y), out bool b))
+                    return b;
+                b = false;
+                foreach (StaticCell s in walk.StaticsOn(x, y))
+                {
+                    StaticTileData t = td.GetStatic(s.Graphic);
+                    if ((t.Flags & (TileFlags.Wall | TileFlags.Door)) != 0 && (t.Flags & TileFlags.Window) == 0
+                        && s.Z <= z + 14 && s.Z + Mathf.Max(1, t.Height) >= z + 2)
+                    {
+                        b = true;
+                        break;
+                    }
+                }
+                blocks[(x, y)] = b;
+                return b;
+            }
+            for (int j = 0; j < VisTiles; j++)
+                for (int i = 0; i < VisTiles; i++)
+                {
+                    int x = lx - half + i, y = ly - half + j;
+                    int dx = Mathf.Abs(x - lx), dy = Mathf.Abs(y - ly), sx = lx < x ? 1 : -1, sy = ly < y ? 1 : -1, err = dx - dy;
+                    int cx = lx, cy = ly;
+                    bool open = true;
+                    while (open)
+                    {
+                        int e2 = 2 * err;
+                        if (e2 > -dy) { err -= dy; cx += sx; }
+                        if (e2 < dx) { err += dx; cy += sy; }
+                        if (cx == x && cy == y)
+                            break;
+                        if (Blocks(cx, cy))
+                            open = false;
+                    }
+                    vis[j * VisTiles + i] = open ? (byte)255 : (byte)0;
+                }
+            return vis;
+        }
+
+        private void UploadVisibility()
+        {
+            if (_vis == null)
+            {
+                _vis = new Texture2D(8 * VisTiles, 4 * VisTiles, TextureFormat.R8, false, true)
+                {
+                    name = "UO light visibility", filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp
+                };
+                _visDirty = true;
+            }
+            if (_visDirty)
+            {
+                _vis.SetPixelData(_visPixels, 0);
+                _vis.Apply(false);
+                _visDirty = false;
+            }
+            Shader.SetGlobalTexture(VisId, _vis);
         }
 
         /// <summary>No lights: the keyword goes off (the shaders' old path).</summary>
@@ -122,6 +258,7 @@ namespace UOClient.Unity
             _candidates.Clear();
             Count = 0;
             Shader.SetGlobalFloat(CountId, 0);
+            Shader.SetGlobalFloat(WindowGlowId, 0f);
             SetKeyword(false);
         }
 

@@ -150,7 +150,8 @@ public sealed class ItemLightShaderTests
         string include = Source("Assets", "LiveGroundCompare", "Shaders", "LiveGroundLight.cginc");
         Assert.Contains("#include \"../LiveGroundLight.cginc\"", water);
         Assert.Contains("* LGLitShadowed(n, visibility, i.world);", water);                  // ambient x shade + LGLocalLight x shade
-        Assert.Contains("return player + UOItemLightAdd(unityXY, _UOAmbient.rgb + player);", include); // under UO_ITEM_LIGHTS
+        // Under UO_ITEM_LIGHTS, at the terrain's own tile so walls stop the lights (ItemLights.Trace).
+        Assert.Contains("return player + UOItemLightAddAt(unityXY, float2(terrainWorld.x, -terrainWorld.z), _UOAmbient.rgb + player);", include);
         Assert.DoesNotContain("UOItemLightAdd", water);                                         // no second, water-only light term
     }
 }

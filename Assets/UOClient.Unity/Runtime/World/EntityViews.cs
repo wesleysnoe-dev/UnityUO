@@ -145,6 +145,9 @@ namespace UOClient.Unity
         private System.Action<int, int, int, int> _addShadowLight;
 
         private readonly Fx.FlameFx _flames = new Fx.FlameFx();
+
+        /// <summary>The living flames near the player (their glow halos are drawn by AmbientLife).</summary>
+        public Fx.FlameFx Flames => _flames;
         private static readonly bool FxTestOn = Fx.FxCatalog.HasArg("-fx-test");
         private float _fxTestNext;
 
@@ -188,6 +191,7 @@ namespace UOClient.Unity
                         Lights.Add(v.TileX, v.TileY, v.TileZ, v.Graphic, v.LightId);
             _ctx.World.AddStaticLights(Lights);
             Fx.FxCatalog.Data = _ctx.Data;
+            Lights.Walk = _ctx.Walk; // walls stop the lights
             Lights.Apply(_ctx.World, _ctx.Data.LightShapes, _ctx.ArtScale, _ctx.Player.X, _ctx.Player.Y, Lighting.LocalLightScale);
             // Living flames on the fire art among the light sources (Fx.FlameFx), by day too.
             _flames.Begin();

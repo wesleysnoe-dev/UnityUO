@@ -751,7 +751,7 @@ namespace UOClient.Unity
                         : it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2,
                     Traced = TraceTile.HasValue && it.X == TraceTile.Value.x && it.Y == TraceTile.Value.y,
                     Water = it.Kind == DrawKind.Land ? WaterArt.IsWater(tileData.Land[it.Graphic & 0x3FFF]) : it.Kind == DrawKind.Static && WaterArt.IsWater(tileData.GetStatic(it.Graphic)),
-                    Plant = it.Kind == DrawKind.Static ? PlantKind.Of(tileData.GetStatic(it.Graphic)) : 0f,
+                    Plant = it.Kind == DrawKind.Static ? PlantKind.SpriteCode(tileData.GetStatic(it.Graphic)) : 0f,
                     TileX = it.X,
                     TileY = it.Y,
                     TileZ = it.Z,

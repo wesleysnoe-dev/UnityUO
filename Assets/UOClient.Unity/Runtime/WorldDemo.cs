@@ -764,7 +764,7 @@ namespace UOClient.Unity
             _lighting.Update(_ctx.Session, _ctx.World.ToUnity(_ctx.Player.AnchorPixels), _ctx.ArtScale, _ctx.Hud);
             FoliageWind.Apply(_ctx.Session, _ctx.ArtScale); // plants lean in the wind, leaves take the season
             _ambient ??= new AmbientLife(_ctx.Root);
-            _ambient.Update(_ctx, _lighting.Sun, FoliageWind.Current(_ctx.Session), _weather.Rain, _weather.Wind);
+            _ambient.Update(_ctx, _lighting.Sun, FoliageWind.Current(_ctx.Session), _weather.Rain, _weather.Wind, _entities.Flames, Lighting.LocalLightScale);
             if (_weather.Status != "clear")
                 _ctx.Hud.TimeName += ", " + _weather.Status;
             _hudPresenter.Update();

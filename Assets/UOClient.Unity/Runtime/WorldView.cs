@@ -179,26 +179,29 @@ namespace UOClient.Unity
         /// <paramref name="foot"/> in UV3 (LiveGroundCompare sprite shadow). When it is not set the mesh is the same as
         /// without it (a foot channel left from before is removed).
         /// </summary>
-        public static void SetQuad(Mesh mesh, Rect r, Vector4 uv, float z, bool mirror, float height, Vector4 foot)
+        public static void SetQuad(Mesh mesh, Rect r, Vector4 uv, float z, bool mirror, float height, Vector4 foot, float code = 0f)
         {
             if (!FootMetadata)
             {
-                SetQuad(mesh, r, uv, z, mirror, height);
+                SetQuad(mesh, r, uv, z, mirror, height, code);
                 return;
             }
-            SetQuad(mesh, r, uv, z, mirror, height);
+            SetQuad(mesh, r, uv, z, mirror, height, code);
             for (int k = 0; k < 4; k++)
                 QuadFeet[k] = foot;
             mesh.SetUVs(2, QuadFeet);
         }
 
-        /// <summary>Rewrites the single quad of a one-sprite mesh (characters, items) without allocating.</summary>
-        public static void SetQuad(Mesh mesh, Rect r, Vector4 uv, float z, bool mirror, float height = NeverCut)
+        /// <summary>
+        /// Rewrites the single quad of a one-sprite mesh (characters, items) without allocating. <paramref name="code"/>:
+        /// the sprite code in the second UV's y (PlantKind: a house's window glows at night), 0 for none.
+        /// </summary>
+        public static void SetQuad(Mesh mesh, Rect r, Vector4 uv, float z, bool mirror, float height = NeverCut, float code = 0f)
         {
             if (_footEverSet && !_footMetadata && mesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.TexCoord2))
                 mesh.Clear(); // a foot left by the TEST sprite shadow: back to the plain quad (rebuilt below)
             for (int k = 0; k < 4; k++)
-                QuadHeights[k] = new Vector2(height, 0);
+                QuadHeights[k] = new Vector2(height, code);
             QuadVertices[0] = new Vector3(r.xMin, r.yMin, z);
             QuadVertices[1] = new Vector3(r.xMin, r.yMax, z);
             QuadVertices[2] = new Vector3(r.xMax, r.yMax, z);

@@ -38,6 +38,7 @@ Shader "UOClient/WorldSprite"
             #endif
 
             sampler2D _MainTex;
+            float4 _MainTex_TexelSize;
             float _Cutoff;
             float _Unlit;          // 1: drawn as is, neither lit nor greyed (the mouse-over outline)
 
@@ -49,6 +50,7 @@ Shader "UOClient/WorldSprite"
             float _UOFoliageSway;  // plants' lean at full weight, Unity units (FoliageWind); unset 0: still
             float _UOWindBoost;    // WeatherView: rain and storms blow harder (unset 0)
             float _UOFoliageSeason; // leaves' season (FoliageWind.SeasonCode): 0 as drawn, 1 spring, 2 fall, 3 winter, 4 desolation
+            float _UOWindowGlow;   // ItemLights: how dark it is (0 day .. 1 night); windows' panes glow by it
             #ifdef LG_SPRITE_SHADOW
             // LiveGroundCompare (TEST only; LiveGroundLighting.cs, SpriteShadow, mirrors this line for line): sun-shadow
             // receive. Each pixel is put back into the world from its sprite's foot anchor and tested against the CPU
@@ -83,6 +85,25 @@ Shader "UOClient/WorldSprite"
                 float visibility = lerp(saturate((z + 0.25 - ceiling) / 2.0 + 0.5), 1.0, _UOSunFade);
                 // Kind 0 (no foot: effects, meshes without UV3) is never shaded.
                 return foot.w < 0.5 ? 1.0 : 0.7 + 0.3 * visibility;
+            }
+
+            // The tile point a sprite pixel stands for, as LGSpriteSunShade places it (ground: on the floor; upright: its
+            // own foot tile), for item lights that walls stop (UOItemLightAddAt).
+            float2 LGSpriteTile(float2 world, float4 foot)
+            {
+                const float h = 22.0, zs = 4.0;
+                float s = _LGSpriteShadowMap.z;
+                float wx = world.x + _LGSpriteShadowMap.x, wy = _LGSpriteShadowMap.y - world.y;
+                float fx = foot.x + _LGSpriteShadowMap.x, fy = _LGSpriteShadowMap.y - foot.y;
+                float a = wx / (h * s);
+                float bg = (wy / s + zs * foot.z) / h;
+                float2 ground = float2(a + bg, bg - a) * 0.5;
+                float af = fx / (h * s), bf = (fy / s + zs * foot.z) / h;
+                float2 tile = floor(float2(af + bf, bf - af) * 0.5);
+                float up = (fy - wy) / s;
+                float b = bf + saturate(-up / h);
+                float2 upright = clamp(float2(a + b, b - a) * 0.5, tile + 0.125, tile + 0.875);
+                return foot.w > 1.5 ? ground : upright;
             }
             #endif
 
@@ -169,6 +190,42 @@ Shader "UOClient/WorldSprite"
                 return lerp(c, t, green);
             }
 
+            // A lit window's warmth (second UV y 8, PlantKind.Window): about three windows in four, each flickering a
+            // little like a hearth behind it; 0 by day.
+            float3 WindowWarmth(float2 world)
+            {
+                float2 cell = floor(world / 61.0);
+                float h = frac(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
+                float flicker = 0.88 + 0.12 * sin(_Time.y * (2.0 + h * 3.0) + h * 40.0);
+                return float3(1.0, 0.7, 0.36) * step(0.25, h) * flicker * _UOWindowGlow;
+            }
+
+            // Glass: a pane's dark, cool pixels (not the frame or the stone around it) glow, added after the light.
+            float3 WindowGlow(float3 art, float2 world)
+            {
+                float lum = dot(art, float3(0.299, 0.587, 0.114));
+                float pane = saturate((0.42 - lum) * 5.0) * saturate((art.b - art.r - 0.04) * 10.0);
+                return WindowWarmth(world) * pane * 0.95;
+            }
+
+            // An opening in a window's art (see-through, with art on all four sides close by): light from inside fills it.
+            bool WindowHole(float2 uv)
+            {
+                float2 t = _MainTex_TexelSize.xy;
+                bool l = false, r = false, u = false, d = false;
+                // Up to 48 texels each way, two at a time (art at 2x or 3x makes a pane that tall).
+                [loop] for (int k = 2; k <= 48; k += 2)
+                {
+                    l = l || tex2Dlod(_MainTex, float4(uv - float2(t.x * k, 0), 0, 0)).a > 0.5;
+                    r = r || tex2Dlod(_MainTex, float4(uv + float2(t.x * k, 0), 0, 0)).a > 0.5;
+                    u = u || tex2Dlod(_MainTex, float4(uv + float2(0, t.y * k), 0, 0)).a > 0.5;
+                    d = d || tex2Dlod(_MainTex, float4(uv - float2(0, t.y * k), 0, 0)).a > 0.5;
+                    if (l && r && u && d)
+                        break;
+                }
+                return l && r && u && d;
+            }
+
             v2f vert(appdata v)
             {
                 v2f o;
@@ -191,12 +248,16 @@ Shader "UOClient/WorldSprite"
                 if (_UOCutZ > 0.5 && i.height > 0.5 && i.height >= _UOCutZ)
                     discard;
                 fixed4 c = tex2D(_MainTex, i.uv);
+                // A lit window's open pane at night shows the warm room behind it instead of the dark.
+                if (c.a < _Cutoff && i.water > 7.5 && i.water < 8.5 && _UOWindowGlow > 0.01 && WindowHole(i.uv))
+                    return fixed4(WindowWarmth(i.world) * 0.75 * (1.0 - _UODead), 1.0);
                 clip(c.a - _Cutoff);
                 if (_Unlit > 0.5)
                     return c * i.color;
+                fixed3 art = c.rgb;
                 if (i.water > 0.5 && i.water < 1.5)
                     c.rgb = UOWaterShimmer(c.rgb, i.world);
-                else if (_UOFoliageSeason > 0.5 && (i.water >= 1.5 && i.water < 3.5 || i.water >= 5.5 && _UOFoliageSeason > 2.5))
+                else if (_UOFoliageSeason > 0.5 && (i.water >= 1.5 && i.water < 3.5 || i.water >= 5.5 && i.water < 7.5 && _UOFoliageSeason > 2.5))
                     c.rgb = FoliageSeason(c.rgb, i.world); // leaves every season; evergreens only winter and desolation
 
                 float d = distance(i.world, _UOLightPos.xy) / max(_UOLightPos.z, 1.0);
@@ -217,10 +278,17 @@ Shader "UOClient/WorldSprite"
                 #else
                 float3 uoLit = _UOAmbient.rgb + _UOLightColor.rgb * falloff;
                 #endif
+                #ifdef LG_SPRITE_SHADOW
+                // Where the sprite's tile is known, a wall between it and a light stops that light (ItemLights.Trace).
+                c.rgb *= (uoLit + (i.foot.w > 0.5 ? UOItemLightAddAt(i.world, LGSpriteTile(i.world, i.foot), uoLit) : UOItemLightAdd(i.world, uoLit))) / max(uoLit, 1e-4);
+                #else
                 c.rgb *= (uoLit + UOItemLightAdd(i.world, uoLit)) / max(uoLit, 1e-4);
+                #endif
             #endif
                 c.rgb *= _UOAmbient.rgb + _UOLightColor.rgb * falloff;
                 c *= i.color;
+                if (i.water > 7.5 && i.water < 8.5 && _UOWindowGlow > 0.01)
+                    c.rgb += WindowGlow(art, i.world);
                 // As a ghost the classic client draws the world in black and white.
                 c.rgb = lerp(c.rgb, dot(c.rgb, float3(0.299, 0.587, 0.114)).xxx, _UODead);
                 return c;

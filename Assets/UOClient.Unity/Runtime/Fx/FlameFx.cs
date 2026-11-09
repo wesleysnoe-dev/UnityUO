@@ -29,6 +29,14 @@ namespace UOClient.Unity.Fx
 
         public int Count => _live.Count;
 
+        /// <summary>Every live flame's position (Unity, its depth just in front of its fire art): the glow halos (AmbientLife).</summary>
+        public void ForEachFlame(System.Action<Vector3, int, int, int> f)
+        {
+            foreach (KeyValuePair<long, ParticleSystem> kv in _live)
+                if (kv.Value != null)
+                    f(kv.Value.transform.position, (int)((kv.Key >> 40) & 0xFFFF), (int)((kv.Key >> 24) & 0xFFFF), (sbyte)((kv.Key >> 16) & 0xFF));
+        }
+
         public void Begin() => _sources.Clear();
 
         public void Add(int x, int y, int z, int graphic)

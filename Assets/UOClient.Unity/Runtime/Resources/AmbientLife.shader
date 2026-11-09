@@ -41,6 +41,13 @@ Shader "UOClient/AmbientLife"
                 float fade = i.kind.y;
                 float3 amb = _UOAmbient.rgb;
                 amb = dot(amb, 1) <= 0.0001 ? float3(1, 1, 1) : amb;
+                if (i.kind.x > 2.5)
+                {
+                    // A flame's halo: a wide soft warm glow, added as light.
+                    float g = saturate(1.0 - r);
+                    g = g * g * g;
+                    return fixed4(i.color.rgb * g * fade * 0.55, 0);
+                }
                 if (i.kind.x < 0.5)
                 {
                     // Firefly: a bright core in a soft halo, added as light.

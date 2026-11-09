@@ -39,7 +39,7 @@ float3 LGLocalLight(float3 terrainWorld)
 #ifdef UO_ITEM_LIGHTS
     // Item, static and multi-part lights: the same sum the sprites add at this Unity point (UOItemLights.cginc).
     float3 player = _UOLightColor.rgb * falloff;
-    return player + UOItemLightAdd(unityXY, _UOAmbient.rgb + player);
+    return player + UOItemLightAddAt(unityXY, float2(terrainWorld.x, -terrainWorld.z), _UOAmbient.rgb + player); // walls stop lights
 #else
     return _UOLightColor.rgb * falloff;
 #endif

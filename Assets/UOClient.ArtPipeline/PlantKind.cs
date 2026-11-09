@@ -13,6 +13,12 @@ namespace UOClient.ArtPipeline
     {
         public const float None = 0f, Leafy = 2f, Woody = 4f, Evergreen = 6f;
 
+        /// <summary>Not a plant: the same sprite code marks a window, whose glass glows at night (WorldSprite).</summary>
+        public const float Window = 8f;
+
+        /// <summary>The sprite code of a static: a plant's (<see cref="Of"/>), <see cref="Window"/>, or none.</summary>
+        public static float SpriteCode(in StaticTileData td) => (td.Flags & TileFlags.Window) != 0 ? Window : Of(td);
+
         // Conifers: their needles stay green through the fall.
         private static readonly string[] Needles = { "needle", "pine", "cedar", "spruce", "fir ", "yew", "juniper", "cypress" };
 

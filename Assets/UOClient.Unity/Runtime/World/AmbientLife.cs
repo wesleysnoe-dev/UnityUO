@@ -73,8 +73,10 @@ namespace UOClient.Unity
         }
 
         /// <summary>Every frame: spawn by what is around the player, move, and rebuild the mesh.</summary>
-        public void Update(GameContext ctx, SunState sun, Season season, float rain, float wind)
+        public void Update(GameContext ctx, SunState sun, Season season, float rain, float wind, Fx.FlameFx flames = null, float darkness = 0f)
         {
+            _flames = flames;
+            _night = darkness;
             if (_renderer == null || ctx.World == null || ctx.Walk == null || ctx.Player == null || ctx.Data == null)
                 return;
             float dt = Mathf.Min(Time.deltaTime, 0.1f);
@@ -173,6 +175,41 @@ namespace UOClient.Unity
             Rebuild(ctx, t);
         }
 
+        // The flames whose glow halos are drawn this frame, and how dark it is (halos are faint by day).
+        private Fx.FlameFx _flames;
+        private float _night;
+        private System.Action<Vector3, int, int, int> _addHalo;
+        private float _haloTime, _haloScale;
+        private bool _roofShown;
+
+        /// <summary>A warm glow around a flame, added as light (the firefly kind), breathing as the fire flickers.</summary>
+        private void AddHalo(Vector3 at, int x, int y, int z)
+        {
+            // A fire under a roof that is shown (the player is not inside with it) glows in its room, not through the roof.
+            if (_roofShown && CharacterShadow.Indoors != null && CharacterShadow.Indoors(x, y, z))
+                return;
+            int seed = x * 31 + y * 17;
+            float t = _haloTime * 6f + seed * 0.37f;
+            float flicker = 0.8f + 0.2f * Mathf.PerlinNoise(t, seed * 0.01f);
+            float strength = (0.18f + 0.82f * _night) * flicker;
+            float h = 26f * _haloScale * (0.9f + 0.15f * flicker);
+            int n = _vertices.Count;
+            for (int k = 0; k < 4; k++)
+            {
+                float cx = k == 0 || k == 1 ? -1f : 1f, cy = k == 0 || k == 3 ? -1f : 1f;
+                _vertices.Add(new Vector3(at.x + cx * h, at.y + cy * h + 4f * _haloScale, at.z - 0.5f));
+                _uvs.Add(new Vector2(cx * 0.5f + 0.5f, cy * 0.5f + 0.5f));
+                _kinds.Add(new Vector2(3f, strength)); // 3: a flame's halo
+                _colours.Add(new Color32(255, 170, 70, 255));
+            }
+            _indices.Add(n);
+            _indices.Add(n + 1);
+            _indices.Add(n + 2);
+            _indices.Add(n);
+            _indices.Add(n + 2);
+            _indices.Add(n + 3);
+        }
+
         private void Spawn(Kind kind, int x, int y, float z, Color32 colour)
         {
             float life = kind == Kind.Firefly ? 8f + (float)_rng.NextDouble() * 10f
@@ -247,6 +284,14 @@ namespace UOClient.Unity
                 _indices.Add(n);
                 _indices.Add(n + 2);
                 _indices.Add(n + 3);
+            }
+            if (_flames != null)
+            {
+                _haloTime = t;
+                _haloScale = s;
+                _roofShown = Shader.GetGlobalFloat("_UOCutZ") < 0.5f;
+                _addHalo ??= AddHalo;
+                _flames.ForEachFlame(_addHalo);
             }
             _mesh.Clear();
             _mesh.SetVertices(_vertices);

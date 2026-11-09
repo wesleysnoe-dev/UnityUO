@@ -46,6 +46,8 @@ namespace UOClient.Unity
                 SetCorpseLook(corpseLook, CorpseDraw.Action(data.AnimationLibrary, item));
             }
             StaticTileData td = data.TileData.GetStatic(item.Graphic);
+            // A house's window glows at night like the map's (PlantKind.Window in the quad's sprite code).
+            _spriteCode = multiPart && (td.Flags & TileFlags.Window) != 0 ? PlantKind.Window : 0f;
             // A coin pile's art and a stack's second copy (ItemStack); the view is remade when the amount changes.
             _shown = item.IsMulti || item.IsCorpse ? item.Graphic : ItemStack.DisplayedGraphic(item.Graphic, item.Amount);
             _twice = !item.IsMulti && !item.IsCorpse && ItemStack.DrawsTwice(item.Graphic, item.Amount, td.Flags);
@@ -279,12 +281,12 @@ namespace UOClient.Unity
         {
             if (!MeshBuilder.FootMetadata)
             {
-                MeshBuilder.SetQuad(_mesh, LastRect, uv, LastDepth, mirror, LastCut);
+                MeshBuilder.SetQuad(_mesh, LastRect, uv, LastDepth, mirror, LastCut, _spriteCode);
                 return;
             }
             // LiveGroundCompare sprite shadow (TEST): stands upright on its tile's centre (Avatar.TileAnchor).
             Vector2 foot = world.ToUnity(new Vector2((_item.X - _item.Y) * 22, (_item.X + _item.Y) * 22 + 22 - _item.Z * 4) * _scale);
-            MeshBuilder.SetQuad(_mesh, LastRect, uv, LastDepth, mirror, LastCut, new Vector4(foot.x, foot.y, _item.Z, 1f));
+            MeshBuilder.SetQuad(_mesh, LastRect, uv, LastDepth, mirror, LastCut, new Vector4(foot.x, foot.y, _item.Z, 1f), _spriteCode);
             if (_shadow == null) // an outline caster does not also cast a column
                 MeshBuilder.ShadowCasters?.Item(this, _item.X, _item.Y, _item.Z, _graphic);
         }
@@ -332,6 +334,8 @@ namespace UOClient.Unity
                 MeshBuilder.SetQuad(_backMesh, _backRect, uv, _backDepth, false, LastCut, new Vector4(foot.x, foot.y, _item.Z, 1f));
             }
         }
+
+        private readonly float _spriteCode; // PlantKind.Window for a house window, else 0
 
         // DepthKey's tie levels are its last digit: tie t is t steps nearer than tie 0.
         private float Depth(IWorldSpace world) => world.DepthFor(_item) - Mathf.Clamp(Tie, 0, DepthKey.TieLevels - 1) * DepthKey.Step;
