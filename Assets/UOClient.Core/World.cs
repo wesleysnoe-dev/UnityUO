@@ -55,6 +55,11 @@ namespace UOClient.Core
         /// </summary>
         public bool IsDead => IsGhostBody(Body) || BondedDead;
 
+        /// <summary>The hidden flag of 0x77 / 0x78 / 0x20 (TazUO Flags.Hidden): only staff are sent hidden characters.</summary>
+        public const byte HiddenFlag = 0x80;
+
+        public bool IsHidden => (Flags & HiddenFlag) != 0;
+
         /// <summary>
         /// A dead bonded pet: 0xBF 0x19 version 0 said so (ModernUO's <c>SendBondedStatus</c> after the pet's 0x78, and
         /// false on resurrection), kept as TazUO keeps <c>Mobile._isDead</c> (ExtendedCommand.cs:311-320). A pet keeps
@@ -87,6 +92,9 @@ namespace UOClient.Core
 
         /// <summary>The server lets it be picked up (ModernUO sets 0x20 for Movable items); multis never are.</summary>
         public bool Movable => !IsMulti && (Flags & 0x20) != 0;
+
+        /// <summary>Hidden from players (flag 0x80): sent to staff only, drawn grey as TazUO does (hue 0x038E).</summary>
+        public bool IsHidden => (Flags & 0x80) != 0;
 
         public const ushort CorpseGraphic = 0x2006;
 

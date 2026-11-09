@@ -39,7 +39,8 @@ namespace UOClient.Unity
             _art = art;
             _scale = scale;
             _graphic = item.Graphic;
-            _hue = item.Hue;
+            // A hidden item (sent to staff only) is drawn grey, as TazUO's ItemView: staff props, not furniture.
+            _hue = item.IsHidden && !item.IsMulti ? MobileLook.HiddenHue : item.Hue;
             if (corpseLook != null && item.IsCorpse)
             {
                 _corpse = item;

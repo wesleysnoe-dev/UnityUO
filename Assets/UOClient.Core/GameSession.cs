@@ -643,7 +643,10 @@ namespace UOClient.Core
             m.Z = r.ReadSByte();
             SetDirection(m, r.ReadByte());
             ushort hue = r.ReadUInt16();
-            m.Flags = r.ReadByte();
+            byte flags = r.ReadByte();
+            if (((flags ^ m.Flags) & Mobile.HiddenFlag) != 0)
+                m.AppearanceVersion++; // hidden or revealed: drawn grey or not (staff see hidden characters)
+            m.Flags = flags;
             m.Notoriety = r.ReadByte();
             if (body != m.Body || hue != m.Hue)
             {

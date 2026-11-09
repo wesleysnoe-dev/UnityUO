@@ -154,6 +154,42 @@ switch (argList[0])
             })));
         return 0;
     }
+    case "overridediff" when argList.Count >= 5:
+    {
+        // overridediff <x0> <y0> <x1> <y1> [map]: every static graphic in the area whose art the client's overrides replace,
+        // and how different it is from the stock art (size, share of differing pixels): a shard reusing a stock id.
+        int ox0 = int.Parse(argList[1]), oy0 = int.Parse(argList[2]), ox1 = int.Parse(argList[3]), oy1 = int.Parse(argList[4]);
+        int om = argList.Count > 5 ? int.Parse(argList[5]) : 0;
+        using var stock = new UOData(uoPath);
+        MapFile omap = data.GetMap(om);
+        var counts = new Dictionary<int, int>();
+        for (int bx = ox0 >> 3; bx <= ox1 >> 3; bx++)
+            for (int by = oy0 >> 3; by <= oy1 >> 3; by++)
+                foreach (StaticCell s in omap.ReadStaticBlock(bx, by))
+                    counts[s.Graphic] = counts.TryGetValue(s.Graphic, out int n) ? n + 1 : 1;
+        foreach (var kv in counts.OrderByDescending(k => k.Value))
+        {
+            Bitmap32? a = stock.GetStatic(kv.Key), b = data.GetStatic(kv.Key);
+            string sn = stock.TileData.GetStatic(kv.Key).Name ?? "", on = data.TileData.GetStatic(kv.Key).Name ?? "";
+            if (a == null && b == null)
+                continue;
+            double diff = 1.0;
+            if (a != null && b != null && a.Width == b.Width && a.Height == b.Height)
+            {
+                int d = 0, opaque = 0;
+                for (int i = 0; i < a.Pixels.Length; i++)
+                {
+                    bool ao = (a.Pixels[i] >> 24) != 0, bo = (b.Pixels[i] >> 24) != 0;
+                    if (ao || bo) opaque++;
+                    if (ao != bo) d++;
+                }
+                diff = opaque == 0 ? 0 : (double)d / opaque;
+            }
+            if (diff > 0.15 || sn != on)
+                Console.WriteLine($"0x{kv.Key:X4} x{kv.Value,-5} stock '{sn}' {(a == null ? "none" : $"{a.Width}x{a.Height}")} -> '{on}' {(b == null ? "none" : $"{b.Width}x{b.Height}")}  shape differs {diff:P0}");
+        }
+        return 0;
+    }
     case "animgroups" when argList.Count >= 2:
     {
         // animgroups <body...>: which actions (groups 0..80) have frames for each body, as the client reads them.

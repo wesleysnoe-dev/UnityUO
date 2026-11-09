@@ -177,6 +177,23 @@ namespace UOClient.Unity
         /// <summary>The hue TazUO draws a dead non-human in (MobileView.cs:120-123).</summary>
         public const int DeadHue = 0x0386;
 
+        /// <summary>TazUO's hidden hue (Profile.HiddenBodyHue, items' IsHidden): a hidden character or item seen by staff.</summary>
+        public const int HiddenHue = 0x038E;
+
+        /// <summary>Every layer in the hidden hue (a hidden character, sent to staff only).</summary>
+        public MobileLook AsHidden()
+        {
+            for (int i = 0; i < Layers.Count; i++)
+            {
+                Layer l = Layers[i];
+                l.Hue = HiddenHue;
+                l.Partial = false;
+                l.Spectral = false;
+                Layers[i] = l;
+            }
+            return this;
+        }
+
         /// <summary>TazUO's <c>HumanGraphicCheck</c> (Mobile.cs:1127-1140), by the body as sent.</summary>
         public static bool IsHumanGraphic(int body) =>
             body >= 0x0190 && body <= 0x0193 || body >= 0x00B7 && body <= 0x00BA || body >= 0x025D && body <= 0x0260
