@@ -16,7 +16,10 @@ namespace UOClient.Unity
         public const float WalkStep = 0.4f, RunStep = 0.2f;
 
         /// <summary>Seconds per tile; riding halves them, as the server expects.</summary>
-        public float StepTime(bool run) => (run ? RunStep : WalkStep) * (_look != null && _look.Mounted ? 0.5f : 1f);
+        public float StepTime(bool run) => (run ? RunStep : WalkStep) * (_look != null && _look.Mounted || FastOnFoot ? 0.5f : 1f);
+
+        /// <summary>The server lets this character move at mount speed on foot (speed control, the player only).</summary>
+        public bool FastOnFoot { get; set; }
 
         private readonly MobileArt _art;
         private readonly int _scale;

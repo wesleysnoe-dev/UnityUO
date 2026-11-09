@@ -280,7 +280,49 @@ namespace UOClient.IO
 
         public Bitmap32 GetGump(int id) => Override(Kind.Gump, id, () => StockGump(id)).Shape ?? StockGump(id);
 
-        private Bitmap32 StockGump(int id)
+        // gump.def: a gump with no data drawn as the first one in its list that has data (TazUO's GumpsLoader), e.g. the
+        // paperdoll pictures of newer clothes (the Arcane set, fur boots) drawn as older ones. The line's hue is not applied.
+        private Dictionary<int, int[]> _gumpDef;
+
+        private Dictionary<int, int[]> GumpDef
+        {
+            get
+            {
+                if (_gumpDef != null)
+                    return _gumpDef;
+                var def = new Dictionary<int, int[]>();
+                string path = System.IO.Path.Combine(Directory, "gump.def");
+                if (System.IO.File.Exists(path))
+                    foreach (string raw in System.IO.File.ReadAllLines(path))
+                    {
+                        string line = raw.Split('#')[0];
+                        int open = line.IndexOf('{'), close = line.IndexOf('}');
+                        if (open < 0 || close < open || !int.TryParse(line.Substring(0, open).Trim(), out int from))
+                            continue;
+                        var to = new List<int>();
+                        foreach (string part in line.Substring(open + 1, close - open - 1).Split(new[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+                            if (int.TryParse(part, out int t))
+                                to.Add(t);
+                        if (to.Count > 0)
+                            def[from] = to.ToArray();
+                    }
+                return _gumpDef = def;
+            }
+        }
+
+        private Bitmap32 StockGump(int id) => StockGumpOnly(id) ?? GumpDefReplacement(id);
+
+        private Bitmap32 GumpDefReplacement(int id)
+        {
+            if (!GumpDef.TryGetValue(id, out int[] to))
+                return null;
+            foreach (int t in to)
+                if (StockGumpOnly(t) is Bitmap32 b)
+                    return b;
+            return null;
+        }
+
+        private Bitmap32 StockGumpOnly(int id)
         {
             if (!GumpFile.TryGetEntry(id, out FileEntry entry))
                 return null;

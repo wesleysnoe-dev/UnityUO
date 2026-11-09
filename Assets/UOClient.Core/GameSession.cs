@@ -238,6 +238,8 @@ namespace UOClient.Core
                     if (took > 5 && SlowPackets.Count < 50)
                         SlowPackets.Add($"0x{id:X2} {took:F1} ms ({packet.Length} bytes)");
                 }
+                else
+                    CountUnhandled(id);
             }
 
             if (_conn != null && !_conn.IsConnected && State != SessionState.Disconnected)
@@ -981,8 +983,43 @@ namespace UOClient.Core
                 return;
             if (sub == 0x08) // set map
                 World.Map = r.ReadByte();
+            else if (sub == 0x26) // speed control (ModernUO SendSpeedControl: Animal Form, forced-walk regions, staff)
+                SpeedMode = r.ReadByte();
             else if (sub == 0x04) // close gump
                 CloseGumpFromServer((uint)r.ReadInt32(), r.ReadInt32());
+            else
+                CountUnhandled(0xBF00 | (sub & 0xFF));
+        }
+
+        /// <summary>
+        /// The server's speed control for the player (0xBF 0x26, TazUO CharacterSpeedType): 0 normal, 1 mount speed on foot,
+        /// 2 walk only, 3 mount speed but walk only, 4 cannot move. Cleared on a new session.
+        /// </summary>
+        public byte SpeedMode { get; private set; }
+
+        /// <summary>Whether the player moves at mount speed on foot (speed control 1 or 3).</summary>
+        public bool FastOnFoot => SpeedMode == 1 || SpeedMode == 3;
+
+        /// <summary>Whether the player may run (speed control below 2).</summary>
+        public bool MayRun => SpeedMode < 2;
+
+        /// <summary>Whether the player may move at all (speed control 4 holds it).</summary>
+        public bool MayMove => SpeedMode != 4;
+
+        /// <summary>
+        /// Packets the server sent that nothing here handles (id, or 0xBF00 | subcommand for 0xBF), how many of each: what
+        /// a play session shows we drop. <see cref="UnhandledSeen"/> fires the first time each one arrives.
+        /// </summary>
+        public readonly Dictionary<int, int> Unhandled = new Dictionary<int, int>();
+
+        public event Action<int> UnhandledSeen;
+
+        private void CountUnhandled(int key)
+        {
+            Unhandled.TryGetValue(key, out int n);
+            Unhandled[key] = n + 1;
+            if (n == 0)
+                UnhandledSeen?.Invoke(key);
         }
 
         // ---- plumbing ----

@@ -589,6 +589,10 @@ namespace UOClient.Unity
                 Debug.LogError($"UOClient: speech.mul not found at {speech}; speech goes out untagged and bankers, stablemasters and vendors will ignore keywords.");
 
             _ctx.Session.StatusChanged += _life.Guard<string>(s => _ctx.Hud.ConnectionStatus = s);
+            // A packet nothing handles: logged once each, so a play session shows what the client drops.
+            _ctx.Session.UnhandledSeen += _life.Guard<int>(k => Debug.Log(k >= 0xBF00
+                ? $"UOClient unhandled: 0xBF subcommand 0x{k & 0xFF:X2}"
+                : $"UOClient unhandled: packet 0x{k:X2}"));
             _ctx.Session.Entered += _life.Guard(OnEnteredWorld);
             // The server's first region music can come before the login completes: the login music is gone by then.
             _ctx.Session.MusicRequested += _life.Guard<int>(_ => EndLoginScreen());

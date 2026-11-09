@@ -71,6 +71,14 @@ namespace UOClient.Unity
         /// </summary>
         public bool TryStep(int direction, bool run)
         {
+            // The server's speed control (0xBF 0x26): mount speed on foot, walk only, or held still.
+            if (_ctx.Session != null)
+            {
+                if (!_ctx.Session.MayMove)
+                    return false;
+                run &= _ctx.Session.MayRun;
+                _ctx.Player.FastOnFoot = _ctx.Session.FastOnFoot;
+            }
             double now = Time.realtimeSinceStartupAsDouble;
             bool canStep = _ctx.Session == null ? !_ctx.Player.IsMoving : now >= _nextStepAt - 0.004 && _ctx.Session.PendingSteps < 3;
             if (!canStep)

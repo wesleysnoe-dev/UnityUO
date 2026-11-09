@@ -154,6 +154,53 @@ switch (argList[0])
             })));
         return 0;
     }
+    case "animgroups" when argList.Count >= 2:
+    {
+        // animgroups <body...>: which actions (groups 0..80) have frames for each body, as the client reads them.
+        foreach (string s in argList.Skip(1))
+        {
+            int b = ParseId(s);
+            var have = Enumerable.Range(0, 81).Where(a => data.AnimationLibrary.AnimationExists(b, a)).ToList();
+            Console.WriteLine($"body {b}: {(have.Count == 0 ? "none" : string.Join(",", have))}");
+        }
+        return 0;
+    }
+    case "equipaudit":
+    {
+        // equipaudit: every wearable item (tiledata Wearable, an AnimId): is it drawn on a man and a woman (its animation,
+        // after EquipConv), in the paperdoll (gump 50000/60000 + anim) and on the ground (its art)? Only named items.
+        int bodyMissing = 0, gumpMissing = 0, artMissing = 0, total = 0;
+        var examples = new List<string>();
+        for (int g = 0; g < 0x10000; g++)
+        {
+            StaticTileData td = data.TileData.GetStatic(g);
+            if ((td.Flags & TileFlags.Wearable) == 0 || td.AnimId == 0 || string.IsNullOrWhiteSpace(td.Name) || td.Layer == 0 || td.Layer > 0x18)
+                continue;
+            total++;
+            var problems = new List<string>();
+            foreach (int who in new[] { 400, 401 })
+            {
+                int anim = data.TryEquipConv(who, td.AnimId, out EquipConvEntry conv) ? conv.Anim : td.AnimId;
+                if (!data.AnimationLibrary.AnimationExists(anim, 4) && !data.AnimationLibrary.AnimationExists(anim, 0))
+                    problems.Add(who == 400 ? "no male anim" : "no female anim");
+            }
+            int gump = data.TryEquipConv(400, td.AnimId, out EquipConvEntry pc) ? pc.Gump : td.AnimId;
+            if (data.GetGump(gump + 50000) == null && data.GetGump(gump + 60000) == null)
+                problems.Add("no paperdoll gump");
+            if (data.GetStatic(g) == null)
+                problems.Add("no art");
+            if (problems.Count == 0)
+                continue;
+            if (problems.Exists(p => p.Contains("anim"))) bodyMissing++;
+            if (problems.Contains("no paperdoll gump")) gumpMissing++;
+            if (problems.Contains("no art")) artMissing++;
+            examples.Add($"0x{g:X4} {td.Name} (layer 0x{td.Layer:X2}, anim {td.AnimId}): {string.Join(", ", problems)}");
+        }
+        Console.WriteLine($"wearables {total}: body anim missing {bodyMissing}, paperdoll gump missing {gumpMissing}, art missing {artMissing}");
+        foreach (string e in examples)
+            Console.WriteLine(e);
+        return 0;
+    }
     case "findname" when argList.Count >= 6:
     {
         // findname <text> <x0> <y0> <x1> <y1> [map]: every static whose tiledata name contains the text, with its tile and Z.
