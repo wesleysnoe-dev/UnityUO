@@ -428,10 +428,16 @@ namespace UOClient.Unity
                 else
                 {
                     if (!_sharedSlots.TryGetValue(q.Bitmap, out AtlasSlot slot))
+                    {
+                        if (q.Traced)
+                            Debug.Log($"[tiletrace] attach chunk {build.ChunkX},{build.ChunkY}: quad at {q.Left},{q.Top} has NO shared slot: skipped");
                         continue;
+                    }
                     texture = slot.Page;
                     uv = _shared.Uv(slot);
                 }
+                if (q.Traced)
+                    Debug.Log($"[tiletrace] attach chunk {build.ChunkX},{build.ChunkY}: quad at {q.Left},{q.Top} {q.Width}x{q.Height} page {texture} roof {q.Roof} depth {q.Depth} cut {q.CutHeight} uv {uv}");
 
                 var key = (texture, q.Roof);
                 if (!groups.TryGetValue(key, out MeshBuilder mb))
@@ -600,6 +606,18 @@ namespace UOClient.Unity
             }
         }
 
+        /// <summary>Diagnosis (-tiletrace=x,y): log every placement the compositor gives for that tile when its chunk builds.</summary>
+        private static readonly Vector2Int? TraceTile = ParseTrace();
+        private static readonly bool MarkTrace = Array.Exists(Environment.GetCommandLineArgs(), s => string.Equals(s, "-marktrace", StringComparison.OrdinalIgnoreCase));
+        private static readonly bool HideTrace = Array.Exists(Environment.GetCommandLineArgs(), s => string.Equals(s, "-hidetrace", StringComparison.OrdinalIgnoreCase));
+
+        private static Vector2Int? ParseTrace()
+        {
+            string a = Array.Find(Environment.GetCommandLineArgs(), s => s.StartsWith("-tiletrace=", StringComparison.OrdinalIgnoreCase));
+            string[] p = a?.Substring("-tiletrace=".Length).Split(',');
+            return p != null && p.Length == 2 && int.TryParse(p[0], out int x) && int.TryParse(p[1], out int y) ? new Vector2Int(x, y) : (Vector2Int?)null;
+        }
+
         private ChunkBuild BuildChunk(IsoCompositor compositor, TileData tileData, int map, int cx, int cy, int generation, ILandEmitter landEmitter)
         {
             List<LandPlacement> land = landEmitter != null ? new List<LandPlacement>() : null;
@@ -613,10 +631,18 @@ namespace UOClient.Unity
             var uniques = new List<(Bitmap32 Bitmap, int Quad)>();
             int tie = 0, lastDiagonal = int.MinValue, lastPriority = int.MinValue;
             DrawKind lastKind = DrawKind.Land;
+            bool trace = TraceTile.HasValue && TraceTile.Value.x / ChunkSize == cx && TraceTile.Value.y / ChunkSize == cy;
+            if (trace)
+                foreach (IsoCompositor.DrawEntry e in entries)
+                    if (e.Item.X == TraceTile.Value.x && e.Item.Y == TraceTile.Value.y)
+                        Debug.Log($"[tiletrace] {e.Item.Kind} 0x{e.Item.Graphic:X4} z {e.Item.Z} prio {e.Item.PriorityZ} sprite {(e.Sprite != null)} baked {e.Baked} " +
+                                  $"stretched {e.Item.Stretched} diverts {(landEmitter != null && landEmitter.Diverts(e.Item, e.Baked))} rect {e.Item.Left},{e.Item.Top} {e.Item.Width}x{e.Item.Height}");
             foreach (IsoCompositor.DrawEntry e in entries)
             {
                 if (e.Sprite == null)
                     continue;
+                if (HideTrace && TraceTile.HasValue && e.Item.Kind == DrawKind.Static && e.Item.X == TraceTile.Value.x && e.Item.Y == TraceTile.Value.y)
+                    continue; // diagnosis (-hidetrace): the traced tile's statics are left out
                 DrawItem it = e.Item;
                 bool unique = e.Baked || it.Stretched;
                 bool divert = land != null && landEmitter.Diverts(it, e.Baked); // LiveGroundCompare; false by default
@@ -660,7 +686,8 @@ namespace UOClient.Unity
                     Top = it.Top,
                     Width = it.Width,
                     Height = it.Height,
-                    Depth = DepthKey.Relative(it, build.BaseDiagonal, tie),
+                    Depth = DepthKey.Relative(it, build.BaseDiagonal, tie)
+                            - (MarkTrace && TraceTile.HasValue && it.X == TraceTile.Value.x && it.Y == TraceTile.Value.y && it.Kind == DrawKind.Static ? 2000f : 0f),
                     Roof = it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).IsRoof,
                     // Statics are cut away above the floor overhead when indoors; land always draws.
                     CutHeight = it.Kind == DrawKind.Static ? MeshBuilder.CutHeight(it.Z) : MeshBuilder.NeverCut,
@@ -671,6 +698,7 @@ namespace UOClient.Unity
                     FootY = ((it.X + it.Y) * 22f + 22f - it.Z * 4f) * _scale,
                     FootZ = it.Z,
                     FootKind = it.Kind == DrawKind.Static && tileData.GetStatic(it.Graphic).Height > 1 ? 1 : 2, // upright : ground
+                    Traced = TraceTile.HasValue && it.X == TraceTile.Value.x && it.Y == TraceTile.Value.y,
                     Shadow = _outlineShadows && it.Kind == DrawKind.Static && ShadowRules.CastsOutline(tileData.GetStatic(it.Graphic), (int)(it.Height / _scale))
                 };
                 if (unique)
@@ -836,6 +864,7 @@ namespace UOClient.Unity
             public int U, V;        // unique art position in the chunk texture
             public float FootX, FootY, FootZ, FootKind; // foot anchor (world-screen pixels, UO Z, kind) for the TEST sprite shadow
             public bool Shadow; // casts its own outline as a sun shadow (ShadowRules, CharacterShadow)
+            public bool Traced; // diagnosis (-tiletrace): on the traced tile
         }
 
         private struct SharedSprite

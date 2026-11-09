@@ -110,6 +110,20 @@ switch (argList[0])
         Console.WriteLine($"  map: {onMap} placements still on this data's map, {missing} no longer there");
         return 0;
     }
+    case "landz" when argList.Count >= 5:
+    {
+        // landz <x0> <y0> <x1> <y1> [map]: each tile's land Z and graphic (rows are y), for reading heights under buildings.
+        int lx0 = int.Parse(argList[1]), ly0 = int.Parse(argList[2]), lx1 = int.Parse(argList[3]), ly1 = int.Parse(argList[4]);
+        MapFile lm = data.GetMap(argList.Count > 5 ? int.Parse(argList[5]) : 0);
+        Console.WriteLine("     " + string.Concat(Enumerable.Range(lx0, lx1 - lx0 + 1).Select(x => $"{x,12}")));
+        for (int y = ly0; y <= ly1; y++)
+            Console.WriteLine($"{y,5}" + string.Concat(Enumerable.Range(lx0, lx1 - lx0 + 1).Select(x =>
+            {
+                LandCell c = lm.GetLand(x, y);
+                return $"{c.Z,4}:{c.Graphic:X4}  ";
+            })));
+        return 0;
+    }
     case "area" when argList.Count >= 5:
     {
         // area <x0> <y0> <x1> <y1> [map]: every static graphic in the rectangle with its tiledata, how many, and how many

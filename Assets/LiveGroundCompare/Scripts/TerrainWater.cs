@@ -40,6 +40,11 @@ namespace UOClient.LiveGroundCompare
             error = null;
             try
             {
+                if (Array.Exists(Environment.GetCommandLineArgs(), a => string.Equals(a, "-noterrain-water", StringComparison.OrdinalIgnoreCase)))
+                {
+                    error = "-noterrain-water"; // diagnosis
+                    return null;
+                }
                 if (!WaterTiles.TryLand(world?.Data, out var land, out error))
                     return null;
                 bool[] table = WaterTiles.Table(land);

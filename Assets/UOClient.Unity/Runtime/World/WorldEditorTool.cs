@@ -70,8 +70,15 @@ namespace UOClient.Unity
         private float _shadowAt = -1f;
         private bool _shadowSent;
 
+        private float _shadowLogAt;
+
         private void RunShadowTest(WorldLayerClient layer)
         {
+            if (_shadowSent && Time.unscaledTime >= _shadowLogAt)
+            {
+                _shadowLogAt = Time.unscaledTime + 3f;
+                Debug.Log($"[shadowtest] player {_ctx.Player.X},{_ctx.Player.Y},{_ctx.Player.Z} cutZ {Shader.GetGlobalFloat("_UOCutZ")}");
+            }
             if (!layer.CanEdit || _shadowSent || _ctx.Session == null)
                 return;
             if (_shadowAt < 0f)

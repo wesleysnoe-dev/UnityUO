@@ -35,6 +35,16 @@ namespace UOClient.LiveGroundCompare
 
         private readonly bool[] _shoreEdge; // natural terrain: shoreline edge statics, dropped
 
+        /// <summary>Diagnosis (-tiletrace=x,y): log what the terrain makes of that tile.</summary>
+        private static readonly (int, int)? TraceTile = ParseTrace();
+
+        private static (int, int)? ParseTrace()
+        {
+            string a = Array.Find(Environment.GetCommandLineArgs(), s => s.StartsWith("-tiletrace=", StringComparison.OrdinalIgnoreCase));
+            string[] p = a?.Substring("-tiletrace=".Length).Split(',');
+            return p != null && p.Length == 2 && int.TryParse(p[0], out int x) && int.TryParse(p[1], out int y) ? (x, y) : ((int, int)?)null;
+        }
+
         /// <summary>
         /// Around a chunk, for the water's shore distance: whether a map tile is drawn ground that no water covers (not
         /// water land, no ocean static on it, not no-draw land). Off the map counts as not land.
@@ -212,11 +222,23 @@ namespace UOClient.LiveGroundCompare
                         // Banks: a corner with water within a tile but not under open water is averaged with its
                         // neighbours (tent 3x3), which rounds the map's tile-staircase coastlines off.
                         var corners = new Dictionary<long, float>();
+                        Func<int, int, int> materialAt = MaterialAt();
                         Func<int, int, float> cornerZ = (x, y) =>
                         {
                             long key = ((long)x << 32) | (uint)y;
                             if (corners.TryGetValue(key, out float hit))
                                 return hit;
+                            // A corner of classic ground (a building's floor of land tiles, a canal's stone bank: art the
+                            // natural materials do not cover) keeps the map's own height: no bank rounding, no bed drop.
+                            // Those pulled the floors of buildings beside water down into the water (Britain's library).
+                            for (int tx = x - 1; tx <= x; tx++)
+                                for (int ty = y - 1; ty <= y; ty++)
+                                    if (materialAt(tx, ty) == TerrainMaterials.Art && !tileWater(tx, ty).Water)
+                                    {
+                                        float exact = Land(map, Math.Max(0, Math.Min(map.Width - 1, x)), Math.Max(0, Math.Min(map.Height - 1, y))).Z;
+                                        corners[key] = exact;
+                                        return exact;
+                                    }
                             float z = rawZ(x, y);
                             int near = 0;
                             for (int tx = x - 2; tx <= x + 1; tx++)
@@ -302,7 +324,12 @@ namespace UOClient.LiveGroundCompare
                     }
                 }
                 // Under water the ground bakes flat (no classic water pattern through the surface).
-                water?.ForEachBed((x, y, argb) => builder.SetFlat(x, y, argb));
+                var traceBeds = TraceTile.HasValue ? new List<(int, int)>() : null;
+                water?.ForEachBed((x, y, argb) =>
+                {
+                    traceBeds?.Add((x, y));
+                    builder.SetFlat(x, y, argb);
+                });
                 // Natural terrain: water over no-draw land still gets a bed (no hole showing through the water).
                 if (_presenter.Materials != null && water != null && _presenter.World?.Data?.GetMap(_presenter.World.Map) is { } bedMap)
                 {
@@ -316,6 +343,33 @@ namespace UOClient.LiveGroundCompare
                 int[,] occluders = _presenter.SharedLight ? Occluders(x0, y0) : null;
                 builder.SetOccluders(occluders);
                 TerrainLandData data = builder.Finish();
+                if (TraceTile is (int tx, int ty) && tx >= x0 && ty >= y0 && tx < x0 + WorldStreamer.ChunkSize && ty < y0 + WorldStreamer.ChunkSize)
+                {
+                    // Diagnosis (-tiletrace=x,y): what the terrain made of that tile.
+                    int t = TerrainLandBuilder.Tiles, i = tx - x0, j = ty - y0;
+                    string solid = "-";
+                    if (data.Solid != null)
+                    {
+                        int rows = data.Solid.GetLength(0), cols = data.Solid.GetLength(1), per = cols / t;
+                        var sb = new System.Text.StringBuilder();
+                        for (int r = 0; r < per; r++)
+                            for (int c = 0; c < per; c++)
+                                sb.Append(data.Solid[(t - 1 - j) * per + r, i * per + c] ? '#' : '.');
+                        solid = sb.ToString();
+                    }
+                    string heights = "-";
+                    if (data.Heights != null)
+                    {
+                        int n = data.HeightmapResolution, hp = (n - 1) / t;
+                        float Z(int col, int row) => TerrainLandBuilder.MinZ + data.Heights[row, col] * TerrainLandBuilder.ZRange;
+                        heights = $"top {Z(i * hp, n - 1 - j * hp):0.#} right {Z((i + 1) * hp, n - 1 - j * hp):0.#} left {Z(i * hp, n - 1 - (j + 1) * hp):0.#} " +
+                                  $"bottom {Z((i + 1) * hp, n - 1 - (j + 1) * hp):0.#} centre {Z(i * hp + hp / 2, n - 1 - j * hp - hp / 2):0.#}";
+                    }
+                    var map = _presenter.World?.Data?.GetMap(_presenter.World.Map);
+                    var w = map != null ? TileWater(map)(tx, ty) : default;
+                    Debug.Log($"[tiletrace] terrain chunk {chunkX},{chunkY} tile {tx},{ty}: solid {solid} heights {heights} tileWater {w.Water}/{w.Level} " +
+                              $"bed {(traceBeds != null && traceBeds.Contains((tx, ty)))} water tiles {water?.WaterTileCount ?? -1} natural {_presenter.Materials != null}");
+                }
                 if (_presenter.Materials != null && data.TileCount > 0)
                     data.Splat = painted != null ? PaintedSplat(painted, x0, y0) : SplatBuilder.Build(x0, y0, MaterialAt());
                 if (_presenter.GrassShader != null && data.Splat != null)

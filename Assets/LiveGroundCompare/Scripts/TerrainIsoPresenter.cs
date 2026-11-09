@@ -158,7 +158,9 @@ namespace UOClient.LiveGroundCompare
             Shader depth = Resources.Load<Shader>(DepthShaderResource);
             if (depth == null)
                 depth = Shader.Find(DepthShaderName);
-            if (depth != null && depth.isSupported)
+            bool noOcclusion = Array.Exists(Environment.GetCommandLineArgs(),
+                a => string.Equals(a, "-noterrain-occlusion", StringComparison.OrdinalIgnoreCase)); // diagnosis: no depth proxy
+            if (depth != null && depth.isSupported && !noOcclusion)
                 DepthShader = depth;
             else
                 OcclusionError = $"shader '{DepthShaderName}' is not in this build or not supported";
@@ -168,7 +170,11 @@ namespace UOClient.LiveGroundCompare
 
             // Sprite sun-shadow receive: only with the shared light (the same CPU heights and columns as the terrain mask).
             string spriteWhy = "light isolated";
-            if (SharedLight)
+            bool noSpriteShadow = Array.Exists(Environment.GetCommandLineArgs(),
+                a => string.Equals(a, "-nosprite-shadow", StringComparison.OrdinalIgnoreCase)); // diagnosis
+            if (noSpriteShadow)
+                spriteWhy = "-nosprite-shadow";
+            else if (SharedLight)
                 SpriteCeiling = SpriteShadowCeiling.TryCreate(world, scale, out spriteWhy);
             SpriteShadowError = SpriteCeiling == null ? spriteWhy : null;
             Debug.Log(SpriteCeiling != null
