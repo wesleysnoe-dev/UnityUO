@@ -30,7 +30,7 @@ namespace UOClient.Unity
         {
             string dir = s.ResolvedOverridesPath;
             if (dir != null)
-                data.UseOverrides(new ClientOverrides(dir, s.hdArt));
+                data.UseOverrides(new ClientOverrides(dir, s.hdArt, s.overhaulArt));
         }
 
         /// <summary>Reads the settings file (writing one with the detected folders on first run), then applies launch arguments.</summary>

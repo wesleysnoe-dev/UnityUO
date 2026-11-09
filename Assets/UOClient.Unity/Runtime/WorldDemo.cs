@@ -117,7 +117,9 @@ namespace UOClient.Unity
                 string overrides = Settings.ResolvedOverridesPath;
                 if (overrides != null)
                 {
-                    var o = new ClientOverrides(overrides, Settings.hdArt);
+                    var o = new ClientOverrides(overrides, Settings.hdArt, Settings.overhaulArt);
+                    if (o.OverhaulFolders.Count > 0)
+                        Debug.Log($"UOClient: overhaul art over the HD pack: {string.Join(", ", o.OverhaulFolders)}");
                     _ctx.Data.UseOverrides(o);
                     Debug.Log($"UOClient: client overrides from {overrides}: {o.ArtCount} art, {o.LandCount} land, {o.GumpCount} gumps, " +
                               $"{o.TileRowCount} tiledata rows, {o.EquipConvCount} equipment conversions{(o.Problems.Count > 0 ? $"; {o.Problems.Count} problems, first: {o.Problems[0]}" : "")}");

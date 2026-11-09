@@ -40,7 +40,12 @@ namespace UOClient.IO
         public int TileRowCount => _tiles.Count;
         public int EquipConvCount => _equipConv.Count;
 
-        public ClientOverrides(string clientFolder, bool includeHdPack)
+        public ClientOverrides(string clientFolder, bool includeHdPack) : this(clientFolder, includeHdPack, null)
+        {
+        }
+
+        /// <param name="overhaulArt">HD folders (HDArt layout) laid over the pack, first listed wins; ExternalImages still win.</param>
+        public ClientOverrides(string clientFolder, bool includeHdPack, string[] overhaulArt)
         {
             ClientFolder = clientFolder;
             string images = Path.Combine(clientFolder, "ExternalImages");
@@ -48,6 +53,20 @@ namespace UOClient.IO
             IndexFolder(Path.Combine(images, "land"), _land, overwrite: true, max: 0x4000);
             IndexFolder(Path.Combine(images, "gumps"), _gumps, overwrite: true);
             IndexFolder(Path.Combine(images, "texmaps"), _texmaps, overwrite: true);
+            if (overhaulArt != null)
+                foreach (string folder in overhaulArt)
+                {
+                    if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+                    {
+                        Problems.Add($"overhaulArt: no folder '{folder}'");
+                        continue;
+                    }
+                    OverhaulFolders.Add(folder);
+                    IndexFolder(Path.Combine(folder, "art"), _art, overwrite: false);
+                    IndexFolder(Path.Combine(folder, "land"), _land, overwrite: false, max: 0x4000);
+                    IndexFolder(Path.Combine(folder, "gumps"), _gumps, overwrite: false);
+                    IndexFolder(Path.Combine(folder, "texmaps"), _texmaps, overwrite: false);
+                }
             if (includeHdPack)
             {
                 string pack = Path.GetFullPath(Path.Combine(clientFolder, "..", "HDArt"));
@@ -59,6 +78,9 @@ namespace UOClient.IO
             ReadTileRows(Path.Combine(clientFolder, "TileData"));
             ReadEquipConv(Path.Combine(clientFolder, "EquipConv"));
         }
+
+        /// <summary>The overhaul art folders that were found and indexed.</summary>
+        public System.Collections.Generic.List<string> OverhaulFolders { get; } = new System.Collections.Generic.List<string>();
 
         public bool HasArt(int graphic) => _art.ContainsKey(graphic);
         public bool HasGump(int id) => _gumps.ContainsKey(id);

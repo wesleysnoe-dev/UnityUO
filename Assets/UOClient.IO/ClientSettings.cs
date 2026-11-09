@@ -31,6 +31,12 @@ namespace UOClient.IO
         /// <summary>Use the HDArt pack's 2x art where the renderer draws at 2x (ExternalImages always applies).</summary>
         public bool hdArt = true;
 
+        /// <summary>
+        /// The overhaul's HD art folders (HDArt layout: art/, land/, texmaps/, gumps/), laid over the HD pack for this
+        /// client only: first listed wins; the shard's own ExternalImages still win over them. Empty: the pack alone.
+        /// </summary>
+        public string[] overhaulArt = new string[0];
+
         /// <summary>The UO Smallz launcher's install, the live client release.</summary>
         public static string UoSmallzRoot =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UOSmallz");
