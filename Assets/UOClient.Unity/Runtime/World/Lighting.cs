@@ -108,7 +108,12 @@ namespace UOClient.Unity
             Sun = SunClock.At(hour);
             if ((_timeOverride < 0 || !float.IsNaN(_fixedHour)) && Sun.Warmth > 0f)
                 target = new TimeOfDay(target.Name, target.Ambient * Color.Lerp(Color.white, GoldenTint, Sun.Warmth), target.Light, target.Vignette);
-            ApplySun(Sun);
+            // Weather (WeatherView): an overcast sky greys and dims the light and fades the sun's shadows.
+            float overcast = WeatherView.Overcast;
+            if (overcast > 0f)
+                target = new TimeOfDay(target.Name, target.Ambient * Color.Lerp(Color.white, OvercastTint, overcast), target.Light,
+                                       Mathf.Lerp(target.Vignette, Mathf.Max(target.Vignette, 0.3f), overcast));
+            ApplySun(Sun, overcast);
             StepTerrainSun(hour);
 
             _timeCurrent = TimeOfDay.Lerp(_timeCurrent, target, 1f - Mathf.Exp(-Time.deltaTime * 2f));
@@ -140,9 +145,11 @@ namespace UOClient.Unity
         private const float NightLightPeak = 0.95f; // Times' "Night" player light, the brightest
 
         /// <summary>The outline shadows and the terrain's shading follow the sun every frame.</summary>
-        private static void ApplySun(SunState sun)
+        private static readonly Color OvercastTint = new Color(0.74f, 0.77f, 0.83f);
+
+        private static void ApplySun(SunState sun, float overcast = 0f)
         {
-            CharacterShadow.SetSun(new Vector2(sun.TowardX, sun.TowardY), sun.Elevation, sun.Strength);
+            CharacterShadow.SetSun(new Vector2(sun.TowardX, sun.TowardY), sun.Elevation, sun.Strength * (1f - overcast * 0.85f));
             (float x, float y, float up) = SunClock.Vector(sun);
             Shader.SetGlobalVector("_LGSunDir", new Vector4(x, up, -y, 0f)); // terrain space: x, up, -tile y
         }

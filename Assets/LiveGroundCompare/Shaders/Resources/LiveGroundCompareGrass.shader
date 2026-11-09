@@ -45,6 +45,7 @@ Shader "LiveGroundCompare/Grass"
             float4 _LGMatTint[8];
             float _Sway, _WaveSpeed, _WaveScale, _RootDark, _TipLight;
             float4 _WindVec, _UpVec;
+            float _UOWindBoost; // WeatherView: rain and storms bend the grass harder and faster (unset 0)
 
             struct appdata
             {
@@ -70,13 +71,13 @@ Shader "LiveGroundCompare/Grass"
                 float3 w = v.terrain;
                 // Waves roll across the screen along the wind (terrain (1, 0, 1)).
                 float along = (w.x + w.z) * 0.70710678;
-                float t = _Time.y * _WaveSpeed;
+                float t = _Time.y * _WaveSpeed * (1.0 + _UOWindBoost * 0.6);
                 float wave = sin(along * _WaveScale * 6.2831 - t * 2.2) * 0.55 + 0.45;
                 float gust = sin(along * 0.05 - _Time.y * 0.35) * 0.5 + 0.5;
                 gust *= gust;
                 float flutter = sin(t * 7.0 + v.uv.y * 40.0) * 0.12;
                 float bend = v.uv.x * v.uv.x;
-                float sway = (wave * (0.6 + gust * 0.9) + flutter) * _Sway * bend;
+                float sway = (wave * (0.6 + gust * 0.9) + flutter) * _Sway * bend * (1.0 + _UOWindBoost);
                 float4 p = v.vertex;
                 p.xy += _WindVec.xy * sway - _UpVec.xy * abs(sway) * 0.35 * v.uv.x; // a bent blade is a little shorter
                 o.pos = UnityObjectToClipPos(p);

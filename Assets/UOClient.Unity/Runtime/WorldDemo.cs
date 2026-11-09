@@ -1,4 +1,4 @@
-﻿// The UO data folder comes from ClientPaths / ClientSettings; there is no uoPath field anymore.
+// The UO data folder comes from ClientPaths / ClientSettings; there is no uoPath field anymore.
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -88,6 +88,7 @@ namespace UOClient.Unity
         private WorldInput _input;
 
         private readonly Lighting _lighting = new Lighting();
+        private WeatherView _weather;
 
         private void Start()
         {
@@ -649,6 +650,8 @@ namespace UOClient.Unity
             _sound?.PlayMusic(Audio.StopMusicId); // the region's music; the login music comes back with the login screen
             _entities.Reset();
             _effects.Dispose();
+            _weather?.Dispose();
+            _weather = null;
             _overheads.Clear();
             _chatLine.Close();
             _placement.Clear();
@@ -753,7 +756,11 @@ namespace UOClient.Unity
 
             _sections.Begin("camera+hud");
             _cameraRig.Follow(_ctx.Player.AnchorPixels, _ctx.World, _ctx.ArtScale, zoom);
+            _weather ??= new WeatherView(_ctx.Camera);
+            _weather.Update(_ctx.Session, _ctx.Camera, _lighting.Sun.Hour); // before the light: its overcast dims it
             _lighting.Update(_ctx.Session, _ctx.World.ToUnity(_ctx.Player.AnchorPixels), _ctx.ArtScale, _ctx.Hud);
+            if (_weather.Status != "clear")
+                _ctx.Hud.TimeName += ", " + _weather.Status;
             _hudPresenter.Update();
             _overheads.Update(_ctx.Hud, _entities.DrawnRect, _ctx.Camera);
             // The pointer aims from the player, the origin a right-drag walks from (PlayerMovement); off over the journal.

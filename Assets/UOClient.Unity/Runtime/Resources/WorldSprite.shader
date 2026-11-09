@@ -53,6 +53,7 @@ Shader "UOClient/WorldSprite"
             // pass compiles to exactly the code outside these blocks.
             sampler2D _LGShadowCeil;   // world-wrapped shadow ceilings in UO Z (texel = 1/4 tile, SpriteShadow.WrapTiles tiles)
             float4 _LGSpriteShadowMap; // xy: world pixels = (unity x + x, y - unity y); z: art scale; w: 1 / wrapped tiles
+            float _UOSunFade;          // the sun's shadows fade (CharacterShadow.SetSun: low sun, overcast); unset 0 = full
 
             float LGSpriteSunShade(float2 world, float4 foot)
             {
@@ -76,7 +77,7 @@ Shader "UOClient/WorldSprite"
                 float2 p = flat ? ground : upright;
                 float z = foot.z + (flat ? 0.0 : max(up, 0.0) / zs);
                 float ceiling = tex2D(_LGShadowCeil, p * _LGSpriteShadowMap.w).r;
-                float visibility = saturate((z + 0.25 - ceiling) / 2.0 + 0.5);
+                float visibility = lerp(saturate((z + 0.25 - ceiling) / 2.0 + 0.5), 1.0, _UOSunFade);
                 // Kind 0 (no foot: effects, meshes without UV3) is never shaded.
                 return foot.w < 0.5 ? 1.0 : 0.7 + 0.3 * visibility;
             }

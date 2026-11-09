@@ -14,6 +14,7 @@ float4 _UOLightPos;         // xy: its Unity world position, z: radius
 float _UODead;              // 0..1: drained to grey (the player is a ghost)
 float4x4 _LGTerrainToUnity; // rows 0, 1: terrain space -> the main camera's Unity world x, y (the sprites' space)
 float4 _LGSunDir;           // xyz: the compositor's sun in terrain space (not unit length, as the compositor)
+float _UOSunFade;           // 0..1: the sun's shadows fade (low sun, the moon handing over, overcast); unset 0 = full
 
 #define LG_MIN_SHADE 0.7
 #define LG_MAX_SHADE 1.25
@@ -23,6 +24,8 @@ float4 _LGSunDir;           // xyz: the compositor's sun in terrain space (not u
 float LGShade(float3 n, float visibility)
 {
     float shade = clamp(dot(normalize(n), _LGSunDir.xyz) / _LGSunDir.y, LG_MIN_SHADE, LG_MAX_SHADE);
+    shade = lerp(shade, 1.0, _UOSunFade * 0.6);              // a faded sun models the slopes less
+    visibility = lerp(saturate(visibility), 1.0, _UOSunFade); // and casts weaker shadows
     return LG_MIN_SHADE + (shade - LG_MIN_SHADE) * saturate(visibility);
 }
 
