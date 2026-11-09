@@ -55,6 +55,67 @@ namespace UOClient.Unity
         private int _stressX, _stressY;
         private const int StressEnd = 330;
 
+        // -groundfollow-selftest: raises a hill beside the character, then walks it back and forth over the hill, logging
+        // each tile ([groundfollow]: server Z, UO's average land Z, the drawn ground's Z there) so GroundFollow can be read.
+        private static readonly bool FollowTest = Array.Exists(Environment.GetCommandLineArgs(),
+            a => string.Equals(a, "-groundfollow-selftest", StringComparison.OrdinalIgnoreCase));
+        private float _followAt = -1f;
+        private int _followStep = -1;
+        private int _followX, _followY;
+        private (int, int, int) _followLast;
+
+        private void RunFollowTest(UI.UiManager ui, WorldLayerClient layer)
+        {
+            if (!layer.CanEdit)
+                return;
+            if (_followAt < 0f)
+            {
+                _followAt = Time.unscaledTime + 12f;
+                return;
+            }
+            // Log every tile reached.
+            var at = (_ctx.Player.X, _ctx.Player.Y, _ctx.Player.Z);
+            if (_followStep > 40 && at != _followLast)
+            {
+                int? predicted = _ctx.Walk?.TryStep(at.Item1, at.Item2, _followLast.Item3);
+                _followLast = at;
+                int? avg = GroundFollow.LandAverageZ?.Invoke(at.Item1, at.Item2);
+                float? drawn = GroundFollow.DrawnZ?.Invoke(at.Item1 + 0.5f, at.Item2 + 0.5f);
+                MapFile map = _ctx.Data?.GetMap(_ctx.World.Map);
+                string corners = map == null ? "-" : $"{map.GetLand(at.Item1, at.Item2).Z}/{map.GetLand(at.Item1 + 1, at.Item2).Z}/{map.GetLand(at.Item1, at.Item2 + 1).Z}/{map.GetLand(at.Item1 + 1, at.Item2 + 1).Z}";
+                string painted = $"{layer.HeightAt(at.Item1, at.Item2)?.ToString("0.0") ?? "-"}/{layer.HeightAt(at.Item1 + 0.5f, at.Item2 + 0.5f)?.ToString("0.0") ?? "-"}";
+                Debug.Log($"[groundfollow] tile {at.Item1},{at.Item2} server Z {at.Item3} land avg {avg?.ToString() ?? "-"} drawn {drawn?.ToString("0.0") ?? "-"} " +
+                          $"on land {GroundFollow.OnLand(at.Item1, at.Item2, at.Item3)} corners t/r/l/b {corners} layer corner/centre {painted} predicted {predicted?.ToString() ?? "blocked"}");
+            }
+            if (Time.unscaledTime < _followAt)
+                return;
+            _followAt = Time.unscaledTime + 0.1f;
+            _followStep++;
+            WorldBrushSettings b = layer.Brush;
+            if (_followStep == 0)
+            {
+                _followX = _ctx.Player.X;
+                _followY = _ctx.Player.Y;
+                Debug.Log($"[groundfollow] self-test start at {_followX},{_followY},{_ctx.Player.Z}; ground follow {(GroundFollow.On ? "on" : "off")}");
+                if (_ctx.Session != null)
+                    _ctx.Session.MoveRejected += (x, y, z, d) => Debug.Log($"[groundfollow] server rejected a step: back to {x},{y},{z}");
+            }
+            else if (_followStep <= 30) // a hill 4 tiles screen-right of the character (tile x+3, y-3)
+            {
+                b.Current = WorldBrushSettings.Mode.Raise; b.Size = 8f; b.Softness = 0.9f; b.Strength = 0.22f;
+                layer.Stroke(_followX + 3.5f, _followY - 2.5f);
+            }
+            else if (_followStep == 31)
+            {
+                layer.EndStroke();
+                _followAt = Time.unscaledTime + 3f;
+            }
+            else if (_followStep <= 40)
+                PlayerMovement.TestIntent = Vector2.zero;
+            else // walk across the hill and back, 6 s each way, for as long as the test runs
+                PlayerMovement.TestIntent = ((_followStep - 41) / 60) % 2 == 0 ? new Vector2(1f, 0f) : new Vector2(-1f, 0f);
+        }
+
         private void RunStressTest(UI.UiManager ui, WorldLayerClient layer)
         {
             if (!layer.CanEdit)
@@ -212,6 +273,8 @@ namespace UOClient.Unity
                 RunSelfTest(ui, layer);
             if (StressTest && _stressStep < StressEnd)
                 RunStressTest(ui, layer);
+            if (FollowTest)
+                RunFollowTest(ui, layer);
 
             if (takesKeys && Input.GetKeyDown(KeyCode.F5))
             {

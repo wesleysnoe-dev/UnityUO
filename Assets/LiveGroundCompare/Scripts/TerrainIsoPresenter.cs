@@ -127,7 +127,12 @@ namespace UOClient.LiveGroundCompare
                 else
                     MaterialsError = "needs the shared light shader";
                 if (Materials != null)
+                {
                     WorldLayerClient.PaintedTerrain = TerrainLandChunk.Painter.Instance;
+                    // Characters follow the smooth ground (GroundFollow), unless -noground-follow.
+                    if (!Array.Exists(Environment.GetCommandLineArgs(), a => string.Equals(a, "-noground-follow", StringComparison.OrdinalIgnoreCase)))
+                        new DrawnGround(world).Install();
+                }
                 Debug.Log(Materials != null
                     ? $"UOClient LiveGround terrain style: natural ({TerrainMaterials.Count} materials, {Materials.Albedo.width}px, splat {SplatBuilder.SamplesPerTile}/tile)"
                     : $"UOClient LiveGround terrain style: classic art ({MaterialsError})");
@@ -333,6 +338,7 @@ namespace UOClient.LiveGroundCompare
         {
             if (_root == null)
                 return;
+            DrawnGround.Uninstall();
             Camera.onPreCull -= OnPreCull;
             if (_main != null)
             {

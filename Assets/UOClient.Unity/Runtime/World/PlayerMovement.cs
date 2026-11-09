@@ -54,10 +54,15 @@ namespace UOClient.Unity
                 run |= intent.magnitude > Screen.height * 0.25f;
             }
             if (intent == Vector2.zero)
+                intent = TestIntent; // self-tests walk the character (GroundFollow); zero otherwise
+            if (intent == Vector2.zero)
                 return;
 
             TryStep(DirectionFromScreen(intent), run);
         }
+
+        /// <summary>Self-tests only: a screen-space walk direction used while no key or mouse is walking (zero: none).</summary>
+        public static Vector2 TestIntent;
 
         /// <summary>
         /// One step (or a turn) in a direction, predicted locally and, online, sent to the server.

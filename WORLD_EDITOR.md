@@ -167,3 +167,15 @@ smoothing asks for each tile tens of thousands of times. Chunk builds now keep t
 (`TerrainLandChunk.Land`), and a region's local copy reads its tiles once. Chunks build in ~33 ms (about 20x),
 a 20-chunk rebuild lands in 0.7 s, and the first-stroke stall is gone. Left: an occasional untimed 70-170 ms frame
 during a rebuild (inside Unity's terrain, not ours).
+
+**Step 3 (characters follow the drawn ground), 2026-11-08.** The server stands a character on land at the tile's
+average land Z (UO's rule); the smooth ground (natural terrain, painted or not) can differ from that by several Z at the
+tile's centre (measured on a painted hill: up to 5.8 Z, ~23 px), and a step was a straight line while the ground curves,
+so characters floated or sank. `GroundFollow` (UOClient.Unity) + `DrawnGround` (LiveGroundCompare, installed with
+`-terrainstyle natural`, off with `-noground-follow`): a character whose Z is its tile's average land Z is drawn at the
+drawn ground's height, sampled continuously along its step (painted samples bilinear, else the terrain's SmoothZ);
+on floors, bridges, stairs or roofs (any other Z) nothing changes; clamped to 8 Z. Drawing only.
+Server fix found on the way (`WorldLayerSystem.Restand`): an edit now moves characters on the changed tiles with the
+ground (on the land: to the new average; buried under it: lifted onto it). Before, raising ground under a standing
+character buried it, unable to step out. Checked with `-groundfollow-selftest` (raises a hill, walks over it, logs each
+tile's server Z, land average and drawn Z). Grass also moved into the main camera with depth keys (characters stand in it).

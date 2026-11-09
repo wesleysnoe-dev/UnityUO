@@ -216,9 +216,13 @@ namespace UOClient.Unity
         {
             // Keep where the avatar is drawn right now, so a step that starts mid-step does not jump.
             Vector2 current = AnchorPixels;
+            (Vector2 currentTile, float currentZ, bool currentLand) = StepPosition();
             _from = new Vector2Int(X, Y);
             _fromZ = Z;
             _fromPixels = current;
+            _fromTile = currentTile;
+            _fromZf = currentZ;
+            _fromLand = currentLand;
             X = x;
             Y = y;
             Z = z;
@@ -254,9 +258,33 @@ namespace UOClient.Unity
         {
             get
             {
+                if (GroundFollow.On)
+                {
+                    // Smooth ground (GroundFollow): the feet on the drawn ground at the interpolated point of the step.
+                    (Vector2 tile, float z, bool _) = StepPosition();
+                    float t = _stepDuration <= 0 ? 1f : _stepTime / _stepDuration;
+                    float drawn = GroundFollow.Z(tile, z, _stepDuration <= 0 ? OnLandNow : _fromLand, OnLandNow, t);
+                    return new Vector2((tile.x - tile.y) * 22f, (tile.x + tile.y) * 22f + 22f - drawn * 4f) * _scale;
+                }
                 Vector2 to = TileAnchor(X, Y, Z);
                 return _stepDuration <= 0 ? to : Vector2.Lerp(_fromPixels, to, _stepTime / _stepDuration);
             }
+        }
+
+        // GroundFollow: where the current step began (the interpolated tile and server Z, and whether that was on land).
+        private Vector2 _fromTile;
+        private float _fromZf;
+        private bool _fromLand;
+
+        private bool OnLandNow => GroundFollow.OnLand(X, Y, Z);
+
+        /// <summary>The interpolated tile position and server Z right now, and whether the avatar is on land.</summary>
+        private (Vector2 Tile, float Z, bool Land) StepPosition()
+        {
+            if (_stepDuration <= 0)
+                return (new Vector2(X, Y), Z, OnLandNow);
+            float t = _stepTime / _stepDuration;
+            return (Vector2.Lerp(_fromTile, new Vector2(X, Y), t), Mathf.Lerp(_fromZf, Z, t), t < 0.5f ? _fromLand : OnLandNow);
         }
 
         /// <summary>The item used to sort the avatar among map placements.</summary>
