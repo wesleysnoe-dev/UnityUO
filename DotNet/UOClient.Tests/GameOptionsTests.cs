@@ -202,7 +202,7 @@ public sealed class GameOptionsTests
         Assert.True(d.alwaysRunUnlessHidden);
         // Kept as this client always behaved (TazUO's own defaults differ; LIVE_PARITY says so).
         Assert.False(d.alwaysRun);
-        Assert.True(d.holdShiftToSplitStack);
+        Assert.False(d.holdShiftToSplitStack); // as TazUO: lifting a stack asks how many
         Assert.True(d.buffBarTime);
     }
 
@@ -212,7 +212,7 @@ public sealed class GameOptionsTests
         var o = new GameOptions
         {
             alwaysRun = true, alwaysRunUnlessHidden = false, scaleSpeechDelay = false, speechDelay = 250, saveJournalToFile = true,
-            containersScale = 150, doubleClickToLootInsideContainers = true, holdShiftToSplitStack = false, useTooltip = false,
+            containersScale = 150, doubleClickToLootInsideContainers = true, holdShiftToSplitStack = true, useTooltip = false,
             buffBarTime = false, castSpellsByOneClick = true,
         };
         string json = o.ToJson();
@@ -227,9 +227,9 @@ public sealed class GameOptionsTests
         Assert.Equal(121, GameOptions.Parse("{\"containersScale\": 120.6}").containersScale);
         Assert.Equal(100, GameOptions.Parse("{\"speechDelay\": \"lots\"}").speechDelay);
         Assert.Equal(100, GameOptions.Parse("{\"speechDelay\": true}").speechDelay);
-        foreach (string key in new[] { "alwaysRun", "saveJournalToFile", "doubleClickToLootInsideContainers", "castSpellsByOneClick" })
+        foreach (string key in new[] { "alwaysRun", "saveJournalToFile", "doubleClickToLootInsideContainers", "castSpellsByOneClick", "holdShiftToSplitStack" })
             Assert.False(GameOptions.Parse("{\"" + key + "\": true}").SameAs(GameOptions.Defaults()), key);
-        foreach (string key in new[] { "alwaysRunUnlessHidden", "scaleSpeechDelay", "holdShiftToSplitStack", "useTooltip", "buffBarTime" })
+        foreach (string key in new[] { "alwaysRunUnlessHidden", "scaleSpeechDelay", "useTooltip", "buffBarTime" })
             Assert.False(GameOptions.Parse("{\"" + key + "\": false}").SameAs(GameOptions.Defaults()), key);
     }
 

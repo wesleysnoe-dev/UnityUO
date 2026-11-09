@@ -356,7 +356,7 @@ namespace UOClient.Unity.UI
         /// The options' HoldShiftToSplitStack (TazUO's): on, a stack dragged with Shift asks how many; off, a plain drag
         /// asks and a Shift drag lifts the lot (GameOptions.OpensSplitMenu).
         /// </summary>
-        public static bool HoldShiftToSplitStack { get; set; } = true;
+        public static bool HoldShiftToSplitStack { get; set; } = false;
 
         /// <summary>
         /// A drag starting: on a stack, asks how many to lift first (ClassicUO's split menu) when

@@ -111,9 +111,9 @@ namespace UOClient.Unity
 
         /// <summary>
         /// TazUO's HoldShiftToSplitStack (<see cref="OpensSplitMenu"/>): on, a stack dragged with Shift asks how many; off, a
-        /// plain drag asks and Shift lifts the lot. On by default here (TazUO: off), as this client always worked.
+        /// plain drag asks and Shift lifts the lot. Off by default, as TazUO and the classic client: lifting a stack asks.
         /// </summary>
-        public bool holdShiftToSplitStack = true;
+        public bool holdShiftToSplitStack = false;
 
         /// <summary>TazUO's UseTooltip (Tooltip.SetText): off hides the text tooltips of windows (buffs, gump elements, spell icons), not item or mobile properties.</summary>
         public bool useTooltip = true;
