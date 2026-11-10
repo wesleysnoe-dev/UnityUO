@@ -61,61 +61,72 @@ namespace UOClient.Unity.UI
         private readonly Dictionary<UiImage, (int X, int Y, int W, int H)> _bounds = new Dictionary<UiImage, (int, int, int, int)>();
         private Vector2 _scroll;
 
-        // TazUO's ShopGump: the shop's two scrolls (buy 0x0870 / 0x0871, sell 0x0872 / 0x0873) split into a top, a middle
-        // band repeated to the list's height, and a foot; the bill of sale sits to the right, half way down.
-        private const int TopH = 64, LeftFootH = 116, RightFootH = 93, RightOffset = 32, ListHeight = 200, BillRow = 22;
+        // One scroll (UO's expandable scroll, 1.3x wide) carrying the classic shop's parts, cut from its own art (buy
+        // 0x0870 / 0x0871, sell 0x0872 / 0x0873): the inventory's header, the bill's header, the total line and the
+        // band of seals; between them the two lists.
+        private const float K = 1.3f, ListHeight = 210, BillHeight = 104;
+        private const int BillRow = 22;
+        private static readonly RectInt InventoryHeader = new RectInt(28, 34, 205, 26), BillHeader = new RectInt(28, 37, 202, 27),
+            TotalLine = new RectInt(28, 168, 165, 16), SealBand = new RectInt(26, 186, 204, 50);
 
         private Vector2 _billScroll;
 
         public ShopWindow(ShopList list)
         {
             _list = list;
-            Rect = new Rect(120, 90, 534, 470);
+            Rect = new Rect(160, 70, ScrollArtWidth * K, 600);
         }
 
         public uint Vendor => _list.Vendor;
         public override string Key => (_list.Selling ? "sell:" : "buy:") + _list.Vendor;
 
+        /// <summary>One scroll: the opening unrolls exactly over it.</summary>
+        public override bool IsScroll => true;
+
         public override void Draw()
         {
-            UiImage leftArt = Art.Gump(_list.Selling ? 0x0872 : 0x0870), rightArt = Art.Gump(_list.Selling ? 0x0873 : 0x0871);
-            if (leftArt == null || rightArt == null)
-            {
-                DrawResizePic(9200, 0, 0, Rect.width, Rect.height); // no shop art: a plain frame, the same parts on it
-                leftArt ??= rightArt;
-            }
-            int leftW = leftArt?.Width ?? 283, leftArtH = leftArt?.Height ?? 307, rightW = rightArt?.Width ?? 283, rightArtH = rightArt?.Height ?? 248;
-            float rightX = leftW - RightOffset, rightY = leftArtH / 2f - RightOffset;
-            float rightMid = rightArtH - RightFootH - TopH + (ListHeight - (leftArtH - LeftFootH - TopH));
-            float rightFootY = rightY + TopH + rightMid;
-            Rect.width = rightX + rightW;
-            Rect.height = Mathf.Max(TopH + ListHeight + LeftFootH, rightFootY + RightFootH);
-            if (leftArt != null && rightArt != null)
-            {
-                DrawStretchedGump(leftArt, 0, 0, TopH, LeftFootH, ListHeight);
-                DrawStretchedGump(rightArt, rightX, rightY, TopH, RightFootH, rightMid);
-            }
+            int leftGump = _list.Selling ? 0x0872 : 0x0870, rightGump = _list.Selling ? 0x0873 : 0x0871;
+            float W = ScrollArtWidth * K, left = 26f * K, inner = W - left * 2f;
+            float y = 37f * K + 4f; // under the top roll
+            float title = y;
+            y += 22f;
+            float invHeader = y;
+            y += InventoryHeader.height * K;
+            var listView = new Rect(left, y, inner, ListHeight);
+            y += ListHeight + 6f;
+            float billHeader = y;
+            y += BillHeader.height * K;
+            var billView = new Rect(left, y, inner, BillHeight);
+            y += BillHeight + 2f;
+            float totalY = y;
+            y += TotalLine.height * K + 2f;
+            float sealY = y;
+            y += SealBand.height * K;
+            Rect.width = W;
+            Rect.height = y + 34f * K + 6f; // and the bottom roll
+            if (!DrawScroll(Rect.height, W))
+                DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
 
-            DrawInventory(new Rect(RightOffset, TopH, leftW - RightOffset * 2 + 5, ListHeight));
-            DrawBill(new Rect(RightOffset / 2f + rightX, TopH + rightY, rightW - RightOffset * 2 + RightOffset / 2f + 5, rightMid));
+            string who = Session.World.Mobiles.TryGetValue(_list.Vendor, out Mobile m) && !string.IsNullOrEmpty(m.Name) ? m.Name : "the vendor";
+            Text(new Rect(left, title, inner, 20), (_list.Selling ? "Sell to " : "Buy from ") + who, InkBlue, 15, TextAnchor.UpperCenter, true);
+            float cx = (W - InventoryHeader.width * K) / 2f;
+            DrawGumpPart(leftGump, InventoryHeader, cx, invHeader, K);
+            DrawInventory(listView);
+            DrawGumpPart(rightGump, BillHeader, (W - BillHeader.width * K) / 2f, billHeader, K);
+            DrawBill(billView);
 
-            // The painted arrows page the lists (TazUO's hit boxes on the art).
-            if (Hit(leftW - 50, TopH - 18, 18, 16)) _scroll.y = Mathf.Max(0, _scroll.y - 50);
-            if (Hit(leftW - 50, TopH + ListHeight, 18, 16)) _scroll.y += 50;
-            if (Hit(rightX + rightW - 50, rightY + TopH - 18, 18, 16)) _billScroll.y = Mathf.Max(0, _billScroll.y - BillRow * 2);
-            if (Hit(rightX + rightW - 50, rightFootY, 18, 16)) _billScroll.y += BillRow * 2;
-
-            // The total and the player's gold on the bill's "Total:" / "Gold Avail:" line.
+            // The total and the player's gold after the art's own "Total:" and "Gold Avail:".
+            float lineX = (W - TotalLine.width * K) / 2f;
+            DrawGumpPart(rightGump, TotalLine, lineX, totalY, K);
             int total = _list.Items.Sum(it => (_order.TryGetValue(it.Serial, out int n) ? n : 0) * it.Price);
-            float labelY = rightFootY + RightFootH - RightOffset * 3 + 15;
-            float totalX = _list.Selling ? rightX + rightW - RightOffset * 3 : RightOffset + rightX + 36;
-            Text(new Rect(totalX, labelY - 2, 90, 18), total.ToString(), Ink, 13, TextAnchor.UpperLeft, true);
+            Text(new Rect(lineX + 42f * K, totalY, 80, 20), total.ToString(), InkBlue, 14, TextAnchor.UpperLeft, true);
             if (!_list.Selling && Session.World.Player != null)
-                Text(new Rect(totalX + 120, labelY - 2, 90, 18), Session.World.Player.Gold.ToString(), Ink, 13, TextAnchor.UpperLeft, true);
+                Text(new Rect(lineX + 162f * K, totalY, 90, 20), Session.World.Player.Gold.ToString(), InkBlue, 14, TextAnchor.UpperLeft, true);
 
-            // Accept and Clear are the seals painted on the bill.
-            float acceptX = RightOffset + rightX, acceptY = rightFootY + RightFootH - 50;
-            if (Hit(acceptX, acceptY, 34, 30))
+            // The band of seals: the red one accepts, the grey one clears (with their labels).
+            float sealX = (W - SealBand.width * K) / 2f;
+            DrawGumpPart(rightGump, SealBand, sealX, sealY, K);
+            if (Hit(sealX + 2f * K, sealY, 66f * K, SealBand.height * K))
             {
                 var order = _order.Where(kv => kv.Value > 0).Select(kv => (kv.Key, kv.Value)).ToList();
                 if (order.Count > 0)
@@ -127,9 +138,12 @@ namespace UOClient.Unity.UI
                 }
                 Close();
             }
-            if (Hit(acceptX + 175, acceptY, 20, 20))
+            if (Hit(sealX + 140f * K, sealY, 64f * K, SealBand.height * K))
                 _order.Clear();
         }
+
+        /// <summary>The blue ink of the shop art's own lettering.</summary>
+        private static readonly Color InkBlue = new Color(0.1f, 0.12f, 0.45f);
 
         /// <summary>An invisible button over a part of the art (a painted seal or arrow).</summary>
         private static bool Hit(float x, float y, float w, float h) => GUI.Button(new Rect(x, y, w, h), GUIContent.none, GUIStyle.none);

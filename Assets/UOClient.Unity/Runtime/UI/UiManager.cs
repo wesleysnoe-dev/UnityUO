@@ -144,19 +144,43 @@ namespace UOClient.Unity.UI
         /// 0x0820): the top roll, the parchment (0x0821 and 0x0822 tiled) between, the bottom roll at its foot. False when
         /// the art is missing (the caller draws a plain background).
         /// </summary>
-        protected bool DrawScroll(float height)
+        protected bool DrawScroll(float height, float width = ScrollArtWidth)
         {
-            UiImage top = Art.Gump(0x0820), right = Art.Gump(0x0821), mid = Art.Gump(0x0822), bottom = Art.Gump(0x0823);
+            // The sharpened pieces (HD, else Scale2x x2, filtered), at the art's sizes times k: crisp at any UI scale.
+            UiImage top = Art.GumpDetailed(0x0820), right = Art.GumpDetailed(0x0821), mid = Art.GumpDetailed(0x0822), bottom = Art.GumpDetailed(0x0823);
             if (top == null || mid == null || bottom == null)
                 return false;
-            int width = Mathf.Max(top.Width, Mathf.Max(mid.Width, bottom.Width));
-            float midX = (width - mid.Width) / 2f, midY = top.Height, midH = height - top.Height - bottom.Height;
-            DrawTiled(right ?? mid, (width - (right ?? mid).Width) / 2f, midY, (right ?? mid).Width, midH);
-            DrawTiled(mid, midX, midY, mid.Width, midH);
-            DrawImage(top, 0, 0);
+            float k = width / Mathf.Max(top.Width, Mathf.Max(mid.Width, bottom.Width));
+            float topH = top.Height * k, botH = bottom.Height * k, midY = topH, midH = height - topH - botH;
+            ScaledTiles(right ?? mid, k, (width - (right ?? mid).Width * k) / 2f, midY, midH);
+            ScaledTiles(mid, k, (width - mid.Width * k) / 2f, midY, midH);
+            GUI.DrawTexture(new Rect(0, 0, top.Width * k, topH), top.Texture, ScaleMode.StretchToFill);
             int off = top.Width - bottom.Width;
-            DrawImage(bottom, off / 2 + off / 4, height - bottom.Height);
+            GUI.DrawTexture(new Rect((off / 2 + off / 4) * k, height - botH, bottom.Width * k, botH), bottom.Texture, ScaleMode.StretchToFill);
             return true;
+        }
+
+        /// <summary>A picture repeated downward from (x, y), each copy k times its art size, cut off at <paramref name="h"/>.</summary>
+        private static void ScaledTiles(UiImage img, float k, float x, float y, float h)
+        {
+            if (img == null || h <= 0)
+                return;
+            float tw = img.Width * k, th = img.Height * k;
+            GUI.BeginGroup(new Rect(x, y, tw, h));
+            for (float ty = 0; ty < h; ty += th)
+                GUI.DrawTexture(new Rect(0, ty, tw, th), img.Texture, ScaleMode.StretchToFill);
+            GUI.EndGroup();
+        }
+
+        /// <summary>A part (art pixels) of a gump drawn at (x, y), k times its size, from the sharpened texture.</summary>
+        protected void DrawGumpPart(int gump, RectInt part, float x, float y, float k)
+        {
+            UiImage img = Art.GumpDetailed(gump);
+            if (img == null)
+                return;
+            var uv = new Rect((float)part.x / img.Width, 1f - (float)(part.y + part.height) / img.Height,
+                              (float)part.width / img.Width, (float)part.height / img.Height);
+            GUI.DrawTextureWithTexCoords(new Rect(x, y, part.width * k, part.height * k), img.Texture, uv);
         }
 
         /// <summary>
