@@ -32,6 +32,12 @@ namespace UOClient.Unity.UI
         /// <summary>A rolled scroll's art (tiledata "scroll"): what party, profile and vendor windows fly in as.</summary>
         public const int ScrollGraphic = 0x14ED;
 
+        /// <summary>UO's scroll (TazUO's ExpandableScroll 0x0820): the top roll, the parchment repeated down, the bottom roll.</summary>
+        public const int ScrollTop = 0x0820, ScrollMiddle = 0x0821, ScrollBottom = 0x0823;
+
+        /// <summary>Of a scroll's opening: it unrolls until ScrollUnrolled, then its rolls fade as the window takes over.</summary>
+        private const float ScrollUnrolled = 0.82f;
+
         /// <summary>A plain book's art, when the used item can't be found (a book opened by the server alone).</summary>
         public const int BookGraphic = 0x0FF2;
 
@@ -195,6 +201,8 @@ namespace UOClient.Unity.UI
                     GUI.BringWindowToFront(intro.OverlayId);
                     continue;
                 }
+                if (intro.Kind == WindowIntro.Scroll && DrawScrollIntro(kv.Key, intro, t))
+                    continue;
                 if (t >= FlightShare)
                     continue;
                 Rect target = FlightTarget(BookRect(kv.Key, intro), intro.Kind, intro.Art);
@@ -446,6 +454,85 @@ namespace UOClient.Unity.UI
             }
         }
 
+        // ---- the scroll: UO's own rolls, flying rolled up, then unrolling down the window ----
+
+        /// <summary>The scroll's pieces and how they sit for a window: scaled to span it, the handles past its sides.</summary>
+        private (UiImage Top, UiImage Mid, UiImage Bottom, float K, float Width)? ScrollParts(UiWindow w)
+        {
+            UiImage top = Art.GumpDetailed(ScrollTop), mid = Art.GumpDetailed(ScrollMiddle), bottom = Art.GumpDetailed(ScrollBottom);
+            if (top == null || mid == null || bottom == null)
+                return null;
+            float width = w.Rect.width + 40f;
+            return (top, mid, bottom, width / top.Width, width);
+        }
+
+        /// <summary>How far down the window the scroll has unrolled (window-local y of the bottom roll's middle), 0..height.</summary>
+        private static float Unrolled(UiWindow w, float topH, float t) =>
+            Mathf.Lerp(topH * 0.4f, w.Rect.height, Ease(Mathf.Clamp01(OpenPhase(t) / ScrollUnrolled)));
+
+        /// <summary>
+        /// The scroll's rolls, in a window of their own above the others: rolled up (top roll over bottom roll), flying
+        /// upright from where it was asked for to the window's top edge, then the bottom roll travelling down as it
+        /// unrolls; both fade once it is open. False when the art is missing (the plain fallback draws it).
+        /// </summary>
+        private bool DrawScrollIntro(UiWindow w, Intro intro, float t)
+        {
+            if (!(ScrollParts(w) is var (top, mid, bottom, k, sw)))
+                return false;
+            float topH = top.Height * k, botH = bottom.Height * k;
+            float x0 = w.Rect.x - 20f, y0 = w.Rect.y - topH * 0.5f;
+            Rect area;
+            float bottomY; // the bottom roll's top, relative to area
+            float alpha = 1f;
+            if (t < FlightShare)
+            {
+                float kf = Ease(t / FlightShare);
+                float startW = 90f, s = Mathf.Lerp(startW / sw, 1f, kf);
+                float rw = sw * s, rh = (topH + botH * 0.7f) * s;
+                Vector2 c = Vector2.Lerp(intro.From, new Vector2(x0 + sw / 2f, y0 + (topH + botH * 0.7f) / 2f), kf);
+                c.y -= Mathf.Sin(kf * Mathf.PI) * 60f;
+                area = new Rect(c.x - rw / 2f, c.y - rh / 2f, rw, rh);
+                bottomY = topH * 0.7f * s; // rolled: the bottom roll tucked under the top one
+                k *= s;
+            }
+            else
+            {
+                float shown = Unrolled(w, topH, t);
+                area = new Rect(x0, y0, sw, topH * 0.5f + shown + botH * 0.5f);
+                bottomY = topH * 0.5f + shown - botH * 0.5f;
+                float open = OpenPhase(t);
+                if (open > ScrollUnrolled)
+                    alpha = 1f - (open - ScrollUnrolled) / (1f - ScrollUnrolled);
+            }
+            float scale = k, by = bottomY, a = alpha;
+            GUI.Window(intro.OverlayId, area, _ =>
+            {
+                if (Event.current.type != EventType.Repaint)
+                    return;
+                Color was = GUI.color;
+                GUI.color = new Color(1f, 1f, 1f, a);
+                float aw = area.width;
+                float bw = bottom.Width * scale, tw = top.Width * scale;
+                GUI.DrawTexture(new Rect((aw - bw) / 2f, by, bw, bottom.Height * scale), bottom.Texture, ScaleMode.StretchToFill);
+                GUI.DrawTexture(new Rect((aw - tw) / 2f, 0, tw, top.Height * scale), top.Texture, ScaleMode.StretchToFill);
+                GUI.color = was;
+            }, GUIContent.none, GUIStyle.none);
+            GUI.BringWindowToFront(intro.OverlayId);
+            return true;
+        }
+
+        /// <summary>The parchment behind a scroll window's contents as it unrolls (window-local, down to <paramref name="shown"/>).</summary>
+        private void ScrollParchment(UiWindow w, float shown)
+        {
+            if (!(ScrollParts(w) is var (_, mid, _, k, sw)))
+                return;
+            float mw = mid.Width * k, mh = mid.Height * k, x = -20f + (sw - mw) / 2f;
+            GUI.BeginGroup(new Rect(0, 0, w.Rect.width, shown));
+            for (float y = 0f; y < shown; y += mh)
+                GUI.DrawTexture(new Rect(x, y, mw, mh), mid.Texture, ScaleMode.StretchToFill);
+            GUI.EndGroup();
+        }
+
         // ---- the window itself during its opening ----
 
         private static void Fill(Rect r, Color c)
@@ -485,10 +572,17 @@ namespace UOClient.Unity.UI
                 GUI.color = new Color(colour.r, colour.g, colour.b, Mathf.Clamp01((open - FadeStart) / (1f - FadeStart)));
                 w.Draw();
             }
+            else if (ScrollParts(w) is var (top, _, _, k, _))
+            {
+                // UO's scroll: parchment behind, the window's own contents over it, down to the bottom roll.
+                float shown = Unrolled(w, top.Height * k, t);
+                ScrollParchment(w, shown);
+                Clipped(w, new Rect(0, 0, w.Rect.width, shown));
+            }
             else
             {
                 float W = w.Rect.width, H = w.Rect.height;
-                // First the roll spreads to the window's width along its top, then it unrolls downward.
+                // No scroll art: the drawn roll spreads along the top, then unrolls downward.
                 float spread = Mathf.Clamp01(open / 0.2f), down = Ease(Mathf.Clamp01((open - 0.2f) / 0.8f));
                 float shown = H * down;
                 Clipped(w, new Rect(0, 0, W, shown));

@@ -154,6 +154,22 @@ namespace UOClient.Unity.UI
             return _detailed[graphic] = new UiImage { Bitmap = bmp, Texture = tex };
         }
 
+        private readonly Dictionary<int, UiImage> _gumpsDetailed = new Dictionary<int, UiImage>();
+
+        /// <summary>A gump for drawing large (the scroll opening's rolls and parchment): the HD one, else Scale2x x2, filtered.</summary>
+        public UiImage GumpDetailed(int id)
+        {
+            if (_gumpsDetailed.TryGetValue(id, out UiImage img))
+                return img;
+            Bitmap32 bmp = _data.GetGump(id);
+            if (bmp == null)
+                return _gumpsDetailed[id] = null;
+            Bitmap32 big = _data.GetGumpHd(id).Hd ?? Scale2x(Scale2x(bmp));
+            Texture2D tex = UnityTextures.ToTexture(big, $"gump 0x{id:X4} detailed");
+            tex.filterMode = FilterMode.Bilinear;
+            return _gumpsDetailed[id] = new UiImage { Bitmap = bmp, Texture = tex };
+        }
+
         /// <summary>Scale2x (EPX): each pixel becomes four, taking a neighbour's colour along a clean edge.</summary>
         public static Bitmap32 Scale2x(Bitmap32 src)
         {
