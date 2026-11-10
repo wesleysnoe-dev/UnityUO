@@ -377,7 +377,7 @@ namespace UOClient.Unity.UI
                 last.SetMobile(serial);
                 return;
             }
-            Vector2 at = _lastAttackPos ?? new Vector2(0, TopBarWindow.Height + 4);
+            Vector2 at = _lastAttackPos ?? new Vector2(0, (PaperdollWindow.Modern ? 0 : TopBarWindow.Height) + 4);
             HealthBarWindow bar = ui.Open(new HealthBarWindow(serial, at.x, at.y) { IsLastAttackBar = true });
             _lastAttackPos = bar.Rect.position;
         }

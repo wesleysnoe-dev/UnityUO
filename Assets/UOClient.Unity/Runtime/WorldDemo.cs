@@ -428,6 +428,7 @@ namespace UOClient.Unity
             doubleClickToLootInsideContainers = UI.ContainerWindow.DoubleClickToLoot,
             holdShiftToSplitStack = UI.UiManager.HoldShiftToSplitStack,
             animateBooksAndScrolls = UI.UiManager.OpenAnimations,
+            modernPaperdoll = UI.PaperdollWindow.Modern,
             useTooltip = _tooltip.UseTooltip,
             buffBarTime = UI.BuffBarWindow.ShowTimers,
             castSpellsByOneClick = UI.SpellIconWindow.SingleClickIconUse,
@@ -485,6 +486,8 @@ namespace UOClient.Unity
             UI.ContainerWindow.DoubleClickToLoot = o.doubleClickToLootInsideContainers;
             UI.UiManager.HoldShiftToSplitStack = o.holdShiftToSplitStack;
             UI.UiManager.OpenAnimations = o.animateBooksAndScrolls;
+            UI.PaperdollWindow.Modern = o.modernPaperdoll;
+            _binder?.SyncTopBar();
             _tooltip.UseTooltip = o.useTooltip;
             UI.BuffBarWindow.ShowTimers = o.buffBarTime;
             UI.SpellIconWindow.SingleClickIconUse = o.castSpellsByOneClick;

@@ -57,6 +57,11 @@ namespace UOClient.Unity.UI
 
         public override void OnOpened()
         {
+            if (Modern)
+            {
+                Rect.size = new Vector2(ModernWidth(_serial == Session.World.PlayerSerial), ModernHeight);
+                return;
+            }
             UiImage bg = Art.Gump(_serial == Session.World.PlayerSerial ? BackgroundPlayer : BackgroundOther) ?? Art.Gump(BackgroundPlayer);
             if (bg != null)
                 Rect.size = new Vector2(bg.Width, bg.Height);
@@ -66,9 +71,17 @@ namespace UOClient.Unity.UI
         {
             if (!Session.World.Mobiles.TryGetValue(_serial, out Mobile m))
                 return;
+            if (Modern)
+            {
+                DrawModern(m);
+                return;
+            }
 
             bool self = _serial == Session.World.PlayerSerial;
-            DrawImage(Art.Gump(self ? BackgroundPlayer : BackgroundOther) ?? Art.Gump(BackgroundPlayer), 0, 0);
+            UiImage background = Art.Gump(self ? BackgroundPlayer : BackgroundOther) ?? Art.Gump(BackgroundPlayer);
+            if (background != null)
+                Rect.size = new Vector2(background.Width, background.Height); // back from the modern size
+            DrawImage(background, 0, 0);
 
             // The virtue gem on every paperdoll, under the body (TazUO adds its PaperDollInteractable after the gem).
             UiImage virtue = Art.Gump(VirtueGem);
@@ -257,6 +270,8 @@ namespace UOClient.Unity.UI
         /// </summary>
         private (int Slot, byte Layer, EquippedItem? Item) HitAt(Vector2 local)
         {
+            if (Modern)
+                return ModernHitAt(local);
             if (OnPicture(_combatBook, CombatBookX, CombatBookY, local) || OnPicture(_racialBook, RacialBookX, RacialBookY, local))
                 return (-1, 0, null);
             var (i, _, _) = MousePick.WindowItem(_drawn.Count, local.x, local.y, Ui.Scale, _ => (BodyX, BodyY),
@@ -288,7 +303,7 @@ namespace UOClient.Unity.UI
                     _pressed = ItemAt(e.mousePosition);
                     _pressAt = e.mousePosition;
                     // Targeting: a worn item, or the character itself when clicking the body.
-                    if (Session.Target != null && e.mousePosition.x < 185)
+                    if (Session.Target != null && OnDoll(e.mousePosition))
                     {
                         TryTarget(_pressed?.Item.Serial ?? _serial);
                         _pressed = null;

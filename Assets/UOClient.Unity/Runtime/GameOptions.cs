@@ -118,6 +118,9 @@ namespace UOClient.Unity
         /// <summary>Books fly up and open, and party, profile and vendor windows unroll as scrolls (UiManager.Intro); off: they appear at once.</summary>
         public bool animateBooksAndScrolls = true;
 
+        /// <summary>The modern paperdoll (framed, its buttons taking over the top bar's, which goes); off: the classic one and the top bar.</summary>
+        public bool modernPaperdoll = true;
+
         /// <summary>TazUO's UseTooltip (Tooltip.SetText): off hides the text tooltips of windows (buffs, gump elements, spell icons), not item or mobile properties.</summary>
         public bool useTooltip = true;
 
@@ -390,6 +393,7 @@ namespace UOClient.Unity
             && containersScale == o.containersScale && doubleClickToLootInsideContainers == o.doubleClickToLootInsideContainers
             && holdShiftToSplitStack == o.holdShiftToSplitStack && useTooltip == o.useTooltip
             && animateBooksAndScrolls == o.animateBooksAndScrolls
+            && modernPaperdoll == o.modernPaperdoll
             && buffBarTime == o.buffBarTime && castSpellsByOneClick == o.castSpellsByOneClick
             && showMobilesHP == o.showMobilesHP && mobileHPShowWhen == o.mobileHPShowWhen
             && healthLineSizeMultiplier == o.healthLineSizeMultiplier
@@ -445,6 +449,7 @@ namespace UOClient.Unity
                     case "doubleClickToLootInsideContainers": Bool(raw, ref o.doubleClickToLootInsideContainers); break;
                     case "holdShiftToSplitStack": Bool(raw, ref o.holdShiftToSplitStack); break;
                     case "animateBooksAndScrolls": Bool(raw, ref o.animateBooksAndScrolls); break;
+                    case "modernPaperdoll": Bool(raw, ref o.modernPaperdoll); break;
                     case "useTooltip": Bool(raw, ref o.useTooltip); break;
                     case "buffBarTime": Bool(raw, ref o.buffBarTime); break;
                     case "castSpellsByOneClick": Bool(raw, ref o.castSpellsByOneClick); break;
@@ -549,6 +554,7 @@ namespace UOClient.Unity
             Add("doubleClickToLootInsideContainers", B(doubleClickToLootInsideContainers));
             Add("holdShiftToSplitStack", B(holdShiftToSplitStack));
             Add("animateBooksAndScrolls", B(animateBooksAndScrolls));
+            Add("modernPaperdoll", B(modernPaperdoll));
             Add("useTooltip", B(useTooltip));
             Add("buffBarTime", B(buffBarTime));
             Add("castSpellsByOneClick", B(castSpellsByOneClick));

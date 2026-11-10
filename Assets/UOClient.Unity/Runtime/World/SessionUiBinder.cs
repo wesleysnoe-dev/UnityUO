@@ -62,8 +62,7 @@ namespace UOClient.Unity
             Ui.Command = RunCommand;
             ChatLog = new UI.ChatLog();
             s.World.JournalAdded += ChatLog.Add;
-            Ui.Open(new UI.TopBarWindow());
-            _ctx.Hud.TopInset = UI.TopBarWindow.Height + 4;
+            SyncTopBar();
             // TazUO brings its buff gump back from the saved layout; we save none, so it opens with each session
             // (closed, the status window's buff button opens it again).
             Ui.Open(new UI.BuffBarWindow());
@@ -469,6 +468,26 @@ namespace UOClient.Unity
                         Ui.Open(new UI.WorldMapWindow(_ctx.Data, Path.Combine(GameContext.ProjectRoot, "Library", "UOClient")));
                     break;
                 case "groups": _ctx.Session.Say("[groups"); break; // the server's Group Finder, as the UO Smallz client's button does
+            }
+        }
+
+        /// <summary>The top bar with the classic paperdoll; none with the modern one (its buttons are the paperdoll's).</summary>
+        public void SyncTopBar()
+        {
+            if (Ui == null || _ctx?.Session == null)
+                return;
+            UI.UiWindow bar = Ui.Find("topbar");
+            if (UI.PaperdollWindow.Modern)
+            {
+                if (bar != null)
+                    Ui.Close(bar);
+                _ctx.Hud.TopInset = 0;
+            }
+            else
+            {
+                if (bar == null)
+                    Ui.Open(new UI.TopBarWindow());
+                _ctx.Hud.TopInset = UI.TopBarWindow.Height + 4;
             }
         }
     }

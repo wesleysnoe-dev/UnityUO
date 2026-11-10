@@ -341,6 +341,8 @@ namespace UOClient.Unity.UI
             Line("In a corpse or a chest on the ground, a double-click moves a plain item\nto your backpack (Ctrl+double-click still uses it).", 34);
             d.animateBooksAndScrolls = Toggle("Animate books and scrolls opening", d.animateBooksAndScrolls);
             Line("Books fly up and open; party, profile and vendor windows unroll.");
+            d.modernPaperdoll = Toggle("Modern paperdoll", d.modernPaperdoll);
+            Line(d.modernPaperdoll ? "Its buttons take the top bar's place (Alt+P opens it)." : "The classic paperdoll, and the top bar.");
             d.holdShiftToSplitStack = Toggle("Hold Shift to split a stack", d.holdShiftToSplitStack);
             Line(d.holdShiftToSplitStack
                 ? "Shift+drag asks how many; a plain drag takes the whole stack."

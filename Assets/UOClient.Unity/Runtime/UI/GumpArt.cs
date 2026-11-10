@@ -170,6 +170,25 @@ namespace UOClient.Unity.UI
             return _gumpsDetailed[id] = new UiImage { Bitmap = bmp, Texture = tex };
         }
 
+        private readonly Dictionary<(int, int, bool), UiImage> _smooth = new Dictionary<(int, int, bool), UiImage>();
+
+        /// <summary>
+        /// A gump hued as <see cref="Gump"/> but smoothed for drawing larger than its art (the modern paperdoll's doll):
+        /// Scale2x, bilinear. The Bitmap is the stock-size hued art (its hit test).
+        /// </summary>
+        public UiImage GumpSmooth(int id, int hue = 0, bool partial = false)
+        {
+            hue &= 0x3FFF;
+            if (_smooth.TryGetValue((id, hue, partial), out UiImage img))
+                return img;
+            UiImage stock = Gump(id, hue, partial);
+            if (stock == null)
+                return _smooth[(id, hue, partial)] = null;
+            Texture2D tex = UnityTextures.ToTexture(Scale2x(stock.Bitmap), $"gump 0x{id:X4} smooth");
+            tex.filterMode = FilterMode.Bilinear;
+            return _smooth[(id, hue, partial)] = new UiImage { Bitmap = stock.Bitmap, Texture = tex };
+        }
+
         private readonly Dictionary<(int, RectInt), UiImage> _cutouts = new Dictionary<(int, RectInt), UiImage>();
 
         /// <summary>

@@ -180,6 +180,11 @@ namespace UOClient.Unity
             foreach (var p in _parsed)
                 if (Input.GetKeyDown(p.Key) && p.Ctrl == ctrl && p.Alt == alt && p.Shift == shift)
                     Run(session, p.Binding.action);
+            // Classic UO's window keys, unless bound to something else: Alt+P the paperdoll, Alt+I the backpack.
+            if (alt && !ctrl && !shift)
+                foreach (var (key, action) in new[] { (KeyCode.P, "paperdoll"), (KeyCode.I, "backpack") })
+                    if (Input.GetKeyDown(key) && !_parsed.Exists(p => p.Key == key && p.Alt && !p.Ctrl && !p.Shift))
+                        Run(session, action);
             Pump(session);
 
             // A queued self/last target (bandages, etc.) answers the next cursor the server raises: not one
