@@ -110,6 +110,7 @@ namespace UOClient.Unity
             }
             s.SoundPlayed += OnSoundPlayed;
             s.MusicRequested += OnMusicRequested;
+            Avatar.FootstepSound = (id, x, y) => OnSoundPlayed(id, x, y, 0); // the client's own footsteps
         }
 
         /// <summary>
@@ -159,6 +160,7 @@ namespace UOClient.Unity
             s.HouseCustomizationChanged -= OnHouseCustomizationChanged;
             s.SoundPlayed -= OnSoundPlayed;
             s.MusicRequested -= OnMusicRequested;
+            Avatar.FootstepSound = null;
         }
 
         private void OnPaperdollOpened(uint serial, string title)

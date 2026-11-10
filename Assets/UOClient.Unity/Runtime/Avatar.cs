@@ -238,8 +238,42 @@ namespace UOClient.Unity
             _stepDuration = 0;
         }
 
+        /// <summary>A footstep to play (sound id, tile x, tile y): the client makes these itself (TazUO ProcessFootstepsSound).</summary>
+        public static Action<int, int, int> FootstepSound;
+
+        private float _nextStepSoundAt;
+        private int _stepSoundOffset;
+
+        /// <summary>
+        /// TazUO's Mobile.ProcessFootstepsSound: people (not ghosts) alternate 0x12B / 0x12C on foot; mounted, a run plays
+        /// 0x129 / 0x12A and a walk 0x12B; at most one per 400 ms on foot (350 riding at a walk, 150 riding at a run), x 1.3.
+        /// </summary>
+        private void Footstep(int x, int y, bool run)
+        {
+            if (FootstepSound == null || _look == null || Dead || !MobileLook.IsHumanGraphic(_look.Body) || Time.time < _nextStepSoundAt)
+                return;
+            int inc = _stepSoundOffset, id = 0x012B, delayMs = 400;
+            if (_look.Mounted)
+            {
+                if (run)
+                {
+                    id = 0x0129;
+                    delayMs = 150;
+                }
+                else
+                {
+                    inc = 0;
+                    delayMs = 350;
+                }
+            }
+            _stepSoundOffset = (inc + 1) % 2;
+            _nextStepSoundAt = Time.time + delayMs * 13 / 10 / 1000f;
+            FootstepSound(id + inc, x, y);
+        }
+
         private void StartMove(int x, int y, int z, bool run, float duration = 0f)
         {
+            Footstep(x, y, run);
             // Keep where the avatar is drawn right now, so a step that starts mid-step does not jump.
             Vector2 current = AnchorPixels;
             (Vector2 currentTile, float currentZ, bool currentLand) = StepPosition();

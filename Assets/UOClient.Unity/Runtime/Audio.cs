@@ -53,7 +53,12 @@ namespace UOClient.Unity
                 _voices.Add(NewSource());
             _music = NewSource();
             _musicOld = NewSource();
+            AudioConfiguration cfg = AudioSettings.GetConfiguration();
+            Debug.Log($"UOClient audio: output {cfg.sampleRate} Hz, {cfg.speakerMode}, dsp {cfg.dspBufferSize}; listener volume {AudioListener.volume}, paused {AudioListener.pause}; " +
+                      $"listeners {UnityEngine.Object.FindObjectsByType<AudioListener>(FindObjectsSortMode.None).Length}; sound {SoundVolume}, music {_musicVolume}");
         }
+
+        private int _soundLogs;
 
         private AudioSource NewSource()
         {
@@ -72,6 +77,11 @@ namespace UOClient.Unity
             if (distance > HearingRange)
                 return;
             AudioClip clip = Clip(id);
+            if (_soundLogs < 5)
+            {
+                _soundLogs++;
+                Debug.Log($"UOClient audio: sound {id} at {dx},{dy}: {(clip == null ? "no data" : $"{clip.length:0.00} s")}, volume {SoundVolume}, listener {AudioListener.volume}");
+            }
             if (clip == null)
                 return;
             SoundsPlayed++;
@@ -114,10 +124,17 @@ namespace UOClient.Unity
             }
             _tracks ??= ReadTracks(Path.Combine(_data.Directory, "Music", "Digital", "Config.txt"));
             if (!_tracks.TryGetValue(id, out var track))
+            {
+                Debug.Log($"UOClient audio: music {id}: not in Config.txt ({_tracks.Count} tracks)");
                 return;
+            }
             string path = LoginMediaRules.MusicFile(Path.Combine(_data.Directory, "Music", "Digital"), track.File);
             if (!File.Exists(path))
+            {
+                Debug.Log($"UOClient audio: music {id}: {path} missing");
                 return;
+            }
+            Debug.Log($"UOClient audio: music {id} -> {Path.GetFileName(path)} (volume {_musicVolume})");
             StartCoroutine(LoadAndFade(request, path, track.Loop));
         }
 
@@ -140,6 +157,7 @@ namespace UOClient.Unity
                 }
                 clip = DownloadHandlerAudioClip.GetContent(req);
             }
+            Debug.Log($"UOClient audio: loaded {Path.GetFileName(path)}: {(clip == null ? "null" : $"{clip.length:0.0} s, {clip.loadState}")}");
             if (request != _musicRequest)
             {
                 Destroy(clip); // overtaken by a newer track while loading
