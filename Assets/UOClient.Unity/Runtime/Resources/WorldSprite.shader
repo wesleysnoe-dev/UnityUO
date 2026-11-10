@@ -51,6 +51,7 @@ Shader "UOClient/WorldSprite"
             float _UOWindBoost;    // WeatherView: rain and storms blow harder (unset 0)
             float _UOFoliageSeason; // leaves' season (FoliageWind.SeasonCode): 0 as drawn, 1 spring, 2 fall, 3 winter, 4 desolation
             float _UOWindowGlow;   // ItemLights: how dark it is (0 day .. 1 night); windows' panes glow by it
+            float _UOWaterStill;   // 1: no shimmer and no shore foam (the options' animated water off); unset 0: animated
             #ifdef LG_SPRITE_SHADOW
             // LiveGroundCompare (TEST only; LiveGroundLighting.cs, SpriteShadow, mirrors this line for line): sun-shadow
             // receive. Each pixel is put back into the world from its sprite's foot anchor and tested against the CPU
@@ -268,10 +269,13 @@ Shader "UOClient/WorldSprite"
                     return c * i.color;
                 fixed3 art = c.rgb;
                 if (i.water > 0.5 && i.water < 1.5)
-                    c.rgb = UOWaterShimmer(c.rgb, i.world);
+                {
+                    if (_UOWaterStill < 0.5)
+                        c.rgb = UOWaterShimmer(c.rgb, i.world);
+                }
                 else if (_UOFoliageSeason > 0.5 && (i.water >= 1.5 && i.water < 3.5 || i.water >= 5.5 && i.water < 7.5 && _UOFoliageSeason > 2.5))
                     c.rgb = FoliageSeason(c.rgb, i.world); // leaves every season; evergreens only winter and desolation
-                if (i.water > 1.01 && i.water < 1.5)
+                if (_UOWaterStill < 0.5 && i.water > 1.01 && i.water < 1.5)
                     c.rgb = UOShoreFoam(c.rgb, i.world, (i.water - 1.0) * 2.0);
 
                 float d = distance(i.world, _UOLightPos.xy) / max(_UOLightPos.z, 1.0);

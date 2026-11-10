@@ -20,6 +20,15 @@ namespace UOClient.Unity
         public static readonly bool Enabled = !Array.Exists(Environment.GetCommandLineArgs(),
             a => string.Equals(a, "-noambient", StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>
+        /// The options' ambient life (GameOptions.ambientLife), every frame: off, no new fireflies, leaves or pollen spawn
+        /// (those in the air live out their few seconds). Flame halos are the fire effects' and stay.
+        /// </summary>
+        public static bool Life = true;
+
+        /// <summary>The options' footprints (GameOptions.footprints), every frame: off, steps leave no prints, dust or splashes.</summary>
+        public static bool StepMarks = true;
+
         private const int MaxParticles = 320;
         private const int Radius = 15;          // tiles around the player where life spawns
         private const int SamplesPerFrame = 10; // tiles looked at each frame
@@ -89,9 +98,9 @@ namespace UOClient.Unity
             bool night = sun.Moon || sun.Strength < 0.15f && (sun.Hour < 6f || sun.Hour > 21f);
             bool dryish = rain < 0.15f;
             // How many of each the scene wants (a target the spawner fills, so life comes and goes gradually).
-            int wantFlies = night && dryish && season != Season.Winter ? 60 : 0;
-            int wantLeaves = season == Season.Winter || season == Season.Desolation ? 0 : (int)((season == Season.Fall ? 70 : 18) * (1f + wind * 1.5f));
-            int wantPollen = !night && dryish && (season == Season.Spring || season == Season.Summer) ? 45 : 0;
+            int wantFlies = Life && night && dryish && season != Season.Winter ? 60 : 0;
+            int wantLeaves = !Life || season == Season.Winter || season == Season.Desolation ? 0 : (int)((season == Season.Fall ? 70 : 18) * (1f + wind * 1.5f));
+            int wantPollen = Life && !night && dryish && (season == Season.Spring || season == Season.Summer) ? 45 : 0;
             int flies = 0, leaves = 0, pollen = 0;
             foreach (Particle p in _particles)
                 if (p.Kind == Kind.Firefly) flies++; else if (p.Kind == Kind.Leaf) leaves++; else pollen++;
@@ -138,7 +147,8 @@ namespace UOClient.Unity
                 }
             }
 
-            Steps(ctx, season, rain);
+            if (StepMarks)
+                Steps(ctx, season, rain);
 
             float t = Time.time;
             for (int i = _particles.Count - 1; i >= 0; i--)

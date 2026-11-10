@@ -15,8 +15,35 @@ namespace UOClient.Unity
     /// </summary>
     public sealed class CharacterShadow : IDisposable
     {
-        public static readonly bool Enabled = !Array.Exists(Environment.GetCommandLineArgs(),
+        /// <summary>-nocharshadows was given: no shadows this run whatever the options say.</summary>
+        public static readonly bool OffFromLaunch = Array.Exists(Environment.GetCommandLineArgs(),
             a => string.Equals(a, "-nocharshadows", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// Whether shadows are drawn this run. Fixed at startup (<see cref="StartWith"/>): characters, items and map chunks
+        /// build their shadows when they are made, so turning them on or off mid-run would leave some with and some without.
+        /// </summary>
+        public static bool Enabled { get; private set; } = !OffFromLaunch;
+
+        private static bool _started;
+
+        /// <summary>
+        /// The saved option (GameOptions.shadows, TazUO's ShadowsEnabled), once, before the first world is built; later
+        /// calls are ignored (the change waits for the next start). -nocharshadows still wins.
+        /// </summary>
+        public static void StartWith(bool option)
+        {
+            if (_started)
+                return;
+            _started = true;
+            Enabled = !OffFromLaunch && option;
+        }
+
+        /// <summary>
+        /// The options' sun shadows (GameOptions.sunShadows), every frame: off, the sun's and moon's shadows (and the
+        /// clouds', which fade with them) are faded out through _UOSunFade (<see cref="SetSun"/>); a lamp's indoors stay.
+        /// </summary>
+        public static bool SunShadows = true;
 
         /// <summary>
         /// The sun: the ground direction (tile units, x and y) a shadow falls in, and the sun's rise (Z per tile of shadow
@@ -152,7 +179,7 @@ namespace UOClient.Unity
                 now = now.normalized * SunMaxLength;
             Vector2 shift = now - PerPixel();
             Shader.SetGlobalVector(SunShiftId, new Vector4(shift.x, -shift.y, 0f, 0f)); // world pixels (y down) to Unity (y up)
-            Shader.SetGlobalFloat(SunFadeId, 1f - Mathf.Clamp01(strength));
+            Shader.SetGlobalFloat(SunFadeId, SunShadows ? 1f - Mathf.Clamp01(strength) : 1f);
             CurrentPerPixel = now;
         }
 

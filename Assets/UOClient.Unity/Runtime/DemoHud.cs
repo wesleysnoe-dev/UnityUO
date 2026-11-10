@@ -141,6 +141,9 @@ namespace UOClient.Unity
         public float DeathScreenUntil { get; set; }
         public const float DeathScreenSeconds = 1.5f;
 
+        /// <summary>TazUO's EnableDeathScreen (GameOptions.deathScreen): off, dying shows no death screen. On, as TazUO.</summary>
+        public bool DeathScreenEnabled { get; set; } = true;
+
         /// <summary>
         /// The quest arrow's target in screen pixels (top-left origin), or null when there is none. On screen it
         /// is marked in place; off screen an arrow at the edge points toward it.
@@ -392,7 +395,7 @@ namespace UOClient.Unity
                 GUI.Label(new Rect(16, h - 26, Mathf.Max(300, w * 0.5f - 350), 18), Summary, _small);
             }
 
-            float death = DeathScreenUntil - Time.unscaledTime;
+            float death = DeathScreenEnabled ? DeathScreenUntil - Time.unscaledTime : 0f;
             if (death > 0)
             {
                 // Over the whole HUD: solid black at first, fading out over the last half second.

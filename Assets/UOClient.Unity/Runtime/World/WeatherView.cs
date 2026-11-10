@@ -32,6 +32,16 @@ namespace UOClient.Unity
         public static readonly bool Clouds = !Array.Exists(Environment.GetCommandLineArgs(),
             a => string.Equals(a, "-noclouds", StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>
+        /// The options' weather switch (GameOptions.weather, TazUO's EnableEnhancedWeather), read every frame: off, nothing
+        /// of the weather is drawn or dims the light, and <see cref="Active"/> goes false so the HUD draws its plain screen
+        /// streaks again (as before this view). -noweather still turns the view off for the run whatever this says.
+        /// </summary>
+        public static bool ShowWeather = true;
+
+        /// <summary>The options' cloud shadows (GameOptions.cloudShadows), every frame; -noclouds still wins.</summary>
+        public static bool ShowClouds = true;
+
         private readonly GameObject _go;
         private readonly Material _material;
         private readonly MeshRenderer _renderer;
@@ -88,8 +98,15 @@ namespace UOClient.Unity
             if (_renderer == null || camera == null)
                 return;
             float rain = 0f, snow = 0f, fog = 0f, storm = 0f;
-            string kind = _forced;
-            Weather w = session?.Weather;
+            Active = ShowWeather;
+            if (!ShowWeather)
+            {
+                // Off: at once, not eased (the HUD's streaks take over this frame).
+                _rain = _snow = _fog = _storm = 0f;
+                _flashAge = 99f;
+            }
+            string kind = ShowWeather ? _forced : "clear";
+            Weather w = ShowWeather ? session?.Weather : null;
             if (kind == null && w != null)
             {
                 float amount = w.Count <= 0 ? 0f : Mathf.Clamp01(0.35f + w.Count / 70f * 0.65f);
@@ -145,7 +162,7 @@ namespace UOClient.Unity
                 flash = Mathf.Max(Pulse(_flashAge, 0.0f, 0.09f), Pulse(_flashAge, 0.18f, 0.35f) * 0.8f);
 
             // Cloud shadows: a fair-weather sky by day (the shader fades them with the sun's shadows, so not by night).
-            float clouds = Clouds ? 1f : 0f;
+            float clouds = Clouds && ShowClouds ? 1f : 0f;
             bool show = _rain > 0.01f || _snow > 0.01f || _fog > 0.01f || flash > 0f || clouds > 0f;
             _renderer.enabled = show;
             Status = !(_rain > 0.01f || _snow > 0.01f || _fog > 0.01f || _storm > 0.01f) ? "clear"

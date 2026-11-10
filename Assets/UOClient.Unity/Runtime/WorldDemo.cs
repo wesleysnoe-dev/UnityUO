@@ -108,9 +108,14 @@ namespace UOClient.Unity
             _cameraRig = new CameraRig(_ctx.Camera);
             _ctx.Hud = new DemoHud();
             Lighting.ApplyDefault();
+            // What "keep" means for vsync and the frame cap: the quality level's and Unity's own, as the game started.
+            _startVSync = QualitySettings.vSyncCount;
+            _startFrameRate = Application.targetFrameRate;
             // The options saved from the options window (read only; with none the code defaults stand).
             if (GameOptionsStore.TryLoad() is GameOptions saved)
                 ApplyOptions(saved);
+            // Shadows are built into characters and chunks as they are made: fixed for the run, before any world.
+            CharacterShadow.StartWith(_graphics.shadows);
 
             try
             {
@@ -405,6 +410,7 @@ namespace UOClient.Unity
         {
             GameOptions o = CurrentOptionsButNamePlates();
             GameOptions.CopyNamePlates(_ctx.Hud.NamePlateOptions, o);
+            GameOptions.CopyGraphics(_graphics, o); // "keep" display values stay keep; the window shows the live ones
             return o;
         }
 
@@ -521,6 +527,105 @@ namespace UOClient.Unity
             UI.GridContainerWindow.ScalePercent = o.gridContainersScale;
             UI.GridContainerWindow.ScaleItems = o.gridContainerScaleItems;
             _ctx.Hud.NamePlateOptions = o.Clone(); // HudPresenter and DemoHud read its nameOverhead* / namePlate* fields
+            ApplyGraphicsOptions(o);
+        }
+
+        // ---- the Display and Video options (GameOptions.Graphics.cs) ----
+
+        // The Display and Video options as last applied, the restart-only shadows and the "keep" display values included.
+        private readonly GameOptions _graphics = GameOptions.Defaults();
+        private bool _graphicsApplied;
+        private int _startVSync, _startFrameRate = -1;
+        private bool _focused = true;
+
+        /// <summary>
+        /// Puts the Display and Video options into the game. Everything takes effect at once except the shadows switch
+        /// (CharacterShadow.StartWith, read once at startup). The window is only resized or switched when its options
+        /// changed (or at startup), so a window the player resized by its edge keeps its size on a later Apply.
+        /// </summary>
+        private void ApplyGraphicsOptions(GameOptions o)
+        {
+            bool displayChanged = !_graphicsApplied || o.displayMode != _graphics.displayMode
+                                  || o.resolutionWidth != _graphics.resolutionWidth || o.resolutionHeight != _graphics.resolutionHeight;
+            GameOptions.CopyGraphics(o, _graphics);
+            _graphicsApplied = true;
+            if (displayChanged)
+                ApplyDisplay(o);
+            ApplyFocusRates();
+
+            Lighting.CustomLightLevel = o.useCustomLightLevel;
+            Lighting.CustomLevel = o.lightLevel;
+            Lighting.CustomLevelType = o.lightLevelType;
+            Lighting.GhostGrey = o.blackWhiteWhenDead;
+            ItemLights.On = o.itemLights;
+            _ctx.Hud.DeathScreenEnabled = o.deathScreen;
+            CharacterShadow.SunShadows = o.sunShadows;
+            WeatherView.ShowWeather = o.weather;
+            WeatherView.ShowClouds = o.cloudShadows;
+            FoliageWind.Sway = o.foliageSway;
+            FoliageWind.ShowSeasons = o.seasons;
+            AmbientLife.Life = o.ambientLife;
+            AmbientLife.StepMarks = o.footprints;
+            Shader.SetGlobalFloat(WaterStillId, o.animatedWater ? 0f : 1f); // WorldSprite: shimmer and shore foam
+            Fx.FxCatalog.On = o.fireEffects;
+            CameraRig.SetPostEffects(_ctx.Camera, o.bloom, o.colorGrading);
+        }
+
+        private static readonly int WaterStillId = Shader.PropertyToID("_UOWaterStill");
+
+        /// <summary>The display mode and resolution; "keep" (DisplayKeep, 0 x 0) leaves the window as Unity restored it.</summary>
+        private static void ApplyDisplay(GameOptions o)
+        {
+            if (o.displayMode == GameOptions.DisplayKeep && o.resolutionWidth <= 0)
+                return;
+            FullScreenMode mode = o.displayMode switch
+            {
+                GameOptions.DisplayWindowed => FullScreenMode.Windowed,
+                GameOptions.DisplayBorderless => FullScreenMode.FullScreenWindow,
+                GameOptions.DisplayExclusive => FullScreenMode.ExclusiveFullScreen,
+                _ => Screen.fullScreenMode
+            };
+            int w = o.resolutionWidth, h = o.resolutionHeight;
+            if (w <= 0 || h <= 0)
+            {
+                // No size chosen: a fullscreen mode takes the desktop's, a window keeps its own.
+                bool full = mode != FullScreenMode.Windowed;
+                w = full ? Screen.currentResolution.width : Screen.width;
+                h = full ? Screen.currentResolution.height : Screen.height;
+            }
+            if (mode == Screen.fullScreenMode && w == Screen.width && h == Screen.height)
+                return;
+            Debug.Log($"UOClient display: {mode} {w}x{h} (was {Screen.fullScreenMode} {Screen.width}x{Screen.height})");
+            Screen.SetResolution(w, h, mode);
+        }
+
+        /// <summary>
+        /// VSync, the frame cap and the listener volume for the window's focus: unfocused with TazUO's ReduceFPSWhenInactive,
+        /// <see cref="GameOptions.BackgroundFrameRate"/> fps (vsync off, so the cap holds); unfocused without
+        /// ReproduceSoundsInBackground, silent. "Keep" values are what the game started with.
+        /// </summary>
+        private void ApplyFocusRates()
+        {
+            if (GameOptions.InactiveFrameRate(_graphics.reduceFpsWhenInactive, _focused) is int background)
+            {
+                QualitySettings.vSyncCount = 0;
+                Application.targetFrameRate = background;
+            }
+            else
+            {
+                QualitySettings.vSyncCount = _graphics.vSync == GameOptions.VSyncKeep ? _startVSync : _graphics.vSync;
+                Application.targetFrameRate = GameOptions.TargetFrameRate(_graphics.frameRateCap) ?? _startFrameRate;
+            }
+            float volume = GameOptions.BackgroundAudioVolume(_graphics.reproduceSoundsInBackground, _focused);
+            if (AudioListener.volume != volume)
+                AudioListener.volume = volume;
+        }
+
+        private void OnApplicationFocus(bool focused)
+        {
+            _focused = focused;
+            if (_graphicsApplied)
+                ApplyFocusRates();
         }
 
         // The options' AutoOpenCorpses: kept across logins, each new session starts with nothing opened (Tick).

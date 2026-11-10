@@ -83,7 +83,8 @@ namespace UOClient.Unity
             {
                 // Server light: 0 = full day, ~26 and above = deep night. The personal light (0x4E, Night Sight) lifts it as
                 // TazUO's IsometricLevel does (LightSources.EffectiveLevel); 0 changes nothing.
-                int level = LightSources.EffectiveLevel(session.World.GlobalLight, session.World.PersonalLight);
+                (int overall, int personal) = ServerLevels(session);
+                int level = LightSources.EffectiveLevel(overall, personal);
                 float night = Mathf.Clamp01((level - 2) / 22f);
                 target = night < 0.5f
                     ? TimeOfDay.Lerp(Times[0], Times[2], night * 2f)
@@ -97,8 +98,10 @@ namespace UOClient.Unity
 
             // The server's season (0xBC) tints the ambient light; summer leaves it as it is. We have no seasonal art
             // sets (bare winter trees and the like), so the tint is all a season changes.
-            if (session != null && session.Season != Season.Summer)
-                target = new TimeOfDay(target.Name, target.Ambient * SeasonTint(session.Season), target.Light, target.Vignette);
+            // The options' seasons off (FoliageWind.ShowSeasons): no tint.
+            Season shownSeason = session != null ? FoliageWind.Shown(session.Season) : Season.Summer;
+            if (shownSeason != Season.Summer)
+                target = new TimeOfDay(target.Name, target.Ambient * SeasonTint(shownSeason), target.Light, target.Vignette);
 
             // The sun: the shard's clock where the player stands (or the T key's time, or -hour). Golden light low in the sky.
             double hour = !float.IsNaN(_fixedHour) ? _fixedHour
@@ -121,23 +124,42 @@ namespace UOClient.Unity
             // Item and static lights (ItemLights) as strong as the player's light is for this darkness (none by day), and
             // only while the personal light is below the overall level, as TazUO's UseLights.
             bool lightsOn = _timeOverride >= 0 || session == null
-                            || LightSources.LightsOn(session.World.GlobalLight, session.World.PersonalLight);
+                            || LightSources.LightsOn(ServerLevels(session).Overall, ServerLevels(session).Personal);
             Color l = _timeCurrent.Light;
             LocalLightScale = lightsOn ? Mathf.Clamp01(Mathf.Max(l.r, Mathf.Max(l.g, l.b)) / NightLightPeak) : 0f;
             int hh = (int)Sun.Hour, mm = (int)((Sun.Hour - hh) * 60f);
             hud.TimeName = target.Name + $" {hh:00}:{mm:00}{(Sun.Moon ? " moon" : "")}"
-                           + (_timeOverride < 0 && session != null ? $" (server light {session.World.GlobalLight})" : "")
+                           + (_timeOverride < 0 && session != null ? $" (server light {session.World.GlobalLight}{(CustomLightLevel ? $", custom {ServerLevels(session).Overall}" : "")})" : "")
                            + (session != null && session.Season != Season.Summer ? $", {session.Season.ToString().ToLowerInvariant()}" : "");
             hud.Vignette = _timeCurrent.Vignette;
 
             // A ghost sees the world drained of color; it fades out again on resurrection.
-            _dead = Mathf.MoveTowards(_dead, session != null && session.PlayerDead ? 1f : 0f, Time.deltaTime * 1.5f);
+            // TazUO's EnableBlackWhiteEffect off (GhostGrey): the world keeps its colour.
+            _dead = Mathf.MoveTowards(_dead, GhostGrey && session != null && session.PlayerDead ? 1f : 0f, Time.deltaTime * 1.5f);
             Shader.SetGlobalFloat("_UODead", _dead);
             hud.Ghost = session != null && session.PlayerDead;
 
             Vector2 light = playerUnity + new Vector2(0, 30 * artScale);
             Shader.SetGlobalVector("_UOLightPos", new Vector4(light.x, light.y, 170f * artScale, 0));
         }
+
+        // ---- the options' lighting (GameOptions: useCustomLightLevel, lightLevel, lightLevelType, blackWhiteWhenDead) ----
+
+        /// <summary>TazUO's UseCustomLightLevel: the world is lit at <see cref="CustomLevel"/> instead of the server's light.</summary>
+        public static bool CustomLightLevel;
+
+        /// <summary>TazUO's LightLevel (0 full day .. 0x1E darkest).</summary>
+        public static int CustomLevel;
+
+        /// <summary>TazUO's LightLevelType (GameOptions.LightLevelAbsolute / LightLevelMinimum).</summary>
+        public static int CustomLevelType;
+
+        /// <summary>TazUO's EnableBlackWhiteEffect: a ghost sees the world in grey. On by default, as always.</summary>
+        public static bool GhostGrey = true;
+
+        /// <summary>The overall and personal light levels the world is lit at: the server's, or the custom level (GameOptions.LightLevels).</summary>
+        private static (int Overall, int Personal) ServerLevels(GameSession session) =>
+            GameOptions.LightLevels(session.World.GlobalLight, session.World.PersonalLight, CustomLightLevel, CustomLevel, CustomLevelType);
 
         /// <summary>How strongly item and static lights show, 0 (day, or the personal light at the overall level) to 1 (night).</summary>
         public static float LocalLightScale { get; private set; }

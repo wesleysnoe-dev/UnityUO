@@ -26,8 +26,17 @@ namespace UOClient.Unity.Fx
         private static readonly Dictionary<int, FlameKind> Kinds = new Dictionary<int, FlameKind>();
         private static readonly Dictionary<int, FireSpot> Spots = new Dictionary<int, FireSpot>();
 
-        /// <summary>-no-fx turns the whole FX layer off (flames, glow, effect lights, bloom).</summary>
-        public static readonly bool Enabled = !HasArg("-no-fx");
+        /// <summary>-no-fx turns the whole FX layer off for the run (flames, glow, effect lights, bloom), whatever the options say.</summary>
+        public static readonly bool OffFromLaunch = HasArg("-no-fx");
+
+        /// <summary>
+        /// The options' fire effects (GameOptions.fireEffects), read as things are drawn: off, no living flames, no
+        /// flicker, and new spell effects are drawn as plain art without glow or light (ones already flying keep theirs).
+        /// </summary>
+        public static bool On = true;
+
+        /// <summary>Whether flames, flicker and glowing effects are drawn now.</summary>
+        public static bool Enabled => !OffFromLaunch && On;
 
         /// <summary>The loaded UO data, for lookups that only have a graphic (ItemLights' flicker).</summary>
         public static UOData Data { get; set; }

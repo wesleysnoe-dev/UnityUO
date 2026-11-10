@@ -27,11 +27,26 @@ namespace UOClient.Unity
             // Depth keys span roughly +-5000 units around the depth origin (see DepthKey).
             camera.nearClipPlane = 0.1f;
             camera.farClipPlane = 20000f;
-            if (Fx.FxCatalog.Enabled && camera.GetComponent<Fx.FxBloom>() == null)
+            if (!Fx.FxCatalog.OffFromLaunch && camera.GetComponent<Fx.FxBloom>() == null)
                 camera.gameObject.AddComponent<Fx.FxBloom>(); // flames, spells and lit windows bleed light
             if (Fx.FxGrade.Enabled && camera.GetComponent<Fx.FxGrade>() == null)
                 camera.gameObject.AddComponent<Fx.FxGrade>(); // after the bloom: contrast, warm highlights, vignette
             return camera;
+        }
+
+        /// <summary>
+        /// The options' bloom and colour grading (GameOptions.bloom / colorGrading): the camera's effect components are
+        /// switched on or off (off costs nothing: Unity skips a disabled component's OnRenderImage). Components that
+        /// -no-fx / -nograde kept off the camera stay absent.
+        /// </summary>
+        public static void SetPostEffects(Camera camera, bool bloom, bool grade)
+        {
+            if (camera == null)
+                return;
+            if (camera.GetComponent<Fx.FxBloom>() is Fx.FxBloom b && b.enabled != bloom)
+                b.enabled = bloom;
+            if (camera.GetComponent<Fx.FxGrade>() is Fx.FxGrade g && g.enabled != grade)
+                g.enabled = grade;
         }
 
         /// <summary>Eases toward the player's anchor (UO pixels) at the given zoom.</summary>

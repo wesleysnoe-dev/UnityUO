@@ -20,6 +20,21 @@ namespace UOClient.Unity
         private static readonly bool Still = Array.Exists(Environment.GetCommandLineArgs(),
             a => string.Equals(a, "-nofoliagesway", StringComparison.OrdinalIgnoreCase));
 
+        /// <summary>-nofoliagesway was given: the plants stay still this run whatever the options say.</summary>
+        public static bool StillFromLaunch => Still;
+
+        /// <summary>The options' foliage sway (GameOptions.foliageSway), read every frame.</summary>
+        public static bool Sway = true;
+
+        /// <summary>
+        /// The options' seasons (GameOptions.seasons): off, the server's season is not shown (leaves, the light's tint,
+        /// falling leaves all as summer, the art as drawn). A season fixed with -season still shows.
+        /// </summary>
+        public static bool ShowSeasons = true;
+
+        /// <summary>The season the world is drawn in for the server's <paramref name="season"/>: summer while seasons are off.</summary>
+        public static Season Shown(Season season) => ShowSeasons ? season : Season.Summer;
+
         private static readonly Season? Forced = ForcedSeason();
 
         private static Season? ForcedSeason()
@@ -33,7 +48,7 @@ namespace UOClient.Unity
         }
 
         /// <summary>The season the leaves show: the forced one, else the server's.</summary>
-        public static Season Current(GameSession session) => Forced ?? session?.Season ?? Season.Summer;
+        public static Season Current(GameSession session) => Forced ?? (session != null ? Shown(session.Season) : Season.Summer);
 
         /// <summary>The shader's code: 0 as drawn (summer), 1 spring, 2 fall, 3 winter, 4 desolation.</summary>
         public static float SeasonCode(Season season) => season switch
@@ -48,7 +63,7 @@ namespace UOClient.Unity
         /// <summary>Every frame (main thread).</summary>
         public static void Apply(GameSession session, int artScale)
         {
-            Shader.SetGlobalFloat(SwayId, Still ? 0f : SwayArtPixels * Mathf.Max(1, artScale));
+            Shader.SetGlobalFloat(SwayId, Still || !Sway ? 0f : SwayArtPixels * Mathf.Max(1, artScale));
             Shader.SetGlobalFloat(SeasonId, SeasonCode(Current(session)));
         }
     }

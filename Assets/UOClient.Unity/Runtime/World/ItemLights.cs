@@ -26,6 +26,13 @@ namespace UOClient.Unity
         public Walkability Walk { get; set; }
         public const string Keyword = "UO_ITEM_LIGHTS";
 
+        /// <summary>
+        /// The options' light sources (GameOptions.itemLights), every frame: off, lamps, torches and candles light nothing
+        /// and windows stay dark at night (TazUO has no such switch; its nearest is UseColoredLights). Indoor lamp shadows
+        /// are the shadows' own and stay.
+        /// </summary>
+        public static bool On = true;
+
         private struct Candidate
         {
             public int X, Y, Z, Shape, Color, Graphic;
@@ -89,6 +96,9 @@ namespace UOClient.Unity
         /// </summary>
         public void Apply(IWorldSpace world, LightShapes shapes, int scale, int playerX, int playerY, float strength)
         {
+            if (!On)
+                strength = 0f; // no item lights, no lit windows; effect glows (the FX option's) still show
+
             long start = System.Diagnostics.Stopwatch.GetTimestamp();
             Candidates = _candidates.Count;
             int n = 0;
