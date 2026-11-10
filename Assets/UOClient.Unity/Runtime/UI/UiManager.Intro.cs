@@ -25,9 +25,9 @@ namespace UOClient.Unity.UI
         private const float FlightShare = 0.35f;
 
         /// <summary>Of a book's opening: the cover turns over [0, CoverEnd], each page takes PageTime, the window fades in from FadeStart.</summary>
-        private const float Settle = 0.14f, CoverEnd = 0.44f, PageTime = 0.22f, FadeStart = 0.86f;
+        private const float Settle = 0.06f, CoverEnd = 0.38f, PageTime = 0.22f, FadeStart = 0.86f;
 
-        private static readonly float[] PageStarts = { 0.38f, 0.49f, 0.6f };
+        private static readonly float[] PageStarts = { 0.32f, 0.43f, 0.54f };
 
         /// <summary>A rolled scroll's art (tiledata "scroll"): what party, profile and vendor windows fly in as.</summary>
         public const int ScrollGraphic = 0x14ED;
@@ -62,7 +62,9 @@ namespace UOClient.Unity.UI
             T opened = Open(window);
             if (wasOpen || !OpenAnimations || !ReferenceEquals(opened, window))
                 return opened;
-            UiImage art = Art.Item(graphic) ?? Art.Item(kind == WindowIntro.Book ? BookGraphic : ScrollGraphic);
+            UiImage art = kind == WindowIntro.Book
+                ? Art.ItemDetailed(graphic) ?? Art.ItemDetailed(BookGraphic)
+                : Art.Item(graphic) ?? Art.Item(ScrollGraphic);
             if (art == null)
                 return opened;
             float now = Time.unscaledTime;
@@ -162,12 +164,39 @@ namespace UOClient.Unity.UI
                 if (t < 0f)
                     continue;
                 Intro intro = kv.Value;
-                if (t >= FlightShare)
+                if (intro.Kind == WindowIntro.Book)
                 {
-                    if (intro.Kind == WindowIntro.Book && Event.current.type == EventType.Repaint)
-                        DrawBookOpening(BookRect(kv.Key, intro), intro, OpenPhase(t));
+                    // The book: standing upright, face-on, growing from where it was used to the full closed book on
+                    // the right page; then opening there. Drawn in a window of its own, above the others.
+                    Rect bookRect = BookRect(kv.Key, intro);
+                    Rect cover = new Rect(bookRect.center.x, bookRect.y, bookRect.width / 2f, bookRect.height);
+                    Rect area;
+                    if (t < FlightShare)
+                    {
+                        float kb = Ease(t / FlightShare);
+                        float startH = 56f, startW = startH * cover.width / Mathf.Max(1f, cover.height);
+                        var start = new Rect(intro.From.x - startW / 2f, intro.From.y - startH / 2f, startW, startH);
+                        area = new Rect(Vector2.Lerp(start.position, cover.position, kb), Vector2.Lerp(start.size, cover.size, kb));
+                        area.y -= Mathf.Sin(kb * Mathf.PI) * 60f; // rising toward the viewer
+                    }
+                    else
+                        area = bookRect;
+                    float open = t < FlightShare ? -1f : OpenPhase(t);
+                    Rect drawn = area;
+                    GUI.Window(intro.OverlayId, area, _ =>
+                    {
+                        if (Event.current.type != EventType.Repaint)
+                            return;
+                        if (open < 0f)
+                            DrawClosedBook(drawn, intro);
+                        else
+                            DrawBookOpening(drawn, intro, open);
+                    }, GUIContent.none, GUIStyle.none);
+                    GUI.BringWindowToFront(intro.OverlayId);
                     continue;
                 }
+                if (t >= FlightShare)
+                    continue;
                 Rect target = FlightTarget(BookRect(kv.Key, intro), intro.Kind, intro.Art);
                 float k = Ease(t / FlightShare);
                 var startSize = new Vector2(intro.Art.Width, intro.Art.Height);
@@ -267,6 +296,19 @@ namespace UOClient.Unity.UI
             }
         }
 
+        /// <summary>The closed book standing upright, face-on, filling <paramref name="cover"/> (UI units): its front cover.</summary>
+        private void DrawClosedBook(Rect cover, Intro intro)
+        {
+            Material m = QuadMaterial;
+            if (m == null)
+                return;
+            float s = Scale;
+            GL.PushMatrix();
+            GL.LoadPixelMatrix(0, Screen.width, Screen.height, 0);
+            Leaf(m, Leather, 0f, cover.x * s, cover.width * s, cover.y * s, cover.yMax * s, 1f, true, intro.Art, null, intro.CoverTint, 1f);
+            GL.PopMatrix();
+        }
+
         /// <summary>
         /// A book of rect <paramref name="book"/> (UI units) opening, at <paramref name="o"/> 0..1: the right page lies open
         /// under the cover; the cover turns over the spine and lands on the left; three pages turn after it, each landing
@@ -307,7 +349,7 @@ namespace UOClient.Unity.UI
                     Leaf(m, pages, Ease(p) * Mathf.PI, sx, half, y0, y1, alpha, false, null);
             }
             if (cover < 1f)
-                Leaf(m, Leather, cover * Mathf.PI, sx, half, y0, y1, alpha, true, intro.Art, pages, intro.CoverTint, Mathf.Clamp01(o / Settle));
+                Leaf(m, Leather, cover * Mathf.PI, sx, half, y0, y1, alpha, true, intro.Art, pages, intro.CoverTint, 1f);
 
             GL.PopMatrix();
         }

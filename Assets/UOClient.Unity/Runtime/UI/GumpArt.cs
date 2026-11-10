@@ -131,6 +131,47 @@ namespace UOClient.Unity.UI
             return img;
         }
 
+        private readonly Dictionary<int, UiImage> _detailed = new Dictionary<int, UiImage>();
+
+        /// <summary>
+        /// An item's art for drawing large (a book's cover in its opening): the HD pack's when there is one, else the stock
+        /// art upscaled 4x by Scale2x twice (pixel edges kept crisp, not blurred), drawn with bilinear filtering. The
+        /// bitmap stays the stock one, so sizes and shapes are as the plain art.
+        /// </summary>
+        public UiImage ItemDetailed(int graphic)
+        {
+            if (_detailed.TryGetValue(graphic, out UiImage img))
+                return img;
+            Bitmap32 bmp = _data.GetStatic(graphic);
+            if (bmp == null)
+                return _detailed[graphic] = null;
+            Bitmap32 big = null;
+            for (int s = 4; s >= 2 && big == null; s--)
+                big = _data.GetStaticHd(graphic, s);
+            big ??= Scale2x(Scale2x(bmp));
+            Texture2D tex = UnityTextures.ToTexture(big, $"item 0x{graphic:X4} detailed");
+            tex.filterMode = FilterMode.Bilinear;
+            return _detailed[graphic] = new UiImage { Bitmap = bmp, Texture = tex };
+        }
+
+        /// <summary>Scale2x (EPX): each pixel becomes four, taking a neighbour's colour along a clean edge.</summary>
+        public static Bitmap32 Scale2x(Bitmap32 src)
+        {
+            int w = src.Width, h = src.Height;
+            var dst = new Bitmap32(w * 2, h * 2);
+            uint At(int x, int y) => src[Mathf.Clamp(x, 0, w - 1), Mathf.Clamp(y, 0, h - 1)];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    uint e = src[x, y], b = At(x, y - 1), d = At(x - 1, y), f = At(x + 1, y), hh = At(x, y + 1);
+                    dst[2 * x, 2 * y] = d == b && b != f && d != hh ? d : e;
+                    dst[2 * x + 1, 2 * y] = b == f && b != d && f != hh ? f : e;
+                    dst[2 * x, 2 * y + 1] = d == hh && d != b && hh != f ? d : e;
+                    dst[2 * x + 1, 2 * y + 1] = hh == f && d != hh && b != f ? f : e;
+                }
+            return dst;
+        }
+
         private readonly Dictionary<int, UiImage> _lands = new Dictionary<int, UiImage>();
 
         /// <summary>A land tile's art (the 44x44 diamond, HD when there is one), for the world editor's ground gallery.</summary>
