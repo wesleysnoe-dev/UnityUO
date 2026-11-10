@@ -48,6 +48,7 @@ namespace UOClient.Unity.UI
             public Vector2 From;     // UI coordinates: where it was used
             public UiImage Art;
             public UiImage Pages;    // the book's own window art (two pages), or null: plain parchment
+            public UiImage Cover;    // the book's own front cover, straightened from its art (GumpArt.ItemCover)
             public Color CoverTint = Color.white; // the book's own colour (its art's mean), the leather tinted to it
             public readonly int OverlayId = _nextOverlayId++;
         }
@@ -81,6 +82,7 @@ namespace UOClient.Unity.UI
             {
                 Kind = kind, Start = now, From = from, Art = art,
                 Pages = kind == WindowIntro.Book ? window.IntroPages : null,
+                Cover = kind == WindowIntro.Book ? Art.ItemCover(graphic) ?? Art.ItemCover(BookGraphic) : null,
                 CoverTint = kind == WindowIntro.Book ? MeanColour(art) : Color.white
             };
             return opened;
@@ -313,7 +315,10 @@ namespace UOClient.Unity.UI
             float s = Scale;
             GL.PushMatrix();
             GL.LoadPixelMatrix(0, Screen.width, Screen.height, 0);
-            Leaf(m, Leather, 0f, cover.x * s, cover.width * s, cover.y * s, cover.yMax * s, 1f, true, intro.Art, null, intro.CoverTint, 1f);
+            if (intro.Cover != null) // the book's own front
+                Leaf(m, intro.Cover.Texture, 0f, cover.x * s, cover.width * s, cover.y * s, cover.yMax * s, 1f, true, null);
+            else
+                Leaf(m, Leather, 0f, cover.x * s, cover.width * s, cover.y * s, cover.yMax * s, 1f, true, intro.Art, null, intro.CoverTint, 1f);
             GL.PopMatrix();
         }
 
@@ -356,7 +361,9 @@ namespace UOClient.Unity.UI
                 if (p > 0f && p < 1f)
                     Leaf(m, pages, Ease(p) * Mathf.PI, sx, half, y0, y1, alpha, false, null);
             }
-            if (cover < 1f)
+            if (cover < 1f && intro.Cover != null) // the book's own front turning
+                Leaf(m, intro.Cover.Texture, cover * Mathf.PI, sx, half, y0, y1, alpha, true, null, pages);
+            else if (cover < 1f)
                 Leaf(m, Leather, cover * Mathf.PI, sx, half, y0, y1, alpha, true, intro.Art, pages, intro.CoverTint, 1f);
 
             GL.PopMatrix();

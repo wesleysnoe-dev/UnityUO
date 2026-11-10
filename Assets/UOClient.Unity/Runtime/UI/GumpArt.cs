@@ -257,6 +257,131 @@ namespace UOClient.Unity.UI
             return _cutouts[(id, part)] = new UiImage { Bitmap = cut, Texture = tex };
         }
 
+        private readonly Dictionary<int, UiImage> _covers = new Dictionary<int, UiImage>();
+
+        /// <summary>
+        /// A book's front cover, face-on, from its item art: the art shows the book lying flat, its cover the top face (a
+        /// diamond: its top corner the art's topmost pixel, its side corners the topmost pixels of the leftmost and
+        /// rightmost columns, the fourth completing the parallelogram). That face is sharpened (Scale2x x2), softened and
+        /// straightened into an upright 3:4 rectangle. Null without art.
+        /// </summary>
+        public UiImage ItemCover(int graphic)
+        {
+            if (_covers.TryGetValue(graphic, out UiImage img))
+                return img;
+            Bitmap32 bmp = _data.GetStatic(graphic);
+            if (bmp == null)
+                return _covers[graphic] = null;
+            int w = bmp.Width, h = bmp.Height, top = -1, left = -1, right = -1;
+            for (int y = 0; y < h && top < 0; y++)
+                for (int x = 0; x < w; x++)
+                    if ((bmp[x, y] >> 24) != 0)
+                    {
+                        top = y;
+                        break;
+                    }
+            for (int x = 0; x < w && left < 0; x++)
+                for (int y = 0; y < h; y++)
+                    if ((bmp[x, y] >> 24) != 0)
+                    {
+                        left = x;
+                        break;
+                    }
+            for (int x = w - 1; x >= 0 && right < 0; x--)
+                for (int y = 0; y < h; y++)
+                    if ((bmp[x, y] >> 24) != 0)
+                    {
+                        right = x;
+                        break;
+                    }
+            if (top < 0)
+                return _covers[graphic] = null;
+            float TopY(int x)
+            {
+                for (int y = 0; y < h; y++)
+                    if ((bmp[x, y] >> 24) != 0)
+                        return y;
+                return 0;
+            }
+            float tx = 0;
+            int tn = 0;
+            for (int x = 0; x < w; x++)
+                if ((bmp[x, top] >> 24) != 0)
+                {
+                    tx += x;
+                    tn++;
+                }
+            // Corners in the 4x art's pixels (pixel centres).
+            var T = new Vector2(tx / tn * 4f + 2f, top * 4f + 2f);
+            var L = new Vector2(left * 4f + 2f, TopY(left) * 4f + 2f);
+            var R = new Vector2(right * 4f + 2f, TopY(right) * 4f + 2f);
+            Vector2 B = L + R - T;
+            Bitmap32 big = Blur(Blur(Scale2x(Scale2x(bmp))));
+            // The cover: its top edge from L to T, its left edge from L to B; a little inset from the face's outline.
+            const int cw = 192, ch = 256;
+            const float inset = 0.03f;
+            var cover = new Bitmap32(cw, ch);
+            for (int y = 0; y < ch; y++)
+                for (int x = 0; x < cw; x++)
+                {
+                    float u = inset + (1f - 2f * inset) * (x + 0.5f) / cw, v = inset + (1f - 2f * inset) * (y + 0.5f) / ch;
+                    Vector2 s = L + (T - L) * u + (B - L) * v;
+                    cover[x, y] = Bilinear(big, s.x - 0.5f, s.y - 0.5f) | 0xFF000000u;
+                }
+            Texture2D tex = UnityTextures.ToTexture(cover, $"item 0x{graphic:X4} cover");
+            tex.filterMode = FilterMode.Bilinear;
+            return _covers[graphic] = new UiImage { Bitmap = cover, Texture = tex };
+        }
+
+        /// <summary>A 3x3 box blur of the opaque pixels (transparent ones don't bleed in).</summary>
+        private static Bitmap32 Blur(Bitmap32 src)
+        {
+            int w = src.Width, h = src.Height;
+            var dst = new Bitmap32(w, h);
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int r = 0, g = 0, b = 0, n = 0;
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int sx = x + dx, sy = y + dy;
+                            if (sx < 0 || sy < 0 || sx >= w || sy >= h)
+                                continue;
+                            uint p = src[sx, sy];
+                            if ((p >> 24) == 0)
+                                continue;
+                            r += (int)((p >> 16) & 0xFF); g += (int)((p >> 8) & 0xFF); b += (int)(p & 0xFF); n++;
+                        }
+                    dst[x, y] = n == 0 ? src[x, y] : (src[x, y] & 0xFF000000u) | (uint)(r / n) << 16 | (uint)(g / n) << 8 | (uint)(b / n);
+                }
+            return dst;
+        }
+
+        /// <summary>The colour at (x, y) between pixels, from the nearest opaque ones.</summary>
+        private static uint Bilinear(Bitmap32 src, float x, float y)
+        {
+            x = Mathf.Clamp(x, 0f, src.Width - 1.001f);
+            y = Mathf.Clamp(y, 0f, src.Height - 1.001f);
+            int x0 = (int)x, y0 = (int)y;
+            float fx = x - x0, fy = y - y0;
+            float r = 0, g = 0, b = 0, wsum = 0;
+            void Add(int px, int py, float wt)
+            {
+                uint p = src[px, py];
+                if ((p >> 24) == 0 || wt <= 0f)
+                    return;
+                r += ((p >> 16) & 0xFF) * wt; g += ((p >> 8) & 0xFF) * wt; b += (p & 0xFF) * wt; wsum += wt;
+            }
+            Add(x0, y0, (1 - fx) * (1 - fy));
+            Add(x0 + 1, y0, fx * (1 - fy));
+            Add(x0, y0 + 1, (1 - fx) * fy);
+            Add(x0 + 1, y0 + 1, fx * fy);
+            if (wsum <= 0f)
+                return src[x0, y0] & 0xFFFFFFu;
+            return (uint)(r / wsum) << 16 | (uint)(g / wsum) << 8 | (uint)(b / wsum);
+        }
+
         /// <summary>Scale2x (EPX): each pixel becomes four, taking a neighbour's colour along a clean edge.</summary>
         public static Bitmap32 Scale2x(Bitmap32 src)
         {
