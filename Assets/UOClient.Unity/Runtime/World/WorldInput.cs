@@ -92,6 +92,11 @@ namespace UOClient.Unity
             {
                 if (_ctx.Session.Target == null)
                     _ctx.Session.SingleClick(_pendingClick, _ctx.Data.TileData);
+                // What was clicked, in the play log (audits: telling a server item from a map static).
+                if (_ctx.Session.World.Items.TryGetValue(_pendingClick, out Core.WorldItem ci))
+                    Debug.Log($"UOClient clicked item 0x{ci.Serial:X8} graphic 0x{ci.Graphic:X4} at {ci.X},{ci.Y},{ci.Z} map {_ctx.Session.World.Map} flags 0x{ci.Flags:X2} multi {ci.IsMulti} amount {ci.Amount}");
+                else if (_ctx.Session.World.Mobiles.TryGetValue(_pendingClick, out Core.Mobile cm))
+                    Debug.Log($"UOClient clicked mobile 0x{cm.Serial:X8} body 0x{cm.Body:X4} at {cm.X},{cm.Y},{cm.Z} flags 0x{cm.Flags:X2}");
                 _pendingClick = 0;
             }
             if (_pendingStatic is EntityViews.PickedStatic clicked && Time.realtimeSinceStartup - _lastWorldClick >= DoubleClickTime)
@@ -270,6 +275,7 @@ namespace UOClient.Unity
         /// </summary>
         private void NameStatic(EntityViews.PickedStatic st)
         {
+            Debug.Log($"UOClient clicked static graphic 0x{st.Graphic:X4} at {st.X},{st.Y},{st.Z} map {_ctx.Session?.World.Map} (map file or house part)");
             string name = Core.TileNames.Singular(_ctx.Data.TileData.GetStatic(st.Graphic).Name)
                           ?? Core.TileNames.Singular(_ui()?.Cliloc?.Get(1020000 + st.Graphic));
             if (name != null)
