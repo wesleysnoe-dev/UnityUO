@@ -486,6 +486,16 @@ namespace UOClient.Unity
         {
             if (UI.PaperdollWindow.Modern)
                 _ctx.Session.OpenPaperdoll();
+            // -open-worldmap[=zoom]: the world map open from the start (captures of it).
+            string mapArg = System.Array.Find(System.Environment.GetCommandLineArgs(), a => a.StartsWith("-open-worldmap", System.StringComparison.OrdinalIgnoreCase));
+            if (mapArg != null && Ui.Find("worldmap") == null)
+            {
+                var map = new UI.WorldMapWindow(_ctx.Data, Path.Combine(GameContext.ProjectRoot, "Library", "UOClient"));
+                if (mapArg.Contains("=") && float.TryParse(mapArg.Substring(mapArg.IndexOf('=') + 1), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out float zoom))
+                    map.Zoom = zoom;
+                Ui.Open(map);
+            }
         }
 
         /// <summary>The top bar with the classic paperdoll; none with the modern one (its buttons are the paperdoll's).</summary>

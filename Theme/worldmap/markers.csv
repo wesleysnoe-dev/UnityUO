@@ -1,0 +1,524 @@
+map,x,y,kind,label
+0,512,1559,dungeon,Shame
+0,517,986,tailor,Yew tanner
+0,529,1008,food,Yew butcher
+0,535,867,provisioner,Yew provisioner
+0,540,966,healer,Yew healer
+0,546,992,town,Yew
+0,553,985,food,Yew baker
+0,554,2178,inn,Skara Brae inn
+0,562,2148,bowyer,Skara Brae rangers' guild
+0,564,1011,carpenter,Yew carpenter
+0,570,969,bowyer,Yew bowyer
+0,570,2121,stable,Skara Brae stable
+0,571,1099,town,A Farm in Yew
+0,578,2227,provisioner,Skara Brae provisioner
+0,582,2186,food,Skara Brae butcher
+0,586,2170,smith,Skara Brae armour
+0,587,1641,dungeon,Blighted Grove
+0,587,2146,bank,Skara Brae bank
+0,590,2205,bowyer,Skara Brae bowyer
+0,592,2277,docks,Skara Brae shipwright
+0,592,2277,map,Skara Brae mapmaker
+0,601,2235,inn,Skara Brae inn
+0,602,2180,alchemist,Skara Brae alchemist
+0,602,2180,mage,Skara Brae mage shop
+0,610,810,inn,Yew inn
+0,611,2157,food,Skara Brae butcher
+0,620,2218,healer,Skara Brae healer
+0,624,1145,bowyer,Yew bowyer
+0,627,2163,carpenter,Skara Brae carpenter
+0,630,2194,smith,Skara Brae smith
+0,631,1034,docks,Yew shipwright
+0,631,1034,map,Yew mapmaker
+0,632,2233,town,Skara Brae
+0,643,1083,healer,Yew healer
+0,643,2067,moongate,Skara Brae moongate
+0,650,2161,smith,Skara Brae armour
+0,650,2178,tailor,Skara Brae tailor
+0,652,820,bank,Yew bank
+0,656,2235,docks,Skara Brae fisherman
+0,659,2141,alchemist,Skara Brae alchemist
+0,659,2141,mage,Skara Brae mage shop
+0,762,1645,dungeon,Sanctuary
+0,771,752,moongate,Yew moongate
+0,1014,1434,dungeon,Orc Cave
+0,1125,3687,docks,Fisherman
+0,1149,1547,food,Britain farmer
+0,1149,1547,stable,Britain rancher
+0,1150,1619,food,Britain farmer
+0,1150,1619,stable,Britain rancher
+0,1176,2635,dungeon,Destard
+0,1190,1707,food,Britain farmer
+0,1190,1707,stable,Britain rancher
+0,1228,1572,food,Britain farmer
+0,1228,1572,stable,Britain rancher
+0,1243,1699,food,Britain farmer
+0,1243,1699,stable,Britain rancher
+0,1296,1082,dungeon,Despise
+0,1296,1759,stable,Britain stable
+0,1317,3773,bank,Jhelom bank
+0,1336,1997,moongate,Britain moongate
+0,1341,1733,warrior,Britain warriors' guild
+0,1349,1778,smith,Britain smith
+0,1354,3754,smith,Jhelom armour
+0,1356,3780,tailor,Jhelom tailor
+0,1360,3815,inn,Jhelom inn
+0,1362,1574,smith,Britain armour
+0,1364,3732,food,Jhelom baker
+0,1372,3908,docks,Jhelom fisherman
+0,1383,3815,town,Jhelom
+0,1386,3825,food,Jhelom butcher
+0,1387,3771,scribe,Jhelom scribe
+0,1388,1588,tailor,Britain tailor
+0,1388,1655,stable,Britain stable
+0,1395,3705,smith,Jhelom smith
+0,1404,3802,tinker,Jhelom tinker
+0,1405,1810,mage,Britain mage shop
+0,1409,1590,scribe,Britain scribe
+0,1416,1754,docks,Britain shipwright
+0,1416,1754,map,Britain mapmaker
+0,1416,3779,healer,Jhelom healer
+0,1417,1578,miner,Britain miners' guild
+0,1418,1547,smith,Britain smith
+0,1419,3859,smith,Jhelom smith
+0,1422,1654,tinker,Britain tinker
+0,1425,1690,bank,Britain bank
+0,1425,3981,alchemist,Jhelom alchemist
+0,1425,3981,mage,Jhelom mage shop
+0,1427,1716,food,Britain cook
+0,1427,1716,inn,Britain tavern
+0,1430,1597,carpenter,Britain carpenter
+0,1431,1612,tailor,Britain tanner
+0,1435,3820,carpenter,Jhelom carpenter
+0,1436,1752,docks,Britain harbour master
+0,1437,3750,docks,Jhelom fishermen's guild
+0,1438,1761,docks,Britain fisherman
+0,1441,3719,smith,Jhelom armour
+0,1442,3802,provisioner,Jhelom provisioner
+0,1447,1647,smith,Britain armour
+0,1447,3981,jeweler,Jhelom jeweler
+0,1449,1723,food,Britain butcher
+0,1450,1617,food,Britain baker
+0,1450,4026,food,Jhelom butcher
+0,1451,1679,jeweler,Britain jeweler
+0,1452,3747,docks,Jhelom shipwright
+0,1452,3747,map,Jhelom mapmaker
+0,1452,3770,food,Jhelom cook
+0,1452,3770,inn,Jhelom tavern
+0,1454,4003,tailor,Jhelom tailor
+0,1455,1557,bard,Britain bard
+0,1456,3850,smith,Jhelom armour
+0,1458,1525,inn,Britain inn
+0,1467,1686,tailor,Britain tailor
+0,1469,1668,provisioner,Britain provisioner
+0,1470,1578,bowyer,Britain bowyer
+0,1470,1765,docks,Britain fisherman
+0,1471,1611,healer,Britain healer
+0,1475,3865,smith,Jhelom armour
+0,1481,1584,smith,Britain armour
+0,1485,1550,alchemist,Britain alchemist
+0,1485,1550,mage,Britain mage shop
+0,1492,1641,dungeon,Misc Dungeons
+0,1493,1616,inn,Britain inn
+0,1494,1715,scribe,Britain scribe
+0,1495,1629,town,Britain
+0,1498,1659,alchemist,Britain herbalist
+0,1498,1691,food,Britain cook
+0,1498,1691,inn,Britain tavern
+0,1499,3771,moongate,Jhelom moongate
+0,1504,3693,docks,Fisherman
+0,1510,1543,stable,Britain stable
+0,1512,3989,docks,Fisherman
+0,1547,1659,tailor,Britain tailor
+0,1547,1768,food,Britain cook
+0,1547,1768,inn,Britain tavern
+0,1585,1591,inn,Britain inn
+0,1590,1654,alchemist,Britain alchemist
+0,1590,1654,mage,Britain mage shop
+0,1602,1712,provisioner,Britain provisioner
+0,1620,1586,food,Britain cook
+0,1620,1586,inn,Britain tavern
+0,1637,1693,smith,Britain armour
+0,1650,1608,bank,Britain bank
+0,1650,1642,jeweler,Britain jeweler
+0,1685,2985,alchemist,Herbalist
+0,1685,2985,mage,Mage shop
+0,1716,892,dungeon,The Painted Caves
+0,1813,2825,bank,Trinsic bank
+0,1822,2739,stable,Trinsic stable
+0,1828,2948,moongate,Trinsic moongate
+0,1844,2735,inn,Trinsic inn
+0,1846,2715,alchemist,Trinsic alchemist
+0,1846,2715,mage,Trinsic mage shop
+0,1848,2680,tinker,Trinsic tinker
+0,1850,2796,provisioner,Trinsic provisioner
+0,1852,2831,provisioner,Trinsic provisioner
+0,1867,2780,town,Trinsic
+0,1880,2802,food,Trinsic baker
+0,1895,2653,smith,Trinsic armour
+0,1897,2684,bank,Trinsic bank
+0,1897,2805,jeweler,Trinsic jeweler
+0,1911,2805,healer,Trinsic healer
+0,1935,2766,smith,Trinsic smith
+0,1935,2796,food,Trinsic cook
+0,1935,2796,inn,Trinsic tavern
+0,1939,2739,warrior,Trinsic warriors' guild
+0,1981,2838,tailor,Trinsic tailor
+0,1990,2889,food,Trinsic butcher
+0,1991,2867,tailor,Trinsic tanner
+0,1996,80,dungeon,Ice
+0,2002,2721,scribe,Trinsic scribe
+0,2011,2804,stable,Trinsic stable
+0,2019,2748,warrior,Trinsic warriors' guild
+0,2026,2845,docks,Trinsic shipwright
+0,2026,2845,map,Trinsic mapmaker
+0,2033,2801,inn,Trinsic inn
+0,2042,226,dungeon,Wrong
+0,2072,2856,docks,Trinsic fisherman
+0,2216,1167,smith,Cove armour
+0,2216,1192,provisioner,Cove provisioner
+0,2245,1231,healer,Cove healer
+0,2256,1181,docks,Cove fisherman
+0,2275,1210,town,Cove
+0,2424,555,bard,Minoc bard
+0,2438,410,food,Minoc butcher
+0,2450,428,provisioner,Minoc provisioner
+0,2455,487,miner,Minoc miners' guild
+0,2461,457,tinker,Minoc tinker
+0,2466,544,town,Minoc
+0,2471,564,smith,Minoc smith
+0,2475,397,food,Minoc cook
+0,2475,397,inn,Minoc tavern
+0,2478,427,warrior,Minoc warriors' guild
+0,2499,916,dungeon,Covetous
+0,2503,552,bank,Minoc bank
+0,2505,432,miner,Minoc miners' guild
+0,2513,477,carpenter,Minoc architect
+0,2522,524,tailor,Minoc tanner
+0,2526,375,stable,Minoc stable
+0,2526,546,provisioner,Minoc provisioner
+0,2533,572,smith,Minoc armour
+0,2577,599,healer,Minoc healer
+0,2627,2100,carpenter,Buccaneer's Den carpenter
+0,2634,2083,smith,Buccaneer's Den smith
+0,2680,2238,food,Buccaneer's Den cook
+0,2680,2238,inn,Buccaneer's Den tavern
+0,2701,692,moongate,Minoc moongate
+0,2706,2163,town,Buccaneer's Den
+0,2707,2178,tailor,Buccaneer's Den tanner
+0,2709,2130,healer,Buccaneer's Den healer
+0,2711,2234,moongate,Buccaneer's Den moongate
+0,2715,2098,inn,Buccaneer's Den inn
+0,2731,2192,bank,Buccaneer's Den bank
+0,2737,2250,provisioner,Buccaneer's Den provisioner
+0,2752,2155,docks,Buccaneer's Den fisherman
+0,2782,969,inn,Vesper inn
+0,2835,805,smith,Vesper armour
+0,2840,885,tailor,Vesper tailor
+0,2841,907,warrior,Vesper warriors' guild
+0,2855,734,miner,Vesper miners' guild
+0,2860,999,tailor,Vesper tanner
+0,2861,812,bowyer,Vesper bowyer
+0,2865,852,smith,Vesper armour
+0,2880,3472,bank,Serpent's Hold bank
+0,2881,684,bank,Vesper bank
+0,2882,723,jeweler,Vesper jeweler
+0,2883,3502,tailor,Serpent's Hold tailor
+0,2890,651,alchemist,Vesper alchemist
+0,2890,651,mage,Vesper mage shop
+0,2899,676,town,Vesper
+0,2899,790,tinker,Vesper tinker
+0,2901,908,food,Vesper cook
+0,2901,908,inn,Vesper tavern
+0,2905,3517,stable,Serpent's Hold stable
+0,2906,3485,food,Serpent's Hold butcher
+0,2917,798,carpenter,Vesper carpenter
+0,2918,672,alchemist,Vesper alchemist
+0,2918,672,mage,Vesper mage shop
+0,2920,856,healer,Vesper healer
+0,2922,3402,dungeon,Fire
+0,2940,3410,docks,Serpent's Hold fisherman
+0,2940,3500,tinker,Serpent's Hold tinker
+0,2961,621,tailor,Vesper tailor
+0,2962,885,inn,Vesper inn
+0,2963,813,docks,Vesper fishermen's guild
+0,2967,3408,inn,Serpent's Hold inn
+0,2972,3425,food,Serpent's Hold cook
+0,2972,3425,inn,Serpent's Hold tavern
+0,2975,3353,food,Serpent's Hold baker
+0,2986,637,provisioner,Vesper provisioner
+0,2987,777,food,Vesper butcher
+0,2992,844,alchemist,Vesper herbalist
+0,2992,3451,docks,Serpent's Hold fisherman
+0,2995,815,docks,Vesper shipwright
+0,2995,815,map,Vesper mapmaker
+0,2997,3428,healer,Serpent's Hold healer
+0,2998,760,food,Vesper baker
+0,3003,3355,alchemist,Serpent's Hold alchemist
+0,3003,3355,mage,Serpent's Hold mage shop
+0,3007,3408,smith,Serpent's Hold smith
+0,3008,3389,provisioner,Serpent's Hold provisioner
+0,3009,3455,food,Serpent's Hold cook
+0,3009,3455,inn,Serpent's Hold tavern
+0,3010,3371,town,Serpent's Hold
+0,3012,780,food,Vesper butcher
+0,3013,3353,alchemist,Serpent's Hold herbalist
+0,3017,761,food,Vesper butcher
+0,3018,3426,smith,Serpent's Hold armour
+0,3031,3350,warrior,Serpent's Hold warriors' guild
+0,3034,827,docks,Vesper fisherman
+0,3036,3464,stable,Serpent's Hold stable
+0,3051,3367,bowyer,Serpent's Hold bowyer
+0,3058,3400,warrior,Serpent's Hold warriors' guild
+0,3545,1178,tailor,Nujel'm tanner
+0,3546,1185,smith,Nujel'm smith
+0,3546,1194,bowyer,Nujel'm bowyer
+0,3554,1202,smith,Nujel'm smith
+0,3555,1171,food,Nujel'm butcher
+0,3563,2139,moongate,Magincia moongate
+0,3602,2615,tailor,Ocllo tanner
+0,3610,2577,food,Ocllo baker
+0,3612,2466,scribe,Ocllo scribe
+0,3628,2541,alchemist,Ocllo alchemist
+0,3628,2541,mage,Ocllo mage shop
+0,3629,2608,healer,Ocllo healer
+0,3632,2595,smith,Ocllo armour
+0,3632,2640,docks,Ocllo shipwright
+0,3632,2640,map,Ocllo mapmaker
+0,3636,2565,provisioner,Ocllo provisioner
+0,3647,2681,docks,Ocllo fisherman
+0,3650,2519,town,Ocllo
+0,3661,2183,jeweler,Magincia jeweler
+0,3665,2140,miner,Magincia miners' guild
+0,3665,2531,bard,Ocllo bards' guild
+0,3666,2235,tailor,Magincia tailor
+0,3667,2252,docks,Magincia shipwright
+0,3667,2252,map,Magincia mapmaker
+0,3667,2586,tailor,Ocllo tailor
+0,3672,2654,inn,Ocllo inn
+0,3673,2614,inn,Ocllo inn
+0,3674,2289,docks,Magincia fisherman
+0,3683,2171,food,Magincia baker
+0,3683,2252,docks,Magincia fishermen's guild
+0,3687,2227,healer,Magincia healer
+0,3695,2511,bank,Ocllo bank
+0,3699,2163,inn,Magincia inn
+0,3699,2218,alchemist,Magincia alchemist
+0,3699,2218,mage,Magincia mage shop
+0,3700,1214,docks,Nujel'm shipwright
+0,3700,1214,map,Nujel'm mapmaker
+0,3708,2649,food,Ocllo butcher
+0,3714,2220,town,Magincia
+0,3720,2126,tinker,Magincia tinker
+0,3727,2224,food,Magincia cook
+0,3727,2224,inn,Magincia tavern
+0,3729,1258,food,Nujel'm cook
+0,3729,1258,inn,Nujel'm tavern
+0,3731,1320,inn,Nujel'm inn
+0,3732,1279,town,Nujel'm
+0,3734,2149,bank,Magincia bank
+0,3740,1197,bard,Nujel'm bards' guild
+0,3755,2227,food,Magincia baker
+0,3764,1317,bank,Nujel'm bank
+0,3769,1218,food,Nujel'm cook
+0,3769,1218,inn,Nujel'm tavern
+0,3774,1265,tailor,Nujel'm tailor
+0,3778,1172,jeweler,Nujel'm jeweler
+0,3784,1097,dungeon,The Prism of Light
+0,4111,429,dungeon,Deceit
+0,4392,1068,food,Moonglow baker
+0,4392,1117,smith,Moonglow armour
+0,4394,1083,healer,Moonglow healer
+0,4395,1137,food,Moonglow butcher
+0,4401,1165,inn,Moonglow inn
+0,4406,1038,docks,Moonglow fisherman
+0,4409,1111,alchemist,Moonglow herbalist
+0,4416,1085,carpenter,Moonglow carpenter
+0,4416,1133,alchemist,Moonglow herbalist
+0,4417,1064,provisioner,Moonglow provisioner
+0,4440,1162,smith,Moonglow armour
+0,4442,1172,town,Moonglow
+0,4448,1090,alchemist,Moonglow alchemist
+0,4448,1090,mage,Moonglow mage shop
+0,4458,1060,tailor,Moonglow tailor
+0,4467,1283,moongate,Moonglow moongate
+0,4471,1156,bank,Moonglow bank
+0,4481,1085,food,Moonglow butcher
+0,4484,1064,inn,Moonglow inn
+0,4530,2382,docks,Fisherman
+0,4533,2333,docks,Fisherman
+0,4533,2333,provisioner,Provisioner
+0,4533,2333,tailor,Tailor
+0,4537,2348,docks,Fisherman
+0,4540,2301,inn,Tavern
+0,4542,2329,alchemist,Alchemist
+0,4544,2299,food,Cook
+0,4545,860,mage,Moonglow mage shop
+0,4547,2376,docks,Fisherman
+0,4549,2301,smith,Smith
+0,4549,2346,docks,Fisherman
+0,4550,2307,bard,Bard
+0,4551,2323,bank,Bank
+0,4551,2327,docks,Fishermen's guild
+0,4551,2334,docks,Shipwright
+0,4553,2318,tailor,Tanner
+0,4554,2389,docks,Fisherman
+0,4557,2307,docks,Fisherman
+0,4561,2328,tinker,Tinker
+0,4564,2298,docks,Shipwright
+0,4570,2400,docks,Fisherman
+0,4571,2303,docks,Fisherman
+0,4573,2364,docks,Fisherman
+0,4722,3814,dungeon,Hythloth
+0,5148,60,alchemist,Wind alchemist
+0,5148,60,mage,Wind mage shop
+0,5154,97,provisioner,Wind provisioner
+0,5161,32,inn,Wind inn
+0,5191,3989,healer,Delucia healer
+0,5197,4060,inn,Delucia inn
+0,5203,86,tailor,Wind tailor
+0,5215,117,alchemist,Wind herbalist
+0,5218,175,inn,Wind inn
+0,5219,4012,provisioner,Delucia provisioner
+0,5225,4000,smith,Delucia smith
+0,5234,4025,tailor,Delucia tailor
+0,5236,142,scribe,Wind scribe
+0,5242,180,scribe,Wind scribe
+0,5263,129,healer,Wind healer
+0,5275,3977,bank,Delucia bank
+0,5296,3978,alchemist,Delucia alchemist
+0,5296,3978,mage,Delucia mage shop
+0,5297,4007,stable,Delucia stable
+0,5300,90,alchemist,Wind alchemist
+0,5300,90,mage,Wind mage shop
+0,5306,37,inn,Wind inn
+0,5347,76,bank,Wind bank
+0,5351,56,food,Wind baker
+0,5662,3150,jeweler,Papua jeweler
+0,5669,3131,bank,Papua bank
+0,5671,3287,stable,Papua stable
+0,5691,3209,carpenter,Papua real estate
+0,5698,3282,food,Papua butcher
+0,5714,3202,alchemist,Papua alchemist
+0,5726,3243,tinker,Papua tinker
+0,5731,3192,alchemist,Papua alchemist
+0,5731,3192,mage,Papua mage shop
+0,5736,3263,provisioner,Papua provisioner
+0,5737,3222,healer,Papua healer
+0,5746,3200,food,Papua baker
+0,5752,3272,tailor,Papua tailor
+0,5775,3161,inn,Papua inn
+0,5805,3270,docks,Papua shipwright
+0,5805,3270,map,Papua mapmaker
+0,5805,3300,smith,Papua weapons
+0,5839,3256,docks,Papua fisherman
+2,281,1016,moongate,Humility moongate
+2,284,536,healer,Healer
+2,369,1432,healer,Healer
+2,528,216,moongate,Valor moongate
+2,546,455,dungeon,Sorcerer's Dungeon
+2,575,537,healer,Healer
+2,652,1301,dungeon,Wisp Dungeon
+2,665,665,inn,Inn
+2,668,928,dungeon,Ankh Dungeon
+2,682,297,healer,Healer
+2,722,1366,moongate,Honesty moongate
+2,744,724,moongate,Honor moongate
+2,766,641,tinker,Gargoyle City tinker
+2,774,1144,inn,Mistas inn
+2,792,665,smith,Gargoyle City smith
+2,808,586,smith,Gargoyle City armour
+2,808,697,smith,Gargoyle City armour
+2,818,1073,town,Mistas
+2,824,602,provisioner,Gargoyle City provisioner
+2,826,679,provisioner,Gargoyle City provisioner
+2,827,777,dungeon,Exodus Dungeon
+2,840,571,mage,Gargoyle City mage shop
+2,840,571,town,Gargoyle City
+2,840,707,inn,Gargoyle City inn
+2,854,680,bank,Gargoyle City bank
+2,855,603,bank,Gargoyle City bank
+2,859,698,jeweler,Gargoyle City jeweler
+2,868,657,scribe,Gargoyle City scribe
+2,869,625,scribe,Gargoyle City scribe
+2,872,586,healer,Gargoyle City healer
+2,896,610,tailor,Gargoyle City tailor
+2,938,494,dungeon,Ancient Lair
+2,987,1011,moongate,Justice moongate
+2,1093,955,healer,Healer
+2,1174,1286,moongate,Sacrifice moongate
+2,1212,1144,town,Lake Shire
+2,1215,467,moongate,Compassion moongate
+2,1238,974,town,Bet-Lem Reg
+2,1253,588,tinker,Tinker
+2,1261,582,smith,Smith
+2,1318,1328,provisioner,Provisioner
+2,1362,1031,dungeon,Spectre Dungeon
+2,1363,1055,town,Reg Volon
+2,1364,1051,healer,Reg Volon healer
+2,1396,432,town,Alexandretta's Bowl
+2,1420,910,dungeon,Spider Cave
+2,1450,1473,dungeon,Twisted Weald
+2,1497,614,smith,Armour
+2,1499,619,stable,Stable
+2,1505,611,alchemist,Alchemist
+2,1505,611,mage,Mage shop
+2,1514,611,food,Baker
+2,1516,542,town,Ancient Citadel
+2,1518,619,healer,Healer
+2,1532,1340,moongate,Spirituality moongate
+2,1566,1049,inn,Inn
+2,1598,539,provisioner,Provisioner
+2,1600,552,tailor,Tailor
+2,1605,541,jeweler,Jeweler
+2,1610,556,bank,Bank
+2,1620,554,inn,Inn
+2,1628,548,healer,Healer
+2,1646,319,town,Montor
+2,1673,876,town,Lenmir Anfinmotas
+2,1721,218,moongate,Chaos moongate
+2,1745,1236,dungeon,Blood Dungeon
+2,1788,571,dungeon,Rock Dungeon
+3,259,783,dungeon,Yomotsu Mines
+3,950,520,healer,Luna healer
+3,976,512,smith,Luna smith
+3,976,527,tailor,Luna tailor
+3,977,223,dungeon,Fan Dancer's Dojo
+3,989,520,bank,Luna bank
+3,989,520,town,Luna
+3,989,527,inn,Luna inn
+3,993,511,jeweler,Luna jeweler
+3,993,511,provisioner,Luna provisioner
+3,1003,512,carpenter,Luna carpenter
+3,1003,512,tinker,Luna tinker
+3,1004,527,alchemist,Luna herbalist
+3,1015,527,moongate,Luna moongate
+3,1027,494,stable,Luna stable
+3,1029,520,healer,Luna healer
+3,1042,1444,stable,Stable
+3,1050,1434,food,Cook
+3,1050,1434,inn,Tavern
+3,1349,769,dungeon,The Citadel
+3,1731,981,dungeon,Labyrinth
+3,1977,1365,smith,Umbra smith
+3,1992,1315,stable,Umbra stable
+3,1997,1386,moongate,Umbra moongate
+3,2011,1326,provisioner,Umbra provisioner
+3,2017,1356,food,Umbra baker
+3,2023,1379,alchemist,Umbra alchemist
+3,2023,1379,mage,Umbra mage shop
+3,2025,1387,alchemist,Umbra herbalist
+3,2027,1353,food,Umbra cook
+3,2027,1353,inn,Umbra tavern
+3,2037,1311,inn,Umbra inn
+3,2045,1397,jeweler,Umbra jeweler
+3,2048,1343,bank,Umbra bank
+3,2049,1344,town,Umbra
+3,2060,1283,carpenter,Umbra carpenter
+3,2066,1282,tinker,Umbra tinker
+3,2068,1372,dungeon,Bedlam
+3,2068,1372,healer,Umbra healer
+3,2078,1327,tailor,Umbra tanner
+3,2357,1268,dungeon,Doom
+3,2357,1268,dungeon,Doom Gauntlet
