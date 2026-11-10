@@ -18,9 +18,16 @@ namespace UOClient.Unity.UI
         public ContextMenuWindow(ContextMenu menu, Vector2 at)
         {
             _menu = menu;
-            float width = 60 + menu.Entries.Select(e => (e.Text ?? "").Length).DefaultIfEmpty(10).Max() * 7.5f;
-            Rect = new Rect(at.x, at.y, Mathf.Clamp(width, 140, 360), 16 + menu.Entries.Count * Row);
+            float width = 60 + Inset * 2 + menu.Entries.Select(e => (e.Text ?? "").Length).DefaultIfEmpty(10).Max() * 7.5f;
+            Rect = new Rect(at.x, at.y, Mathf.Clamp(width, 150, 380), Inset * 2 + menu.Entries.Count * Row);
         }
+
+        /// <summary>The entries' margin inside the frame (its border is at most 12).</summary>
+        private const float Inset = 15;
+
+        /// <summary>The entries' words on the dark frame: parchment, gold under the mouse, grey when disabled.</summary>
+        private static readonly Color EntryText = IronSkin.Text, EntryHot = IronSkin.TextHot, EntryOff = new Color(0.5f, 0.47f, 0.42f),
+            HoverBar = new Color(0.55f, 0.43f, 0.24f, 0.35f);
 
         public override string Key => "context";
 
@@ -36,13 +43,20 @@ namespace UOClient.Unity.UI
 
         public override void Draw()
         {
-            DrawResizePic(3000, 0, 0, Rect.width, Rect.height); // the light popup frame
+            DrawResizePic(3000, 0, 0, Rect.width, Rect.height); // the popup frame (the iron frame: Themed)
             for (int i = 0; i < _menu.Entries.Count; i++)
             {
                 ContextMenuEntry e = _menu.Entries[i];
-                var r = new Rect(8, 8 + i * Row, Rect.width - 16, Row);
+                var r = new Rect(Inset, Inset + i * Row, Rect.width - Inset * 2, Row);
                 bool hover = !e.Disabled && r.Contains(Event.current.mousePosition);
-                Color color = e.Disabled ? new Color(0.45f, 0.45f, 0.45f) : hover ? new Color(1f, 1f, 0.6f) : new Color(0.1f, 0.08f, 0.05f);
+                if (hover)
+                {
+                    Color was = GUI.color;
+                    GUI.color = HoverBar;
+                    GUI.DrawTexture(r, Texture2D.whiteTexture);
+                    GUI.color = was;
+                }
+                Color color = e.Disabled ? EntryOff : hover ? EntryHot : EntryText;
                 Text(new Rect(r.x + 6, r.y + 3, r.width - 6, r.height), e.Text, color, 14);
                 if (!e.Disabled && GUI.Button(r, GUIContent.none, GUIStyle.none))
                 {
