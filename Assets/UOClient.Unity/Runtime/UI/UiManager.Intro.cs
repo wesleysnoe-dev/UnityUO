@@ -25,9 +25,9 @@ namespace UOClient.Unity.UI
         private const float FlightShare = 0.35f;
 
         /// <summary>Of a book's opening: the cover turns over [0, CoverEnd], each page takes PageTime, the window fades in from FadeStart.</summary>
-        private const float CoverEnd = 0.36f, PageTime = 0.24f, FadeStart = 0.86f;
+        private const float Settle = 0.14f, CoverEnd = 0.44f, PageTime = 0.22f, FadeStart = 0.86f;
 
-        private static readonly float[] PageStarts = { 0.3f, 0.42f, 0.54f };
+        private static readonly float[] PageStarts = { 0.38f, 0.49f, 0.6f };
 
         /// <summary>A rolled scroll's art (tiledata "scroll"): what party, profile and vendor windows fly in as.</summary>
         public const int ScrollGraphic = 0x14ED;
@@ -42,6 +42,7 @@ namespace UOClient.Unity.UI
             public Vector2 From;     // UI coordinates: where it was used
             public UiImage Art;
             public UiImage Pages;    // the book's own window art (two pages), or null: plain parchment
+            public Color CoverTint = Color.white; // the book's own colour (its art's mean), the leather tinted to it
             public readonly int OverlayId = _nextOverlayId++;
         }
 
@@ -68,8 +69,35 @@ namespace UOClient.Unity.UI
             Vector2 from = now - _lastPressAt < 4f
                 ? _lastPress
                 : new Vector2(Screen.width / Scale / 2f, Screen.height / Scale - 40f);
-            _intros[window] = new Intro { Kind = kind, Start = now, From = from, Art = art, Pages = kind == WindowIntro.Book ? window.IntroPages : null };
+            _intros[window] = new Intro
+            {
+                Kind = kind, Start = now, From = from, Art = art,
+                Pages = kind == WindowIntro.Book ? window.IntroPages : null,
+                CoverTint = kind == WindowIntro.Book ? MeanColour(art) : Color.white
+            };
             return opened;
+        }
+
+        /// <summary>The mean colour of an image's opaque pixels, brightened to tint a pale leather (a red book, a black one...).</summary>
+        private static Color MeanColour(UiImage img)
+        {
+            double r = 0, g = 0, b = 0;
+            int n = 0;
+            for (int y = 0; y < img.Height; y++)
+                for (int x = 0; x < img.Width; x++)
+                {
+                    uint p = img.Bitmap[x, y];
+                    if ((p >> 24) < 128)
+                        continue;
+                    r += (p >> 16) & 0xFF;
+                    g += (p >> 8) & 0xFF;
+                    b += p & 0xFF;
+                    n++;
+                }
+            if (n == 0)
+                return Color.white;
+            var c = new Color((float)(r / n / 255.0), (float)(g / n / 255.0), (float)(b / n / 255.0));
+            return c * 1.9f; // the leather is a mid brown: this brings it to about the art's own colour
         }
 
         /// <summary>The art of an item the player can see (on the ground, in a container, worn), or 0.</summary>
@@ -261,7 +289,8 @@ namespace UOClient.Unity.UI
             Flat(m, pages, sx, sx + half, y0, y1, 0.5f, 1f, alpha);
 
             // The left side's stack: the cover's inside once it has landed, then a page once one has.
-            float cover = Ease(Mathf.Clamp01(o / CoverEnd));
+            // The closed book settles first (its art growing to fill the cover), then the cover turns.
+            float cover = Ease(Mathf.Clamp01((o - Settle) / (CoverEnd - Settle)));
             int landed = 0;
             foreach (float start in PageStarts)
                 if (o >= start + PageTime)
@@ -278,7 +307,7 @@ namespace UOClient.Unity.UI
                     Leaf(m, pages, Ease(p) * Mathf.PI, sx, half, y0, y1, alpha, false, null);
             }
             if (cover < 1f)
-                Leaf(m, Leather, cover * Mathf.PI, sx, half, y0, y1, alpha, true, intro.Art, pages);
+                Leaf(m, Leather, cover * Mathf.PI, sx, half, y0, y1, alpha, true, intro.Art, pages, intro.CoverTint, Mathf.Clamp01(o / Settle));
 
             GL.PopMatrix();
         }
@@ -316,13 +345,16 @@ namespace UOClient.Unity.UI
         /// page's right half, or the cover with the book's art); its back after (the page's left half, or the endpaper).
         /// </summary>
         private static void Leaf(Material m, Texture front, float theta, float sx, float half, float y0, float y1, float a,
-                                 bool isCover, UiImage art, Texture back = null)
+                                 bool isCover, UiImage art, Texture back = null, Color? coverTint = null, float coverOpen = 0f)
         {
             float c = Mathf.Cos(theta), lift = (y1 - y0) * 0.07f * Mathf.Sin(theta);
             float ex = sx + half * c, ey0 = y0 - lift, ey1 = y1 + lift;
             bool facingFront = c >= 0f;
             float shade = 0.55f + 0.45f * Mathf.Abs(c);
             var tint = new Color(shade, shade, shade, a);
+            Color face = coverTint ?? Color.white;
+            if (isCover && facingFront)
+                tint = new Color(Mathf.Min(1.4f, face.r) * shade, Mathf.Min(1.4f, face.g) * shade, Mathf.Min(1.4f, face.b) * shade, a);
             // The cover's back is the left page; a page's back is the same left page (the book's art, as it lands).
             bool showPageBack = !facingFront;
             m.mainTexture = isCover && showPageBack ? back ?? PlainParchment : front;
@@ -341,8 +373,18 @@ namespace UOClient.Unity.UI
             // The book's own art on the cover's face, mapped onto the turning leaf (the flight lands it there, at 2x).
             if (isCover && facingFront && art != null)
             {
-                // Half the art's share of the leaf (at twice its size, as the flight lands it), across and down.
-                float aw = Mathf.Min(art.Width * 2f / half, 1f) * 0.5f, ah = Mathf.Min(art.Height * 2f / (y1 - y0), 1f) * 0.5f;
+                // The art on the cover's face: from twice its size (where the flight lands it) to most of the cover,
+                // keeping its shape; half its share of the leaf, across and down.
+                float grow = coverOpen, pageH = y1 - y0;
+                float wantW = Mathf.Lerp(art.Width * 2f, half * 0.8f, Ease(grow));
+                float wantH = wantW * art.Height / Mathf.Max(1f, art.Width);
+                if (wantH > pageH * 0.8f)
+                {
+                    wantW *= pageH * 0.8f / wantH;
+                    wantH = pageH * 0.8f;
+                }
+                float aw = Mathf.Min(wantW / half, 1f) * 0.5f, ah = Mathf.Min(wantH / pageH, 1f) * 0.5f;
+                var artTint = new Color(shade, shade, shade, a); // the art in its own colours, not the leather's tint
                 Vector2 P(float u, float v) // u 0 spine .. 1 edge, v 0 top .. 1 bottom
                 {
                     var top = Vector2.Lerp(new Vector2(sx, y0), new Vector2(ex, ey0), u);
@@ -352,7 +394,7 @@ namespace UOClient.Unity.UI
                 m.mainTexture = art.Texture;
                 m.SetPass(0);
                 GL.Begin(GL.QUADS);
-                GL.Color(tint);
+                GL.Color(artTint);
                 Vector2 a0 = P(0.5f - aw, 0.5f - ah), a1 = P(0.5f + aw, 0.5f - ah), a2 = P(0.5f + aw, 0.5f + ah), a3 = P(0.5f - aw, 0.5f + ah);
                 GL.TexCoord2(0, 1); GL.Vertex3(a0.x, a0.y, 0);
                 GL.TexCoord2(1, 1); GL.Vertex3(a1.x, a1.y, 0);
