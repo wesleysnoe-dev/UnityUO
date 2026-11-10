@@ -38,6 +38,9 @@ namespace UOClient.Unity.UI
         /// <summary>Called once when the window is first opened (art and session are available from here on).</summary>
         public virtual void OnOpened() { }
 
+        /// <summary>A book window's two-page art at its corner (what the opening animation turns), or null.</summary>
+        public virtual UiImage IntroPages => null;
+
         /// <summary>Called once when the window is closed (by right-click or code).</summary>
         public virtual void OnClosed() { }
 

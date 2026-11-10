@@ -33,6 +33,9 @@ namespace UOClient.Unity.UI
 
         public override string Key => "spellbook:" + _s.Book;
 
+        /// <summary>The open classic book (its own art); the list style has none.</summary>
+        public override UiImage IntroPages => _s.Classic ? Art.Gump(_s.Info.BookGraphic) : null;
+
         /// <summary>The book, its spells and the spread open (SpellbookState).</summary>
         public SpellbookState State => _s;
 

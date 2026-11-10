@@ -31,6 +31,8 @@ namespace UOClient.Unity.UI
 
         public override string Key => KeyFor(_book.Serial);
 
+        public override UiImage IntroPages => Art.Gump(Background);
+
         public static string KeyFor(uint serial) => "book:" + serial;
 
         public override bool StillValid => Session.Books.TryGetValue(_book.Serial, out BookInfo open) && open == _book;
