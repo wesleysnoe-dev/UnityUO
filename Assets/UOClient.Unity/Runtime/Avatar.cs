@@ -413,6 +413,7 @@ namespace UOClient.Unity
             bool moving = _stepDuration > 0 && !Dying;
             MobileFrame[] frames = null;
             bool falling = false;
+            int drawnAction = -1;
             if (Dying)
             {
                 MobileFrame[] fall = _art.Get(_look, _lookKey, DeathAction, fileDir, layerDir);
@@ -420,6 +421,7 @@ namespace UOClient.Unity
                 {
                     frames = fall;
                     falling = true;
+                    drawnAction = DeathAction;
                 }
                 else if (fall != null)
                     DeathFinished = true; // no fall for this body: gone at once (TazUO, Mobile.cs:720-724)
@@ -441,6 +443,7 @@ namespace UOClient.Unity
                     {
                         frames = act;
                         serverAnim = true;
+                        drawnAction = _server.Action;
                     }
                 }
                 _serverPending = 0;               // still being built: the clock waits, the normal action shows meanwhile
@@ -451,10 +454,12 @@ namespace UOClient.Unity
                 sitBack = fileDir == 3;
                 var peace = MobileArt.Actions(_look);
                 frames = _art.Get(_look, _lookKey, sitBack ? SitBackAction : peace.Stand, fileDir, layerDir);
+                drawnAction = sitBack ? SitBackAction : peace.Stand;
                 if (frames != null && frames.Length == 0)
                 {
                     sitBack = false;
                     frames = _art.Get(_look, _lookKey, peace.Stand, fileDir, layerDir); // no riding pose: fold the standing one
+                    drawnAction = peace.Stand;
                 }
             }
             else if (!falling && !serverAnim)
@@ -463,7 +468,8 @@ namespace UOClient.Unity
                 var peace = MobileArt.Actions(_look);
                 int action = MobileActions.Pick(MobileArt.Actions(_look, WarMode, Dead), moving, _running);
                 frames = MobileActions.WithFallback(action, MobileActions.Pick(peace, moving, _running), peace.Stand,
-                    a => _art.Get(_look, _lookKey, a, fileDir, layerDir), out _);
+                    a => _art.Get(_look, _lookKey, a, fileDir, layerDir), out int chosen);
+                drawnAction = chosen;
             }
 
             if (frames == null)
@@ -483,22 +489,31 @@ namespace UOClient.Unity
             _lastMirror = mirror;
             _renderer.enabled = true;
 
-            MobileFrame f;
+            int index;
             if (falling)
             {
                 // Once through, then hold the last frame.
-                f = frames[MobileActions.DeathFrame(_deathTime, frames.Length)];
+                index = MobileActions.DeathFrame(_deathTime, frames.Length);
                 DeathFinished = MobileActions.DeathDone(_deathTime, frames.Length);
             }
             else if (serverAnim)
-                f = frames[_server.Frame(frames.Length)];
+                index = _server.Frame(frames.Length);
             else if (seated)
-                f = frames[0];
+                index = 0;
             else
             {
                 // Walk/run cycles span two tiles; standing idles slowly.
                 float frameDuration = !moving ? 0.25f : StepTime(_running) * 2f / frames.Length;
-                f = frames[(int)(_animTime / frameDuration) % frames.Length];
+                index = (int)(_animTime / frameDuration) % frames.Length;
+            }
+            MobileFrame f = frames[index];
+            if (drawnAction >= 0) // frames still being built keep the last ones shown: so does this
+            {
+                DrawnAction = drawnAction;
+                DrawnFrame = index;
+                DrawnFileDir = fileDir;
+                DrawnMirror = mirror;
+                DrawnSeated = seated;
             }
 
             Vector2 anchor = AnchorPixels;
@@ -558,6 +573,13 @@ namespace UOClient.Unity
             _outline.Update(ObjectHighlight.OutlinesInWorld(Selected, true, false, ObjectHighlight.HighlightGameObjects),
                 _art, f.Slot, r, mirror, LastDepth, LastCut, folded ? _sitOutline : null);
         }
+
+        /// <summary>The action, frame index and file direction drawn this frame (-1: nothing yet), for what rides on the frame (CarriedFlames).</summary>
+        public int DrawnAction { get; private set; } = -1;
+        public int DrawnFrame { get; private set; }
+        public int DrawnFileDir { get; private set; }
+        public bool DrawnMirror { get; private set; }
+        public bool DrawnSeated { get; private set; }
 
         // People's riding action (group 25), frame 0: a person seen from behind sitting (ClassicUO uses it for file dir 3).
         private const int SitBackAction = 25;

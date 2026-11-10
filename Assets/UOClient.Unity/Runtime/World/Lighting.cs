@@ -127,6 +127,10 @@ namespace UOClient.Unity
                             || LightSources.LightsOn(ServerLevels(session).Overall, ServerLevels(session).Personal);
             Color l = _timeCurrent.Light;
             LocalLightScale = lightsOn ? Mathf.Clamp01(Mathf.Max(l.r, Mathf.Max(l.g, l.b)) / NightLightPeak) : 0f;
+            // The soft glow round the player is their personal light (0x4E: Night Sight, a staff light), as in the classic
+            // client, where a character gives no light of its own: without one only a carried torch or lamp lights them.
+            // (The item lights' strength above still follows the time of day.)
+            Shader.SetGlobalVector("_UOLightColor", session == null || ServerLevels(session).Personal > 0 ? l : Color.clear);
             int hh = (int)Sun.Hour, mm = (int)((Sun.Hour - hh) * 60f);
             hud.TimeName = target.Name + $" {hh:00}:{mm:00}{(Sun.Moon ? " moon" : "")}"
                            + (_timeOverride < 0 && session != null ? $" (server light {session.World.GlobalLight}{(CustomLightLevel ? $", custom {ServerLevels(session).Overall}" : "")})" : "")

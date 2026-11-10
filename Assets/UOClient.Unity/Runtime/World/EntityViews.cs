@@ -212,15 +212,19 @@ namespace UOClient.Unity
             });
             FxTest();
             _flames.Apply(_ctx.Data, _ctx.World, _ctx.ArtScale, _ctx.Player.X, _ctx.Player.Y);
+            _carriedFlames.Apply(_ctx.Data, _ctx.World, _ctx.ArtScale);
         }
 
         /// <summary>
         /// The lights the player and the characters near them carry (ItemLights.Carried): each worn item with the tiledata
         /// light flag, at its bearer's drawn feet.
         /// </summary>
+        private readonly Fx.CarriedFlames _carriedFlames = new Fx.CarriedFlames();
+
         private void GatherCarriedLights()
         {
             ItemLights.Carried.Clear();
+            _carriedFlames.Begin();
             if (_ctx.Session == null)
                 return;
             void From(Avatar a, Core.Mobile m)
@@ -230,8 +234,11 @@ namespace UOClient.Unity
                 foreach (Core.EquippedItem e in m.Equipment.Values)
                 {
                     StaticTileData td = _ctx.Data.TileData.GetStatic(e.Graphic);
-                    if (LightSources.IsLight(td.Flags))
-                        ItemLights.Carried.Add((a.AnchorPixels, e.Graphic, td.LightIndex));
+                    if (!LightSources.IsLight(td.Flags))
+                        continue;
+                    ItemLights.Carried.Add((a.AnchorPixels, e.Graphic, td.LightIndex));
+                    if (td.AnimId != 0)
+                        _carriedFlames.Add(m.Serial, a, e.Graphic, td.AnimId); // its living flame, on the frame's fire
                 }
             }
             if (_ctx.Session.World.Mobiles.TryGetValue(_ctx.Session.World.PlayerSerial, out Core.Mobile me))
