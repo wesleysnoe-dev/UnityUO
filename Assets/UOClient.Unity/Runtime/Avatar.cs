@@ -393,10 +393,12 @@ namespace UOClient.Unity
             // Sitting (Core.Seats, ClassicUO MobileView): on a seat a person faces the way the seat allows and is drawn from
             // the standing frame folded at the hips, or, seen from behind (file direction 3), the riding pose.
             bool seated = Seated(out Core.Seats.Seat seat);
-            if (seated)
-                Direction = Core.Seats.Facing(seat, Direction) & 7;
+            // Drawn facing the way the seat allows, but Direction itself stays the server's: movement compares a key's
+            // direction with it to tell a turn from a step, and a seat's facing there made the first step off a chair a
+            // step the server took as a turn (the client walked ahead, then the server put it back).
+            int facing = seated ? Core.Seats.Facing(seat, Direction) & 7 : Direction;
             // Worn layers stack by the facing itself (TazUO's layerDir, taken before GetAnimDirection; MobileView.cs:151-154).
-            int layerDir = Direction & 7;
+            int layerDir = facing & 7;
             int fileDir = AnimationFile.FileDirection(layerDir, out bool mirror);
             bool war = WarMode && !Dead;
             if (layerDir != _prefetchedDir || !ReferenceEquals(_look, _prefetchedLook) || war != _prefetchedWar)
