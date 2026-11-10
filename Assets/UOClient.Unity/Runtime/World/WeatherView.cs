@@ -26,7 +26,8 @@ namespace UOClient.Unity
         private static readonly int RainId = Shader.PropertyToID("_WRain"), SnowId = Shader.PropertyToID("_WSnow"),
             FogId = Shader.PropertyToID("_WFog"), WindId = Shader.PropertyToID("_WWind"), FlashId = Shader.PropertyToID("_WFlash"),
             OriginId = Shader.PropertyToID("_WOrigin"), ScaleId = Shader.PropertyToID("_WScale"),
-            WindBoostId = Shader.PropertyToID("_UOWindBoost"), CloudsId = Shader.PropertyToID("_WClouds");
+            WindBoostId = Shader.PropertyToID("_UOWindBoost"), CloudsId = Shader.PropertyToID("_WClouds"),
+            WaterWeatherId = Shader.PropertyToID("_UOWaterWeather");
 
         /// <summary>-noclouds: no drifting cloud shadows.</summary>
         public static readonly bool Clouds = !Array.Exists(Environment.GetCommandLineArgs(),
@@ -145,6 +146,7 @@ namespace UOClient.Unity
             _wind = Mathf.Lerp(_wind, wind, k);
             Overcast = Mathf.Clamp01(Mathf.Max(Mathf.Max(_rain * 0.75f, _snow * 0.55f), Mathf.Max(_storm * 0.9f, _fog * 0.4f)));
             Shader.SetGlobalFloat(WindBoostId, _storm * 1.6f + _rain * 0.5f);
+            Shader.SetGlobalVector(WaterWeatherId, new Vector4(_rain, Wind, 0f, 0f)); // the water's rain rings and swells
 
             // Lightning in a storm: every 7 to 20 seconds, a double flash.
             float flash = 0f;
@@ -190,6 +192,7 @@ namespace UOClient.Unity
             Active = false;
             Overcast = 0f;
             Shader.SetGlobalFloat(WindBoostId, 0f);
+            Shader.SetGlobalVector(WaterWeatherId, Vector4.zero);
             if (_go != null) UnityEngine.Object.Destroy(_go);
             if (_material != null) UnityEngine.Object.Destroy(_material);
         }

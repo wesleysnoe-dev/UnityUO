@@ -178,6 +178,8 @@ namespace UOClient.Unity
             CharacterShadow.SetSun(new Vector2(sun.TowardX, sun.TowardY), sun.Elevation, sun.Strength * (1f - overcast * 0.85f));
             (float x, float y, float up) = SunClock.Vector(sun);
             Shader.SetGlobalVector("_LGSunDir", new Vector4(x, up, -y, 0f)); // terrain space: x, up, -tile y
+            // The water's glitter (WorldSprite UOWaterShimmer): the sun's or the moon's, as strong as its shadows, golden when low.
+            Shader.SetGlobalVector("_UOWaterSun", new Vector4(sun.Moon ? 0f : 1f, sun.Strength * (1f - overcast), sun.Warmth, 0f));
         }
 
         /// <summary>Moves the terrain's baked sun when the hour crosses a step, and asks for the screen to be rebuilt.</summary>
