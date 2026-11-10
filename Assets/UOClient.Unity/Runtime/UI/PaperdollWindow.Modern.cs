@@ -91,6 +91,7 @@ namespace UOClient.Unity.UI
             bool female = IsFemale(m.Body);
             UiImage body = Art.Gump(female ? 0x000D : 0x000C, m.Hue);
             CollectWorn(m, female);
+            Compose(body, female ? 0x000D : 0x000C, m.Hue);
             // Everything drawn (the body, a halberd above the head, a cloak, the pack) fits the niche: centred by its
             // pixels, at DollScale or smaller when it would not fit.
             int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
@@ -104,9 +105,7 @@ namespace UOClient.Unity.UI
                 minX = Mathf.Min(minX, bx0); minY = Mathf.Min(minY, by0);
                 maxX = Mathf.Max(maxX, bx0 + bw0 + 1); maxY = Mathf.Max(maxY, by0 + bh0 + 1);
             }
-            Grow(body);
-            foreach (var d in _drawn)
-                Grow(d.Image);
+            Grow(_comp);
             if (minX > maxX)
             {
                 minX = 0; minY = 0; maxX = 180; maxY = 240;
@@ -123,9 +122,12 @@ namespace UOClient.Unity.UI
 
             GUI.BeginGroup(doll);
             var origin = _bodyAt - doll.position;
-            DrawDollPiece(body, female ? 0x000D : 0x000C, m.Hue, false, origin, false);
-            foreach (var (_, e, img, gump) in _drawn)
-                DrawDollPiece(img, gump, e.Hue, PartialHue(e.Graphic), origin, over != 0 && hit.Slot < 0 && e.Serial == over);
+            // The hovered piece's outline, then the composed doll over it (only the outline's rim shows).
+            foreach (var (_, e, img, _) in _drawn)
+                if (over != 0 && hit.Slot < 0 && e.Serial == over && Art.Outline(img) is UiImage o)
+                    GUI.DrawTexture(new Rect(origin.x - _dollScale, origin.y - _dollScale, o.Width * _dollScale, o.Height * _dollScale), o.Texture);
+            if (_comp != null)
+                GUI.DrawTexture(new Rect(origin.x, origin.y, _comp.Width * _dollScale, _comp.Height * _dollScale), _comp.Texture);
             GUI.EndGroup();
 
             for (int i = 0; i < _modernSlots.Count; i++)
@@ -203,6 +205,81 @@ namespace UOClient.Unity.UI
 
             if (DoubleClicked(virtue, _virtueAt.x, _virtueAt.y))
                 Session.RequestVirtueGump(_serial);
+        }
+
+        private string _compKey;
+        private UiImage _comp;   // the doll composed at its art's size (Bitmap) and smoothed (Texture)
+        private readonly List<Bitmap32> _covers = new List<Bitmap32>(); // per worn piece: its unhued art when it carries a cover, else null
+
+        /// <summary>
+        /// UO's darkest blue (colour 1), which the classic paperdoll art paints round a helmet, the arms, a hood: a
+        /// cover that hides what is under it (hair under a helmet) against the classic paperdoll's dark background.
+        /// </summary>
+        private static bool IsCover(uint p) =>
+            (p >> 24) != 0 && ((p >> 16) & 0xFF) <= 4 && ((p >> 8) & 0xFF) <= 4 && (p & 0xFF) <= 12;
+
+        /// <summary>A piece carries a cover when it has a patch of colour 1, not a stray dark pixel or two (the body has some).</summary>
+        private const int CoverPixels = 60;
+
+        /// <summary>
+        /// The body and what is worn laid into one picture, back to front: a piece's cover pixels clear what is under them
+        /// (so the niche shows there, not black); then smoothed (edges bled, Scale2x, bilinear). Remade when what is worn changes.
+        /// </summary>
+        private void Compose(UiImage body, int bodyGump, int bodyHue)
+        {
+            var key = new System.Text.StringBuilder().Append(bodyGump).Append(':').Append(bodyHue);
+            foreach (var d in _drawn)
+                key.Append('|').Append(d.Gump).Append(':').Append(d.Item.Hue);
+            string k = key.ToString();
+            if (k == _compKey && _comp != null)
+                return;
+            _compKey = k;
+            int w = body?.Width ?? 1, h = body?.Height ?? 1;
+            foreach (var d in _drawn)
+            {
+                w = Mathf.Max(w, d.Image.Width);
+                h = Mathf.Max(h, d.Image.Height);
+            }
+            var comp = new Bitmap32(w, h);
+            void Lay(Bitmap32 src, Bitmap32 cover)
+            {
+                for (int y = 0; y < src.Height; y++)
+                    for (int x = 0; x < src.Width; x++)
+                    {
+                        if (cover != null && x < cover.Width && y < cover.Height && IsCover(cover[x, y]))
+                            comp[x, y] = 0;
+                        else if ((src[x, y] >> 24) != 0)
+                            comp[x, y] = src[x, y];
+                    }
+            }
+            if (body != null)
+                Lay(body.Bitmap, null);
+            _covers.Clear();
+            foreach (var d in _drawn)
+            {
+                Bitmap32 raw = Art.Data.GetGump(d.Gump);
+                int n = 0;
+                if (raw != null)
+                    foreach (uint p in raw.Pixels)
+                        if (IsCover(p))
+                            n++;
+                Bitmap32 cover = n > CoverPixels ? raw : null;
+                _covers.Add(cover);
+                Lay(d.Image.Bitmap, cover);
+            }
+            if (_comp != null)
+                Object.Destroy(_comp.Texture);
+            Texture2D tex = UnityTextures.ToTexture(GumpArt.Scale2x(GumpArt.Bleed(comp, 3)), "paperdoll doll");
+            tex.filterMode = FilterMode.Bilinear;
+            _comp = new UiImage { Bitmap = comp, Texture = tex };
+        }
+
+        public override void OnClosed()
+        {
+            if (_comp != null)
+                Object.Destroy(_comp.Texture);
+            _comp = null;
+            _compKey = null;
         }
 
         /// <summary>The worn pieces with paperdoll art, back to front (as the classic Draw collects them).</summary>
@@ -291,7 +368,7 @@ namespace UOClient.Unity.UI
                 for (int i = _drawn.Count - 1; i >= 0; i--)
                 {
                     var (layer, item, img, _) = _drawn[i];
-                    if (!img.HitTest(px, py))
+                    if (!img.HitTest(px, py) || i < _covers.Count && _covers[i] != null && IsCover(_covers[i][px, py]))
                         continue;
                     return layer == 11 || layer == 16 ? (-1, (byte)0, (EquippedItem?)null) : (-1, layer, item);
                 }
