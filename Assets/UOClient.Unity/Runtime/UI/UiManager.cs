@@ -172,7 +172,7 @@ namespace UOClient.Unity.UI
     /// Owns the open windows: draws them with IMGUI windows (which give proper focus and stacking),
     /// routes item drag and drop between them, and tells the world whether the pointer is over UI.
     /// </summary>
-    public sealed class UiManager
+    public sealed partial class UiManager
     {
         private readonly List<UiWindow> _windows = new List<UiWindow>();
         private bool _restack; // the list order changed outside a click: IMGUI's stacking is to follow it (OnGUI)
@@ -258,6 +258,7 @@ namespace UOClient.Unity.UI
 
         public void Close(UiWindow window)
         {
+            ForgetIntro(window);
             if (_windows.Remove(window))
                 window.OnClosed();
         }
@@ -394,6 +395,7 @@ namespace UOClient.Unity.UI
                 if (!_windows[i].StillValid)
                     Close(_windows[i]);
 
+            NoteIntroPress(Event.current); // where a book or button was pressed: an opening animation starts there
             Matrix4x4 saved = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(Scale, Scale, 1));
             Event e = Event.current;
@@ -431,8 +433,11 @@ namespace UOClient.Unity.UI
             foreach (UiWindow w in _windows.ToArray())
             {
                 UiWindow window = w;
+                if (IntroHidesWindow(window))
+                    continue; // still flying in (UiManager.Intro)
                 window.Rect = GUI.Window(window.Id, window.Rect, _ => DrawWindow(window), GUIContent.none, GUIStyle.none);
             }
+            DrawIntroFlights();
 
             // A window opened or brought forward by code: stack IMGUI's windows back to front in our order, so the window
             // drawn on top is the one TopWindowAt (the wheel, IsOverUi, drops) takes for the front.
@@ -471,7 +476,8 @@ namespace UOClient.Unity.UI
                 }
             }
 
-            w.Draw();
+            if (!DrawIntroWindow(w)) // opening (UiManager.Intro): drawn partly, behind its cover or roll
+                w.Draw();
 
             // Last, so controls drawn above take their clicks first: the rest of the window moves it.
             if (Dragging == null && w.Movable)

@@ -302,7 +302,10 @@ namespace UOClient.Unity
             // A fresh list from the same vendor (asked again, or after a trade) replaces the open one's stale stock and prices.
             var shop = new UI.ShopWindow(list);
             CloseByKey(shop.Key);
-            Ui.Open(shop);
+            if (list.Selling)
+                Ui.Open(shop);
+            else
+                Ui.OpenWithIntro(shop, UI.WindowIntro.Scroll, UI.UiManager.ScrollGraphic); // buying unrolls
         }
 
         private void CloseByKey(string key)
@@ -347,12 +350,14 @@ namespace UOClient.Unity
 
         // Already open (the book used again, a scroll added): the open one takes the new content.
         private void OnSpellbookContent(uint book, int first, ulong bits) =>
-            Ui.Open(new UI.SpellbookWindow(book, first, bits)).SetContent(first, bits);
+            Ui.OpenWithIntro(new UI.SpellbookWindow(book, first, bits), UI.WindowIntro.Book, Ui.GraphicOf(book)).SetContent(first, bits);
 
-        private void OnProfileReceived(CharacterProfile p) => Ui.Open(new UI.ProfileWindow(p)).SetProfile(p);
+        private void OnProfileReceived(CharacterProfile p) =>
+            Ui.OpenWithIntro(new UI.ProfileWindow(p), UI.WindowIntro.Scroll, UI.UiManager.ScrollGraphic).SetProfile(p);
 
         /// <summary>A cover (0xD4/0x93): open the book, or refresh the open one (pages arrive into it through 0x66).</summary>
-        private void OnBookOpened(BookInfo book) => Ui.Open(new UI.BookWindow(book)).SetBook(book);
+        private void OnBookOpened(BookInfo book) =>
+            Ui.OpenWithIntro(new UI.BookWindow(book), UI.WindowIntro.Book, Ui.GraphicOf(book.Serial)).SetBook(book);
 
         /// <summary>A board (0x71 0): open it, or refresh the open one (its messages follow as 0x3C, then 0x71 1).</summary>
         private void OnBulletinBoardOpened(BulletinBoardInfo board) => Ui.Open(new UI.BulletinBoardWindow(board)).SetBoard(board);
@@ -442,7 +447,7 @@ namespace UOClient.Unity
                     if (Ui.Find("party") is UI.UiWindow partyWindow)
                         Ui.Close(partyWindow);
                     else
-                        Ui.Open(new UI.PartyWindow());
+                        Ui.OpenWithIntro(new UI.PartyWindow(), UI.WindowIntro.Scroll, UI.UiManager.ScrollGraphic);
                     break;
                 // The top bar's own buttons.
                 case "minimap": _ctx.Hud.MinimapVisible = !_ctx.Hud.MinimapVisible; break;

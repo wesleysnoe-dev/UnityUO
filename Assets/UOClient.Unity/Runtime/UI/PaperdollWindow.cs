@@ -177,7 +177,7 @@ namespace UOClient.Unity.UI
             if (DoubleClicked(virtue, VirtueX, VirtueY))
                 Session.RequestVirtueGump(_serial);
             else if (DoubleClicked(party, partyX, ProfileY))
-                Ui.Open(new PartyWindow()); // opens it, or brings the open one forward
+                Ui.OpenWithIntro(new PartyWindow(), WindowIntro.Scroll, UiManager.ScrollGraphic); // opens it (unrolling), or brings the open one forward
             // The party scroll overlaps the profile's right edge by 4px and sits above it, so it's tested first.
             else if (DoubleClicked(profile, profileX, ProfileY))
                 Session.RequestProfile(_serial);

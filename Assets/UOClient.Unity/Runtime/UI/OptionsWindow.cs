@@ -339,6 +339,8 @@ namespace UOClient.Unity.UI
             Line("Container gumps and their items; game boards keep their size.");
             d.doubleClickToLootInsideContainers = Toggle("Double-click to loot items inside containers", d.doubleClickToLootInsideContainers);
             Line("In a corpse or a chest on the ground, a double-click moves a plain item\nto your backpack (Ctrl+double-click still uses it).", 34);
+            d.animateBooksAndScrolls = Toggle("Animate books and scrolls opening", d.animateBooksAndScrolls);
+            Line("Books fly up and open; party, profile and vendor windows unroll.");
             d.holdShiftToSplitStack = Toggle("Hold Shift to split a stack", d.holdShiftToSplitStack);
             Line(d.holdShiftToSplitStack
                 ? "Shift+drag asks how many; a plain drag takes the whole stack."

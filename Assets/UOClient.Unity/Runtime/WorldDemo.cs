@@ -427,6 +427,7 @@ namespace UOClient.Unity
             containersScale = UI.ContainerWindow.ScalePercent,
             doubleClickToLootInsideContainers = UI.ContainerWindow.DoubleClickToLoot,
             holdShiftToSplitStack = UI.UiManager.HoldShiftToSplitStack,
+            animateBooksAndScrolls = UI.UiManager.OpenAnimations,
             useTooltip = _tooltip.UseTooltip,
             buffBarTime = UI.BuffBarWindow.ShowTimers,
             castSpellsByOneClick = UI.SpellIconWindow.SingleClickIconUse,
@@ -483,6 +484,7 @@ namespace UOClient.Unity
             UI.ContainerWindow.ScalePercent = o.containersScale;
             UI.ContainerWindow.DoubleClickToLoot = o.doubleClickToLootInsideContainers;
             UI.UiManager.HoldShiftToSplitStack = o.holdShiftToSplitStack;
+            UI.UiManager.OpenAnimations = o.animateBooksAndScrolls;
             _tooltip.UseTooltip = o.useTooltip;
             UI.BuffBarWindow.ShowTimers = o.buffBarTime;
             UI.SpellIconWindow.SingleClickIconUse = o.castSpellsByOneClick;

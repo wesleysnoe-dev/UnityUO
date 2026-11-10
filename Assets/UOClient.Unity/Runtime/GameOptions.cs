@@ -115,6 +115,9 @@ namespace UOClient.Unity
         /// </summary>
         public bool holdShiftToSplitStack = false;
 
+        /// <summary>Books fly up and open, and party, profile and vendor windows unroll as scrolls (UiManager.Intro); off: they appear at once.</summary>
+        public bool animateBooksAndScrolls = true;
+
         /// <summary>TazUO's UseTooltip (Tooltip.SetText): off hides the text tooltips of windows (buffs, gump elements, spell icons), not item or mobile properties.</summary>
         public bool useTooltip = true;
 
@@ -386,6 +389,7 @@ namespace UOClient.Unity
             && scaleSpeechDelay == o.scaleSpeechDelay && speechDelay == o.speechDelay && saveJournalToFile == o.saveJournalToFile
             && containersScale == o.containersScale && doubleClickToLootInsideContainers == o.doubleClickToLootInsideContainers
             && holdShiftToSplitStack == o.holdShiftToSplitStack && useTooltip == o.useTooltip
+            && animateBooksAndScrolls == o.animateBooksAndScrolls
             && buffBarTime == o.buffBarTime && castSpellsByOneClick == o.castSpellsByOneClick
             && showMobilesHP == o.showMobilesHP && mobileHPShowWhen == o.mobileHPShowWhen
             && healthLineSizeMultiplier == o.healthLineSizeMultiplier
@@ -440,6 +444,7 @@ namespace UOClient.Unity
                     case "containersScale": Integer(raw, ref o.containersScale); break;
                     case "doubleClickToLootInsideContainers": Bool(raw, ref o.doubleClickToLootInsideContainers); break;
                     case "holdShiftToSplitStack": Bool(raw, ref o.holdShiftToSplitStack); break;
+                    case "animateBooksAndScrolls": Bool(raw, ref o.animateBooksAndScrolls); break;
                     case "useTooltip": Bool(raw, ref o.useTooltip); break;
                     case "buffBarTime": Bool(raw, ref o.buffBarTime); break;
                     case "castSpellsByOneClick": Bool(raw, ref o.castSpellsByOneClick); break;
@@ -543,6 +548,7 @@ namespace UOClient.Unity
             Add("containersScale", containersScale.ToString(CultureInfo.InvariantCulture));
             Add("doubleClickToLootInsideContainers", B(doubleClickToLootInsideContainers));
             Add("holdShiftToSplitStack", B(holdShiftToSplitStack));
+            Add("animateBooksAndScrolls", B(animateBooksAndScrolls));
             Add("useTooltip", B(useTooltip));
             Add("buffBarTime", B(buffBarTime));
             Add("castSpellsByOneClick", B(castSpellsByOneClick));
