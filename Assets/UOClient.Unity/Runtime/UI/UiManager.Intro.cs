@@ -27,6 +27,9 @@ namespace UOClient.Unity.UI
         /// <summary>Of a book's opening: the cover turns over [0, CoverEnd], each page takes PageTime, the window fades in from FadeStart.</summary>
         private const float Settle = 0.06f, CoverEnd = 0.38f, PageTime = 0.22f, FadeStart = 0.86f;
 
+        /// <summary>A book painted open has no cover to turn: it fades into its window sooner.</summary>
+        private const float OpenArtFade = 0.25f;
+
         private static readonly float[] PageStarts = { 0.32f, 0.43f, 0.54f };
 
         /// <summary>A rolled scroll's art (tiledata "scroll"): what party, profile and vendor windows fly in as.</summary>
@@ -49,6 +52,9 @@ namespace UOClient.Unity.UI
             public UiImage Art;
             public UiImage Pages;    // the book's own window art (two pages), or null: plain parchment
             public UiImage Cover;    // the book's own front cover, straightened from its art (GumpArt.ItemCover)
+            public Texture HdCover;  // its painted front cover (Resources/BookCovers), over Cover
+            public Texture OpenArt;  // a book drawn open (its painting wider than tall): flies in open, no cover to turn
+            public Texture CoverTexture => HdCover != null ? HdCover : Cover?.Texture;
             public Color CoverTint = Color.white; // the book's own colour (its art's mean), the leather tinted to it
             public readonly int OverlayId = _nextOverlayId++;
         }
@@ -78,8 +84,15 @@ namespace UOClient.Unity.UI
             Vector2 from = now - _lastPressAt < 4f
                 ? _lastPress
                 : new Vector2(Screen.width / Scale / 2f, Screen.height / Scale - 40f);
+            // The painted art of this book (Resources/BookCovers/0xNNNN.png): a front cover, or the book lying open.
+            Texture2D painted = kind == WindowIntro.Book ? Resources.Load<Texture2D>($"BookCovers/0x{graphic:X4}") : null;
+            if (painted != null)
+                painted.wrapMode = TextureWrapMode.Clamp;
+            bool paintedOpen = painted != null && painted.width > painted.height;
             _intros[window] = new Intro
             {
+                HdCover = paintedOpen ? null : painted,
+                OpenArt = paintedOpen ? painted : null,
                 Kind = kind, Start = now, From = from, Art = art,
                 Pages = kind == WindowIntro.Book ? window.IntroPages : null,
                 Cover = kind == WindowIntro.Book ? Art.ItemCover(graphic) ?? Art.ItemCover(BookGraphic) : null,
@@ -158,7 +171,8 @@ namespace UOClient.Unity.UI
                 return false;
             if (t < FlightShare)
                 return true;
-            return _intros[w].Kind == WindowIntro.Book && OpenPhase(t) < FadeStart;
+            Intro intro = _intros[w];
+            return intro.Kind == WindowIntro.Book && OpenPhase(t) < (intro.OpenArt != null ? OpenArtFade : FadeStart);
         }
 
         private static float Ease(float t) => t * t * (3f - 2f * t);
@@ -177,7 +191,8 @@ namespace UOClient.Unity.UI
                     // The book: standing upright, face-on, growing from where it was used to the full closed book on
                     // the right page; then opening there. Drawn in a window of its own, above the others.
                     Rect bookRect = BookRect(kv.Key, intro);
-                    Rect cover = new Rect(bookRect.center.x, bookRect.y, bookRect.width / 2f, bookRect.height);
+                    // A book painted open flies to the whole two pages; a closed one to its cover on the right page.
+                    Rect cover = intro.OpenArt != null ? bookRect : new Rect(bookRect.center.x, bookRect.y, bookRect.width / 2f, bookRect.height);
                     Rect area;
                     if (t < FlightShare)
                     {
@@ -195,7 +210,16 @@ namespace UOClient.Unity.UI
                     {
                         if (Event.current.type != EventType.Repaint)
                             return;
-                        if (open < 0f)
+                        if (intro.OpenArt != null)
+                        {
+                            // Open already: it fades as the window fades in over it.
+                            float fade = open < OpenArtFade ? 1f : 1f - (open - OpenArtFade) / (1f - OpenArtFade);
+                            Color was = GUI.color;
+                            GUI.color = new Color(1f, 1f, 1f, fade);
+                            GUI.DrawTexture(new Rect(0, 0, drawn.width, drawn.height), intro.OpenArt, ScaleMode.ScaleToFit);
+                            GUI.color = was;
+                        }
+                        else if (open < 0f)
                             DrawClosedBook(drawn, intro);
                         else
                             DrawBookOpening(drawn, intro, open);
@@ -315,8 +339,8 @@ namespace UOClient.Unity.UI
             float s = Scale;
             GL.PushMatrix();
             GL.LoadPixelMatrix(0, Screen.width, Screen.height, 0);
-            if (intro.Cover != null) // the book's own front
-                Leaf(m, intro.Cover.Texture, 0f, cover.x * s, cover.width * s, cover.y * s, cover.yMax * s, 1f, true, null);
+            if (intro.CoverTexture != null) // the book's own front
+                Leaf(m, intro.CoverTexture, 0f, cover.x * s, cover.width * s, cover.y * s, cover.yMax * s, 1f, true, null);
             else
                 Leaf(m, Leather, 0f, cover.x * s, cover.width * s, cover.y * s, cover.yMax * s, 1f, true, intro.Art, null, intro.CoverTint, 1f);
             GL.PopMatrix();
@@ -361,8 +385,8 @@ namespace UOClient.Unity.UI
                 if (p > 0f && p < 1f)
                     Leaf(m, pages, Ease(p) * Mathf.PI, sx, half, y0, y1, alpha, false, null);
             }
-            if (cover < 1f && intro.Cover != null) // the book's own front turning
-                Leaf(m, intro.Cover.Texture, cover * Mathf.PI, sx, half, y0, y1, alpha, true, null, pages);
+            if (cover < 1f && intro.CoverTexture != null) // the book's own front turning
+                Leaf(m, intro.CoverTexture, cover * Mathf.PI, sx, half, y0, y1, alpha, true, null, pages);
             else if (cover < 1f)
                 Leaf(m, Leather, cover * Mathf.PI, sx, half, y0, y1, alpha, true, intro.Art, pages, intro.CoverTint, 1f);
 
