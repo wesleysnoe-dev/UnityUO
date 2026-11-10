@@ -368,6 +368,7 @@ namespace UOClient.Unity
             namePlateBackgroundR = Math.Max(0, Math.Min(255, namePlateBackgroundR));
             namePlateBackgroundG = Math.Max(0, Math.Min(255, namePlateBackgroundG));
             namePlateBackgroundB = Math.Max(0, Math.Min(255, namePlateBackgroundB));
+            ClampGraphics(); // GameOptions.Graphics.cs
             return this;
         }
 
@@ -410,7 +411,8 @@ namespace UOClient.Unity
             && gridContainersDefaultToOldStyleView == o.gridContainersDefaultToOldStyleView
             && containerOpacity == o.containerOpacity && gridContainersScale == o.gridContainersScale
             && gridContainerScaleItems == o.gridContainerScaleItems
-            && SameNamePlates(o);
+            && SameNamePlates(o)
+            && SameGraphics(o);
 
         // ---- the file: a flat JSON object; keys this version doesn't know are kept as they were ----
 
@@ -500,7 +502,10 @@ namespace UOClient.Unity
                     case "namePlateBackgroundG": Integer(raw, ref o.namePlateBackgroundG); break;
                     case "namePlateBackgroundB": Integer(raw, ref o.namePlateBackgroundB); break;
                     case "namePlateAvoidOverlap": Bool(raw, ref o.namePlateAvoidOverlap); break;
-                    default: unknown.Add(new KeyValuePair<string, string>(key, raw)); break;
+                    default:
+                        if (!o.ParseGraphics(key, raw)) // the Display and Video keys (GameOptions.Graphics.cs)
+                            unknown.Add(new KeyValuePair<string, string>(key, raw));
+                        break;
                 }
             }
             return o.Clamp();
@@ -606,6 +611,7 @@ namespace UOClient.Unity
             Add("namePlateBackgroundG", I(namePlateBackgroundG));
             Add("namePlateBackgroundB", I(namePlateBackgroundB));
             Add("namePlateAvoidOverlap", B(namePlateAvoidOverlap));
+            WriteGraphics(Add, B, I);
             if (unknown != null)
                 foreach (var kv in unknown)
                     Add(FlatJson.Escape(kv.Key), kv.Value);
