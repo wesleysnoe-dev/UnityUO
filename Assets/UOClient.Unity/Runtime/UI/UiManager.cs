@@ -172,15 +172,15 @@ namespace UOClient.Unity.UI
             GUI.EndGroup();
         }
 
-        /// <summary>A part (art pixels) of a gump drawn at (x, y), k times its size, from the sharpened texture.</summary>
+        /// <summary>
+        /// The ink of a part (art pixels) of a gump, without its parchment (GumpArt.GumpCutout), drawn at (x, y) k times its
+        /// size: lettering and seals cut from one piece of art laid on another's paper.
+        /// </summary>
         protected void DrawGumpPart(int gump, RectInt part, float x, float y, float k)
         {
-            UiImage img = Art.GumpDetailed(gump);
-            if (img == null)
-                return;
-            var uv = new Rect((float)part.x / img.Width, 1f - (float)(part.y + part.height) / img.Height,
-                              (float)part.width / img.Width, (float)part.height / img.Height);
-            GUI.DrawTextureWithTexCoords(new Rect(x, y, part.width * k, part.height * k), img.Texture, uv);
+            UiImage img = Art.GumpCutout(gump, part);
+            if (img != null)
+                GUI.DrawTexture(new Rect(x, y, part.width * k, part.height * k), img.Texture, ScaleMode.StretchToFill);
         }
 
         /// <summary>

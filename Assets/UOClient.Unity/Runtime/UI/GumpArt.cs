@@ -170,6 +170,64 @@ namespace UOClient.Unity.UI
             return _gumpsDetailed[id] = new UiImage { Bitmap = bmp, Texture = tex };
         }
 
+        private readonly Dictionary<(int, RectInt), UiImage> _cutouts = new Dictionary<(int, RectInt), UiImage>();
+
+        /// <summary>
+        /// The ink of a part of a gump (lettering, rules, seals) without the parchment it was painted on, to lay on other
+        /// parchment: each pixel's opacity is how far it is from the part's paper colour (the median of its pixels), with
+        /// a soft ramp so ink edges blend; then sharpened as <see cref="GumpDetailed"/> (Scale2x x2, filtered).
+        /// </summary>
+        public UiImage GumpCutout(int id, RectInt part)
+        {
+            if (_cutouts.TryGetValue((id, part), out UiImage img))
+                return img;
+            Bitmap32 src = _data.GetGump(id);
+            if (src == null)
+                return _cutouts[(id, part)] = null;
+            var cut = new Bitmap32(part.width, part.height);
+            var lums = new List<int>(part.width * part.height);
+            for (int y = 0; y < part.height; y++)
+                for (int x = 0; x < part.width; x++)
+                {
+                    int sx = part.x + x, sy = part.y + y;
+                    uint p = sx < src.Width && sy < src.Height ? src[sx, sy] : 0u;
+                    cut[x, y] = p;
+                    if ((p >> 24) != 0)
+                        lums.Add((int)(((p >> 16) & 0xFF) * 3 + ((p >> 8) & 0xFF) * 6 + (p & 0xFF)) / 10);
+                }
+            // The paper: the median opaque pixel's colour (most of a part is paper).
+            lums.Sort();
+            int paperLum = lums.Count > 0 ? lums[lums.Count / 2] : 200;
+            double pr = 0, pg = 0, pb = 0;
+            int pn = 0;
+            for (int i = 0; i < cut.Pixels.Length; i++)
+            {
+                uint p = cut.Pixels[i];
+                int lum = (int)(((p >> 16) & 0xFF) * 3 + ((p >> 8) & 0xFF) * 6 + (p & 0xFF)) / 10;
+                if ((p >> 24) != 0 && Mathf.Abs(lum - paperLum) < 12)
+                {
+                    pr += (p >> 16) & 0xFF; pg += (p >> 8) & 0xFF; pb += p & 0xFF; pn++;
+                }
+            }
+            if (pn > 0)
+            {
+                pr /= pn; pg /= pn; pb /= pn;
+            }
+            for (int i = 0; i < cut.Pixels.Length; i++)
+            {
+                uint p = cut.Pixels[i];
+                if ((p >> 24) == 0)
+                    continue;
+                double dr = ((p >> 16) & 0xFF) - pr, dg = ((p >> 8) & 0xFF) - pg, db = (p & 0xFF) - pb;
+                double dist = System.Math.Sqrt(dr * dr + dg * dg + db * db);
+                double a = System.Math.Max(0.0, System.Math.Min(1.0, (dist - 28.0) / 44.0)); // paper 0, ink 1, a soft edge
+                cut.Pixels[i] = ((uint)(a * 255.0) << 24) | (p & 0xFFFFFFu);
+            }
+            Texture2D tex = UnityTextures.ToTexture(Scale2x(Scale2x(cut)), $"gump 0x{id:X4} cutout");
+            tex.filterMode = FilterMode.Bilinear;
+            return _cutouts[(id, part)] = new UiImage { Bitmap = cut, Texture = tex };
+        }
+
         /// <summary>Scale2x (EPX): each pixel becomes four, taking a neighbour's colour along a clean edge.</summary>
         public static Bitmap32 Scale2x(Bitmap32 src)
         {
