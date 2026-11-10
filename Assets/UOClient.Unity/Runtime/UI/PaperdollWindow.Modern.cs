@@ -185,11 +185,13 @@ namespace UOClient.Unity.UI
             DrawImage(_combatBook, _combatAt.x, _combatAt.y);
             DrawImage(_racialBook, _racialAt.x, _racialAt.y);
             (string name, string rest) = SplitTitle(_title ?? m.Name ?? "");
-            float caps = plaque.height * 1.25f; // the knotwork caps at either end
+            // The plaque's knotwork caps stretch with it: about a tenth of its width at each end (the art's dark panel
+            // runs from 104 to 920 of 1024).
+            float caps = plaque.width * 0.105f + 4f;
             float textLeft = plaque.x + caps, textW = plaque.width - caps * 2f;
-            PaperdollSkin.Title(new Rect(textLeft, plaque.y + (rest.Length > 0 ? 6f : 16f), textW, 28f), name, 22, PaperdollSkin.Gold);
+            PaperdollSkin.Title(new Rect(textLeft, plaque.y + (rest.Length > 0 ? 6f : 16f), textW, 28f), name, 22, PaperdollSkin.Gold, minSize: 13);
             if (rest.Length > 0)
-                PaperdollSkin.Title(new Rect(textLeft, plaque.y + 34f, textW, 20f), rest, 14, PaperdollSkin.GoldFaded);
+                PaperdollSkin.Title(new Rect(textLeft, plaque.y + 34f, textW, 20f), rest, 15, PaperdollSkin.GoldFaded, minSize: 12);
 
             if (Event.current.type == EventType.Repaint)
                 Hovered = over;

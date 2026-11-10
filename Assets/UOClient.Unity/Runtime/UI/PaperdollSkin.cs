@@ -204,7 +204,9 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>Words in the serif face (SerifFaces), centred unless told, with a soft shadow.</summary>
-        public static void Title(Rect r, string text, int size, Color color, bool shadow = true, TextAnchor align = TextAnchor.MiddleCenter)
+        /// <param name="minSize">Too long for the rect, the words shrink to this size, then end in "..." (never cut mid-letter).</param>
+        public static void Title(Rect r, string text, int size, Color color, bool shadow = true, TextAnchor align = TextAnchor.MiddleCenter,
+                                 int minSize = 9)
         {
             if (_serif == null)
             {
@@ -216,8 +218,16 @@ namespace UOClient.Unity.UI
             _serif.alignment = align;
             // Too long for the rect (a long name and title): smaller, down to 9.
             var content = new GUIContent(text);
-            while (_serif.fontSize > 9 && _serif.CalcSize(content).x > r.width)
+            while (_serif.fontSize > minSize && _serif.CalcSize(content).x > r.width)
                 _serif.fontSize--;
+            if (_serif.CalcSize(content).x > r.width)
+            {
+                // Still too long: as much as fits, then an ellipsis.
+                int n = text.Length;
+                while (n > 1 && _serif.CalcSize(new GUIContent(text.Substring(0, n).TrimEnd() + "\u2026")).x > r.width)
+                    n--;
+                text = text.Substring(0, n).TrimEnd() + "\u2026";
+            }
             if (shadow)
             {
                 _serif.normal.textColor = new Color(0f, 0f, 0f, 0.8f);
