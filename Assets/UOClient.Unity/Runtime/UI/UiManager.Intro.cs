@@ -266,9 +266,8 @@ namespace UOClient.Unity.UI
             foreach (float start in PageStarts)
                 if (o >= start + PageTime)
                     landed++;
-            if (cover >= 1f)
-                FlatColour(m, sx - half, sx, y0, y1, new Color(Endpaper.r, Endpaper.g, Endpaper.b, alpha));
-            if (landed > 0)
+            // The cover's inside is the left page (the book's own art), so once it lands the left page is there.
+            if (cover >= 1f || landed > 0)
                 Flat(m, pages, sx - half, sx, y0, y1, 0f, 0.5f, alpha);
 
             // The pages turning (under the cover while it still turns, so it is drawn last).
@@ -279,7 +278,7 @@ namespace UOClient.Unity.UI
                     Leaf(m, pages, Ease(p) * Mathf.PI, sx, half, y0, y1, alpha, false, null);
             }
             if (cover < 1f)
-                Leaf(m, Leather, cover * Mathf.PI, sx, half, y0, y1, alpha, true, intro.Art);
+                Leaf(m, Leather, cover * Mathf.PI, sx, half, y0, y1, alpha, true, intro.Art, pages);
 
             GL.PopMatrix();
         }
@@ -317,23 +316,20 @@ namespace UOClient.Unity.UI
         /// page's right half, or the cover with the book's art); its back after (the page's left half, or the endpaper).
         /// </summary>
         private static void Leaf(Material m, Texture front, float theta, float sx, float half, float y0, float y1, float a,
-                                 bool isCover, UiImage art)
+                                 bool isCover, UiImage art, Texture back = null)
         {
             float c = Mathf.Cos(theta), lift = (y1 - y0) * 0.07f * Mathf.Sin(theta);
             float ex = sx + half * c, ey0 = y0 - lift, ey1 = y1 + lift;
             bool facingFront = c >= 0f;
             float shade = 0.55f + 0.45f * Mathf.Abs(c);
             var tint = new Color(shade, shade, shade, a);
-            if (isCover && !facingFront)
-            {
-                m.mainTexture = Texture2D.whiteTexture;
-                tint = new Color(Endpaper.r * shade, Endpaper.g * shade, Endpaper.b * shade, a);
-            }
-            else
-                m.mainTexture = front;
+            // The cover's back is the left page; a page's back is the same left page (the book's art, as it lands).
+            bool showPageBack = !facingFront;
+            m.mainTexture = isCover && showPageBack ? back ?? PlainParchment : front;
             m.SetPass(0);
-            // Texture u at the spine and at the free edge: a page's right half on the front, its left half on the back.
-            float uSpine = isCover ? 0f : 0.5f, uEdge = isCover ? 1f : facingFront ? 1f : 0f;
+            // Texture u at the spine and at the free edge: the cover's leather whole; a page's right half on the front,
+            // the left half on the back.
+            float uSpine = isCover && !showPageBack ? 0f : 0.5f, uEdge = isCover && !showPageBack ? 1f : facingFront ? 1f : 0f;
             GL.Begin(GL.QUADS);
             GL.Color(tint);
             GL.TexCoord2(uSpine, 1f); GL.Vertex3(sx, y0, 0);
