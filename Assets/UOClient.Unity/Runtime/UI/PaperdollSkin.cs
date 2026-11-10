@@ -201,6 +201,10 @@ namespace UOClient.Unity.UI
             }
             _serif.fontSize = size;
             _serif.alignment = align;
+            // Too long for the rect (a long name and title): smaller, down to 9.
+            var content = new GUIContent(text);
+            while (_serif.fontSize > 9 && _serif.CalcSize(content).x > r.width)
+                _serif.fontSize--;
             if (shadow)
             {
                 _serif.normal.textColor = new Color(0f, 0f, 0f, 0.8f);

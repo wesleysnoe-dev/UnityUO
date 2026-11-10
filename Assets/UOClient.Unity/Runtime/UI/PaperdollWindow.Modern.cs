@@ -72,14 +72,19 @@ namespace UOClient.Unity.UI
             _combatBook = books ? Art.Gump(CombatBookIcon) : null;
             _racialBook = racial ? Art.Gump(RacialBookIcon) : null;
             var plaque = new Rect(Border, doll.yMax + PlaqueGap, w - Border * 2f, PlaqueH);
-            float bx = plaque.x + 16f;
+            // The books at the top band's right end (clear of the round buttons, which are centred).
+            float bx = w - Border - 10f;
+            if (_racialBook != null)
+            {
+                bx -= _racialBook.Width;
+                _racialAt = new Vector2(bx, Border + (IconBand - _racialBook.Height) / 2f);
+                bx -= 6f;
+            }
             if (_combatBook != null)
             {
-                _combatAt = new Vector2(bx, plaque.y + (plaque.height - _combatBook.Height) / 2f);
-                bx += _combatBook.Width + 6f;
+                bx -= _combatBook.Width;
+                _combatAt = new Vector2(bx, Border + (IconBand - _combatBook.Height) / 2f);
             }
-            if (_racialBook != null)
-                _racialAt = new Vector2(bx, plaque.y + (plaque.height - _racialBook.Height) / 2f);
 
             // The body and what is worn, as the classic paperdoll layers them; larger, centred in the niche.
             bool female = IsFemale(m.Body);
@@ -158,7 +163,8 @@ namespace UOClient.Unity.UI
             DrawImage(_combatBook, _combatAt.x, _combatAt.y);
             DrawImage(_racialBook, _racialAt.x, _racialAt.y);
             (string name, string rest) = SplitTitle(_title ?? m.Name ?? "");
-            float textLeft = plaque.x + 60f, textW = plaque.width - 120f;
+            float caps = plaque.height * 1.25f; // the knotwork caps at either end
+            float textLeft = plaque.x + caps, textW = plaque.width - caps * 2f;
             PaperdollSkin.Title(new Rect(textLeft, plaque.y + (rest.Length > 0 ? 6f : 16f), textW, 28f), name, 22, PaperdollSkin.Gold);
             if (rest.Length > 0)
                 PaperdollSkin.Title(new Rect(textLeft, plaque.y + 34f, textW, 20f), rest, 14, PaperdollSkin.GoldFaded);

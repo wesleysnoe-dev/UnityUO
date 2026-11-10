@@ -184,9 +184,53 @@ namespace UOClient.Unity.UI
             UiImage stock = Gump(id, hue, partial);
             if (stock == null)
                 return _smooth[(id, hue, partial)] = null;
-            Texture2D tex = UnityTextures.ToTexture(Scale2x(stock.Bitmap), $"gump 0x{id:X4} smooth");
+            Texture2D tex = UnityTextures.ToTexture(Scale2x(Bleed(stock.Bitmap, 3)), $"gump 0x{id:X4} smooth");
             tex.filterMode = FilterMode.Bilinear;
             return _smooth[(id, hue, partial)] = new UiImage { Bitmap = stock.Bitmap, Texture = tex };
+        }
+
+        /// <summary>
+        /// A copy whose transparent pixels carry the mean colour of their opaque (or already filled) neighbours, still
+        /// transparent, <paramref name="passes"/> deep: filtering then blends an edge with its own colour, not black.
+        /// </summary>
+        public static Bitmap32 Bleed(Bitmap32 src, int passes)
+        {
+            int w = src.Width, h = src.Height;
+            var px = (uint[])src.Pixels.Clone();
+            var filled = new bool[px.Length];
+            for (int i = 0; i < px.Length; i++)
+                filled[i] = (px[i] >> 24) != 0;
+            for (int pass = 0; pass < passes; pass++)
+            {
+                var next = (uint[])px.Clone();
+                var nextFilled = (bool[])filled.Clone();
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                    {
+                        int i = y * w + x;
+                        if (filled[i])
+                            continue;
+                        int r = 0, g = 0, b = 0, n = 0;
+                        for (int dy = -1; dy <= 1; dy++)
+                            for (int dx = -1; dx <= 1; dx++)
+                            {
+                                int sx = x + dx, sy = y + dy;
+                                if (sx < 0 || sy < 0 || sx >= w || sy >= h || !filled[sy * w + sx])
+                                    continue;
+                                uint p = px[sy * w + sx];
+                                r += (int)((p >> 16) & 0xFF); g += (int)((p >> 8) & 0xFF); b += (int)(p & 0xFF); n++;
+                            }
+                        if (n == 0)
+                            continue;
+                        next[i] = (uint)(r / n) << 16 | (uint)(g / n) << 8 | (uint)(b / n); // alpha stays 0
+                        nextFilled[i] = true;
+                    }
+                px = next;
+                filled = nextFilled;
+            }
+            var dst = new Bitmap32(w, h);
+            System.Array.Copy(px, dst.Pixels, px.Length);
+            return dst;
         }
 
         private readonly Dictionary<(int, RectInt), UiImage> _cutouts = new Dictionary<(int, RectInt), UiImage>();
