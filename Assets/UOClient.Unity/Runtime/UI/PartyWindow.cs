@@ -11,48 +11,55 @@ namespace UOClient.Unity.UI
     public sealed class PartyWindow : UiWindow
     {
         private const float Row = 22;
-        private static readonly Color Gold = new Color(1f, 0.9f, 0.6f), Plain = new Color(0.95f, 0.92f, 0.84f), Dim = new Color(0.7f, 0.7f, 0.65f);
 
-        public PartyWindow() => Rect = new Rect(40, 120, 260, 140);
+        // The parchment between the scroll's rolls (UO's expandable scroll, as the profile).
+        private const float Left = 34f, Right = ScrollArtWidth - 34f;
+
+        public PartyWindow() => Rect = new Rect(40, 120, ScrollArtWidth, 200);
 
         public override string Key => "party";
+
+        /// <summary>Drawn on UO's scroll: the opening unrolls exactly over it.</summary>
+        public override bool IsScroll => true;
 
         public override void Draw()
         {
             var members = Session.PartyMembers;
-            Rect.height = 104 + Mathf.Max(1, members.Count) * Row;
-            DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
-            Text(new Rect(0, 10, Rect.width, 20), "Party", Gold, 15, TextAnchor.UpperCenter, true);
+            Rect.width = ScrollArtWidth;
+            Rect.height = 168 + Mathf.Max(1, members.Count) * Row;
+            if (!DrawScroll(Rect.height))
+                DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
+            Text(new Rect(Left, 42, Right - Left, 20), "Party", Ink, 15, TextAnchor.UpperCenter, true);
 
             uint me = Session.World.PlayerSerial;
             bool leader = Session.InParty && Session.PartyLeader == me;
-            float y = 36;
+            float y = 68;
             if (members.Count == 0)
-                Text(new Rect(16, y + 2, Rect.width - 32, 18), "You are not in a party.", Dim, 12);
+                Text(new Rect(Left, y + 2, Right - Left, 18), "You are not in a party.", InkFaded, 12);
             for (int i = 0; i < members.Count; i++, y += Row)
             {
                 uint serial = members[i];
                 string name = $"{i + 1}. {Session.PartyMemberName(serial)}" + (i == 0 ? " (leader)" : "");
-                Text(new Rect(16, y + 2, 150, 18), name, serial == me ? Gold : Plain, 12);
+                Text(new Rect(Left, y + 2, 150, 18), name, serial == me ? InkHot : Ink, 12, TextAnchor.UpperLeft, serial == me);
                 if (Session.World.Mobiles.TryGetValue(serial, out Mobile m) && m.HitsMax > 0)
                 {
-                    var bar = new Rect(16, y + 17, 140, 3);
-                    GUI.DrawTexture(bar, Texture2D.whiteTexture, ScaleMode.StretchToFill, false, 0, new Color(0.3f, 0.05f, 0.05f), 0, 0);
+                    var bar = new Rect(Left, y + 17, 140, 3);
+                    GUI.DrawTexture(bar, Texture2D.whiteTexture, ScaleMode.StretchToFill, false, 0, new Color(0.45f, 0.2f, 0.12f), 0, 0);
                     bar.width *= Mathf.Clamp01(m.Hits / (float)m.HitsMax);
-                    GUI.DrawTexture(bar, Texture2D.whiteTexture, ScaleMode.StretchToFill, false, 0, new Color(0.2f, 0.75f, 0.25f), 0, 0);
+                    GUI.DrawTexture(bar, Texture2D.whiteTexture, ScaleMode.StretchToFill, false, 0, new Color(0.2f, 0.5f, 0.15f), 0, 0);
                 }
-                if (leader && serial != me && GUI.Button(new Rect(Rect.width - 86, y, 70, 20), "Remove"))
+                if (leader && serial != me && InkButton(new Rect(Right - 64, y, 64, 20), "Remove", 12))
                     Session.PartyRemove(serial);
             }
 
-            y = Rect.height - 62;
-            bool canLoot = GUI.Toggle(new Rect(16, y, Rect.width - 32, 20), Session.PartyCanLoot, " Party can loot me");
-            if (canLoot != Session.PartyCanLoot && Session.InParty)
-                Session.SetPartyCanLoot(canLoot);
+            y = Rect.height - 92;
+            bool canLoot = Session.PartyCanLoot;
+            if (InkButton(new Rect(Left, y, Right - Left, 20), (canLoot ? "[x]" : "[  ]") + " Party can loot me", 12) && Session.InParty)
+                Session.SetPartyCanLoot(!canLoot);
             y += 26;
-            if ((leader || !Session.InParty) && GUI.Button(new Rect(16, y, 100, 24), "Add"))
+            if ((leader || !Session.InParty) && InkButton(new Rect(Left, y, 90, 22), "Add"))
                 Session.PartyInvite();
-            if (Session.InParty && GUI.Button(new Rect(Rect.width - 116, y, 100, 24), leader ? "Disband" : "Leave"))
+            if (Session.InParty && InkButton(new Rect(Right - 90, y, 90, 22), leader ? "Disband" : "Leave"))
                 Session.LeaveParty();
         }
     }

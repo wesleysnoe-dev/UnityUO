@@ -462,13 +462,20 @@ namespace UOClient.Unity.UI
             UiImage top = Art.GumpDetailed(ScrollTop), mid = Art.GumpDetailed(ScrollMiddle), bottom = Art.GumpDetailed(ScrollBottom);
             if (top == null || mid == null || bottom == null)
                 return null;
-            float width = w.Rect.width + 40f;
+            // A window drawn as the scroll itself is matched exactly; any other gets the handles past its sides.
+            float width = w.IsScroll ? w.Rect.width : w.Rect.width + 40f;
             return (top, mid, bottom, width / top.Width, width);
         }
 
         /// <summary>How far down the window the scroll has unrolled (window-local y of the bottom roll's middle), 0..height.</summary>
-        private static float Unrolled(UiWindow w, float topH, float t) =>
-            Mathf.Lerp(topH * 0.4f, w.Rect.height, Ease(Mathf.Clamp01(OpenPhase(t) / ScrollUnrolled)));
+        private static float Unrolled(UiWindow w, float topH, float botH, float t)
+        {
+            float k = Ease(Mathf.Clamp01(OpenPhase(t) / ScrollUnrolled));
+            // A scroll window: the bottom roll ends on the window's own (its middle at height - botH / 2).
+            return w.IsScroll
+                ? Mathf.Lerp(topH * 0.4f + botH * 0.5f, w.Rect.height - botH * 0.5f, k)
+                : Mathf.Lerp(topH * 0.4f, w.Rect.height, k);
+        }
 
         /// <summary>
         /// The scroll's rolls, in a window of their own above the others: rolled up (top roll over bottom roll), flying
@@ -480,7 +487,8 @@ namespace UOClient.Unity.UI
             if (!(ScrollParts(w) is var (top, mid, bottom, k, sw)))
                 return false;
             float topH = top.Height * k, botH = bottom.Height * k;
-            float x0 = w.Rect.x - 20f, y0 = w.Rect.y - topH * 0.5f;
+            float x0 = w.IsScroll ? w.Rect.x : w.Rect.x - 20f, y0 = w.IsScroll ? w.Rect.y : w.Rect.y - topH * 0.5f;
+            float yShift = w.IsScroll ? 0f : topH * 0.5f; // where the window's top lies within the scroll's area
             Rect area;
             float bottomY; // the bottom roll's top, relative to area
             float alpha = 1f;
@@ -497,9 +505,9 @@ namespace UOClient.Unity.UI
             }
             else
             {
-                float shown = Unrolled(w, topH, t);
-                area = new Rect(x0, y0, sw, topH * 0.5f + shown + botH * 0.5f);
-                bottomY = topH * 0.5f + shown - botH * 0.5f;
+                float shown = Unrolled(w, topH, botH, t);
+                area = new Rect(x0, y0, sw, yShift + shown + botH * 0.5f);
+                bottomY = yShift + shown - botH * 0.5f;
                 float open = OpenPhase(t);
                 if (open > ScrollUnrolled)
                     alpha = 1f - (open - ScrollUnrolled) / (1f - ScrollUnrolled);
@@ -526,7 +534,7 @@ namespace UOClient.Unity.UI
         {
             if (!(ScrollParts(w) is var (_, mid, _, k, sw)))
                 return;
-            float mw = mid.Width * k, mh = mid.Height * k, x = -20f + (sw - mw) / 2f;
+            float mw = mid.Width * k, mh = mid.Height * k, x = (w.IsScroll ? 0f : -20f) + (sw - mw) / 2f;
             GUI.BeginGroup(new Rect(0, 0, w.Rect.width, shown));
             for (float y = 0f; y < shown; y += mh)
                 GUI.DrawTexture(new Rect(x, y, mw, mh), mid.Texture, ScaleMode.StretchToFill);
@@ -572,10 +580,10 @@ namespace UOClient.Unity.UI
                 GUI.color = new Color(colour.r, colour.g, colour.b, Mathf.Clamp01((open - FadeStart) / (1f - FadeStart)));
                 w.Draw();
             }
-            else if (ScrollParts(w) is var (top, _, _, k, _))
+            else if (ScrollParts(w) is var (top, _, bottomPart, k, _))
             {
                 // UO's scroll: parchment behind, the window's own contents over it, down to the bottom roll.
-                float shown = Unrolled(w, top.Height * k, t);
+                float shown = Unrolled(w, top.Height * k, bottomPart.Height * k, t);
                 ScrollParchment(w, shown);
                 Clipped(w, new Rect(0, 0, w.Rect.width, shown));
             }

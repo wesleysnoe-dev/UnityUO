@@ -41,6 +41,9 @@ namespace UOClient.Unity.UI
         /// <summary>A book window's two-page art at its corner (what the opening animation turns), or null.</summary>
         public virtual UiImage IntroPages => null;
 
+        /// <summary>The window is drawn as UO's scroll (DrawScroll): its opening unrolls exactly over it.</summary>
+        public virtual bool IsScroll => false;
+
         /// <summary>Called once when the window is closed (by right-click or code).</summary>
         public virtual void OnClosed() { }
 
@@ -126,6 +129,69 @@ namespace UOClient.Unity.UI
             bool down = inside && Input.GetMouseButton(0);
             UiImage hover = inside && over >= 0 ? Art.Gump(over) : null;
             DrawImage(down ? Art.Gump(pressed) ?? up : hover ?? up, x, y);
+            return GUI.Button(r, GUIContent.none, GUIStyle.none);
+        }
+
+        /// <summary>Ink on parchment (the scroll windows' text), and its mouse-over red.</summary>
+        protected static readonly Color Ink = new Color(0.22f, 0.13f, 0.06f), InkHot = new Color(0.55f, 0.08f, 0.05f),
+            InkFaded = new Color(0.42f, 0.32f, 0.2f);
+
+        /// <summary>UO's expandable scroll (TazUO ExpandableScroll 0x0820): its width.</summary>
+        public const int ScrollArtWidth = 300;
+
+        /// <summary>
+        /// UO's expandable scroll at the window's corner, <paramref name="height"/> tall (TazUO's ExpandableScroll, graphic
+        /// 0x0820): the top roll, the parchment (0x0821 and 0x0822 tiled) between, the bottom roll at its foot. False when
+        /// the art is missing (the caller draws a plain background).
+        /// </summary>
+        protected bool DrawScroll(float height)
+        {
+            UiImage top = Art.Gump(0x0820), right = Art.Gump(0x0821), mid = Art.Gump(0x0822), bottom = Art.Gump(0x0823);
+            if (top == null || mid == null || bottom == null)
+                return false;
+            int width = Mathf.Max(top.Width, Mathf.Max(mid.Width, bottom.Width));
+            float midX = (width - mid.Width) / 2f, midY = top.Height, midH = height - top.Height - bottom.Height;
+            DrawTiled(right ?? mid, (width - (right ?? mid).Width) / 2f, midY, (right ?? mid).Width, midH);
+            DrawTiled(mid, midX, midY, mid.Width, midH);
+            DrawImage(top, 0, 0);
+            int off = top.Width - bottom.Width;
+            DrawImage(bottom, off / 2 + off / 4, height - bottom.Height);
+            return true;
+        }
+
+        /// <summary>
+        /// A picture in three parts, its middle band repeated to <paramref name="midHeight"/> (TazUO's GumpPicTexture
+        /// split of the shop's scrolls): the top <paramref name="topH"/> rows, the middle rows tiled, the bottom
+        /// <paramref name="bottomH"/> rows. Returns the drawn height.
+        /// </summary>
+        protected static float DrawStretchedGump(UiImage img, float x, float y, int topH, int bottomH, float midHeight)
+        {
+            if (img == null)
+                return 0f;
+            int srcMid = img.Height - topH - bottomH;
+            Part(img, x, y, 0, topH);
+            GUI.BeginGroup(new Rect(x, y + topH, img.Width, midHeight));
+            for (float ty = 0; ty < midHeight; ty += srcMid)
+                Part(img, 0, ty, topH, srcMid);
+            GUI.EndGroup();
+            Part(img, x, y + topH + midHeight, img.Height - bottomH, bottomH);
+            return topH + midHeight + bottomH;
+        }
+
+        /// <summary>Rows <paramref name="srcY"/>..+<paramref name="srcH"/> of a picture drawn at (x, y), native size.</summary>
+        private static void Part(UiImage img, float x, float y, int srcY, int srcH)
+        {
+            if (srcH <= 0)
+                return;
+            var uv = new Rect(0f, 1f - (float)(srcY + srcH) / img.Height, 1f, (float)srcH / img.Height);
+            GUI.DrawTextureWithTexCoords(new Rect(x, y, img.Width, srcH), img.Texture, uv);
+        }
+
+        /// <summary>A word in ink that reddens under the mouse and acts as a button (on parchment, where grey buttons jar).</summary>
+        protected bool InkButton(Rect r, string label, int size = 13)
+        {
+            bool over = r.Contains(Event.current.mousePosition);
+            Text(r, label, over ? InkHot : Ink, size, TextAnchor.MiddleCenter, true);
             return GUI.Button(r, GUIContent.none, GUIStyle.none);
         }
 

@@ -61,10 +61,16 @@ namespace UOClient.Unity.UI
         private readonly Dictionary<UiImage, (int X, int Y, int W, int H)> _bounds = new Dictionary<UiImage, (int, int, int, int)>();
         private Vector2 _scroll;
 
+        // TazUO's ShopGump: the shop's two scrolls (buy 0x0870 / 0x0871, sell 0x0872 / 0x0873) split into a top, a middle
+        // band repeated to the list's height, and a foot; the bill of sale sits to the right, half way down.
+        private const int TopH = 64, LeftFootH = 116, RightFootH = 93, RightOffset = 32, ListHeight = 200, BillRow = 22;
+
+        private Vector2 _billScroll;
+
         public ShopWindow(ShopList list)
         {
             _list = list;
-            Rect = new Rect(160, 100, 420, 470);
+            Rect = new Rect(120, 90, 534, 470);
         }
 
         public uint Vendor => _list.Vendor;
@@ -72,48 +78,44 @@ namespace UOClient.Unity.UI
 
         public override void Draw()
         {
-            DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
-            string who = Session.World.Mobiles.TryGetValue(_list.Vendor, out Mobile m) && !string.IsNullOrEmpty(m.Name) ? m.Name : "the vendor";
-            Text(new Rect(0, 10, Rect.width, 22), (_list.Selling ? "Sell to " : "Buy from ") + who, new Color(1f, 0.9f, 0.6f), 16, TextAnchor.UpperCenter, true);
-
-            var view = new Rect(12, 40, Rect.width - 24, Rect.height - 130);
-            float content = 0;
-            foreach (ShopItem it in _list.Items)
-                content += LineHeight(it.Serial, Art.Data.TileData.GetStatic(it.Graphic).Height);
-            // The mouse in the list's own coordinates, while it is on the visible list and no window covers it: at the
-            // display pixel's centre, which is what the icon shows there (MousePick.UiPixel).
-            float half = 0.5f / Ui.Scale;
-            Vector2? mouse = MouseIsOver && view.Contains(Event.current.mousePosition)
-                ? Event.current.mousePosition + new Vector2(half, half) - view.position + _scroll : (Vector2?)null;
-            _scroll = GUI.BeginScrollView(view, _scroll, new Rect(0, 0, view.width - 18, content));
-            float y = 0;
-            foreach (ShopItem item in _list.Items)
+            UiImage leftArt = Art.Gump(_list.Selling ? 0x0872 : 0x0870), rightArt = Art.Gump(_list.Selling ? 0x0873 : 0x0871);
+            if (leftArt == null || rightArt == null)
             {
-                int row = LineHeight(item.Serial, Art.Data.TileData.GetStatic(item.Graphic).Height);
-                _order.TryGetValue(item.Serial, out int chosen);
-                DrawIcon(item, y, row, mouse);
-                float mid = y + (row - 46) / 2f; // the text and buttons keep their places in the line's middle
-                Text(new Rect(56, mid + 4, 216, 20), item.Name, new Color(0.95f, 0.92f, 0.82f));
-                Text(new Rect(56, mid + 22, 216, 20), $"{item.Price} gp   ({item.Amount} {(_list.Selling ? "owned" : "in stock")})", new Color(0.8f, 0.76f, 0.62f), 12);
-                if (chosen > 0)
-                    Text(new Rect(258, mid + 12, 40, 20), chosen.ToString(), new Color(1f, 0.85f, 0.4f), 15, TextAnchor.UpperRight, true);
-
-                bool add = GUI.Button(new Rect(306, mid + 10, 26, 24), "+")
-                           || GUI.Button(new Rect(0, y, 250, row), GUIContent.none, GUIStyle.none);
-                if (add)
-                    _order[item.Serial] = Event.current.shift ? item.Amount : Mathf.Min(item.Amount, chosen + 1);
-                if (GUI.Button(new Rect(336, mid + 10, 26, 24), "-") && chosen > 0)
-                    _order[item.Serial] = chosen - 1;
-                y += row;
+                DrawResizePic(9200, 0, 0, Rect.width, Rect.height); // no shop art: a plain frame, the same parts on it
+                leftArt ??= rightArt;
             }
-            GUI.EndScrollView();
+            int leftW = leftArt?.Width ?? 283, leftArtH = leftArt?.Height ?? 307, rightW = rightArt?.Width ?? 283, rightArtH = rightArt?.Height ?? 248;
+            float rightX = leftW - RightOffset, rightY = leftArtH / 2f - RightOffset;
+            float rightMid = rightArtH - RightFootH - TopH + (ListHeight - (leftArtH - LeftFootH - TopH));
+            float rightFootY = rightY + TopH + rightMid;
+            Rect.width = rightX + rightW;
+            Rect.height = Mathf.Max(TopH + ListHeight + LeftFootH, rightFootY + RightFootH);
+            if (leftArt != null && rightArt != null)
+            {
+                DrawStretchedGump(leftArt, 0, 0, TopH, LeftFootH, ListHeight);
+                DrawStretchedGump(rightArt, rightX, rightY, TopH, RightFootH, rightMid);
+            }
 
+            DrawInventory(new Rect(RightOffset, TopH, leftW - RightOffset * 2 + 5, ListHeight));
+            DrawBill(new Rect(RightOffset / 2f + rightX, TopH + rightY, rightW - RightOffset * 2 + RightOffset / 2f + 5, rightMid));
+
+            // The painted arrows page the lists (TazUO's hit boxes on the art).
+            if (Hit(leftW - 50, TopH - 18, 18, 16)) _scroll.y = Mathf.Max(0, _scroll.y - 50);
+            if (Hit(leftW - 50, TopH + ListHeight, 18, 16)) _scroll.y += 50;
+            if (Hit(rightX + rightW - 50, rightY + TopH - 18, 18, 16)) _billScroll.y = Mathf.Max(0, _billScroll.y - BillRow * 2);
+            if (Hit(rightX + rightW - 50, rightFootY, 18, 16)) _billScroll.y += BillRow * 2;
+
+            // The total and the player's gold on the bill's "Total:" / "Gold Avail:" line.
             int total = _list.Items.Sum(it => (_order.TryGetValue(it.Serial, out int n) ? n : 0) * it.Price);
-            Text(new Rect(20, Rect.height - 84, 260, 20), $"Total: {total} gp", new Color(1f, 0.9f, 0.6f), 15, TextAnchor.UpperLeft, true);
+            float labelY = rightFootY + RightFootH - RightOffset * 3 + 15;
+            float totalX = _list.Selling ? rightX + rightW - RightOffset * 3 : RightOffset + rightX + 36;
+            Text(new Rect(totalX, labelY - 2, 90, 18), total.ToString(), Ink, 13, TextAnchor.UpperLeft, true);
             if (!_list.Selling && Session.World.Player != null)
-                Text(new Rect(220, Rect.height - 84, 180, 20), $"You have {Session.World.Player.Gold} gp", new Color(0.8f, 0.76f, 0.62f), 13, TextAnchor.UpperRight);
+                Text(new Rect(totalX + 120, labelY - 2, 90, 18), Session.World.Player.Gold.ToString(), Ink, 13, TextAnchor.UpperLeft, true);
 
-            if (GUI.Button(new Rect(20, Rect.height - 52, 110, 28), "Accept"))
+            // Accept and Clear are the seals painted on the bill.
+            float acceptX = RightOffset + rightX, acceptY = rightFootY + RightFootH - 50;
+            if (Hit(acceptX, acceptY, 34, 30))
             {
                 var order = _order.Where(kv => kv.Value > 0).Select(kv => (kv.Key, kv.Value)).ToList();
                 if (order.Count > 0)
@@ -125,10 +127,63 @@ namespace UOClient.Unity.UI
                 }
                 Close();
             }
-            if (GUI.Button(new Rect(150, Rect.height - 52, 110, 28), "Clear"))
+            if (Hit(acceptX + 175, acceptY, 20, 20))
                 _order.Clear();
-            if (GUI.Button(new Rect(Rect.width - 130, Rect.height - 52, 110, 28), "Close"))
-                Close();
+        }
+
+        /// <summary>An invisible button over a part of the art (a painted seal or arrow).</summary>
+        private static bool Hit(float x, float y, float w, float h) => GUI.Button(new Rect(x, y, w, h), GUIContent.none, GUIStyle.none);
+
+        /// <summary>The shop's inventory: each line's picture, name and price, and how many there are; a click adds one (Shift: all).</summary>
+        private void DrawInventory(Rect view)
+        {
+            float content = 0;
+            foreach (ShopItem it in _list.Items)
+                content += LineHeight(it.Serial, Art.Data.TileData.GetStatic(it.Graphic).Height);
+            // The mouse in the list's own coordinates, while it is on the visible list and no window covers it: at the
+            // display pixel's centre, which is what the icon shows there (MousePick.UiPixel).
+            float half = 0.5f / Ui.Scale;
+            Vector2? mouse = MouseIsOver && view.Contains(Event.current.mousePosition)
+                ? Event.current.mousePosition + new Vector2(half, half) - view.position + _scroll : (Vector2?)null;
+            _scroll = GUI.BeginScrollView(view, _scroll, new Rect(0, 0, view.width, content), false, false, GUIStyle.none, GUIStyle.none);
+            float y = 0;
+            foreach (ShopItem item in _list.Items)
+            {
+                int row = LineHeight(item.Serial, Art.Data.TileData.GetStatic(item.Graphic).Height);
+                _order.TryGetValue(item.Serial, out int chosen);
+                var line = new Rect(0, y, view.width, row);
+                bool over = mouse.HasValue && line.Contains(mouse.Value);
+                DrawIcon(item, y, row, mouse);
+                float mid = y + (row - 46) / 2f; // the text keeps its place in the line's middle
+                Text(new Rect(55, mid + 6, 112, 18), item.Name, over ? InkHot : Ink, 12, TextAnchor.UpperLeft, true);
+                Text(new Rect(55, mid + 24, 112, 18), $"{item.Price} gp", InkFaded, 12);
+                Text(new Rect(168, mid + 15, view.width - 172, 18), (item.Amount - chosen).ToString(), Ink, 12, TextAnchor.UpperRight);
+                if (GUI.Button(line, GUIContent.none, GUIStyle.none) && chosen < item.Amount)
+                    _order[item.Serial] = Event.current.shift ? item.Amount : chosen + 1;
+                y += row;
+            }
+            GUI.EndScrollView();
+        }
+
+        /// <summary>The bill of sale: each chosen line's amount and name, with more / less.</summary>
+        private void DrawBill(Rect view)
+        {
+            var chosenItems = _list.Items.Where(it => _order.TryGetValue(it.Serial, out int n) && n > 0).ToList();
+            _billScroll = GUI.BeginScrollView(view, _billScroll, new Rect(0, 0, view.width, chosenItems.Count * BillRow),
+                false, false, GUIStyle.none, GUIStyle.none);
+            float y = 0;
+            foreach (ShopItem item in chosenItems)
+            {
+                int n = _order[item.Serial];
+                Text(new Rect(4, y + 2, 30, 18), n.ToString(), Ink, 12, TextAnchor.UpperLeft, true);
+                Text(new Rect(38, y + 2, view.width - 92, 18), item.Name, Ink, 12);
+                if (InkButton(new Rect(view.width - 50, y, 22, 20), "+", 14) && n < item.Amount)
+                    _order[item.Serial] = Event.current.shift ? item.Amount : n + 1;
+                if (InkButton(new Rect(view.width - 26, y, 22, 20), "-", 14))
+                    _order[item.Serial] = Event.current.shift ? 0 : n - 1;
+                y += BillRow;
+            }
+            GUI.EndScrollView();
         }
 
         /// <summary>
