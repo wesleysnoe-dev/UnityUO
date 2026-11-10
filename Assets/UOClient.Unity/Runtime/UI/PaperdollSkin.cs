@@ -232,6 +232,7 @@ namespace UOClient.Unity.UI
         private static void Tile(Texture2D tex, Rect r, float size)
         {
             float th = size * tex.height / tex.width;
+            tex.wrapMode = TextureWrapMode.Repeat;
             GUI.DrawTextureWithTexCoords(r, tex, new Rect(0, 0, r.width / size, r.height / th));
         }
 
