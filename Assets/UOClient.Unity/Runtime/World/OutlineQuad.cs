@@ -30,8 +30,13 @@ namespace UOClient.Unity
 
         public bool Visible => _renderer != null && _renderer.enabled;
 
-        /// <summary>Outlines the sprite <paramref name="slot"/> drawn over <paramref name="drawn"/>, or hides the outline.</summary>
-        public void Update(bool show, MobileArt art, AtlasSlot slot, Rect drawn, bool mirror, float depth, float cutHeight)
+        /// <summary>
+        /// Outlines the sprite <paramref name="slot"/> drawn over <paramref name="drawn"/>, or hides the outline.
+        /// <paramref name="shape"/>: when the sprite is not drawn as one quad (a seated body), fills the outline's mesh
+        /// the same way from its rect, UVs and depth.
+        /// </summary>
+        public void Update(bool show, MobileArt art, AtlasSlot slot, Rect drawn, bool mirror, float depth, float cutHeight,
+            System.Action<Mesh, Rect, Vector4, float> shape = null)
         {
             if (!show || slot.Width <= 0 || slot.Height <= 0)
             {
@@ -54,7 +59,10 @@ namespace UOClient.Unity
             var r = new Rect(drawn.xMin - t * kx, drawn.yMin - t * ky, drawn.width + 2 * t * kx, drawn.height + 2 * t * ky);
             _renderer.sharedMaterial = MaterialFor(art.Atlas.Page(o.Page));
             _renderer.enabled = true;
-            MeshBuilder.SetQuad(_mesh, r, art.Atlas.Uv(o), depth - DepthBias, mirror, cutHeight);
+            if (shape != null)
+                shape(_mesh, r, art.Atlas.Uv(o), depth - DepthBias);
+            else
+                MeshBuilder.SetQuad(_mesh, r, art.Atlas.Uv(o), depth - DepthBias, mirror, cutHeight);
         }
 
         private Material MaterialFor(Texture page)

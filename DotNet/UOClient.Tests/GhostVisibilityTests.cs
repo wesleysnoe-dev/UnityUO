@@ -96,13 +96,20 @@ public sealed class GhostVisibilityInstallTests
     [Fact]
     public void TheLivingKeepHairBeardAndMount()
     {
-        MobileLook look = MobileLook.From(_data, 400, Skin, new[] { DeathRobe, Hair, Beard, Horse });
+        // A plain robe: the death robe is hooded, and a hood hides the hair on the living too (MobileLook.IsCovered).
+        MobileLook look = MobileLook.From(_data, 400, Skin, new[] { PlainRobe, Hair, Beard, Horse });
         Assert.True(look.Mounted);
         Assert.Contains(look.Layers, l => l.IsMount);
         Assert.Contains(look.Layers, l => l.Slot == 11);
         Assert.Contains(look.Layers, l => l.Slot == 16);
         Assert.Equal(400, Assert.Single(look.Layers, l => l.Slot == 0 && !l.IsMount).Body);
+
+        MobileLook hooded = MobileLook.From(_data, 400, Skin, new[] { DeathRobe, Hair, Beard });
+        Assert.DoesNotContain(hooded.Layers, l => l.Slot == 11); // under the hood
+        Assert.Contains(hooded.Layers, l => l.Slot == 16);       // the beard shows
     }
+
+    private static readonly (byte, int, int) PlainRobe = (22, 0x1F03, 0);
 
     [Fact]
     public void AGhostSharesFramesWithTheSameLivingLook()

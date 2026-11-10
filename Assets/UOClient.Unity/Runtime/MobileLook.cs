@@ -171,6 +171,63 @@ namespace UOClient.Unity
             return ordered;
         }
 
+        // Layers IsCovered looks at.
+        private const byte ShoesLayer = 3, PantsLayer = 4, HelmetLayer = 6, TorsoLayer = 13, TunicLayer = 17, ArmsLayer = 19,
+            RobeLayer = 22, SkirtLayer = 23, LegsLayer = 24;
+
+        /// <summary>
+        /// Whether another worn piece hides this layer, so it is not drawn (TazUO's MobileView.IsCovered, :1305-1482): a
+        /// hooded robe hides the hair and a helmet; most robes hide the torso and arms (not the open ones); leg armour or
+        /// certain robes and pants hide shoes and pants; a robe over one tunic hides it.
+        /// </summary>
+        public static bool IsCovered(IReadOnlyDictionary<byte, (int Graphic, int Hue)> worn, byte layer)
+        {
+            int Graphic(byte l) => worn.TryGetValue(l, out var it) ? it.Graphic : -1;
+            int robe = Graphic(RobeLayer), pants = Graphic(PantsLayer);
+            // Robes that leave the body showing (sleeveless or open): they hide neither torso, arms nor that tunic.
+            bool OpenRobe(int g) => g == 0x9985 || g == 0x9986 || g == 0xA412 || g == 0xA2CB || g == 0xA2CA;
+            switch (layer)
+            {
+                case ShoesLayer:
+                    if (worn.ContainsKey(LegsLayer) || pants == 0x1411)
+                        return true;
+                    return pants == 0x0513 || pants == 0x0514 || robe == 0x0504;
+                case PantsLayer:
+                    if (worn.ContainsKey(LegsLayer) || robe == 0x0504)
+                        return true;
+                    if (pants == 0x01EB || pants == 0x03E5 || pants == 0x03EB)
+                    {
+                        int skirt = Graphic(SkirtLayer);
+                        if (skirt >= 0 && skirt != 0x01C7 && skirt != 0x01E4)
+                            return true;
+                        if (robe >= 0 && robe != 0x0229 && (robe <= 0x04E7 || robe > 0x04EB))
+                            return true;
+                    }
+                    return false;
+                case TunicLayer:
+                    return Graphic(TunicLayer) == 0x0238 && robe >= 0 && !OpenRobe(robe);
+                case TorsoLayer:
+                    if (robe > 0 && !OpenRobe(robe))
+                        return true;
+                    int tunic = Graphic(TunicLayer), torso = Graphic(TorsoLayer);
+                    return tunic >= 0 && tunic != 0x1541 && tunic != 0x1542 && (torso == 0x782A || torso == 0x782B);
+                case ArmsLayer:
+                    return robe > 0 && !OpenRobe(robe);
+                case HelmetLayer:
+                case HairLayer:
+                    // Hooded robes.
+                    if (robe < 0)
+                        return false;
+                    if (robe > 0x3173)
+                        return robe == 0x4B9D || robe == 0x7816;
+                    if (robe <= 0x2687)
+                        return robe >= 0x2683 || robe >= 0x204E && robe <= 0x204F;
+                    return robe == 0x2FB9 || robe == 0x3173;
+                default:
+                    return false;
+            }
+        }
+
         /// <summary>The hair and beard layers, which a ghost does not draw (MobileView.cs:372, 1245).</summary>
         public const byte HairLayer = 11, BeardLayer = 16, MountLayer = 25;
 
@@ -267,7 +324,7 @@ namespace UOClient.Unity
             // Stored in one order; DrawOrder puts them in the facing's.
             foreach (byte layer in UsedLayers[0])
             {
-                if (!byLayer.TryGetValue(layer, out var item))
+                if (!byLayer.TryGetValue(layer, out var item) || IsCovered(byLayer, layer))
                     continue;
                 StaticTileData td = data.TileData.GetStatic(item.Graphic);
                 if (td.AnimId == 0)

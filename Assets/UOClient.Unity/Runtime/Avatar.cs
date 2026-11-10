@@ -545,11 +545,18 @@ namespace UOClient.Unity
             }
             else
                 MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut);
-            if (seated && !sitBack)
-                SetSitQuads(r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut, view.ToUnity(anchor));
-            // The frame is every worn layer composited, so its outline is the whole equipped silhouette.
+            bool folded = seated && !sitBack;
+            if (folded)
+            {
+                _sitMirror = mirror;
+                _sitFoot = view.ToUnity(anchor);
+                SetSitQuads(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, _sitMirror, LastCut, _sitFoot);
+            }
+            // The frame is every worn layer composited, so its outline is the whole equipped silhouette: folded the same
+            // way when the body is seated (a flat outline showed the person standing).
+            _sitOutline ??= (mesh, rect, uv, depth) => SetSitQuads(mesh, rect, uv, depth, _sitMirror, LastCut, _sitFoot);
             _outline.Update(ObjectHighlight.OutlinesInWorld(Selected, true, false, ObjectHighlight.HighlightGameObjects),
-                _art, f.Slot, r, mirror, LastDepth, LastCut);
+                _art, f.Slot, r, mirror, LastDepth, LastCut, folded ? _sitOutline : null);
         }
 
         // People's riding action (group 25), frame 0: a person seen from behind sitting (ClassicUO uses it for file dir 3).
@@ -566,11 +573,16 @@ namespace UOClient.Unity
         private static readonly Vector4[] SitFeet = new Vector4[12];
         private static readonly int[] SitIndices = { 0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11 };
 
+        // The seated fold's facing and feet this frame, for the outline's fold (one delegate, made once).
+        private bool _sitMirror;
+        private Vector2 _sitFoot;
+        private System.Action<Mesh, Rect, Vector4, float> _sitOutline;
+
         /// <summary>
         /// The seated frame as three quads (ClassicUO Batcher2D.DrawCharacterSitted): the upper body moved back over the
         /// seat, the hips slanting from it to the knees, the shins straight, the feet left out (under the seat).
         /// </summary>
-        private void SetSitQuads(Rect r, Vector4 uv, float depth, bool mirror, float cut, Vector2 foot)
+        private void SetSitQuads(Mesh mesh, Rect r, Vector4 uv, float depth, bool mirror, float cut, Vector2 foot)
         {
             float shift = (mirror ? -SitShift : SitShift) * _scale;
             float top = r.yMax, h = r.height;
@@ -596,14 +608,14 @@ namespace UOClient.Unity
                 SitHeights[k] = new Vector2(cut, 0f);
                 SitFeet[k] = new Vector4(foot.x, foot.y, Z, 1f);
             }
-            _mesh.Clear();
-            _mesh.vertices = SitVertices;
-            _mesh.uv = SitUvs;
-            _mesh.uv2 = SitHeights;
+            mesh.Clear();
+            mesh.vertices = SitVertices;
+            mesh.uv = SitUvs;
+            mesh.uv2 = SitHeights;
             if (MeshBuilder.FootMetadata)
-                _mesh.SetUVs(2, SitFeet);
-            _mesh.triangles = SitIndices;
-            _mesh.RecalculateBounds();
+                mesh.SetUVs(2, SitFeet);
+            mesh.triangles = SitIndices;
+            mesh.RecalculateBounds();
         }
 
         private Vector2 TileAnchor(int x, int y, int z)
