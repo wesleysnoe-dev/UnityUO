@@ -10,6 +10,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed class MapItemWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private const float Margin = 20, TitleHeight = 30, FooterHeight = 30, MaxView = 480;
         private static readonly Color Parchment = new Color(0.86f, 0.78f, 0.6f), Ink = new Color(0.3f, 0.2f, 0.1f);
         private static readonly Color PinColor = new Color(0.55f, 0.08f, 0.05f);

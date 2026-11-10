@@ -18,6 +18,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed class SkillsWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         /// <summary>
         /// The edited groups, kept for the whole run so closing the window keeps them; never saved. A future save would go
         /// to its own file (e.g. UserSettings/skill-groups.json) written only on an explicit Save, never into

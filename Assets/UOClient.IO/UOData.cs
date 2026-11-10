@@ -171,15 +171,18 @@ namespace UOClient.IO
             ClientOverrides o = Overrides;
             if (o == null)
                 return default;
-            string path = kind == Kind.Static ? o.ArtPath(id) : kind == Kind.Land ? o.LandPath(id)
-                : kind == Kind.Gump ? o.GumpPath(id) : o.TexmapPath(id);
+            // Our own look first (ClientOverrides.UseTheme): measured against what it replaces, the shard's PNG or the stock gump.
+            string theme = kind == Kind.Gump ? o.ThemeGumpPath(id) : null;
+            string path = theme ?? (kind == Kind.Static ? o.ArtPath(id) : kind == Kind.Land ? o.LandPath(id)
+                : kind == Kind.Gump ? o.GumpPath(id) : o.TexmapPath(id));
             if (path == null)
                 return default;
             lock (_overrideCache)
                 if (_overrideCache.TryGetValue((kind, id), out var cached))
                     return cached;
 
-            Bitmap32 png = o.Load(path), original = png == null ? null : stock();
+            Bitmap32 png = o.Load(path), original = png == null ? null
+                : theme != null && o.GumpPath(id) is string shard ? o.Load(shard) ?? stock() : stock();
             (Bitmap32, Bitmap32, int) result = default;
             if (png != null)
             {

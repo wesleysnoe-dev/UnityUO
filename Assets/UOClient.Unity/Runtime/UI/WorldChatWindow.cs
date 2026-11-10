@@ -75,6 +75,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed class WorldChatWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private static readonly (ChatChannel Channel, string Name)[] Tabs =
         {
             (ChatChannel.All, "All"), (ChatChannel.Global, "Global"), (ChatChannel.Trade, "Trade"),

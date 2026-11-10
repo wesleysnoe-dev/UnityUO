@@ -11,6 +11,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed partial class HouseCustomizeWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private readonly uint _house;
         private GUIStyle _wrap;
 

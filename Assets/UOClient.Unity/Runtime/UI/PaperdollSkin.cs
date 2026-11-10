@@ -32,7 +32,7 @@ namespace UOClient.Unity.UI
         // ---- the frame ----
 
         /// <summary>The window's frame and background: <paramref name="border"/> thick, its corners ornamented.</summary>
-        public static void Frame(Rect r, float border)
+        public static void Frame(Rect r, float border, float cornerScale = 3f)
         {
             Texture2D bg = Piece("background");
             var inner = new Rect(r.x + border, r.y + border, r.width - border * 2f, r.height - border * 2f);
@@ -60,7 +60,7 @@ namespace UOClient.Unity.UI
                 Box(new Rect(r.x + border - 3f, r.y + border - 3f, r.width - border * 2f + 6f, r.height - border * 2f + 6f), Gold, 1f);
             }
 
-            float c = border * 3f;
+            float c = border * cornerScale;
             if (corner != null)
             {
                 Flipped(corner, new Rect(r.x - 2f, r.y - 2f, c, c), false, false);
@@ -181,23 +181,36 @@ namespace UOClient.Unity.UI
         /// <summary>The serif faces tried, in order: the first one installed is used (else the UI's own font).</summary>
         private static readonly string[] SerifFaces = { "Palatino Linotype", "Book Antiqua", "Georgia", "Cambria", "Times New Roman" };
 
+        private static Font _serifFont;
+        private static bool _serifLooked;
+
+        /// <summary>
+        /// The first SerifFaces face installed, or null (the UI's own font then). A face that is not installed loads
+        /// nothing (and logs every frame), so only an installed one is asked for.
+        /// </summary>
+        public static Font SerifFont
+        {
+            get
+            {
+                if (_serifLooked)
+                    return _serifFont;
+                _serifLooked = true;
+                var installed = new HashSet<string>(Font.GetOSInstalledFontNames());
+                foreach (string face in SerifFaces)
+                    if (installed.Contains(face))
+                        return _serifFont = Font.CreateDynamicFontFromOSFont(face, 16);
+                return null;
+            }
+        }
+
         /// <summary>Words in the serif face (SerifFaces), centred unless told, with a soft shadow.</summary>
         public static void Title(Rect r, string text, int size, Color color, bool shadow = true, TextAnchor align = TextAnchor.MiddleCenter)
         {
             if (_serif == null)
             {
-                // A face that is not installed loads nothing (and logs every frame), so only an installed one is asked for.
-                var installed = new HashSet<string>(Font.GetOSInstalledFontNames());
-                Font f = null;
-                foreach (string face in SerifFaces)
-                    if (installed.Contains(face))
-                    {
-                        f = Font.CreateDynamicFontFromOSFont(face, 16);
-                        break;
-                    }
                 _serif = new GUIStyle(GUI.skin.label) { wordWrap = false, clipping = TextClipping.Clip, padding = new RectOffset(), richText = false };
-                if (f != null)
-                    _serif.font = f;
+                if (SerifFont != null)
+                    _serif.font = SerifFont;
             }
             _serif.fontSize = size;
             _serif.alignment = align;

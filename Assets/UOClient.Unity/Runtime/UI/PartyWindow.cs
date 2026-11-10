@@ -70,6 +70,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed class PartyInviteWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private readonly uint _leader;
 
         public PartyInviteWindow(uint leader)

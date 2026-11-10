@@ -7,6 +7,9 @@ namespace UOClient.Unity.UI
     /// <summary>A yes/no question (log out, etc.).</summary>
     public sealed class ConfirmWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private readonly string _title, _text;
         private readonly Action _yes;
         private GUIStyle _wrap;
@@ -45,6 +48,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed class OpenUrlWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         public const string WindowKey = "openurl";
 
         private readonly string _url;

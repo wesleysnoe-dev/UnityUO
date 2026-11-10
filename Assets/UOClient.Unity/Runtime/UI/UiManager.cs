@@ -44,6 +44,12 @@ namespace UOClient.Unity.UI
         /// <summary>The window is drawn as UO's scroll (DrawScroll): its opening unrolls exactly over it.</summary>
         public virtual bool IsScroll => false;
 
+        /// <summary>
+        /// One of our own windows in the game's look (IronSkin): drawn with its skin, its stone background (gump 9200, or
+        /// the popups' 3000) the iron and knotwork frame.
+        /// </summary>
+        public virtual bool Themed => false;
+
         /// <summary>Called once when the window is closed (by right-click or code).</summary>
         public virtual void OnClosed() { }
 
@@ -86,6 +92,11 @@ namespace UOClient.Unity.UI
         /// <summary>A resizable background: nine gumps from <paramref name="id"/> (corners, edges, center).</summary>
         protected void DrawResizePic(int id, float x, float y, float w, float h)
         {
+            if (Themed && (id == 9200 || id == 3000))
+            {
+                IronSkin.Frame(new Rect(x, y, w, h));
+                return;
+            }
             UiImage tl = Art.Gump(id), t = Art.Gump(id + 1), tr = Art.Gump(id + 2);
             UiImage l = Art.Gump(id + 3), m = Art.Gump(id + 4), rr = Art.Gump(id + 5);
             UiImage bl = Art.Gump(id + 6), b = Art.Gump(id + 7), br = Art.Gump(id + 8);
@@ -569,8 +580,18 @@ namespace UOClient.Unity.UI
                 }
             }
 
-            if (!DrawIntroWindow(w)) // opening (UiManager.Intro): drawn partly, behind its cover or roll
-                w.Draw();
+            GUISkin skinWas = GUI.skin;
+            if (w.Themed)
+                GUI.skin = IronSkin.Skin;
+            try
+            {
+                if (!DrawIntroWindow(w)) // opening (UiManager.Intro): drawn partly, behind its cover or roll
+                    w.Draw();
+            }
+            finally
+            {
+                GUI.skin = skinWas;
+            }
 
             // Last, so controls drawn above take their clicks first: the rest of the window moves it.
             if (Dragging == null && w.Movable)

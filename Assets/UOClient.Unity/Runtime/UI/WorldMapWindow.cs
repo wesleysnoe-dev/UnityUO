@@ -14,6 +14,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed class WorldMapWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         internal const int TilesPerPixel = 2;
         private static readonly string[] Facets = { "Felucca", "Trammel", "Ilshenar", "Malas", "Tokuno", "Ter Mur" };
 

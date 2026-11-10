@@ -13,6 +13,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed partial class OptionsWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private static readonly Color Heading = new Color(1f, 0.9f, 0.6f);
         private static readonly Color Note = new Color(0.8f, 0.78f, 0.7f);
         private static readonly Color Greyed = new Color(0.55f, 0.52f, 0.47f);

@@ -10,6 +10,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed class HuePickerWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         public const int Background = 0x0906;
         public const int OkNormal = 0x0907, OkPressed = 0x0908, OkOver = 0x0909, OkX = 208, OkY = 138;
         public const int BoxX = 34, BoxY = 34, Cell = 8;

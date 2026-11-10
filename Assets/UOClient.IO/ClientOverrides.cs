@@ -82,8 +82,26 @@ namespace UOClient.IO
         /// <summary>The overhaul art folders that were found and indexed.</summary>
         public System.Collections.Generic.List<string> OverhaulFolders { get; } = new System.Collections.Generic.List<string>();
 
+        private readonly Dictionary<int, string> _themeGumps = new Dictionary<int, string>();
+
+        /// <summary>
+        /// Our client's own look (the game's iron and gold style, in <c>&lt;folder&gt;/gumps/0xNNNN.png</c>): gumps that win
+        /// over ExternalImages, so the shard's custom gump kit and backgrounds draw in it. A PNG 2-4x the size of the art it
+        /// replaces (the shard's PNG, else the stock gump) is HD over it, at that art's size.
+        /// </summary>
+        public void UseTheme(string folder)
+        {
+            if (!string.IsNullOrWhiteSpace(folder))
+                IndexFolder(Path.Combine(folder, "gumps"), _themeGumps, overwrite: true);
+        }
+
+        public int ThemeGumpCount => _themeGumps.Count;
+
+        /// <summary>Our own look's PNG for a gump, or null.</summary>
+        public string ThemeGumpPath(int id) => _themeGumps.TryGetValue(id, out string p) ? p : null;
+
         public bool HasArt(int graphic) => _art.ContainsKey(graphic);
-        public bool HasGump(int id) => _gumps.ContainsKey(id);
+        public bool HasGump(int id) => _gumps.ContainsKey(id) || _themeGumps.ContainsKey(id);
 
         public string ArtPath(int graphic) => _art.TryGetValue(graphic, out string p) ? p : null;
         public string LandPath(int tile) => _land.TryGetValue(tile, out string p) ? p : null;

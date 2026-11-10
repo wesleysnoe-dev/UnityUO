@@ -116,7 +116,7 @@ namespace UOClient.Unity.UI
             GUI.Window(TooltipWindowId, r, _ =>
             {
                 var local = new Rect(0, 0, r.width, r.height);
-                GUI.DrawTexture(local, _tooltipBack);
+                IronSkin.Panel(local);
                 GUI.Label(local, content, _tooltipStyle);
             }, GUIContent.none, GUIStyle.none);
             GUI.BringWindowToFront(TooltipWindowId);

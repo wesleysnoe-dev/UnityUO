@@ -9,6 +9,9 @@ namespace UOClient.Unity.UI
     /// <summary>A context (popup) menu at the mouse: each entry sends its choice; anything else closes it.</summary>
     public sealed partial class ContextMenuWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private const float Row = 22;
         private readonly ContextMenu _menu;
 
@@ -234,6 +237,9 @@ namespace UOClient.Unity.UI
     /// <summary>The server asked for a line of text (a name, a rune description, ...).</summary>
     public sealed class PromptWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private readonly TextPrompt _prompt;
         private string _text = "";
         private bool _focused;
@@ -288,6 +294,9 @@ namespace UOClient.Unity.UI
     /// <summary>A server gump's text entry dialog (0xAB): a caption, a text or number box and help text; answered with 0xAC.</summary>
     public sealed class TextEntryWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private readonly TextEntryRequest _entry;
         private string _text = "";
         private bool _focused, _answered;

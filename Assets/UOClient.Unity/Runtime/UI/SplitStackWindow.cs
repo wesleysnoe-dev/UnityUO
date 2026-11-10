@@ -9,6 +9,9 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed class SplitStackWindow : UiWindow
     {
+        /// <summary>Our own window, in the game's look (IronSkin).</summary>
+        public override bool Themed => true;
+
         private readonly DraggedItem _item;
         private int _amount;
         private string _text;
