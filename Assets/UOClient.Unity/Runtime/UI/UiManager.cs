@@ -402,6 +402,19 @@ namespace UOClient.Unity.UI
         /// </summary>
         public bool IsOverUi(Vector2 screen) => TopWindowAtScreen(screen) != null;
 
+        /// <summary>
+        /// The latest right press went to a window (closing it, as like as not). IMGUI hands a window the press a frame
+        /// before Input reports it, so by then the window may be gone; the walk (PlayerMovement) asks this on the frame
+        /// Input reports the press, instead of what is under the mouse. Only a press in the last two frames counts.
+        /// </summary>
+        public bool RightPressOnWindow
+        {
+            get => _rightPressFrame >= 0 && Time.frameCount - _rightPressFrame <= 2;
+            private set => _rightPressFrame = value ? Time.frameCount : -1;
+        }
+
+        private int _rightPressFrame = -1;
+
         /// <summary>The front window at a screen point (Unity screen coordinates, bottom-left origin), or null.</summary>
         public UiWindow TopWindowAtScreen(Vector2 screen)
         {
@@ -572,6 +585,8 @@ namespace UOClient.Unity.UI
                 // Clicked: bring forward (our list order is the stacking order used for drops).
                 if (_windows.Remove(w))
                     _windows.Add(w);
+                if (e.button == 1)
+                    RightPressOnWindow = true; // the walk must not take this press up once the window is gone
                 if (e.button == 1 && w.CanClose)
                 {
                     Close(w);

@@ -23,7 +23,7 @@ namespace UOClient.Unity
         /// <summary>The player's hidden flag (0x80 in the mobile's flags, as TazUO's Flags.Hidden).</summary>
         private bool PlayerHidden => _ctx.Session?.World.Player is Core.Mobile p && (p.Flags & 0x80) != 0;
 
-        private bool _rightPressOnPlate;
+        private bool _rightPressOnUi;
 
         /// <summary>WASD / arrows (Shift runs), or right mouse toward the cursor while over the world.</summary>
         public void Update(UI.UiManager ui)
@@ -38,13 +38,15 @@ namespace UOClient.Unity
                        || AlwaysRun && !(AlwaysRunUnlessHidden && PlayerHidden);
 
             // Right mouse walks only over the world; over a window it closes the window instead.
-            // (Nor over the quest arrow, where a right click cancels it, nor while a press that began on a nameplate is
-            // held: that right-click closes the plate. A walk begun on the world carries on over plates, as TazUO's.)
+            // (Nor over the quest arrow, where a right click cancels it, nor while a press that began on a nameplate or
+            // a window is held: that right-click closed it, and the world under the mouse once it is gone is no walk.
+            // A walk begun on the world carries on over plates, as TazUO's.)
             if (!Input.GetMouseButton(1))
-                _rightPressOnPlate = false;
+                _rightPressOnUi = false;
             else if (Input.GetMouseButtonDown(1))
-                _rightPressOnPlate = _ctx.Hud.NamePlateAt(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)) != 0;
-            if (intent == Vector2.zero && Input.GetMouseButton(1) && !_rightPressOnPlate && (ui == null || !ui.IsOverUi(Input.mousePosition))
+                _rightPressOnUi = _ctx.Hud.NamePlateAt(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)) != 0
+                                     || ui != null && (ui.IsOverUi(Input.mousePosition) || ui.RightPressOnWindow);
+            if (intent == Vector2.zero && Input.GetMouseButton(1) && !_rightPressOnUi && (ui == null || !ui.IsOverUi(Input.mousePosition))
                 && !_ctx.Hud.QuestArrowRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)))
             {
                 Vector3 player = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(_ctx.Player.AnchorPixels));
