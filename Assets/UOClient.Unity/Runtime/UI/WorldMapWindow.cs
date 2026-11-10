@@ -170,6 +170,9 @@ namespace UOClient.Unity.UI
         // ---- resizing ----
 
         private const float Grip = 18f;
+
+        /// <summary>The grip: the map's bottom-right corner, just inside the frame (the themed frame is drawn over the window's edge).</summary>
+        private Rect GripRect => new Rect(Rect.width - 12f - Grip, Rect.height - 12f - Grip, Grip, Grip);
         private static readonly Vector2 MinSize = new Vector2(360, 280);
         private bool _resizing;
         private Vector2 _resizeGrab;
@@ -180,7 +183,7 @@ namespace UOClient.Unity.UI
             Event e = Event.current;
             // The grip holds the mouse while dragged (hotControl), so the drag keeps coming once it leaves the window.
             int id = GUIUtility.GetControlID(FocusType.Passive);
-            var grip = new Rect(Rect.width - Grip, Rect.height - Grip, Grip, Grip);
+            Rect grip = GripRect;
             switch (e.GetTypeForControl(id))
             {
                 case EventType.MouseDown when e.button == 0 && grip.Contains(e.mousePosition):
@@ -204,22 +207,37 @@ namespace UOClient.Unity.UI
             }
         }
 
-        /// <summary>Three short gilt diagonals in the bottom-right corner: the resize grip.</summary>
+        /// <summary>Three short gilt diagonals in the bottom-right corner: the resize grip (a texture, drawn unturned).</summary>
         private void DrawGrip()
         {
             if (Event.current.type != EventType.Repaint)
                 return;
-            GUI.color = new Color(0.85f, 0.7f, 0.4f, 0.9f);
-            for (int i = 0; i < 3; i++)
-            {
-                float o = 5f + i * 4f;
-                Matrix4x4 m = GUI.matrix;
-                var pivot = new Vector2(Rect.width - o, Rect.height - o);
-                GUIUtility.RotateAroundPivot(-45f, pivot);
-                GUI.DrawTexture(new Rect(pivot.x - o * 0.7f, pivot.y - 0.75f, o * 1.4f, 1.5f), Texture2D.whiteTexture);
-                GUI.matrix = m;
-            }
-            GUI.color = Color.white;
+            _gripTexture ??= GripTexture();
+            GUI.DrawTexture(GripRect, _gripTexture);
+        }
+
+        private static Texture2D _gripTexture;
+
+        /// <summary>The grip's lines: three anti-aliased diagonals running into the bottom-right corner.</summary>
+        private static Texture2D GripTexture()
+        {
+            const int n = 32;
+            var t = new Texture2D(n, n, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color[n * n];
+            var gilt = new Color(0.9f, 0.75f, 0.45f);
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    // Texture rows run bottom up: x + y (from the top) is constant along a / diagonal.
+                    float top = n - 1 - y, sum = x + top;
+                    float a = 0f;
+                    foreach (float line in new[] { n * 1.0f, n * 1.35f, n * 1.7f })
+                        a = Mathf.Max(a, Mathf.Clamp01(1.6f - Mathf.Abs(sum - line)));
+                    px[y * n + x] = new Color(gilt.r, gilt.g, gilt.b, a * 0.9f);
+                }
+            t.SetPixels(px);
+            t.Apply(false);
+            return t;
         }
 
         private void HandleMouse(Rect view)
