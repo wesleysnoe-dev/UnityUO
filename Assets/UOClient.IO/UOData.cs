@@ -181,8 +181,7 @@ namespace UOClient.IO
                 if (_overrideCache.TryGetValue((kind, id), out var cached))
                     return cached;
 
-            Bitmap32 png = o.Load(path), original = png == null ? null
-                : theme != null && o.GumpPath(id) is string shard ? o.Load(shard) ?? stock() : stock();
+            Bitmap32 png = o.Load(path), original = png == null ? null : theme != null ? ThemeBaseline(o, id, stock) : stock();
             (Bitmap32, Bitmap32, int) result = default;
             if (png != null)
             {
@@ -195,6 +194,20 @@ namespace UOClient.IO
             lock (_overrideCache)
                 _overrideCache[(kind, id)] = result;
             return result;
+        }
+
+        /// <summary>
+        /// What a theme gump replaces, for its HD scale: the shard's own PNG when it is a replacement (a gump the data files
+        /// lack, or one redrawn at another size), else the stock gump. An HD copy of the stock gump (the HD pack, 2-4x it)
+        /// is not the size the game lays out with, so it is never the measure.
+        /// </summary>
+        private static Bitmap32 ThemeBaseline(ClientOverrides o, int id, Func<Bitmap32> stock)
+        {
+            Bitmap32 st = stock();
+            Bitmap32 shard = o.GumpPath(id) is string p ? o.Load(p) : null;
+            if (shard != null && (st == null || ClientOverrides.HdScale(shard.Width, shard.Height, st.Width, st.Height) == 1))
+                return shard;
+            return st;
         }
 
         public Bitmap32 GetLand(int graphic) =>
