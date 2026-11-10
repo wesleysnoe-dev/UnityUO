@@ -213,6 +213,8 @@ namespace UOClient.Unity
             FxTest();
             _flames.Apply(_ctx.Data, _ctx.World, _ctx.ArtScale, _ctx.Player.X, _ctx.Player.Y);
             _carriedFlames.Apply(_ctx.Data, _ctx.World, _ctx.ArtScale);
+            Fx.HitSparks.Draw(_sparkAt ??= serial => serial == _ctx.Session?.World.PlayerSerial ? _ctx.Player
+                : _others.TryGetValue(serial, out Avatar a) ? a : null, _ctx.ArtScale);
         }
 
         /// <summary>
@@ -220,6 +222,7 @@ namespace UOClient.Unity
         /// light flag, at its bearer's drawn feet.
         /// </summary>
         private readonly Fx.CarriedFlames _carriedFlames = new Fx.CarriedFlames();
+        private System.Func<uint, Avatar> _sparkAt;
 
         private void GatherCarriedLights()
         {

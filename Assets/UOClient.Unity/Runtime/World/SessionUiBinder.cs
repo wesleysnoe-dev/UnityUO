@@ -72,6 +72,7 @@ namespace UOClient.Unity
             s.TargetEnded += OnTargetEnded;
             s.WarModeChanged += OnWarModeChanged;
             s.Damaged += OnDamaged;
+            s.MobileAnimated += OnAnimatedForSparks;
             s.LastAttackSet += OnLastAttackSet;
             s.AttackQueryRequested += OnAttackQueryRequested;
             s.TargetQueryRequested += OnTargetQueryRequested;
@@ -133,6 +134,7 @@ namespace UOClient.Unity
             s.TargetEnded -= OnTargetEnded;
             s.WarModeChanged -= OnWarModeChanged;
             s.Damaged -= OnDamaged;
+            s.MobileAnimated -= OnAnimatedForSparks;
             s.LastAttackSet -= OnLastAttackSet;
             s.AttackQueryRequested -= OnAttackQueryRequested;
             s.TargetQueryRequested -= OnTargetQueryRequested;
@@ -242,7 +244,13 @@ namespace UOClient.Unity
             Ui.Open(new UI.QuestionWindow("attack", UI.QuestionWindow.CriminalText, yes => s.AnswerAttackQuery(serial, yes)));
         }
 
-        private void OnDamaged(uint serial, int amount) => _overheads.Add(serial, amount.ToString(), new Color(1f, 0.25f, 0.2f), 18, 1.6f, true);
+        private void OnDamaged(uint serial, int amount)
+        {
+            _overheads.Add(serial, amount.ToString(), new Color(1f, 0.25f, 0.2f), 18, 1.6f, true);
+            Fx.HitSparks.Damaged(_ctx.Session, serial); // a weapon's hit throws sparks
+        }
+
+        private void OnAnimatedForSparks(Core.ServerAnimation a) => Fx.HitSparks.Animated(_ctx.Session, a);
 
         private void OnJournalOverhead(JournalEntry j)
         {

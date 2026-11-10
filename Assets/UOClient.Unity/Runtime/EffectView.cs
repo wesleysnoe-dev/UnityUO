@@ -31,6 +31,7 @@ namespace UOClient.Unity
         private readonly Fx.FxCatalog.EffectStyle _style;
         private ParticleSystem _trail;
         private bool _burst;
+        private bool _motes;
 
         public EffectView(UOData data, MobileArt art, Transform parent, Shader shader, int scale, GraphicEffect e, Func<uint, Vector3Int?> locate)
         {
@@ -156,6 +157,11 @@ namespace UOClient.Unity
             {
                 _burst = true;
                 Fx.FxParticles.Burst(centre, _style.Light, _scale);
+            }
+            if (_style.Motes.a > 0f && !_motes)
+            {
+                _motes = true;
+                Fx.FxParticles.Motes(centre, _style.Motes, _scale);
             }
             if (_style.Radius > 0f)
             {

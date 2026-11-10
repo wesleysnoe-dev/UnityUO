@@ -66,6 +66,33 @@ public class OverhaulArtTests
             Assert.Equal(2, o.ThemeGumpCount);
             o.UseTheme(Path.Combine(root, "Missing"));              // a missing folder adds nothing and throws nothing
             Assert.Equal(2, o.ThemeGumpCount);
+            Assert.Equal(0, o.ThemeArtCount);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void Theme_ArtWinsOverTheShardsOwn_OnlyWhereItHasOne()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "uoc-theme-art-" + System.Guid.NewGuid().ToString("N"));
+        try
+        {
+            string client = Path.Combine(root, "Client");
+            string shardFireball = Touch(Path.Combine(client, "ExternalImages", "art"), "0x36D4.png");
+            string theme = Touch(Path.Combine(root, "Theme", "art"), "0x36D4.png");
+            Touch(Path.Combine(root, "Theme", "art"), "0x36B0.png");
+
+            var o = new ClientOverrides(client, includeHdPack: false);
+            o.UseTheme(Path.Combine(root, "Theme"));
+            Assert.Equal(theme, o.ThemeArtPath(0x36D4));            // ours over the shard's fireball
+            Assert.Equal(shardFireball, o.ArtPath(0x36D4));         // the shard's stays known (the measure)
+            Assert.Null(o.ThemeArtPath(0x0EED));                    // gold: no theme art
+            Assert.True(o.HasArt(0x36B0));
+            Assert.Equal(2, o.ThemeArtCount);
+            Assert.Equal(0, o.ThemeGumpCount);
         }
         finally
         {

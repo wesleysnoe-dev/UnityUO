@@ -172,7 +172,7 @@ namespace UOClient.IO
             if (o == null)
                 return default;
             // Our own look first (ClientOverrides.UseTheme): measured against what it replaces, the shard's PNG or the stock gump.
-            string theme = kind == Kind.Gump ? o.ThemeGumpPath(id) : null;
+            string theme = kind == Kind.Gump ? o.ThemeGumpPath(id) : kind == Kind.Static ? o.ThemeArtPath(id) : null;
             string path = theme ?? (kind == Kind.Static ? o.ArtPath(id) : kind == Kind.Land ? o.LandPath(id)
                 : kind == Kind.Gump ? o.GumpPath(id) : o.TexmapPath(id));
             if (path == null)
@@ -181,7 +181,8 @@ namespace UOClient.IO
                 if (_overrideCache.TryGetValue((kind, id), out var cached))
                     return cached;
 
-            Bitmap32 png = o.Load(path), original = png == null ? null : theme != null ? ThemeBaseline(o, id, stock) : stock();
+            Bitmap32 png = o.Load(path), original = png == null ? null
+                : theme != null ? ThemeBaseline(kind == Kind.Gump ? o.GumpPath(id) : o.ArtPath(id), o, stock) : stock();
             (Bitmap32, Bitmap32, int) result = default;
             if (png != null)
             {
@@ -201,10 +202,10 @@ namespace UOClient.IO
         /// lack, or one redrawn at another size), else the stock gump. An HD copy of the stock gump (the HD pack, 2-4x it)
         /// is not the size the game lays out with, so it is never the measure.
         /// </summary>
-        private static Bitmap32 ThemeBaseline(ClientOverrides o, int id, Func<Bitmap32> stock)
+        private static Bitmap32 ThemeBaseline(string shardPath, ClientOverrides o, Func<Bitmap32> stock)
         {
             Bitmap32 st = stock();
-            Bitmap32 shard = o.GumpPath(id) is string p ? o.Load(p) : null;
+            Bitmap32 shard = shardPath != null ? o.Load(shardPath) : null;
             if (shard != null && (st == null || ClientOverrides.HdScale(shard.Width, shard.Height, st.Width, st.Height) == 1))
                 return shard;
             return st;

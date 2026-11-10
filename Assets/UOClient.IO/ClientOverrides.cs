@@ -83,24 +83,32 @@ namespace UOClient.IO
         public System.Collections.Generic.List<string> OverhaulFolders { get; } = new System.Collections.Generic.List<string>();
 
         private readonly Dictionary<int, string> _themeGumps = new Dictionary<int, string>();
+        private readonly Dictionary<int, string> _themeArt = new Dictionary<int, string>();
 
         /// <summary>
         /// Our client's own look (the game's iron and gold style, in <c>&lt;folder&gt;/gumps/0xNNNN.png</c>): gumps that win
-        /// over ExternalImages, so the shard's custom gump kit and backgrounds draw in it. A PNG 2-4x the size of the art it
-        /// replaces (the shard's PNG, else the stock gump) is HD over it, at that art's size.
+        /// over ExternalImages, so the shard's custom gump kit and backgrounds draw in it; and item art in <c>art/</c> (the
+        /// spell effects' HD pass). A PNG 2-4x the size of the art it replaces (the shard's PNG, else the stock art) is HD
+        /// over it, at that art's size.
         /// </summary>
         public void UseTheme(string folder)
         {
-            if (!string.IsNullOrWhiteSpace(folder))
-                IndexFolder(Path.Combine(folder, "gumps"), _themeGumps, overwrite: true);
+            if (string.IsNullOrWhiteSpace(folder))
+                return;
+            IndexFolder(Path.Combine(folder, "gumps"), _themeGumps, overwrite: true);
+            IndexFolder(Path.Combine(folder, "art"), _themeArt, overwrite: true);
         }
 
         public int ThemeGumpCount => _themeGumps.Count;
+        public int ThemeArtCount => _themeArt.Count;
+
+        /// <summary>Our own look's PNG for a static's art, or null.</summary>
+        public string ThemeArtPath(int graphic) => _themeArt.TryGetValue(graphic, out string p) ? p : null;
 
         /// <summary>Our own look's PNG for a gump, or null.</summary>
         public string ThemeGumpPath(int id) => _themeGumps.TryGetValue(id, out string p) ? p : null;
 
-        public bool HasArt(int graphic) => _art.ContainsKey(graphic);
+        public bool HasArt(int graphic) => _art.ContainsKey(graphic) || _themeArt.ContainsKey(graphic);
         public bool HasGump(int id) => _gumps.ContainsKey(id) || _themeGumps.ContainsKey(id);
 
         public string ArtPath(int graphic) => _art.TryGetValue(graphic, out string p) ? p : null;

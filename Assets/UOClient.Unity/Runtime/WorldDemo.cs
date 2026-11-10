@@ -127,7 +127,7 @@ namespace UOClient.Unity
                     var o = new ClientOverrides(overrides, Settings.hdArt, Settings.overhaulArt);
                     // The game's own look over the shard's custom gump kit and backgrounds (Theme/gumps).
                     o.UseTheme(System.IO.Path.Combine(GameContext.ProjectRoot, "Theme"));
-                    Debug.Log($"UOClient: theme gumps: {o.ThemeGumpCount}");
+                    Debug.Log($"UOClient: theme gumps: {o.ThemeGumpCount}, theme art: {o.ThemeArtCount}");
                     if (o.OverhaulFolders.Count > 0)
                         Debug.Log($"UOClient: overhaul art over the HD pack: {string.Join(", ", o.OverhaulFolders)}");
                     _ctx.Data.UseOverrides(o);

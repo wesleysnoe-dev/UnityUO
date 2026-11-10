@@ -207,6 +207,75 @@ namespace UOClient.Unity.Fx
             ps.Play();
         }
 
+        /// <summary>
+        /// A heal's, cure's or blessing's motes: soft sparks in the spell's colour rising round the target for about a
+        /// second and fading; it removes itself.
+        /// </summary>
+        public static void Motes(Vector3 at, Color color, float scale)
+        {
+            ParticleSystem ps = Make("Motes", null, 60);
+            ps.transform.position = at;
+            var main = ps.main;
+            main.duration = 0.7f;
+            main.loop = false;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.3f);
+            main.startSpeed = 0f;
+            main.startSize = new ParticleSystem.MinMaxCurve(2f * scale, 4.5f * scale);
+            main.startColor = Color.white;
+            main.stopAction = ParticleSystemStopAction.Destroy;
+            var em = ps.emission;
+            em.rateOverTime = 40f;
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(22f * scale, 34f * scale, 0.1f); // round the body
+            var vel = ps.velocityOverLifetime;
+            vel.enabled = true;
+            vel.space = ParticleSystemSimulationSpace.World;
+            vel.x = new ParticleSystem.MinMaxCurve(-3f * scale, 3f * scale);
+            vel.y = new ParticleSystem.MinMaxCurve(14f * scale, 30f * scale);
+            vel.z = new ParticleSystem.MinMaxCurve(0f, 0f);
+            var col = ps.colorOverLifetime;
+            col.enabled = true;
+            col.color = Ramp(Color.Lerp(color, Color.white, 0.7f), color, color * 0.4f, 0.8f);
+            var size = ps.sizeOverLifetime;
+            size.enabled = true;
+            size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0, 0.4f), new Keyframe(0.25f, 1f), new Keyframe(1, 0f)));
+            var noise = ps.noise;
+            noise.enabled = true;
+            noise.strength = 4f * scale;
+            noise.frequency = 1.1f;
+            ps.Play();
+        }
+
+        /// <summary>A weapon hit's sparks: a quick spray of bright specks that arc down and die; it removes itself.</summary>
+        public static void Sparks(Vector3 at, Color color, float scale)
+        {
+            ParticleSystem ps = Make("Sparks", null, 30);
+            ps.transform.position = at;
+            var main = ps.main;
+            main.duration = 0.1f;
+            main.loop = false;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.18f, 0.38f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(25f * scale, 60f * scale);
+            main.startSize = new ParticleSystem.MinMaxCurve(1.2f * scale, 2.6f * scale);
+            main.startColor = Color.white;
+            main.gravityModifier = 9f * scale; // they fall as they fly
+            main.stopAction = ParticleSystemStopAction.Destroy;
+            var em = ps.emission;
+            em.rateOverTime = 0f;
+            em.SetBursts(new[] { new ParticleSystem.Burst(0f, 14) });
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Circle;
+            shape.radius = 2f * scale;
+            var col = ps.colorOverLifetime;
+            col.enabled = true;
+            col.color = Ramp(Color.white, color, color * 0.3f);
+            var size = ps.sizeOverLifetime;
+            size.enabled = true;
+            size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0, 1, 1, 0.2f));
+            ps.Play();
+        }
+
         /// <summary>Stops a system emitting and removes it once its particles are gone.</summary>
         public static void Release(ParticleSystem ps)
         {

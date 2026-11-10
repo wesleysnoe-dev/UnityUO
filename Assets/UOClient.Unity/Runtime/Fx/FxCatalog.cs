@@ -124,6 +124,8 @@ namespace UOClient.Unity.Fx
         {
             public bool Glow, Unlit, Trail, Burst;
             public Color Light;
+            /// <summary>Rising motes in this colour on the target (heals, cures, blessings); alpha 0: none.</summary>
+            public Color Motes;
             public float Radius;
         }
 
@@ -146,7 +148,7 @@ namespace UOClient.Unity.Fx
                 case 0x379F: // energy bolt
                     return new EffectStyle { Glow = true, Trail = true, Light = Energy, Radius = 4f };
                 case 0x3779: case 0x37B9: case 0x376A: case 0x375A: case 0x373A: case 0x374A: // sparkles: heal, cure, bless, ...
-                    return new EffectStyle { Glow = true, Light = Holy, Radius = 2.5f };
+                    return new EffectStyle { Glow = true, Light = Holy, Radius = 2.5f, Motes = MotesFor(graphic) };
                 case 0x36FE: case 0x3818: // energy field flashes
                     return new EffectStyle { Glow = true, Light = Energy, Radius = 3f };
                 case 0x113A: case 0x36D5: // poison clouds
@@ -155,6 +157,15 @@ namespace UOClient.Unity.Fx
                     return default;
             }
         }
+
+        /// <summary>The motes' colour by sparkle: heals gold, cures green, protection and stat buffs blue, the rest white-gold.</summary>
+        private static Color MotesFor(int graphic) => graphic switch
+        {
+            0x376A => new Color(1f, 0.82f, 0.4f),
+            0x373A => new Color(0.45f, 1f, 0.5f),
+            0x375A => new Color(0.55f, 0.75f, 1f),
+            _ => Holy,
+        };
 
         internal static bool HasArg(string name)
         {
