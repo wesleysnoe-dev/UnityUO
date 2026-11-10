@@ -186,7 +186,7 @@ Shader "UOClient/WorldSprite"
                 // The water's colour, shallows to deep (lighter by day), with a little of the art's own grain and hue.
                 float3 deep = lerp(float3(0.02, 0.07, 0.15), float3(0.05, 0.17, 0.32), _UOWaterSun.x);
                 float3 shallow = float3(0.10, 0.42, 0.45);
-                float3 water = lerp(deep, shallow, smoothstep(0.0, 1.0, shore));
+                float3 water = lerp(deep, shallow, smoothstep(0.05, 0.95, shore));
                 float grain = dot(rgb, float3(0.299, 0.587, 0.114)) / max(dot(water, float3(0.299, 0.587, 0.114)), 0.05);
                 water = lerp(water, water * clamp(grain, 0.6, 1.6), 0.2);
                 // The ripples' light and shade, and the sky in their slopes (the steeper, the more sky).
@@ -199,6 +199,14 @@ Shader "UOClient/WorldSprite"
                 float3 sunTint = lerp(float3(1.0, 0.97, 0.9), float3(1.0, 0.68, 0.32), _UOWaterSun.z);
                 float3 tint = lerp(float3(0.7, 0.78, 0.95), sunTint, _UOWaterSun.x);
                 c += spec * tint * (0.6 + 3.0 * _UOWaterSun.y);
+                // Whitecaps: in the rough patches, broken white foam on the crests that builds, rolls with the wind and
+                // fades; a few on a breezy day, many in a storm.
+                float capField = WaterNoise(p * float2(0.03, 0.065) + float2(t * 0.3, t * 0.1)); // streaked along the wind
+                float capLife = 0.5 + 0.5 * sin(t * 1.3 + WaterNoise(p * 0.01) * 12.0);
+                float capAmt = smoothstep(0.84 - wind * 0.3, 0.94 - wind * 0.25, capField) * capLife
+                               * saturate((rough - 1.0 + wind * 0.7) * 1.6) * saturate(0.3 + wind * 1.6);
+                float foam = smoothstep(0.3, 0.75, WaterNoise(p * float2(0.09, 0.16) + t * 0.25)) * (0.75 + 0.25 * WaterNoise(p * 0.3));
+                c = lerp(c, float3(0.88, 0.93, 0.98), capAmt * foam * 0.8);
                 // Rain: on a grid of cells a drop lands in each at its own moment, and a ring spreads and fades.
                 if (_UOWaterWeather.x > 0.02)
                 {
@@ -298,7 +306,7 @@ Shader "UOClient/WorldSprite"
                 float n = sin(world.x * 0.09 + t * 1.3) * sin(world.y * 0.11 - t * 1.1) * 0.5 + 0.5;
                 float n2 = sin(world.x * 0.23 - t * 0.7) * sin(world.y * 0.19 + t * 0.9) * 0.5 + 0.5;
                 float band = sin(shore * 12.0 - t * 1.8) * 0.5 + 0.5;
-                float f = smoothstep(0.35, 0.85, shore + (n - 0.5) * 0.35 + (n2 - 0.5) * 0.15) * (0.6 + 0.4 * band);
+                float f = smoothstep(0.74, 0.96, shore + (n - 0.5) * 0.35 + (n2 - 0.5) * 0.15) * (0.6 + 0.4 * band);
                 return lerp(rgb, float3(0.86, 0.92, 0.96), saturate(f * 0.8));
             }
 

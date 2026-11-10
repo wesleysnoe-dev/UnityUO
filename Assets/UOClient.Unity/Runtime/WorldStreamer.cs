@@ -68,6 +68,9 @@ namespace UOClient.Unity
     /// </summary>
     public sealed class WorldStreamer : IWorldSpace, IDisposable
     {
+        /// <summary>How far out (tiles) the shallows and the surf reach from dry land.</summary>
+        public const int ShoreReach = 4;
+
         public const int ChunkSize = 16;
 
         private readonly UOData _data;
@@ -658,7 +661,7 @@ namespace UOClient.Unity
             var watch = System.Diagnostics.Stopwatch.StartNew();
             int x0 = cx * ChunkSize, y0 = cy * ChunkSize;
             List<IsoCompositor.DrawEntry> entries = compositor.BuildDrawList(map, x0, y0, ChunkSize, ChunkSize);
-            // Shore foam: whether a tile is dry, for a water tile's four neighbours. Most of UO's sea is water statics laid
+            // Shore: whether a tile is dry, and how near dry land each corner of a water tile is. Most of UO's sea is water statics laid
             // over ordinary land, so a tile is wet when its land or any static on it is UO water art.
             MapFile shoreMap = _data.GetMap(map);
             var wetCache = new Dictionary<(int, int), bool>();
@@ -683,6 +686,26 @@ namespace UOClient.Unity
                 }
                 wetCache[(tx, ty)] = wet;
                 return !wet;
+            }
+            // How near dry land a point of the water is (tile units, at a quad corner's edge): 1 at the shore, falling to 0
+            // ShoreReach tiles out, so the shallows' colour and the surf line run smoothly over several tiles, not one.
+            var nearCache = new Dictionary<(float, float), float>();
+            float Near(float px, float py)
+            {
+                if (nearCache.TryGetValue((px, py), out float near))
+                    return near;
+                float best = float.MaxValue;
+                int r = ShoreReach;
+                for (int ty = Mathf.FloorToInt(py) - r; ty <= Mathf.CeilToInt(py) + r; ty++)
+                    for (int tx = Mathf.FloorToInt(px) - r; tx <= Mathf.CeilToInt(px) + r; tx++)
+                    {
+                        float dx = tx + 0.5f - px, dy = ty + 0.5f - py, d2 = dx * dx + dy * dy; // to the dry tile's centre
+                        if (d2 < best && Dry(tx, ty))
+                            best = d2;
+                    }
+                near = best == float.MaxValue ? 0f : Mathf.Clamp01(1f - (Mathf.Sqrt(best) - 0.5f) / (ShoreReach - 0.5f));
+                nearCache[(px, py)] = near;
+                return near;
             }
             var build = new ChunkBuild { ChunkX = cx, ChunkY = cy, Generation = generation, BaseDiagonal = x0 + y0 };
             build.DrawListMs = watch.Elapsed.TotalMilliseconds;
@@ -781,7 +804,10 @@ namespace UOClient.Unity
                     // A water land tile's dry neighbours, by the quad corner facing them (WorldSprite's shore foam).
                     Shore = it.Kind == DrawKind.Land && WaterArt.IsWater(tileData.Land[it.Graphic & 0x3FFF])
                             || it.Kind == DrawKind.Static && WaterArt.IsWater(tileData.GetStatic(it.Graphic))
-                        ? new Vector4(Dry(it.X, it.Y + 1) ? 1f : 0f, Dry(it.X - 1, it.Y) ? 1f : 0f, Dry(it.X, it.Y - 1) ? 1f : 0f, Dry(it.X + 1, it.Y) ? 1f : 0f)
+                        // At the sprite rectangle's own corners in tile space (the quad's corners: bottom-left (x+0.5, y+1.5),
+                        // top-left (x-0.5, y+0.5), top-right (x+0.5, y-0.5), bottom-right (x+1.5, y+0.5)), so neighbours that
+                        // share a corner agree on it and the shallows run on without steps.
+                        ? new Vector4(Near(it.X + 0.5f, it.Y + 1.5f), Near(it.X - 0.5f, it.Y + 0.5f), Near(it.X + 0.5f, it.Y - 0.5f), Near(it.X + 1.5f, it.Y + 0.5f))
                         : Vector4.zero,
                     TileX = it.X,
                     TileY = it.Y,
@@ -955,7 +981,7 @@ namespace UOClient.Unity
             public bool Traced; // diagnosis (-tiletrace): on the traced tile
             public bool Water;  // UO water art: shimmers (WorldSprite)
             public float Plant; // PlantKind code: sways in the wind, leaves take the season (WorldSprite)
-            public Vector4 Shore; // water land: dry neighbours by quad corner (bottom-left, top-left, top-right, bottom-right)
+            public Vector4 Shore; // water: nearness of dry land (0..1, ShoreReach tiles) by quad corner (bottom-left, top-left, top-right, bottom-right)
             public int TileX, TileY, TileZ; // the static's tile (shadows)
             public bool Indoors;            // a roof or a floor over it: no sun shadow, only a lamp's (CharacterShadow.Cast)
         }
