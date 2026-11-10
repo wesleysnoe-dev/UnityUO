@@ -53,6 +53,15 @@ namespace UOClient.Unity.UI
 
         public override bool StillValid => Session.World.Mobiles.ContainsKey(_serial);
 
+        /// <summary>Each worn layer's item graphic and hue (MobileLook.IsCovered's view of what is worn).</summary>
+        private static Dictionary<byte, (int Graphic, int Hue)> WornGraphics(Mobile m)
+        {
+            var worn = new Dictionary<byte, (int Graphic, int Hue)>(m.Equipment.Count);
+            foreach (var kv in m.Equipment)
+                worn[kv.Key] = (kv.Value.Graphic, kv.Value.Hue);
+            return worn;
+        }
+
         private static bool IsFemale(int body) => body == 401 || body == 403 || body == 606 || body == 745 || body == 667;
 
         public override void OnOpened()
@@ -105,9 +114,11 @@ namespace UOClient.Unity.UI
 
             bool female = IsFemale(m.Body);
             _drawn.Clear();
+            var wornGraphics = WornGraphics(m);
             foreach (byte layer in PaperdollOrder)
             {
-                if (!m.Equipment.TryGetValue(layer, out EquippedItem e))
+                // What another piece hides (hair under a hood) is not drawn, as on the character in the world.
+                if (!m.Equipment.TryGetValue(layer, out EquippedItem e) || MobileLook.IsCovered(wornGraphics, layer))
                     continue;
                 StaticTileData td = Art.Data.TileData.GetStatic(e.Graphic);
                 if (td.AnimId == 0)

@@ -339,9 +339,11 @@ namespace UOClient.Unity.UI
         private void CollectWorn(Mobile m, bool female)
         {
             _drawn.Clear();
+            var worn = WornGraphics(m);
             foreach (byte layer in PaperdollOrder)
             {
-                if (!m.Equipment.TryGetValue(layer, out EquippedItem e))
+                // What another piece hides (hair under a hood) is not drawn, as on the character in the world.
+                if (!m.Equipment.TryGetValue(layer, out EquippedItem e) || MobileLook.IsCovered(worn, layer))
                     continue;
                 StaticTileData td = Art.Data.TileData.GetStatic(e.Graphic);
                 if (td.AnimId == 0)
