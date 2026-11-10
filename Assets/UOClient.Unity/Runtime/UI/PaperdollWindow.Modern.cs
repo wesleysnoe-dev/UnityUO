@@ -20,7 +20,7 @@ namespace UOClient.Unity.UI
         public static bool Modern { get; set; } = true;
 
         // ---- layout, in UI units ----
-        private const float Border = 18f, IconBand = 46f, DollW = 330f, DollH = 344f, ColumnGap = 10f, ColumnW = 176f;
+        private const float Border = 18f, IconBand = 46f, DollW = 280f, DollH = 344f, ColumnGap = 10f, ColumnW = 156f;
         private const float ButtonH = 36f, ButtonGap = 6f, PlaqueGap = 8f, PlaqueH = 60f;
         private const float DollScale = 1.45f, SlotSize = 34f, IconSize = 32f, IconGap = 10f;
 
