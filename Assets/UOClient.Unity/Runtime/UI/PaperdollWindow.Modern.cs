@@ -85,8 +85,10 @@ namespace UOClient.Unity.UI
             bool female = IsFemale(m.Body);
             UiImage body = Art.Gump(female ? 0x000D : 0x000C, m.Hue);
             CollectWorn(m, female);
-            float bw = (body?.Width ?? 180) * DollScale, bh = (body?.Height ?? 240) * DollScale;
-            _bodyAt = new Vector2(doll.x + (doll.width - bw) / 2f, doll.y + (doll.height - bh) / 2f + 4f);
+            // Centred by the body's own pixels (its art has room around the figure).
+            var (fx, fy, fw, fh) = body != null ? BoundsOf(body) : (0, 0, 180, 240);
+            _bodyAt = new Vector2(doll.x + doll.width / 2f - (fx + fw / 2f) * DollScale,
+                                  doll.y + doll.height / 2f - (fy + fh / 2f) * DollScale + 6f);
 
             LayoutSlots(m, doll);
 

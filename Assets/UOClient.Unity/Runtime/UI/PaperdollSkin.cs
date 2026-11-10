@@ -178,13 +178,26 @@ namespace UOClient.Unity.UI
             Box(new Rect(r.x + 4f, r.y + 4f, r.width - 8f, r.height - 8f), GoldDim, 1f);
         }
 
-        /// <summary>Words in the serif face (Book Antiqua / Palatino / Georgia), centred unless told, with a soft shadow.</summary>
+        /// <summary>The serif faces tried, in order: the first one installed is used (else the UI's own font).</summary>
+        private static readonly string[] SerifFaces = { "Palatino Linotype", "Book Antiqua", "Georgia", "Cambria", "Times New Roman" };
+
+        /// <summary>Words in the serif face (SerifFaces), centred unless told, with a soft shadow.</summary>
         public static void Title(Rect r, string text, int size, Color color, bool shadow = true, TextAnchor align = TextAnchor.MiddleCenter)
         {
             if (_serif == null)
             {
-                Font f = Font.CreateDynamicFontFromOSFont(new[] { "Book Antiqua", "Palatino Linotype", "Georgia", "Times New Roman" }, 16);
-                _serif = new GUIStyle(GUI.skin.label) { font = f, wordWrap = false, clipping = TextClipping.Clip, padding = new RectOffset(), richText = false };
+                // A face that is not installed loads nothing (and logs every frame), so only an installed one is asked for.
+                var installed = new HashSet<string>(Font.GetOSInstalledFontNames());
+                Font f = null;
+                foreach (string face in SerifFaces)
+                    if (installed.Contains(face))
+                    {
+                        f = Font.CreateDynamicFontFromOSFont(face, 16);
+                        break;
+                    }
+                _serif = new GUIStyle(GUI.skin.label) { wordWrap = false, clipping = TextClipping.Clip, padding = new RectOffset(), richText = false };
+                if (f != null)
+                    _serif.font = f;
             }
             _serif.fontSize = size;
             _serif.alignment = align;
