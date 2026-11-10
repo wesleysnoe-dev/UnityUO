@@ -365,6 +365,21 @@ namespace UOClient.Core
         }
 
         /// <summary>
+        /// The player changed facet: everything else known is on the old one, and the server sends no deletes for it, so
+        /// it would be drawn on the new facet at the same coordinates (a Felucca house's furniture in Doom). As TazUO's
+        /// World.InternalMapChangeClear: every ground item (houses and boats too, with what they hold) and every mobile but
+        /// the player go; what the player wears and carries stays.
+        /// </summary>
+        internal void ClearForMapChange()
+        {
+            foreach (uint serial in new List<uint>(Items.Keys))
+                RemoveWithContents(serial);
+            foreach (uint serial in new List<uint>(Mobiles.Keys))
+                if (serial != PlayerSerial)
+                    RemoveWithContents(serial);
+        }
+
+        /// <summary>
         /// The server deleted an object (0x1D), as TazUO's DeleteObject (DeleteObject.cs): never the player, and what the
         /// object held goes with it at any depth, as its <c>RemoveItem</c> / <c>RemoveMobile</c> cascade (contents, a
         /// mobile's worn packs, their open windows; <see cref="RemoveWithContents"/>). Unknown or repeated serials do

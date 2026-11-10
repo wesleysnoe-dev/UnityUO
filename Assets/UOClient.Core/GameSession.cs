@@ -986,7 +986,12 @@ namespace UOClient.Core
                 || ActiveSpellExtended(sub, r) || WeaponAbilityExtended(sub) || WorldLayerExtended(sub, r))
                 return;
             if (sub == 0x08) // set map
-                World.Map = r.ReadByte();
+            {
+                byte map = r.ReadByte();
+                if (map != World.Map)
+                    World.ClearForMapChange(); // the old facet's things are not removed by the server
+                World.Map = map;
+            }
             else if (sub == 0x26) // speed control (ModernUO SendSpeedControl: Animal Form, forced-walk regions, staff)
                 SpeedMode = r.ReadByte();
             else if (sub == 0x04) // close gump
