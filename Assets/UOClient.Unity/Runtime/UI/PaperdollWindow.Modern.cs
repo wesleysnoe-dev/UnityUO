@@ -39,6 +39,7 @@ namespace UOClient.Unity.UI
 
         private readonly List<(Rect At, byte Layer, EquippedItem Item, UiImage Art)> _modernSlots = new List<(Rect, byte, EquippedItem, UiImage)>();
         private Vector2 _bodyAt;                // where the body's art origin is drawn
+        private float _dollScale = DollScale;   // the doll's scale this frame (smaller when what is worn needs it)
         private Vector2 _combatAt, _racialAt;   // the book icons on the plaque
         private Vector2 _virtueAt;
 
@@ -90,10 +91,29 @@ namespace UOClient.Unity.UI
             bool female = IsFemale(m.Body);
             UiImage body = Art.Gump(female ? 0x000D : 0x000C, m.Hue);
             CollectWorn(m, female);
-            // Centred by the body's own pixels (its art has room around the figure).
-            var (fx, fy, fw, fh) = body != null ? BoundsOf(body) : (0, 0, 180, 240);
-            _bodyAt = new Vector2(doll.x + doll.width / 2f - (fx + fw / 2f) * DollScale,
-                                  doll.y + doll.height / 2f - (fy + fh / 2f) * DollScale + 6f);
+            // Everything drawn (the body, a halberd above the head, a cloak, the pack) fits the niche: centred by its
+            // pixels, at DollScale or smaller when it would not fit.
+            int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+            void Grow(UiImage img)
+            {
+                if (img == null)
+                    return;
+                var (bx0, by0, bw0, bh0) = BoundsOf(img);
+                if (bw0 <= 0 || bh0 <= 0)
+                    return;
+                minX = Mathf.Min(minX, bx0); minY = Mathf.Min(minY, by0);
+                maxX = Mathf.Max(maxX, bx0 + bw0 + 1); maxY = Mathf.Max(maxY, by0 + bh0 + 1);
+            }
+            Grow(body);
+            foreach (var d in _drawn)
+                Grow(d.Image);
+            if (minX > maxX)
+            {
+                minX = 0; minY = 0; maxX = 180; maxY = 240;
+            }
+            _dollScale = Mathf.Min(DollScale, (doll.width - 16f) / (maxX - minX), (doll.height - 16f) / (maxY - minY));
+            _bodyAt = new Vector2(doll.x + doll.width / 2f - (minX + maxX) / 2f * _dollScale,
+                                  doll.y + doll.height / 2f - (minY + maxY) / 2f * _dollScale);
 
             LayoutSlots(m, doll);
 
@@ -214,9 +234,9 @@ namespace UOClient.Unity.UI
             if (img == null)
                 return;
             if (outlined && Art.Outline(img) is UiImage o)
-                GUI.DrawTexture(new Rect(origin.x - DollScale, origin.y - DollScale, o.Width * DollScale, o.Height * DollScale), o.Texture);
+                GUI.DrawTexture(new Rect(origin.x - _dollScale, origin.y - _dollScale, o.Width * _dollScale, o.Height * _dollScale), o.Texture);
             UiImage smooth = Art.GumpSmooth(gump, hue, partial) ?? img;
-            GUI.DrawTexture(new Rect(origin.x, origin.y, img.Width * DollScale, img.Height * DollScale), smooth.Texture);
+            GUI.DrawTexture(new Rect(origin.x, origin.y, img.Width * _dollScale, img.Height * _dollScale), smooth.Texture);
         }
 
         /// <summary>
@@ -267,7 +287,7 @@ namespace UOClient.Unity.UI
                     return (i, _modernSlots[i].Layer, _modernSlots[i].Item);
             if (DollRect.Contains(local))
             {
-                int px = Mathf.FloorToInt((local.x - _bodyAt.x) / DollScale), py = Mathf.FloorToInt((local.y - _bodyAt.y) / DollScale);
+                int px = Mathf.FloorToInt((local.x - _bodyAt.x) / _dollScale), py = Mathf.FloorToInt((local.y - _bodyAt.y) / _dollScale);
                 for (int i = _drawn.Count - 1; i >= 0; i--)
                 {
                     var (layer, item, img, _) = _drawn[i];

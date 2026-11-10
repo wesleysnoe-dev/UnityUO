@@ -55,6 +55,7 @@ namespace UOClient.Unity
                 DropOutside = (item, gui) => _input.DropInWorld(item, new Vector2(gui.x, Screen.height - gui.y))
             };
             s.World.PaperdollOpened += OnPaperdollOpened;
+            s.Entered += OnEnteredWorld;
             s.World.ContainerOpened += OnContainerOpened;
             s.World.GumpOpened += OnGumpOpened;
             s.LiftRejected += OnLiftRejected;
@@ -123,6 +124,7 @@ namespace UOClient.Unity
                 return;
             _session = null;
             s.World.PaperdollOpened -= OnPaperdollOpened;
+            s.Entered -= OnEnteredWorld;
             s.World.ContainerOpened -= OnContainerOpened;
             s.World.GumpOpened -= OnGumpOpened;
             s.LiftRejected -= OnLiftRejected;
@@ -469,6 +471,13 @@ namespace UOClient.Unity
                     break;
                 case "groups": _ctx.Session.Say("[groups"); break; // the server's Group Finder, as the UO Smallz client's button does
             }
+        }
+
+        /// <summary>The modern paperdoll opens as the world does: it holds what the top bar did, and nothing else opens it.</summary>
+        private void OnEnteredWorld()
+        {
+            if (UI.PaperdollWindow.Modern)
+                _ctx.Session.OpenPaperdoll();
         }
 
         /// <summary>The top bar with the classic paperdoll; none with the modern one (its buttons are the paperdoll's).</summary>
