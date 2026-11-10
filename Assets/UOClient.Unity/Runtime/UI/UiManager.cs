@@ -16,6 +16,12 @@ namespace UOClient.Unity.UI
 
         public readonly int Id = _nextId++;
         public Rect Rect;
+
+        /// <summary>
+        /// A size the window asked for while drawing (a resize grip): GUI.Window hands back the rect it was given, so the
+        /// manager applies this after it.
+        /// </summary>
+        public Vector2? ResizeTo;
         internal UiManager Ui;
 
         /// <summary>Identifies what the window shows, so opening it again brings the existing one forward.</summary>
@@ -553,6 +559,11 @@ namespace UOClient.Unity.UI
                 if (IntroHidesWindow(window))
                     continue; // still flying in (UiManager.Intro)
                 window.Rect = GUI.Window(window.Id, window.Rect, _ => DrawWindow(window), GUIContent.none, GUIStyle.none);
+                if (window.ResizeTo is Vector2 size)
+                {
+                    window.Rect.size = size;
+                    window.ResizeTo = null;
+                }
             }
             DrawIntroFlights();
 

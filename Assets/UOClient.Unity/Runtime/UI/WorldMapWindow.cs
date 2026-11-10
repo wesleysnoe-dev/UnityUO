@@ -72,6 +72,8 @@ namespace UOClient.Unity.UI
                 _shops = !_shops;
 
             var view = new Rect(12, 34, Rect.width - 24, Rect.height - 46);
+            _viewSize = view.size;
+            HandleResize();
             Texture2D tex = Image(map);
             if (tex == null)
             {
@@ -83,22 +85,18 @@ namespace UOClient.Unity.UI
 
             HandleMouse(view);
 
-            // Visible part of the image, in map pixels.
-            float vw = view.width / _zoom, vh = view.height / _zoom;
-            float cx = _center.x / TilesPerPixel, cy = _center.y / TilesPerPixel;
-            var src = new Rect(cx - vw / 2, cy - vh / 2, vw, vh);
             GUI.DrawTexture(view, Texture2D.blackTexture);
-            GUI.DrawTextureWithTexCoords(view, tex,
-                new Rect(src.x / tex.width, 1f - (src.y + src.height) / tex.height, src.width / tex.width, src.height / tex.height));
+            DrawTurned(view, tex);
 
             HoveredText = null;
             GUI.BeginGroup(view);
-            DrawMarkers(map, new Rect(0, 0, view.width, view.height), src);
+            DrawMarkers(map, new Rect(0, 0, view.width, view.height));
             GUI.EndGroup();
+            DrawGrip();
 
             if (p != null)
             {
-                Vector2 at = new Vector2(view.x + (p.X / (float)TilesPerPixel - src.x) * _zoom, view.y + (p.Y / (float)TilesPerPixel - src.y) * _zoom);
+                Vector2 at = view.position + ToLocal(p.X, p.Y);
                 if (view.Contains(at))
                 {
                     GUI.color = new Color(0.3f, 0.65f, 1f);
@@ -107,6 +105,121 @@ namespace UOClient.Unity.UI
                     Text(new Rect(at.x + 6, at.y - 9, 160, 18), p.Name ?? "You", new Color(0.7f, 0.85f, 1f), 12);
                 }
             }
+        }
+
+        // ---- the map turned as the game sees it ----
+
+        // The game draws a tile as a diamond: the map's x runs down-right and y down-left on screen, a 45° turn (UO's
+        // diamonds are 44 by 44, so the turn needs no squash). The map is drawn that way, north up and to the right.
+        private const float Turn = 0.70710678f; // cos 45° = sin 45°
+        private Vector2 _viewSize;
+
+        /// <summary>A tile's position in the view (view-local pixels), the map turned 45° about the centre tile.</summary>
+        private Vector2 ToLocal(float tx, float ty)
+        {
+            float rx = tx - _center.x, ry = ty - _center.y, k = _zoom * Turn;
+            return new Vector2(_viewSize.x / 2f + (rx - ry) * k, _viewSize.y / 2f + (rx + ry) * k);
+        }
+
+        /// <summary>The tile at a view-local point (the inverse of <see cref="ToLocal"/>).</summary>
+        private Vector2 ToTile(Vector2 local)
+        {
+            float k = _zoom * Turn;
+            float dx = (local.x - _viewSize.x / 2f) / k, dy = (local.y - _viewSize.y / 2f) / k;
+            return _center + new Vector2((dx + dy) / 2f, (dy - dx) / 2f);
+        }
+
+        private static Material _turnMaterial;
+
+        /// <summary>
+        /// The facet image laid into the view turned 45°: one quad over the view whose corners take the map at the tiles
+        /// under them (an affine turn, so the four corners say it exactly). GL in the repaint, in the GUI's own space.
+        /// </summary>
+        private void DrawTurned(Rect view, Texture2D tex)
+        {
+            if (Event.current.type != EventType.Repaint)
+                return;
+            if (_turnMaterial == null)
+            {
+                Shader shader = Shader.Find("UI/Default");
+                if (shader == null)
+                    return;
+                _turnMaterial = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+            }
+            _turnMaterial.mainTexture = tex;
+            _turnMaterial.SetPass(0);
+            Vector2 Uv(Vector2 local)
+            {
+                Vector2 t = ToTile(local) / TilesPerPixel;
+                return new Vector2(t.x / tex.width, 1f - t.y / tex.height);
+            }
+            GL.PushMatrix(); // IMGUI's repaint already has the GUI matrix and the window's offset loaded
+            GL.Begin(GL.QUADS);
+            GL.Color(Color.white);
+            Vector2[] corners = { Vector2.zero, new Vector2(view.width, 0), view.size, new Vector2(0, view.height) };
+            foreach (Vector2 c in corners)
+            {
+                Vector2 uv = Uv(c);
+                GL.TexCoord2(uv.x, uv.y);
+                GL.Vertex3(view.x + c.x, view.y + c.y, 0f);
+            }
+            GL.End();
+            GL.PopMatrix();
+        }
+
+        // ---- resizing ----
+
+        private const float Grip = 18f;
+        private static readonly Vector2 MinSize = new Vector2(360, 280);
+        private bool _resizing;
+        private Vector2 _resizeGrab;
+
+        /// <summary>The bottom-right corner drags the window's size (the rest of the frame still moves it).</summary>
+        private void HandleResize()
+        {
+            Event e = Event.current;
+            // The grip holds the mouse while dragged (hotControl), so the drag keeps coming once it leaves the window.
+            int id = GUIUtility.GetControlID(FocusType.Passive);
+            var grip = new Rect(Rect.width - Grip, Rect.height - Grip, Grip, Grip);
+            switch (e.GetTypeForControl(id))
+            {
+                case EventType.MouseDown when e.button == 0 && grip.Contains(e.mousePosition):
+                    _resizing = true;
+                    _resizeGrab = Rect.size - e.mousePosition;
+                    GUIUtility.hotControl = id;
+                    e.Use();
+                    break;
+                case EventType.MouseDrag when _resizing && GUIUtility.hotControl == id:
+                    float s = Ui.Scale;
+                    var max = new Vector2(Screen.width / s - Rect.x, Screen.height / s - Rect.y);
+                    ResizeTo = Vector2.Max(MinSize, Vector2.Min(max, e.mousePosition + _resizeGrab));
+                    e.Use();
+                    break;
+                case EventType.MouseUp when _resizing:
+                    _resizing = false;
+                    if (GUIUtility.hotControl == id)
+                        GUIUtility.hotControl = 0;
+                    e.Use();
+                    break;
+            }
+        }
+
+        /// <summary>Three short gilt diagonals in the bottom-right corner: the resize grip.</summary>
+        private void DrawGrip()
+        {
+            if (Event.current.type != EventType.Repaint)
+                return;
+            GUI.color = new Color(0.85f, 0.7f, 0.4f, 0.9f);
+            for (int i = 0; i < 3; i++)
+            {
+                float o = 5f + i * 4f;
+                Matrix4x4 m = GUI.matrix;
+                var pivot = new Vector2(Rect.width - o, Rect.height - o);
+                GUIUtility.RotateAroundPivot(-45f, pivot);
+                GUI.DrawTexture(new Rect(pivot.x - o * 0.7f, pivot.y - 0.75f, o * 1.4f, 1.5f), Texture2D.whiteTexture);
+                GUI.matrix = m;
+            }
+            GUI.color = Color.white;
         }
 
         private void HandleMouse(Rect view)
@@ -125,7 +238,7 @@ namespace UOClient.Unity.UI
             }
             else if (e.type == EventType.MouseDrag && _dragging)
             {
-                _center -= (e.mousePosition - _dragFrom) / _zoom * TilesPerPixel;
+                _center -= ToTile(e.mousePosition - _dragFrom + _viewSize / 2f) - _center; // the drag turned as the map is
                 _dragFrom = e.mousePosition;
                 _follow = false;
                 e.Use();
@@ -351,7 +464,7 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>The towns' names, then each place's badge where there is room for it; the one under the mouse is named.</summary>
-        private void DrawMarkers(int map, Rect view, Rect src)
+        private void DrawMarkers(int map, Rect view)
         {
             _taken.Clear();
             _towns.Clear();
@@ -365,7 +478,7 @@ namespace UOClient.Unity.UI
             {
                 if (mk.Map != map)
                     continue;
-                var at = new Vector2((mk.X / (float)TilesPerPixel - src.x) * _zoom, (mk.Y / (float)TilesPerPixel - src.y) * _zoom);
+                Vector2 at = ToLocal(mk.X, mk.Y);
                 if (at.x < -60 || at.y < -30 || at.x > view.width + 60 || at.y > view.height + 30)
                     continue;
                 if (mk.Kind == "town")
