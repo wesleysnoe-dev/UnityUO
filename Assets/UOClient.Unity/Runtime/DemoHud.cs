@@ -310,8 +310,8 @@ namespace UOClient.Unity
             if (NamesVisible)
             {
                 foreach (var (labelName, screen, color) in Labels)
-                    DrawOutlined(new Rect(screen.x / s - 100, screen.y / s - 26, 200, 22), labelName, _name, color);
-                DrawOutlined(new Rect(headScreen.x / s - 100, headScreen.y / s - 26, 200, 22), characterName, _name, new Color(0.55f, 0.75f, 1f));
+                    DrawSoftShadow(new Rect(screen.x / s - 100, screen.y / s - 26, 200, 22), labelName, _name, color);
+                DrawSoftShadow(new Rect(headScreen.x / s - 100, headScreen.y / s - 26, 200, 22), characterName, _name, new Color(0.55f, 0.75f, 1f));
             }
 
             DrawNamePlates(s, w, h);
@@ -348,16 +348,28 @@ namespace UOClient.Unity
             foreach (var (text, screen, color, size, stack) in Overheads)
             {
                 _overhead.fontSize = size;
-                float th = _overhead.CalcHeight(new GUIContent(text), 240);
-                float used = 0;
-                if (stack != 0)
+                var content = new GUIContent(text);
+                if (stack == 0)
                 {
-                    // Over a plate rather than on it (TazUO lifts overhead text by the plate's height).
-                    if (!_stacked.TryGetValue(stack, out used) && _plateTop.TryGetValue(stack, out float plateTop))
-                        used = Mathf.Max(0, screen.y / s - plateTop + 2);
-                    _stacked[stack] = used + th + 2;
+                    // A damage number (it rises): outlined, so it reads over anything.
+                    float dh = _overhead.CalcHeight(content, 240);
+                    DrawOutlined(new Rect(screen.x / s - 120, screen.y / s - dh, 240, dh), text, _overhead, color);
+                    continue;
                 }
-                DrawOutlined(new Rect(screen.x / s - 120, screen.y / s - th - used, 240, th), text, _overhead, color);
+                // Speech and labels: each line in a bubble over its speaker, the lowest with a tail pointing at them.
+                float tw = Mathf.Min(SpeechWrap, _overhead.CalcSize(content).x + 2f);
+                float th = _overhead.CalcHeight(content, tw);
+                float bubbleH = th + BubblePadY * 2f;
+                // Over a plate rather than on it (TazUO lifts overhead text by the plate's height).
+                // Without a plate, over the name line instead (names sit in the 26 px above the head).
+                bool lowest = !_stacked.TryGetValue(stack, out float used);
+                if (lowest)
+                    used = _plateTop.TryGetValue(stack, out float plateTop) ? Mathf.Max(0, screen.y / s - plateTop + 2) : 24f;
+                _stacked[stack] = used + bubbleH + 3f;
+                float bottom = screen.y / s - used - (lowest ? BubbleTail : 0f);
+                var bubble = new Rect(screen.x / s - tw / 2f - BubblePadX, bottom - bubbleH, tw + BubblePadX * 2f, bubbleH);
+                DrawBubble(bubble, color.a, lowest);
+                DrawSoftShadow(new Rect(bubble.x + BubblePadX, bubble.y + BubblePadY, tw, th), text, _overhead, color);
             }
 
             QuestArrowRect = Rect.zero;
@@ -725,6 +737,59 @@ namespace UOClient.Unity
             }
         }
 
+        // Speech bubbles: the widest line before wrapping, the padding round the words, and the tail's height.
+        private const float SpeechWrap = 240f, BubblePadX = 8f, BubblePadY = 3f, BubbleTail = 6f;
+        private static readonly Color BubbleFill = new Color(0.05f, 0.045f, 0.04f, 0.66f), BubbleRim = new Color(0.55f, 0.43f, 0.24f, 0.55f);
+        private Texture2D _tail;
+
+        /// <summary>A speech bubble: rounded, dark and see-through with a faint gilt rim; a tail under it toward the speaker.</summary>
+        private void DrawBubble(Rect r, float alpha, bool tail)
+        {
+            Color fill = BubbleFill, rim = BubbleRim;
+            fill.a *= alpha;
+            rim.a *= alpha;
+            if (tail)
+            {
+                _tail ??= Own(TailTexture());
+                GUI.DrawTexture(new Rect(r.center.x - 6f, r.yMax - 1f, 12f, BubbleTail + 1f), _tail, ScaleMode.StretchToFill, true, 0f, fill, 0f, 0f);
+            }
+            GUI.DrawTexture(r, _white, ScaleMode.StretchToFill, true, 0f, fill, 0f, 7f);
+            GUI.DrawTexture(r, _white, ScaleMode.StretchToFill, true, 0f, rim, 1f, 7f);
+        }
+
+        /// <summary>The bubble's tail: a small downward triangle, soft-edged.</summary>
+        private static Texture2D TailTexture()
+        {
+            const int w = 24, h = 14;
+            var t = new Texture2D(w, h, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            var px = new Color[w * h];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    // texture rows run bottom up: the point at the bottom (y 0), the base at the top
+                    float half = (y + 0.5f) / h * (w / 2f);
+                    float a = Mathf.Clamp01(half - Mathf.Abs(x + 0.5f - w / 2f) + 0.5f);
+                    px[y * w + x] = new Color(1f, 1f, 1f, a);
+                }
+            t.SetPixels(px);
+            t.Apply(false);
+            return t;
+        }
+
+        /// <summary>Words with a soft drop shadow (a dark copy down and right, a faint one round it): lighter than an outline.</summary>
+        private static void DrawSoftShadow(Rect r, string text, GUIStyle style, Color color)
+        {
+            Color saved = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.35f * color.a);
+            GUI.Label(new Rect(r.x - 1, r.y, r.width, r.height), text, style);
+            GUI.Label(new Rect(r.x + 2, r.y + 1, r.width, r.height), text, style);
+            GUI.color = new Color(0f, 0f, 0f, 0.8f * color.a);
+            GUI.Label(new Rect(r.x + 1, r.y + 1, r.width, r.height), text, style);
+            GUI.color = color;
+            GUI.Label(r, text, style);
+            GUI.color = saved;
+        }
+
         private static void DrawOutlined(Rect r, string text, GUIStyle style, Color color)
         {
             // Four shadow copies instead of eight: IMGUI labels are not free, and dozens of names draw every frame.
@@ -766,6 +831,14 @@ namespace UOClient.Unity
             _name =new GUIStyle(_label) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             _plate = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Overflow };
             _overhead = new GUIStyle(_label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.LowerCenter, wordWrap = true };
+            // Names and speech in the game's serif (the paperdoll's), as the new windows are.
+            if (UI.PaperdollSkin.SerifFont is Font serif)
+            {
+                _name.font = serif;
+                _name.fontSize = 16;
+                _overhead.font = serif;
+                _overhead.fontStyle = FontStyle.Normal;
+            }
             _tabStyle = new GUIStyle(GUI.skin.button) { fontSize = 13 };
             _tabStyle.normal.background = Own(UnityTextures.Solid(new Color(0.16f, 0.13f, 0.1f, 0.95f)));
             _tabStyle.hover.background = Own(UnityTextures.Solid(new Color(0.24f, 0.19f, 0.13f, 0.95f)));

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UOClient.Core;
 using UOClient.IO.Formats;
@@ -72,6 +72,13 @@ namespace UOClient.Unity
 
         private float _shadowLogAt;
         private bool _nearLightSent;
+        private int _sayStep;
+        private static readonly string[] SayLines =
+        {
+            "Hail, friend!",
+            "Hast thou seen the ships come in at the docks today? They say a storm is brewing out past the isle.",
+            "Bank",
+        };
 
         private void RunShadowTest(WorldLayerClient layer)
         {
@@ -91,6 +98,10 @@ namespace UOClient.Unity
                     Debug.Log($"[shadowtest] beside the indoor light at {light}");
                 }
             }
+            // -say-selftest: once there, the character speaks a few lines (short and long), for the speech bubbles.
+            if (_shadowSent && _sayStep < SayLines.Length && Time.unscaledTime >= _shadowAt + 22f + _sayStep * 2.5f && _ctx.Session != null
+                && Array.Exists(Environment.GetCommandLineArgs(), a => string.Equals(a, "-say-selftest", StringComparison.OrdinalIgnoreCase)))
+                _ctx.Session.Say(SayLines[_sayStep++]);
             if (_shadowSent && Time.unscaledTime >= _shadowLogAt)
             {
                 _shadowLogAt = Time.unscaledTime + 3f;
