@@ -158,7 +158,7 @@ namespace UOClient.Unity
                     if (File.Exists(loginShots))
                     {
                         File.Delete(loginShots);
-                        StartCoroutine(new LoginTour(_ctx, _login).Run());
+                        StartCoroutine(new LoginTour(_ctx, _login, () => Accounts.ReadLogin(Settings)).Run());
                     }
                 }
                 else

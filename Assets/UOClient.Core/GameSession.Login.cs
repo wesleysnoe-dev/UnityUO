@@ -22,6 +22,9 @@ namespace UOClient.Core
     {
         public int Index;
         public string Name, Building;
+
+        /// <summary>Where it is (0xA9 from 7.0.13 on): the tile, the facet, and its description's cliloc (0 when not sent).</summary>
+        public int X, Y, Z, Map, Cliloc;
     }
 
     /// <summary>Choosing a shard and a character by hand (the login screens), instead of from the settings.</summary>

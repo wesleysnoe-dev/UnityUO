@@ -85,6 +85,18 @@ namespace UOClient.Unity
 
         public void Attach(GameSession session) => Screen.Attach(session);
 
+        /// <summary>
+        /// The login tour's login: straight to the character pages with <paramref name="login"/>, saving nothing (Log in
+        /// would remember the account for the server in place of the player's own).
+        /// </summary>
+        internal void StartTour(LoginSettings login)
+        {
+            login.Interactive = true;
+            _startOnline(login);
+            if (_ctx.Session != null)
+                Attach(_ctx.Session);
+        }
+
         public void Failed(string reason) => Screen.Failed(reason);
 
         public void Draw() => Screen.Draw();

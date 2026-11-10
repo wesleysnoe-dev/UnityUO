@@ -8,12 +8,13 @@ using UOClient.IO.Formats;
 namespace UOClient.Unity.UI
 {
     /// <summary>
-    /// The screens before the world: account login, shard choice (when there is more than one),
-    /// character select (play, delete), and character creation with a paperdoll preview.
+    /// The screens before the world: account login, shard choice (when there is more than one), character select (play,
+    /// delete), and character creation (LoginScreen.Create.cs), all but the login form in the modern paperdoll's look.
     /// </summary>
-    public sealed class LoginScreen
+    public sealed partial class LoginScreen
     {
-        public enum Page { Login, Connecting, Servers, Characters, Create }
+        /// <summary>The page shown; Create, Profession, Skills and City are character creation's steps in order.</summary>
+        public enum Page { Login, Connecting, Servers, Characters, Create, Profession, Skills, City }
 
         public Page Current = Page.Login;
         public string Host = "127.0.0.1", Account = "", Password = "", Status = "";
@@ -154,7 +155,7 @@ namespace UOClient.Unity.UI
             if (!HasOrnament)
                 GUI.Label(new Rect(0, h * 0.08f, w, 60), "Unity UO", _title);
             // Top right, clear of the panel and of the video's bottom-right caption.
-            if (OptionsPressed != null && GUI.Button(new Rect(w - 110, 16, 94, 28), "Options"))
+            if (OptionsPressed != null && Chip(new Rect(w - 116, 16, 100, 30), "Options", false, 16))
                 OptionsPressed();
 
             switch (Current)
@@ -164,6 +165,9 @@ namespace UOClient.Unity.UI
                 case Page.Servers: DrawServers(w, h); break;
                 case Page.Characters: DrawCharacters(w, h); break;
                 case Page.Create: DrawCreate(w, h); break;
+                case Page.Profession: DrawProfession(w, h); break;
+                case Page.Skills: DrawSkills(w, h); break;
+                case Page.City: DrawCity(w, h); break;
             }
             GUI.matrix = saved;
         }
@@ -274,8 +278,13 @@ namespace UOClient.Unity.UI
             float secondaryW = layout.Account.W;
             float sx = layout.Account.X;
             float rowH = 22f;
-            GUI.Label(new Rect(sx, secondaryY, 48, rowH), "Server", _small);
-            string typedHost = GUI.TextField(new Rect(sx + 50, secondaryY, secondaryW - 136, rowH), Host, 64, _field);
+            rowH = 26f;
+            // A dark plate under the row, so it reads over the bright video.
+            var plate = new Rect(sx - 10f, secondaryY - 6f, secondaryW + 20f, rowH * 2f + 18f);
+            Fill(plate, new Color(0.02f, 0.018f, 0.016f, 0.78f));
+            Outline(plate, PaperdollSkin.GoldDim, 1f);
+            PaperdollSkin.Title(new Rect(sx, secondaryY, 56, rowH), "Server", 15, PaperdollSkin.Gold, true, TextAnchor.MiddleLeft);
+            string typedHost = Field(new Rect(sx + 58, secondaryY, secondaryW - 144, rowH), Host, 64, "login-host", 15);
             if (typedHost != Host)
             {
                 Host = typedHost;
@@ -284,13 +293,14 @@ namespace UOClient.Unity.UI
                 Password = password;
                 RememberPassword = password.Length > 0;
             }
-            _portText = GUI.TextField(new Rect(sx + secondaryW - 78, secondaryY, 78, rowH), _portText, 5, _field);
-            RememberPassword = GUI.Toggle(new Rect(sx, secondaryY + 24, secondaryW - 120, rowH), RememberPassword, " Remember password", _toggle);
-            if (GUI.Button(new Rect(sx + secondaryW - 110, secondaryY + 22, 110, 24), "Quit"))
+            _portText = Field(new Rect(sx + secondaryW - 78, secondaryY, 78, rowH), _portText, 5, "login-port", 15);
+            if (Chip(new Rect(sx, secondaryY + 32, 200, rowH), RememberPassword ? "✓  Remember password" : "Remember password", RememberPassword, 14))
+                RememberPassword = !RememberPassword;
+            if (Chip(new Rect(sx + secondaryW - 110, secondaryY + 32, 110, rowH), "Quit", false, 15))
                 QuitPressed?.Invoke();
 
             if (!string.IsNullOrEmpty(Status))
-                GUI.Label(new Rect(sx, Mathf.Min(h - 28f, secondaryY + 48f), secondaryW, 28), Status, _small);
+                Note(new Rect(sx, Mathf.Min(h - 28f, secondaryY + 62f), secondaryW, 28), Status);
 
             if (!_focusedOnce && Event.current.type == EventType.Repaint)
             {
@@ -311,9 +321,9 @@ namespace UOClient.Unity.UI
 
         private void DrawConnecting(float w, float h)
         {
-            Rect p = Panel(w, h, 420, 130);
-            GUI.Label(new Rect(p.x + 20, p.y + 30, p.width - 40, 40), Status, _label);
-            if (GUI.Button(new Rect(p.x + p.width / 2 - 60, p.y + 80, 120, 30), "Cancel"))
+            Rect p = StyledPanel(w, h, 460, 210, null);
+            PaperdollSkin.Title(new Rect(p.x + 30, p.y + 40, p.width - 60, 60), Status, 20, PaperdollSkin.Gold);
+            if (Scroll(new Rect(p.center.x - 80, p.yMax - 76, 160, 40), "Cancel"))
             {
                 _session?.Dispose();
                 Failed("Cancelled.");
@@ -322,40 +332,44 @@ namespace UOClient.Unity.UI
 
         private void DrawServers(float w, float h)
         {
-            Rect p = Panel(w, h, 420, 90 + _session.Servers.Count * 36);
-            GUI.Label(new Rect(p.x, p.y + 20, p.width, 24), "Choose a shard", _label);
+            Rect p = StyledPanel(w, h, 480, 150 + _session.Servers.Count * 50, "Choose a Shard");
             for (int i = 0; i < _session.Servers.Count; i++)
-                if (GUI.Button(new Rect(p.x + 40, p.y + 54 + i * 36, p.width - 80, 30), _session.Servers[i].Name))
+                if (Scroll(new Rect(p.x + 60, p.y + 84 + i * 50, p.width - 120, 42), _session.Servers[i].Name))
                 {
                     Current = Page.Connecting;
                     _session.SelectServer(_session.Servers[i].Index);
                 }
         }
 
+        /// <summary>The account's characters, each played with a click; an empty slot starts a new one.</summary>
         private void DrawCharacters(float w, float h)
         {
             int slots = Mathf.Max(1, _session.Characters.Count);
-            Rect p = Panel(w, h, 440, 150 + slots * 38);
-            GUI.Label(new Rect(p.x, p.y + 20, p.width, 24), "Characters", _label);
+            Rect p = StyledPanel(w, h, 560, 196 + slots * 58, "Choose Your Character");
+            bool canCreate = _session.Cities.Count > 0;
             bool hasFree = false;
+            Vector2 mouse = Event.current.mousePosition;
             for (int i = 0; i < _session.Characters.Count; i++)
             {
                 string name = _session.Characters[i];
-                var row = new Rect(p.x + 40, p.y + 56 + i * 38, p.width - 140, 32);
+                var row = new Rect(p.x + 50, p.y + 84 + i * 58, p.width - 100, 48);
                 if (name.Length == 0)
                 {
                     hasFree = true;
-                    GUI.Label(row, "- empty -", _small);
+                    bool hotEmpty = canCreate && row.Contains(mouse);
+                    Card(row, hotEmpty, false);
+                    PaperdollSkin.Title(row, "Empty slot", 17, hotEmpty ? PaperdollSkin.GoldFaded : new Color(0.45f, 0.4f, 0.33f), false);
+                    if (canCreate && GUI.Button(row, GUIContent.none, GUIStyle.none))
+                        BeginCreate();
                     continue;
                 }
-                if (GUI.Button(row, name))
-                {
-                    Current = Page.Connecting;
-                    _session.PlayCharacter(i);
-                }
+                var delete = new Rect(row.xMax - 96, row.y + 10, 84, 28);
+                bool hot = row.Contains(mouse) && !delete.Contains(mouse);
+                Card(row, hot, false);
+                PaperdollSkin.Title(new Rect(row.x + 20, row.y, row.width - 140, row.height), name, 22, hot ? Color.white : PaperdollSkin.Gold, true, TextAnchor.MiddleLeft);
                 // Delete takes two clicks within three seconds.
                 bool armed = _deleteArmed == i && Time.realtimeSinceStartup - _deleteArmedAt < 3f;
-                if (GUI.Button(new Rect(row.xMax + 8, row.y, 82, 32), armed ? "Sure?" : "Delete"))
+                if (Chip(delete, armed ? "Sure?" : "Delete", armed, 14))
                 {
                     if (armed)
                     {
@@ -368,176 +382,22 @@ namespace UOClient.Unity.UI
                         _deleteArmedAt = Time.realtimeSinceStartup;
                     }
                 }
+                else if (GUI.Button(row, GUIContent.none, GUIStyle.none))
+                {
+                    Current = Page.Connecting;
+                    _session.PlayCharacter(i);
+                }
             }
-            float by = p.y + 66 + slots * 38;
-            GUI.enabled = hasFree && _session.Cities.Count > 0;
-            if (GUI.Button(new Rect(p.x + 40, by, 170, 32), "New character"))
-            {
-                _new = new NewCharacter { City = _session.Cities.Count > 0 ? _session.Cities[0].Index : 0 };
-                Current = Page.Create;
-            }
-            GUI.enabled = true;
-            if (GUI.Button(new Rect(p.xMax - 160, by, 120, 32), "Log out"))
+            float by = p.yMax - 72;
+            if (Scroll(new Rect(p.x + 50, by, 200, 42), "New Character", hasFree && canCreate))
+                BeginCreate();
+            if (Scroll(new Rect(p.xMax - 210, by, 160, 42), "Log Out"))
             {
                 _session.Dispose();
                 Failed("");
             }
             if (!string.IsNullOrEmpty(Status) && Status != "Choose a character")
-                GUI.Label(new Rect(p.x, p.yMax + 10, p.width, 40), Status, _small);
-        }
-
-        // ---- character creation ----
-
-        private static readonly ushort[] SkinHues = { 0x03EA, 0x03F2, 0x03FA, 0x0402, 0x040A, 0x0412, 0x041A, 0x0422 };
-        private static readonly ushort[] HairHues = { 0x044E, 0x0451, 0x0455, 0x045A, 0x045E, 0x0466, 0x046B, 0x0471, 0x0476, 0x047C };
-        private static readonly ushort[] ClothHues = { 0x0515, 0x01BB, 0x0026, 0x0058, 0x0090, 0x00B3, 0x0213, 0x0386, 0x0455, 0x0001 };
-        private static readonly (ushort Id, string Name)[] HairStyles =
-        {
-            (0x203B, "Short"), (0x203C, "Long"), (0x203D, "Ponytail"), (0x2044, "Mohawk"), (0x2045, "Pageboy"),
-            (0x2047, "Afro"), (0x2048, "Receding"), (0x2049, "Two tails"), (0x204A, "Topknot"), (0, "Bald")
-        };
-        private static readonly (ushort Id, string Name)[] Beards =
-        {
-            (0, "None"), (0x203E, "Long"), (0x203F, "Short"), (0x2040, "Goatee"), (0x2041, "Mustache"),
-            (0x204B, "Short + mustache"), (0x204C, "Long + mustache"), (0x204D, "Vandyke")
-        };
-
-        private void DrawCreate(float w, float h)
-        {
-            Rect p = Panel(w, h, 760, 520);
-            NewCharacter c = _new;
-            float x = p.x + 30, y = p.y + 24;
-
-            GUI.Label(new Rect(x, y, 80, 22), "Name", _label);
-            c.Name = GUI.TextField(new Rect(x + 60, y, 150, 26), c.Name, 16, _field);
-            c.Female = GUI.Toggle(new Rect(x + 220, y + 2, 80, 22), c.Female, " Female", _toggle);
-            y += 40;
-
-            // Stats: each 10..60, total 90.
-            int Stat(string label, int v)
-            {
-                GUI.Label(new Rect(x, y, 120, 22), $"{label} {v}", _label);
-                v = Mathf.RoundToInt(GUI.HorizontalSlider(new Rect(x + 125, y + 6, 165, 20), v, 10, 60));
-                y += 28;
-                return v;
-            }
-            c.Str = Stat("Strength", c.Str);
-            c.Dex = Stat("Dexterity", c.Dex);
-            c.Int = Stat("Intelligence", c.Int);
-            int statTotal = c.Str + c.Dex + c.Int;
-            GUI.Label(new Rect(x, y, 300, 20), $"Stat total {statTotal} / 90", statTotal == 90 ? _small : Warn());
-            y += 30;
-
-            // Skills: four, each 0..50, total 120.
-            GUI.Label(new Rect(x, y, 300, 22), "Skills", _label);
-            y += 24;
-            for (int i = 0; i < 4; i++)
-            {
-                var (id, value) = c.Skills[i];
-                string name = id < GameSession.SkillNames.Length ? GameSession.SkillNames[id] : "?";
-                if (GUI.Button(new Rect(x, y, 170, 24), name))
-                    _pickingSkill = _pickingSkill == i ? -1 : i;
-                value = Mathf.RoundToInt(GUI.HorizontalSlider(new Rect(x + 180, y + 6, 80, 20), value, 0, 50));
-                GUI.Label(new Rect(x + 266, y + 2, 40, 20), value.ToString(), _small);
-                c.Skills[i] = (id, value);
-                y += 28;
-            }
-            int skillTotal = c.Skills.Sum(sk => sk.Value);
-            bool distinct = c.Skills.Select(sk => sk.Id).Distinct().Count() == 4;
-            GUI.Label(new Rect(x, y, 320, 20), $"Skill total {skillTotal} / 120{(distinct ? "" : " Â· pick four different skills")}", skillTotal == 120 && distinct ? _small : Warn());
-            y += 30;
-
-            // City.
-            int cityPos = Mathf.Max(0, _session.Cities.FindIndex(ct => ct.Index == c.City));
-            if (_session.Cities.Count > 0)
-            {
-                GUI.Label(new Rect(x, y, 60, 22), "City", _label);
-                if (GUI.Button(new Rect(x + 60, y, 230, 26), _session.Cities[cityPos].Name))
-                    c.City = _session.Cities[(cityPos + 1) % _session.Cities.Count].Index;
-            }
-
-            // Middle column: skill picker or looks.
-            float mx = p.x + 340;
-            if (_pickingSkill >= 0)
-            {
-                GUI.Label(new Rect(mx, p.y + 24, 200, 22), "Choose a skill", _label);
-                var view = new Rect(mx, p.y + 50, 200, p.height - 80);
-                _skillScroll = GUI.BeginScrollView(view, _skillScroll, new Rect(0, 0, 180, GameSession.SkillNames.Length * 24));
-                for (int sk = 0; sk < GameSession.SkillNames.Length; sk++)
-                    if (GUI.Button(new Rect(0, sk * 24, 180, 22), GameSession.SkillNames[sk]))
-                    {
-                        c.Skills[_pickingSkill] = (sk, c.Skills[_pickingSkill].Value);
-                        _pickingSkill = -1;
-                    }
-                GUI.EndScrollView();
-            }
-            else
-            {
-                float ly = p.y + 24;
-                void Cycle(string label, string value, Action next)
-                {
-                    GUI.Label(new Rect(mx, ly, 70, 22), label, _label);
-                    if (GUI.Button(new Rect(mx + 70, ly, 130, 24), value))
-                        next();
-                    ly += 32;
-                }
-                Cycle("Skin", $"Tone {Array.IndexOf(SkinHues, c.SkinHue) + 1}", () => c.SkinHue = Next(SkinHues, c.SkinHue));
-                Cycle("Hair", HairStyles.FirstOrDefault(hs => hs.Id == c.HairStyle).Name ?? "Short", () => c.HairStyle = Next(HairStyles.Select(hs => hs.Id).ToArray(), c.HairStyle));
-                Cycle("Hair hue", $"Shade {Array.IndexOf(HairHues, c.HairHue) + 1}", () => c.HairHue = Next(HairHues, c.HairHue));
-                if (!c.Female)
-                {
-                    Cycle("Beard", Beards.FirstOrDefault(b => b.Id == c.BeardStyle).Name ?? "None", () => c.BeardStyle = Next(Beards.Select(b => b.Id).ToArray(), c.BeardStyle));
-                    c.BeardHue = c.HairHue;
-                }
-                Cycle("Shirt", $"Dye {Array.IndexOf(ClothHues, c.ShirtHue) + 1}", () => c.ShirtHue = Next(ClothHues, c.ShirtHue));
-                Cycle("Pants", $"Dye {Array.IndexOf(ClothHues, c.PantsHue) + 1}", () => c.PantsHue = Next(ClothHues, c.PantsHue));
-            }
-
-            // Right column: the paperdoll preview.
-            DrawPreview(new Vector2(p.xMax - 230, p.y + 30), c);
-
-            bool valid = c.Name.Trim().Length >= 2 && statTotal == 90 && skillTotal == 120 && distinct;
-            GUI.enabled = valid;
-            if (GUI.Button(new Rect(p.x + 30, p.yMax - 52, 160, 32), "Create"))
-            {
-                c.Name = c.Name.Trim();
-                Current = Page.Connecting;
-                _session.CreateCharacter(c);
-            }
-            GUI.enabled = true;
-            if (GUI.Button(new Rect(p.xMax - 150, p.yMax - 52, 120, 32), "Back"))
-                Current = Page.Characters;
-        }
-
-        private static ushort Next(ushort[] options, ushort current)
-        {
-            int i = Array.IndexOf(options, current);
-            return options[(i + 1) % options.Length];
-        }
-
-        private void DrawPreview(Vector2 at, NewCharacter c)
-        {
-            UiImage body = _art.Gump(c.Female ? 0x000D : 0x000C, c.SkinHue);
-            if (body == null)
-                return;
-            void Layer(int itemGraphic, int hue)
-            {
-                if (itemGraphic == 0)
-                    return;
-                StaticTileData td = _art.Data.TileData.GetStatic(itemGraphic);
-                if (td.AnimId == 0)
-                    return;
-                UiImage img = (c.Female ? _art.Gump(td.AnimId + 60000, hue) : null) ?? _art.Gump(td.AnimId + 50000, hue);
-                if (img != null)
-                    GUI.DrawTexture(new Rect(at.x, at.y, img.Width, img.Height), img.Texture);
-            }
-            GUI.DrawTexture(new Rect(at.x, at.y, body.Width, body.Height), body.Texture);
-            Layer(0x152E, c.PantsHue);                       // long pants
-            Layer(c.Female ? 0x1F01 : 0x1517, c.ShirtHue);   // plain dress / shirt
-            Layer(0x170F, 0);                                // shoes
-            Layer(c.HairStyle, c.HairHue);
-            if (!c.Female)
-                Layer(c.BeardStyle, c.BeardHue);
+                Note(new Rect(p.x, p.yMax + 10, p.width, 30), Status);
         }
 
         // ---- drawing helpers ----

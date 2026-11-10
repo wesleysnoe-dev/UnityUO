@@ -461,8 +461,9 @@ namespace UOClient.Core
                 int index = r.ReadByte();
                 string cityName = r.ReadAscii(32);
                 string building = r.ReadAscii(32);
-                r.Skip(24);      // x, y, z, map, cliloc, 0
-                Cities.Add(new StartCity { Index = index, Name = cityName, Building = building });
+                int cx = r.ReadInt32(), cy = r.ReadInt32(), cz = r.ReadInt32(), cmap = r.ReadInt32(), cliloc = r.ReadInt32();
+                r.Skip(4);
+                Cities.Add(new StartCity { Index = index, Name = cityName, Building = building, X = cx, Y = cy, Z = cz, Map = cmap, Cliloc = cliloc });
                 if (cityName.IndexOf(_settings.StartCity ?? "", StringComparison.OrdinalIgnoreCase) >= 0)
                     city = index;
             }
