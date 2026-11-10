@@ -167,16 +167,17 @@ Shader "UOClient/WorldSprite"
                 float t = _Time.y;
                 float wind = 0.15 + _UOWaterWeather.y;
                 float2 p = float2(world.x, world.y * 2.0); // the water is seen at an angle: ripples flattened on screen
-                // A slow wandering warp (no two places alike) and broad patches of rougher and calmer water.
-                p += 22.0 * float2(WaterNoise(p * 0.006 + t * 0.03), WaterNoise(p * 0.006 + 17.3 - t * 0.025)) - 11.0;
+                // A wandering warp fixed in place (no two places alike; still, so it never speeds the ripples up or slows
+                // them) and broad patches of rougher and calmer water drifting slowly.
+                p += 22.0 * float2(WaterNoise(p * 0.006), WaterNoise(p * 0.006 + 17.3)) - 11.0;
                 float rough = 0.45 + 1.1 * WaterNoise(world * 0.0028 + float2(t * 0.012, -t * 0.008));
                 const float2 dirs[6] = { float2(0.97, 0.24), float2(0.62, -0.78), float2(-0.29, 0.96), float2(0.83, 0.56), float2(-0.91, 0.42), float2(0.12, -0.99) };
-                const float lens[6] = { 47.3, 29.1, 18.7, 12.3, 8.9, 6.1 };
+                const float lens[6] = { 61.0, 38.3, 25.1, 17.2, 12.6, 9.7 }; // none under ~5 art pixels: those flicker
                 float2 slope = float2(0.0, 0.0);
                 [unroll] for (int k = 0; k < 6; k++)
                 {
                     float kk = 6.2831853 / lens[k];
-                    float w = sqrt(9.8 * kk * 30.0) * (0.6 + wind); // deep water: longer ripples run faster
+                    float w = sqrt(kk) * 2.2 * (0.7 + 0.6 * wind); // a calm drift, a little quicker in wind
                     float ph = dot(dirs[k], p) * kk - t * w + k * 1.7;
                     float a = (0.14 + 0.2 * wind) * rough / (1.0 + k * 0.4); // steepness, the short ones gentler
                     slope += dirs[k] * (a * cos(ph));
