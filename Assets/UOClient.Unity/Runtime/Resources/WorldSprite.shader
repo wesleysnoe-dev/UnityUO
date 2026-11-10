@@ -160,28 +160,34 @@ Shader "UOClient/WorldSprite"
                 float w2 = sin(dot(p, float2(-0.5, 1.4)) - t * speed * 0.6 + 1.7);
                 float chop = sin(dot(p, float2(3.1, 2.3)) - t * speed * 2.1) * sin(dot(p, float2(-2.6, 3.4)) + t * 1.7);
                 float swell = w1 * 0.65 + w2 * 0.35;
-                float light = 1.0 + (0.07 + 0.05 * wind) * swell + (0.03 + 0.04 * wind) * chop;
+                // Long bands of light and shade rolling across (the swells), the chop finer on top.
+                float band = sin(dot(p, float2(0.55, 0.25)) * 1.0 - t * speed * 0.45);
+                float light = 1.0 + (0.12 + 0.06 * wind) * swell + 0.1 * band + (0.06 + 0.05 * wind) * chop;
                 float3 c = rgb * light;
-                // Glitter: fine crests catching the light, gold by day (warmer when the sun is low), silver under the moon.
-                float2 q = world * 0.07;
-                float g1 = sin(q.x * 1.3 + q.y * 0.9 + t * 3.1);
-                float g2 = sin(-q.x * 0.7 + q.y * 1.6 - t * 2.6);
-                float glint = pow(saturate(g1 * g2), 22.0) * (0.25 + 0.25 * saturate(swell));
+                // Glitter: scattered glints that flash for a moment where a crest catches the light, each cell of the water
+                // with its own spot and moment (random, never a grid), more of them on the swells' crests; gold by day
+                // (warmer when the sun is low), silver under the moon.
+                float2 gc = floor(world / 11.0);
+                float gh = frac(sin(dot(gc, float2(41.3, 289.1))) * 15731.743);
+                float2 gp = frac(world / 11.0) - float2(frac(gh * 3.7), frac(gh * 9.1));
+                float flash = pow(saturate(sin(t * (1.3 + gh * 1.7) + gh * 40.0)), 18.0);
+                float spot = saturate(1.0 - length(gp * float2(2.4, 6.5)));         // a short streak along the waves
+                float glint = spot * spot * flash * step(0.55, gh) * (0.6 + 0.8 * saturate(swell));
                 float3 sunTint = lerp(float3(0.85, 0.92, 1.0), float3(1.0, 0.78, 0.45), _UOWaterSun.z);
                 float3 tint = lerp(float3(0.65, 0.72, 0.9), sunTint, _UOWaterSun.x);
-                c += glint * tint * (0.35 + 0.9 * _UOWaterSun.y);
+                c += glint * tint * (0.9 + 2.0 * _UOWaterSun.y);
                 // Rain: on a grid of cells a drop lands in each at its own moment, and a ring spreads and fades.
                 if (_UOWaterWeather.x > 0.02)
                 {
-                    float2 cell = floor(world / 26.0);
-                    float2 local = frac(world / 26.0) - 0.5;
+                    float2 cell = floor(world / 34.0);
+                    float2 local = frac(world / 34.0) - 0.5;
                     float h = frac(sin(dot(cell, float2(127.1, 311.7))) * 43758.5453);
                     float2 centre = float2(frac(h * 7.3), frac(h * 13.1)) * 0.6 - 0.3;
                     float age = frac(t * 0.9 + h);
                     float r = length((local - centre) * float2(1.0, 2.0)); // flattened: the water is seen at an angle
-                    float ring = smoothstep(0.035, 0.0, abs(r - age * 0.45)) * (1.0 - age);
+                    float ring = smoothstep(0.06, 0.0, abs(r - age * 0.45)) * (1.0 - age);
                     float present = step(h, _UOWaterWeather.x); // heavier rain: drops in more of the cells
-                    c += ring * present * 0.28 * float3(0.85, 0.9, 1.0);
+                    c += ring * present * 0.5 * float3(0.85, 0.9, 1.0);
                 }
                 return c;
             }
