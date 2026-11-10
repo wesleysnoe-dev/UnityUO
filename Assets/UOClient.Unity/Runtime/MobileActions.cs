@@ -15,7 +15,10 @@ namespace UOClient.Unity
         /// TazUO's <c>Mobile.ProcessAnimation</c> steps a death one frame per <c>CHARACTER_ANIMATION_DELAY</c>
         /// (80 ms, Constants.cs:19; Mobile.cs:627) and removes the dying mobile once past the last frame (Mobile.cs:706-714).
         /// </summary>
-        public const float DeathFrameSeconds = 0.08f;
+        public const float DeathFrameSeconds = CharacterFrameSeconds;
+
+        /// <summary>TazUO's CHARACTER_ANIMATION_DELAY: every character animation steps one frame per 80 ms (Constants.cs:19).</summary>
+        public const float CharacterFrameSeconds = 0.08f;
 
         /// <summary>
         /// Walk/run/stand for a look's state. Riders keep the mounted actions whatever the mode (MobileAnimation.cs:1144,

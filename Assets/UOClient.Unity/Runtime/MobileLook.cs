@@ -91,6 +91,16 @@ namespace UOClient.Unity
         /// </summary>
         public (int First, int Second) DeathActions = (21, 22);
 
+        /// <summary>
+        /// The idle fidgets to pick from (TazUO Mobile._animationIdle and SetIdleAnimation, Mobile.cs:19-36, 416-561):
+        /// a random one, or the first if the body lacks it; a UOP creature has the one, action 26.
+        /// </summary>
+        public int[] Fidgets = Fidget[(int)AnimGroup.Human];
+
+        // By AnimGroup (Monster, Animal, Human): High Fidget1/2, Low Fidget1/2, People Fidget1/2/3.
+        private static readonly int[][] Fidget = { new[] { 17, 18, 17 }, new[] { 9, 10, 9 }, new[] { 5, 6, 34 } };
+        private static readonly int[] UopFidget = { 26 };
+
         /// <summary>Identifies the look for sharing frames between identical mobiles.</summary>
         public string Key
         {
@@ -237,19 +247,35 @@ namespace UOClient.Unity
         /// <summary>TazUO's hidden hue (Profile.HiddenBodyHue, items' IsHidden): a hidden character or item seen by staff.</summary>
         public const int HiddenHue = 0x038E;
 
-        /// <summary>Every layer in the hidden hue (a hidden character, sent to staff only).</summary>
+        /// <summary>Every layer in the hidden hue (a hidden character, sent to staff only), drawn see-through.</summary>
         public MobileLook AsHidden()
+        {
+            Ghostly = true;
+            return InHue(HiddenHue);
+        }
+
+        /// <summary>
+        /// Every layer, the mount too, wholly in one hue: TazUO's overridenHue (MobileView.cs:111-149), for a poisoned,
+        /// paralyzed or invulnerable character and for the one being fought or targeted.
+        /// </summary>
+        public MobileLook InHue(int hue)
         {
             for (int i = 0; i < Layers.Count; i++)
             {
                 Layer l = Layers[i];
-                l.Hue = HiddenHue;
+                l.Hue = hue;
                 l.Partial = false;
                 l.Spectral = false;
                 Layers[i] = l;
             }
             return this;
         }
+
+        /// <summary>Drawn see-through (TazUO's HiddenBodyAlpha) and without a shadow: a hidden character.</summary>
+        public bool Ghostly;
+
+        /// <summary>How opaque a hidden character is drawn (TazUO Profile.HiddenBodyAlpha, 40 %).</summary>
+        public const float GhostlyAlpha = 0.4f;
 
         /// <summary>TazUO's <c>HumanGraphicCheck</c> (Mobile.cs:1127-1140), by the body as sent.</summary>
         public static bool IsHumanGraphic(int body) =>
@@ -278,6 +304,7 @@ namespace UOClient.Unity
             look.BodyActions = anims.Actions(drawn);
             look.WarActions = anims.Actions(drawn, warMode: true);
             look.DeathActions = (anims.DeathAction(drawn, false, running: true), anims.DeathAction(drawn, true, running: true));
+            look.Fidgets = anims.UsesUop(drawn) && look.Group != AnimGroup.Human ? UopFidget : Fidget[(int)look.Group];
             int skin = hue & 0x3FFF;
             if (skin == 0)
                 skin = anims.ReplacementHue(drawn); // Body.def stand-ins come with their own hue

@@ -1,3 +1,4 @@
+using System;
 ﻿// EquipConvEntry is the top-level struct in UOClient.IO (ClientOverrides.cs).
 using System.Collections.Generic;
 using UnityEngine;
@@ -19,11 +20,80 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed partial class PaperdollWindow : UiWindow
     {
-        // Back to front, as the classic paperdoll layers them.
+        // Back to front, as the classic paperdoll layers them (TazUO PaperDollInteractable._layerOrder), the backpack last.
         private static readonly byte[] PaperdollOrder =
         {
-            20, 5, 4, 3, 24, 19, 13, 17, 8, 14, 7, 23, 22, 12, 10, 11, 16, 18, 6, 1, 2, 9, 21
+            20, 5, 4, 3, 24, 19, 13, 17, 8, 14, 15, 7, 23, 22, 12, 10, 11, 16, 18, 6, 1, 2, 9, 21
         };
+
+        // A cloak that is a container (a quiver) goes over the robe (_layerOrderQuiverFix).
+        private static readonly byte[] QuiverOrder =
+        {
+            5, 4, 3, 24, 19, 13, 17, 8, 14, 15, 7, 23, 22, 20, 12, 10, 11, 16, 18, 6, 1, 2, 9, 21
+        };
+
+        // With a cloak, the parrot robes go over everything (_layerOrderParrotFix).
+        private static readonly byte[] ParrotOrder =
+        {
+            5, 4, 3, 24, 19, 13, 17, 20, 8, 14, 15, 7, 23, 12, 10, 11, 16, 18, 6, 1, 2, 9, 22, 21
+        };
+
+        private const byte ArmsLayer = 19, TorsoLayer = 13, PantsLayer = 4, CloakLayer = 20, RobeLayer = 22, BackpackLayer = 21;
+        private readonly byte[] _order = new byte[24];
+
+        /// <summary>
+        /// The layers back to front for what this character wears (TazUO PaperDollInteractable.cs:215-253, 407-490): the
+        /// quiver and parrot orders; women's leather, studded and plate tunics under the pants; leather and studded sleeves
+        /// and ringmail arms over the torso; and plate arms swapped with the torso.
+        /// </summary>
+        private byte[] OrderFor(Mobile m)
+        {
+            byte[] baseOrder = PaperdollOrder;
+            if (m.Equipment.TryGetValue(CloakLayer, out EquippedItem cloak))
+            {
+                if (m.Equipment.TryGetValue(RobeLayer, out EquippedItem robe) && (robe.Graphic == 0xA2CA || robe.Graphic == 0xA2CB))
+                    baseOrder = ParrotOrder;
+                else if ((Art.Data.TileData.GetStatic(cloak.Graphic).Flags & TileFlags.Container) != 0)
+                    baseOrder = QuiverOrder;
+            }
+            Array.Copy(baseOrder, _order, _order.Length);
+            int Index(byte layer) => Array.IndexOf(_order, layer);
+            int torso = m.Equipment.TryGetValue(TorsoLayer, out EquippedItem t) ? t.Graphic : -1;
+            int arms = m.Equipment.TryGetValue(ArmsLayer, out EquippedItem a) ? a.Graphic : -1;
+            if (torso == 0x1C06 || torso == 0x1C02 || torso == 0x1C04)
+            {
+                int p = Index(PantsLayer), k = Index(TorsoLayer);
+                if (p >= 0 && k >= 0 && p < k)
+                {
+                    Array.Copy(_order, p, _order, p + 1, k - p);
+                    _order[p] = TorsoLayer;
+                }
+            }
+            if (arms == 0x13CD || arms == 0x13DC || arms == 0x13EE)
+            {
+                int p = Index(ArmsLayer), k = Index(TorsoLayer);
+                if (p >= 0 && k >= 0 && p < k)
+                {
+                    Array.Copy(_order, p + 1, _order, p, k - p);
+                    _order[k] = ArmsLayer;
+                }
+            }
+            if (arms == 0x1410 || arms == 0x1417)
+            {
+                int p = Index(ArmsLayer), k = Index(TorsoLayer);
+                if (p >= 0 && k >= 0)
+                    (_order[p], _order[k]) = (TorsoLayer, ArmsLayer);
+            }
+            return _order;
+        }
+
+        /// <summary>
+        /// The classic paperdoll's backpack sits left of the body: 8 pixels, 14 with the paperdoll books
+        /// (PaperDollInteractable.cs:372-376).
+        /// </summary>
+        private float BackpackShift => ShowsPaperdollBooks(true, Session.CharacterListFlags) ? 14f : 8f;
+
+        private float LayerX(byte layer) => layer == BackpackLayer ? BodyX - BackpackShift : BodyX;
 
         private readonly uint _serial;
         private string _title;
@@ -115,7 +185,7 @@ namespace UOClient.Unity.UI
             bool female = IsFemale(m.Body);
             _drawn.Clear();
             var wornGraphics = WornGraphics(m);
-            foreach (byte layer in PaperdollOrder)
+            foreach (byte layer in OrderFor(m))
             {
                 // What another piece hides (hair under a hood) is not drawn, as on the character in the world.
                 if (!m.Equipment.TryGetValue(layer, out EquippedItem e) || MobileLook.IsCovered(wornGraphics, layer))
@@ -143,11 +213,11 @@ namespace UOClient.Unity.UI
                 DrawSlot(_slots[i], over != 0 && hit.Slot == i);
 
             DrawImage(Art.Gump(female ? 0x000D : 0x000C, m.Hue), BodyX, BodyY);
-            foreach (var (_, e, img, _) in _drawn)
+            foreach (var (layer, e, img, _) in _drawn)
             {
                 if (over != 0 && hit.Slot < 0 && e.Serial == over)
-                    DrawOutline(img, BodyX, BodyY);
-                DrawImage(img, BodyX, BodyY);
+                    DrawOutline(img, LayerX(layer), BodyY);
+                DrawImage(img, LayerX(layer), BodyY);
             }
 
             if (_titleStyle == null)
@@ -285,7 +355,7 @@ namespace UOClient.Unity.UI
                 return ModernHitAt(local);
             if (OnPicture(_combatBook, CombatBookX, CombatBookY, local) || OnPicture(_racialBook, RacialBookX, RacialBookY, local))
                 return (-1, 0, null);
-            var (i, _, _) = MousePick.WindowItem(_drawn.Count, local.x, local.y, Ui.Scale, _ => (BodyX, BodyY),
+            var (i, _, _) = MousePick.WindowItem(_drawn.Count, local.x, local.y, Ui.Scale, k => (LayerX(_drawn[k].Layer), BodyY),
                 _ => false, (k, x, y) => _drawn[k].Image.HitTest(x, y));
             if (i >= 0)
             {

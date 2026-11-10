@@ -340,7 +340,7 @@ namespace UOClient.Unity.UI
         {
             _drawn.Clear();
             var worn = WornGraphics(m);
-            foreach (byte layer in PaperdollOrder)
+            foreach (byte layer in OrderFor(m))
             {
                 // What another piece hides (hair under a hood) is not drawn, as on the character in the world.
                 if (!m.Equipment.TryGetValue(layer, out EquippedItem e) || MobileLook.IsCovered(worn, layer))

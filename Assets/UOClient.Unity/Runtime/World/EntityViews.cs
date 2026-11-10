@@ -16,7 +16,7 @@ namespace UOClient.Unity
     {
         private readonly GameContext _ctx;
         private readonly Dictionary<uint, Avatar> _others = new Dictionary<uint, Avatar>();
-        private readonly Dictionary<uint, int> _otherLook = new Dictionary<uint, int>();
+        private readonly Dictionary<uint, long> _otherLook = new Dictionary<uint, long>(); // LookState
         private readonly Dictionary<uint, ItemView> _items = new Dictionary<uint, ItemView>();
         private readonly Dictionary<uint, List<ItemView>> _multis = new Dictionary<uint, List<ItemView>>();
 
@@ -28,7 +28,7 @@ namespace UOClient.Unity
         // update for the same serial gets a fresh one (DisplayDeath.cs:26-38). Its corpse stays hidden while the session's
         // CorpseFalls lists it (ItemView.cs:183), and is turned to the owner's facing when the fall is dropped.
         private readonly List<(Avatar Avatar, uint Serial)> _dying = new List<(Avatar, uint)>();
-        private int _playerLook = -1;
+        private long _playerLook = -1;
         private GameSession _attached;
 
         public EntityViews(GameContext ctx)
@@ -91,7 +91,7 @@ namespace UOClient.Unity
             _ctx.Player?.Dispose();
             _ctx.Player = new Avatar(_ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, LookOf(p), p.X, p.Y, p.Z, name);
             _ctx.Player.Face(p.Direction);
-            _playerLook = p.AppearanceVersion;
+            _playerLook = LookState(p);
         }
 
         /// <summary>Views for everything the session already knows about (after entering the world).</summary>
@@ -116,6 +116,7 @@ namespace UOClient.Unity
 
         public void Render(bool hideUpperMultiParts)
         {
+            RefreshStateLooks();
             if (_ctx.Player != null && _ctx.Session != null)
                 _ctx.Player.Selected = Selected != 0 && Selected == _ctx.Session.World.PlayerSerial;
             foreach (KeyValuePair<uint, Avatar> kv in _others)
@@ -555,9 +556,9 @@ namespace UOClient.Unity
                     return;
                 if (m.Name != null)
                     PlayerNamed?.Invoke(m.Name);
-                if (m.AppearanceVersion != _playerLook)
+                if (LookState(m) != _playerLook)
                 {
-                    _playerLook = m.AppearanceVersion;
+                    _playerLook = LookState(m);
                     _ctx.Player.SetLook(LookOf(m));
                 }
                 // A server-side position change (teleport, resync) overrides prediction.
@@ -572,12 +573,12 @@ namespace UOClient.Unity
                 a.Face(m.Direction);
                 a.SetCombat(m.WarMode, m.IsDead);
                 _others[m.Serial] = a;
-                _otherLook[m.Serial] = m.AppearanceVersion;
+                _otherLook[m.Serial] = LookState(m);
                 return;
             }
-            if (_otherLook[m.Serial] != m.AppearanceVersion)
+            if (_otherLook[m.Serial] != LookState(m))
             {
-                _otherLook[m.Serial] = m.AppearanceVersion;
+                _otherLook[m.Serial] = LookState(m);
                 a.SetLook(LookOf(m));
             }
             a.SetCombat(m.WarMode, m.IsDead);
@@ -604,9 +605,9 @@ namespace UOClient.Unity
         {
             if (_others.TryGetValue(m.Serial, out Avatar a))
             {
-                if (_otherLook[m.Serial] != m.AppearanceVersion)
+                if (_otherLook[m.Serial] != LookState(m))
                 {
-                    _otherLook[m.Serial] = m.AppearanceVersion;
+                    _otherLook[m.Serial] = LookState(m);
                     a.SetLook(LookOf(m));
                 }
                 a.SetCombat(m.WarMode, m.IsDead);
@@ -742,8 +743,86 @@ namespace UOClient.Unity
         private MobileLook LookOf(Core.Mobile m)
         {
             MobileLook look = MobileLook.From(_ctx.Data, m.Body, m.Hue, m.Equipment.Values.Select(e => (e.Layer, (int)e.Graphic, (int)e.Hue)), m.BondedDead);
-            return m.IsHidden ? look.AsHidden() : look; // staff see hidden characters, drawn grey (TazUO HiddenBodyHue)
+            if (m.IsHidden)
+                return look.AsHidden(); // staff see hidden characters, grey and see-through (TazUO HiddenBodyHue / Alpha)
+            int hue = StateHue(m);
+            return hue > 0 ? look.InHue(hue) : look;
         }
+
+        // TazUO's default highlight hues (Profile.cs:169-171).
+        private const int PoisonHue = 0x0044, ParalyzedHue = 0x014C, InvulnerableHue = 0x0030;
+        private const byte InvulnerableNotoriety = 7;
+
+        /// <summary>
+        /// The hue a living character is drawn wholly in, or 0 (TazUO MobileView.cs:116-149, its defaults): yellow-barred
+        /// (but not invulnerable) gold, paralyzed purple, poisoned green; and someone else who is our last attack, or under
+        /// the mouse while a target cursor is up, in their notoriety colour.
+        /// </summary>
+        private int StateHue(Core.Mobile m)
+        {
+            int hue = 0;
+            if (!m.IsDead)
+            {
+                bool invulnerable = m.Notoriety == InvulnerableNotoriety;
+                if ((m.YellowHits || (m.Flags & YellowBarFlag) != 0) && !invulnerable)
+                    hue = InvulnerableHue;
+                else if ((m.Flags & FrozenFlag) != 0 && !invulnerable)
+                    hue = ParalyzedHue;
+                else if (m.Poisoned)
+                    hue = PoisonHue;
+            }
+            Core.GameSession s = _ctx.Session;
+            if (s != null && m.Serial != s.World.PlayerSerial
+                && (s.Target != null && Selected == m.Serial || m.Serial == s.LastAttack))
+            {
+                int noto = UI.HealthBarWindow.NotorietyHue(m.Notoriety);
+                if (noto > 0)
+                    hue = noto;
+            }
+            return hue;
+        }
+
+        // The mobile flags TazUO reads for these (Flags.Frozen, Flags.YellowBar).
+        private const byte FrozenFlag = 0x01, YellowBarFlag = 0x08;
+
+        /// <summary>What a character's look depends on: its appearance and the hue its state draws it in.</summary>
+        private long LookState(Core.Mobile m) => ((long)m.AppearanceVersion << 32) | (uint)(m.IsHidden ? -1 : StateHue(m));
+
+        /// <summary>
+        /// Poison, paralysis, being fought or targeted change no appearance version: each frame, a character whose state
+        /// hue changed gets its look again (the hued frames are built once and shared, as any look's).
+        /// </summary>
+        private void RefreshStateLooks()
+        {
+            Core.GameSession s = _ctx.Session;
+            if (s == null)
+                return;
+            if (_ctx.Player != null && s.World.Mobiles.TryGetValue(s.World.PlayerSerial, out Core.Mobile me))
+            {
+                long state = LookState(me);
+                if (state != _playerLook)
+                {
+                    _playerLook = state;
+                    _ctx.Player.SetLook(LookOf(me));
+                }
+            }
+            foreach (KeyValuePair<uint, Avatar> kv in _others)
+            {
+                if (!s.World.Mobiles.TryGetValue(kv.Key, out Core.Mobile m))
+                    continue;
+                long state = LookState(m);
+                if (_otherLook.TryGetValue(kv.Key, out long was) && was != state)
+                    _changedLooks.Add((kv.Key, m, state));
+            }
+            foreach (var (serial, m, state) in _changedLooks)
+            {
+                _otherLook[serial] = state;
+                _others[serial].SetLook(LookOf(m));
+            }
+            _changedLooks.Clear();
+        }
+
+        private readonly List<(uint, Core.Mobile, long)> _changedLooks = new List<(uint, Core.Mobile, long)>();
 
         /// <summary>Each distinct body near us, how many, and how many are drawn (have art), for the tour report.</summary>
         public string BodyReport()

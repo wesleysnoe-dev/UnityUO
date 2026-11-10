@@ -171,6 +171,8 @@ namespace UOClient.Unity
                 ? null
                 : new ServerPlayback(action, delay, frameCount, repeatCount, repeat, forward);
             _serverPending = 0;
+            _fidgetAlt = -1;
+            _fidgetIn = NextFidget();
         }
 
         public static Vector2Int Delta(int direction)
@@ -299,9 +301,44 @@ namespace UOClient.Unity
         private MobileLook _prefetchedLook;
         private bool _prefetchedWar;
 
+        // Idle fidgets: when the next is due, and the body's other fidget if the one picked has no frames.
+        private float _fidgetIn = NextFidget();
+        private int _fidgetAlt = -1;
+        private static readonly System.Random FidgetRandom = new System.Random();
+
+        /// <summary>TazUO's CalculateRandomIdleTime: 30 to 60 seconds from now.</summary>
+        private static float NextFidget() => 30f + (float)FidgetRandom.NextDouble() * 30f;
+
+        /// <summary>
+        /// TazUO's SetIdleAnimation (Mobile.cs:282-295, 416-561): now and then someone standing at peace, on foot, looks
+        /// about or shifts (a fidget, played once as a server animation with interval 1); anything else the server plays
+        /// puts the next one off.
+        /// </summary>
+        private void TickFidget(float dt)
+        {
+            if (_server == null)
+                _fidgetAlt = -1; // the last fidget is over
+            if (_server != null && _fidgetAlt < 0 || Dying)
+            {
+                _fidgetIn = NextFidget();
+                return;
+            }
+            if ((_fidgetIn -= dt) > 0f)
+                return;
+            _fidgetIn = NextFidget();
+            if (_look == null || _look.Mounted || WarMode || Dead || _stepDuration > 0 || _server != null || Seated(out _))
+                return; // sitting stays sitting (a server animation would stand them up)
+            int[] f = _look.Fidgets;
+            int pick = f.Length == 1 ? 0 : FidgetRandom.Next(f.Length);
+            _server = new ServerPlayback(f[pick], 1, 0, 1, false, true);
+            _serverPending = 0;
+            _fidgetAlt = f.Length == 1 ? -1 : f[pick == 0 ? 1 : 0];
+        }
+
         public void Tick(float dt)
         {
             _animTime += dt;
+            TickFidget(dt);
             if (_server != null)
                 _serverPending += dt; // stepped in Render, where the action's frame count is known
             if (Dying)
@@ -432,6 +469,12 @@ namespace UOClient.Unity
             if (!falling && _server != null)
             {
                 MobileFrame[] act = _art.Get(_look, _lookKey, _server.Action, fileDir, layerDir);
+                if (act != null && act.Length == 0 && _fidgetAlt >= 0)
+                {
+                    _server = new ServerPlayback(_fidgetAlt, 1, 0, 1, false, true); // that fidget is missing: the other
+                    _fidgetAlt = -1;
+                    act = _art.Get(_look, _lookKey, _server.Action, fileDir, layerDir);
+                }
                 if (act != null && act.Length == 0)
                     _server = null;               // the body has no such action: carry on as normal, never blank
                 else if (act != null)
@@ -502,9 +545,8 @@ namespace UOClient.Unity
                 index = 0;
             else
             {
-                // Walk/run cycles span two tiles; standing idles slowly.
-                float frameDuration = !moving ? 0.25f : StepTime(_running) * 2f / frames.Length;
-                index = (int)(_animTime / frameDuration) % frames.Length;
+                // One frame per 80 ms whatever the motion (TazUO CHARACTER_ANIMATION_DELAY; Mobile.cs:627, 732).
+                index = (int)(_animTime / MobileActions.CharacterFrameSeconds) % frames.Length;
             }
             MobileFrame f = frames[index];
             if (drawnAction >= 0) // frames still being built keep the last ones shown: so does this
@@ -539,13 +581,15 @@ namespace UOClient.Unity
             Rect r = view.ToUnityRect(left, top, f.Slot.Width, f.Slot.Height);
 
             _material.mainTexture = _art.Atlas.Page(f.Slot.Page);
-            SetSpectral(_material, _art.IsSpectral(f.Slot));
+            bool ghostly = _look.Ghostly;
+            SetSpectral(_material, _art.IsSpectral(f.Slot) || ghostly); // a hidden character is blended too, see-through
             LastSlot = f.Slot;
             LastMirror = mirror;
             LastRect = r;
             LastDepth = view.DepthFor(SortItem);
-            // The sun shadow: this frame laid on the ground from the feet (none for a ghost).
-            _shadow.Update(!Dead, view, _art.Atlas.Page(f.Slot.Page), _art.Atlas.Uv(f.Slot), mirror,
+            // The sun shadow: this frame laid on the ground from the feet (none for a ghost, nor a hidden character:
+            // TazUO's hasShadow, MobileView.cs:69).
+            _shadow.Update(!Dead && !ghostly, view, _art.Atlas.Page(f.Slot.Page), _art.Atlas.Uv(f.Slot), mirror,
                 left, top, f.Slot.Width, f.Slot.Height, anchor, LastDepth, X, Y, Z);
             LastCut = MeshBuilder.CutHeight(Z);
             // Characters on a floor above us are cut away with it (we ourselves always stand below the cut).
@@ -555,7 +599,7 @@ namespace UOClient.Unity
                 Vector2 foot = view.ToUnity(anchor);
                 float footZ = _stepDuration <= 0 ? Z : Mathf.Lerp(_fromZ, Z, _stepTime / _stepDuration);
                 MeshBuilder.SetQuad(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, mirror, LastCut, new Vector4(foot.x, foot.y, footZ, 1f));
-                if (!Dead) // a ghost casts no shadow
+                if (!Dead && !ghostly) // a ghost or a hidden character casts no shadow
                     MeshBuilder.ShadowCasters?.Mobile(this, anchor, footZ);
             }
             else
@@ -567,6 +611,7 @@ namespace UOClient.Unity
                 _sitFoot = view.ToUnity(anchor);
                 SetSitQuads(_mesh, r, _art.Atlas.Uv(f.Slot), LastDepth, _sitMirror, LastCut, _sitFoot);
             }
+            Fade(ghostly, folded);
             // The frame is every worn layer composited, so its outline is the whole equipped silhouette: folded the same
             // way when the body is seated (a flat outline showed the person standing).
             _sitOutline ??= (mesh, rect, uv, depth) => SetSitQuads(mesh, rect, uv, depth, _sitMirror, LastCut, _sitFoot);
@@ -580,6 +625,34 @@ namespace UOClient.Unity
         public int DrawnFileDir { get; private set; }
         public bool DrawnMirror { get; private set; }
         public bool DrawnSeated { get; private set; }
+
+        // Vertex colours: white, or a hidden character's see-through alpha (the shader multiplies by them).
+        private static readonly Color[] Opaque4 = Filled(4, Color.white), Opaque12 = Filled(12, Color.white);
+        private static readonly Color[] Ghost4 = Filled(4, new Color(1f, 1f, 1f, MobileLook.GhostlyAlpha)), Ghost12 = Filled(12, new Color(1f, 1f, 1f, MobileLook.GhostlyAlpha));
+        private bool _faded;
+        private int _fadedCount;
+
+        private static Color[] Filled(int n, Color c)
+        {
+            var a = new Color[n];
+            for (int i = 0; i < n; i++)
+                a[i] = c;
+            return a;
+        }
+
+        /// <summary>Sets the quad's alpha: see-through while hidden, back to opaque once not (only when it changes or the mesh was rebuilt).</summary>
+        private void Fade(bool ghostly, bool folded)
+        {
+            int n = _mesh.vertexCount;
+            if (!ghostly && !_faded || n != 4 && n != 12)
+                return;
+            // The seated quads are rebuilt every frame and a change of shape rebuilds the mesh: both lose their colours.
+            if (ghostly == _faded && n == _fadedCount && !folded)
+                return;
+            _mesh.colors = ghostly ? (n == 4 ? Ghost4 : Ghost12) : (n == 4 ? Opaque4 : Opaque12);
+            _faded = ghostly;
+            _fadedCount = n;
+        }
 
         // People's riding action (group 25), frame 0: a person seen from behind sitting (ClassicUO uses it for file dir 3).
         private const int SitBackAction = 25;
