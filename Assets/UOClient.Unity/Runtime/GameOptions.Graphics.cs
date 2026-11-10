@@ -115,6 +115,9 @@ namespace UOClient.Unity
         /// <summary>Footprints in sand and snow, dust puffs and rain splashes under steps (AmbientLife). On, as always.</summary>
         public bool footprints = true;
 
+        /// <summary>Plants in front of the player thin out around them, so the player is never lost behind a tree (SeeThroughTrees). On, as it came.</summary>
+        public bool seeThroughTrees = true;
+
         /// <summary>TazUO's AnimatedWaterEffect: water shimmers and foams at the shore (WorldSprite). On, as always here (TazUO: off).</summary>
         public bool animatedWater = true;
 
@@ -153,6 +156,7 @@ namespace UOClient.Unity
             to.seasons = from.seasons;
             to.ambientLife = from.ambientLife;
             to.footprints = from.footprints;
+            to.seeThroughTrees = from.seeThroughTrees;
             to.animatedWater = from.animatedWater;
             to.fireEffects = from.fireEffects;
             to.bloom = from.bloom;
@@ -167,7 +171,7 @@ namespace UOClient.Unity
             && itemLights == o.itemLights && blackWhiteWhenDead == o.blackWhiteWhenDead && deathScreen == o.deathScreen
             && shadows == o.shadows && sunShadows == o.sunShadows && weather == o.weather && cloudShadows == o.cloudShadows
             && foliageSway == o.foliageSway && seasons == o.seasons && ambientLife == o.ambientLife && footprints == o.footprints
-            && animatedWater == o.animatedWater && fireEffects == o.fireEffects && bloom == o.bloom && colorGrading == o.colorGrading;
+            && seeThroughTrees == o.seeThroughTrees && animatedWater == o.animatedWater && fireEffects == o.fireEffects && bloom == o.bloom && colorGrading == o.colorGrading;
 
         private void ClampGraphics()
         {
@@ -212,6 +216,7 @@ namespace UOClient.Unity
                 case "seasons": Bool(raw, ref seasons); return true;
                 case "ambientLife": Bool(raw, ref ambientLife); return true;
                 case "footprints": Bool(raw, ref footprints); return true;
+                case "seeThroughTrees": Bool(raw, ref seeThroughTrees); return true;
                 case "animatedWater": Bool(raw, ref animatedWater); return true;
                 case "fireEffects": Bool(raw, ref fireEffects); return true;
                 case "bloom": Bool(raw, ref bloom); return true;
@@ -244,6 +249,7 @@ namespace UOClient.Unity
             add("seasons", b(seasons));
             add("ambientLife", b(ambientLife));
             add("footprints", b(footprints));
+            add("seeThroughTrees", b(seeThroughTrees));
             add("animatedWater", b(animatedWater));
             add("fireEffects", b(fireEffects));
             add("bloom", b(bloom));

@@ -60,6 +60,7 @@ namespace UOClient.Unity.UI
                     case Page.General: DrawGeneral(d); break;
                     case Page.Sound: DrawSound(d); break;
                     case Page.Video: DrawVideo(d); break;
+                    case Page.Display: DrawDisplay(d); break;
                     case Page.Tooltip: DrawTooltip(d); break;
                     case Page.Speech: DrawSpeech(d); break;
                     case Page.CombatSpells: DrawCombat(d); break;
@@ -263,10 +264,126 @@ namespace UOClient.Unity.UI
                 Line("Sound effects start when you log in; unavailable until then.");
             d.musicVolume = Slider("Music volume", d.musicVolume, 0f, 1f, Percent(d.musicVolume));
             Line("Music: the login music now, the region music in the world.");
+            d.reproduceSoundsInBackground = Toggle("Play sound and music in the background", d.reproduceSoundsInBackground);
+            Line("Off: silent while another window has the focus (TazUO's background sound).");
         }
+
+        // ---- Video: the world's look (TazUO's Video > Lighting, Misc and Shadows, and this client's own effects) ----
 
         private void DrawVideo(GameOptions d)
         {
+            Section("Lighting");
+            d.useCustomLightLevel = Toggle("Use a custom light level", d.useCustomLightLevel);
+            _indent = 20;
+            GUI.enabled = d.useCustomLightLevel;
+            // TazUO's slider shows 0x1E - LightLevel: right is brighter.
+            d.lightLevel = GameOptions.MaxLightLevel - IntSlider("Brightness", GameOptions.MaxLightLevel - d.lightLevel, 0, GameOptions.MaxLightLevel);
+            d.lightLevelType = Choice("Type", d.lightLevelType, "Absolute", "Minimum");
+            Line(d.lightLevelType == GameOptions.LightLevelAbsolute
+                ? "The world is always lit this bright, day or night (T still picks a time)."
+                : "Never darker than this; brighter when the server's light is.");
+            GUI.enabled = true;
+            _indent = 0;
+            d.itemLights = Toggle("Light sources (lamps, torches, candles, lit windows)", d.itemLights);
+            d.blackWhiteWhenDead = Toggle("Grey world while dead", d.blackWhiteWhenDead);
+            d.deathScreen = Toggle("Death screen", d.deathScreen);
+
+            Section("Shadows");
+            d.shadows = Toggle("Shadows (after restart)", d.shadows);
+            Line("Characters, items, trees and buildings cast them, by sun, moon and lamps.");
+            if (CharacterShadow.OffFromLaunch)
+                Line("-nocharshadows on the command line: off for this run.");
+            else if (d.shadows != CharacterShadow.Enabled)
+                Line(d.shadows ? "On from the next start (saved with Okay)." : "Off from the next start (saved with Okay).");
+            _indent = 20;
+            GUI.enabled = d.shadows;
+            d.sunShadows = Toggle("Sun and moon shadows", d.sunShadows);
+            Line("Off: only lamps cast shadows, indoors; cloud shadows go with the sun's.");
+            GUI.enabled = true;
+            _indent = 0;
+
+            Section("Weather and sky");
+            d.weather = Toggle("Weather (rain, snow, fog, morning mist, lightning)", d.weather);
+            LaunchOff(!WeatherView.Enabled, "-noweather");
+            Line("Off: the server's rain and snow as plain streaks, as the classic client.");
+            d.cloudShadows = Toggle("Cloud shadows", d.cloudShadows);
+            LaunchOff(!WeatherView.Clouds, "-noclouds");
+
+            Section("Nature");
+            d.foliageSway = Toggle("Trees and plants sway in the wind", d.foliageSway);
+            LaunchOff(FoliageWind.StillFromLaunch, "-nofoliagesway");
+            d.seasons = Toggle("Show seasons (leaf colours, light tint)", d.seasons);
+            Line("Off: the world always looks as in summer, whatever the server's season.");
+            d.ambientLife = Toggle("Ambient life (fireflies, falling leaves, pollen)", d.ambientLife);
+            d.footprints = Toggle("Footprints, dust and splashes", d.footprints);
+            LaunchOff(!AmbientLife.Enabled, "-noambient");
+            d.seeThroughTrees = Toggle("See-through trees around you", d.seeThroughTrees);
+            Line("Trees and plants in front of you thin out round your character.");
+            d.animatedWater = Toggle("Animated water (shimmer, shore foam)", d.animatedWater);
+
+            Section("Effects");
+            d.fireEffects = Toggle("Fire and spell effects (flames, flicker, glow)", d.fireEffects);
+            d.bloom = Toggle("Bloom (bright light bleeds softly)", d.bloom);
+            LaunchOff(Fx.FxCatalog.OffFromLaunch, "-no-fx");
+            d.colorGrading = Toggle("Colour grading and vignette", d.colorGrading);
+            LaunchOff(!Fx.FxGrade.Enabled, "-nograde");
+        }
+
+        // ---- Display: the window (TazUO's Video > Game window) and the view ----
+
+        private List<(int Width, int Height)> _resolutions;
+
+        private void DrawDisplay(GameOptions d)
+        {
+            Section("Window");
+            // "Keep" values show what the window is now; touching a control makes it a choice.
+            int liveMode = Screen.fullScreenMode == FullScreenMode.Windowed || Screen.fullScreenMode == FullScreenMode.MaximizedWindow
+                ? GameOptions.DisplayWindowed
+                : Screen.fullScreenMode == FullScreenMode.ExclusiveFullScreen ? GameOptions.DisplayExclusive : GameOptions.DisplayBorderless;
+            int mode = d.displayMode == GameOptions.DisplayKeep ? liveMode : d.displayMode;
+            int chosen = Choice("Mode", mode, 100, GameOptions.DisplayModeNames);
+            if (chosen != mode)
+                d.displayMode = chosen;
+
+            _resolutions ??= GameOptions.DistinctResolutions(Screen.resolutions.Select(r => (r.width, r.height)));
+            (int w, int h) = d.resolutionWidth > 0 ? (d.resolutionWidth, d.resolutionHeight) : (Screen.width, Screen.height);
+            if (Stepper("Resolution", GameOptions.ResolutionName(w, h), out int step) && _resolutions.Count > 0)
+            {
+                int at = _resolutions.IndexOf((w, h));
+                int next = at >= 0 ? at + step
+                    : step > 0 ? _resolutions.FindIndex(r => r.Width * r.Height > w * h) // between two: the next one up or down
+                    : _resolutions.FindLastIndex(r => r.Width * r.Height < w * h);
+                if (next >= 0 && next < _resolutions.Count)
+                    (d.resolutionWidth, d.resolutionHeight) = _resolutions[next];
+            }
+            Line(mode == GameOptions.DisplayWindowed
+                ? "A window can also be resized by its edge. Borderless: the desktop's size."
+                : mode == GameOptions.DisplayBorderless
+                    ? "Borderless fills the screen; other sizes are scaled to it."
+                    : "Fullscreen switches the monitor to this resolution.");
+
+            bool liveVSync = QualitySettings.vSyncCount > 0;
+            bool vSync = d.vSync == GameOptions.VSyncKeep ? liveVSync : d.vSync == GameOptions.VSyncOn;
+            bool nowVSync = Toggle("VSync (wait for the monitor's refresh)", vSync);
+            if (nowVSync != vSync)
+                d.vSync = nowVSync ? GameOptions.VSyncOn : GameOptions.VSyncOff;
+
+            _indent = 20;
+            GUI.enabled = !nowVSync;
+            int cap = d.frameRateCap == GameOptions.FrameRateKeep
+                ? (Application.targetFrameRate <= 0 ? GameOptions.FrameRateUnlimited : Application.targetFrameRate)
+                : d.frameRateCap;
+            int capAt = System.Array.IndexOf(GameOptions.FrameRateCaps, cap);
+            int nowCapAt = Choice("Frame cap", capAt, 54, GameOptions.FrameRateCaps.Select(GameOptions.FrameRateName).ToArray());
+            if (nowCapAt != capAt && nowCapAt >= 0)
+                d.frameRateCap = GameOptions.FrameRateCaps[nowCapAt];
+            GUI.enabled = true;
+            _indent = 0;
+            Line(nowVSync ? "With VSync on, the monitor's refresh rate is the cap." : "Frames per second at most (TazUO's FPS setting).");
+            d.reduceFpsWhenInactive = Toggle("Reduce frame rate in the background", d.reduceFpsWhenInactive);
+            Line($"{GameOptions.BackgroundFrameRate} fps while another window has the focus (as TazUO).");
+
+            Section("View");
             d.zoom = Slider("Zoom", d.zoom, GameOptions.MinZoom, GameOptions.MaxZoom, d.zoom.ToString("0.00") + "x");
             Line("The mouse wheel changes the zoom too.");
             bool auto = d.uiScale <= 0;
@@ -279,6 +396,36 @@ namespace UOClient.Unity.UI
                 d.uiScale = Slider("UI scale", d.uiScale, GameOptions.MinUiScale, GameOptions.MaxUiScale, d.uiScale.ToString("0.00") + "x");
             else
                 Line($"UI scale: {GameOptions.ResolveUiScale(Screen.height, GameOptions.AutoUiScale):0.00}x (auto)");
+        }
+
+        /// <summary>A heading over a group of options.</summary>
+        private void Section(string title)
+        {
+            if (_y > 0)
+                _y += 6;
+            Text(new Rect(0, _y, 440, 20), title, Heading, 13, TextAnchor.UpperLeft, true);
+            _y += 24;
+        }
+
+        /// <summary>The note under a toggle that a launch argument turns off for this run (the choice is still saved).</summary>
+        private void LaunchOff(bool off, string argument)
+        {
+            if (off)
+                Line(argument + " on the command line: off for this run.");
+        }
+
+        /// <summary>A value between "&lt;" and "&gt;" buttons; true when one was pressed, <paramref name="step"/> -1 or +1.</summary>
+        private bool Stepper(string label, string shown, out int step)
+        {
+            Text(new Rect(_indent, _y + 2, 120 - _indent, 20), label);
+            step = 0;
+            if (GUI.Button(new Rect(125, _y, 28, 22), "<"))
+                step = -1;
+            Text(new Rect(158, _y + 2, 120, 20), shown, Color.white, 13, TextAnchor.UpperCenter);
+            if (GUI.Button(new Rect(283, _y, 28, 22), ">"))
+                step = 1;
+            _y += 30;
+            return step != 0;
         }
 
         private void DrawTooltip(GameOptions d)

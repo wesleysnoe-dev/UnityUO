@@ -174,8 +174,9 @@ public sealed class GameOptionsTests
     [Fact]
     public void Pages_FollowTazUO_AndUnavailableOnesHaveNoControls()
     {
-        // TazUO's PAGE order (ModernOptionsGump.cs :6146-6164), the pages without a system here left out.
-        Assert.Equal(new[] { "General", "Sound", "Video", "Macros", "Tooltip", "Speech", "Combat & Spells", "Containers", "Nameplates" },
+        // TazUO's PAGE order (ModernOptionsGump.cs :6146-6164), the pages without a system here left out; Display (the
+        // window: TazUO's Video > Game window) split off Video, whose world graphics fill a page of their own.
+        Assert.Equal(new[] { "General", "Sound", "Video", "Display", "Macros", "Tooltip", "Speech", "Combat & Spells", "Containers", "Nameplates" },
             OptionsWindow.Pages.Select(p => p.Title));
         Assert.Equal(Enum.GetValues<OptionsWindow.Page>().Length, OptionsWindow.Pages.Length);
         Assert.Equal(new[] { "Counters", "Info Bar", "Ignore List", "Cooldowns", "Experimental", "TazUO" }, OptionsWindow.UnavailablePages);

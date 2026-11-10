@@ -24,7 +24,7 @@ public sealed class OptionsGraphicsTests
         Assert.Equal(0, d.lightLevel);
         Assert.Equal(GameOptions.LightLevelAbsolute, d.lightLevelType);
         foreach (bool on in new[] { d.itemLights, d.blackWhiteWhenDead, d.deathScreen, d.shadows, d.sunShadows, d.weather,
-                     d.cloudShadows, d.foliageSway, d.seasons, d.ambientLife, d.footprints, d.animatedWater, d.fireEffects, d.bloom, d.colorGrading })
+                     d.cloudShadows, d.foliageSway, d.seasons, d.ambientLife, d.footprints, d.seeThroughTrees, d.animatedWater, d.fireEffects, d.bloom, d.colorGrading })
             Assert.True(on);
     }
 

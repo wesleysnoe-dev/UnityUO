@@ -269,10 +269,7 @@ Shader "UOClient/WorldSprite"
                     return c * i.color;
                 fixed3 art = c.rgb;
                 if (i.water > 0.5 && i.water < 1.5)
-                {
-                    if (_UOWaterStill < 0.5)
-                        c.rgb = UOWaterShimmer(c.rgb, i.world);
-                }
+                    c.rgb = _UOWaterStill < 0.5 ? UOWaterShimmer(c.rgb, i.world) : c.rgb; // animated water off: as drawn
                 else if (_UOFoliageSeason > 0.5 && (i.water >= 1.5 && i.water < 3.5 || i.water >= 5.5 && i.water < 7.5 && _UOFoliageSeason > 2.5))
                     c.rgb = FoliageSeason(c.rgb, i.world); // leaves every season; evergreens only winter and desolation
                 if (_UOWaterStill < 0.5 && i.water > 1.01 && i.water < 1.5)

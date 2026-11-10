@@ -9,13 +9,14 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed partial class OptionsWindow
     {
-        public enum Page { General, Sound, Video, Macros, Tooltip, Speech, CombatSpells, Containers, Nameplates }
+        public enum Page { General, Sound, Video, Display, Macros, Tooltip, Speech, CombatSpells, Containers, Nameplates }
 
         public static readonly (Page Page, string Title)[] Pages =
         {
             (Page.General, "General"),
             (Page.Sound, "Sound"),
             (Page.Video, "Video"),
+            (Page.Display, "Display"),
             (Page.Macros, "Macros"),
             (Page.Tooltip, "Tooltip"),
             (Page.Speech, "Speech"),
@@ -40,6 +41,13 @@ namespace UOClient.Unity.UI
             (Page.General, "Block walking into doors: walks are left to the server to refuse."),
             (Page.Sound, "Footsteps: the client plays no footstep sounds of its own."),
             (Page.Sound, "Music / sound on-off, combat music: volume only."),
+            (Page.Video, "Dark nights, coloured / alternative lights: lights keep light.mul's colours."),
+            (Page.Video, "Rock and tree shadows apart, terrain shadow level: one shadows switch."),
+            (Page.Video, "Fixed sun: its place sets day, night and the shadows' side; Sun shadows off instead."),
+            (Page.Video, "Natural terrain, grass, smooth ground: experimental, launch arguments only."),
+            (Page.Video, "Target aura, mouse thread, upscaling filters: not in this client."),
+            (Page.Display, "Viewport size, position and lock: the world always fills the window."),
+            (Page.Display, "Shadow quality, anti-aliasing: shadows are the client's own, no setting behind."),
             (Page.Tooltip, "Center mobile tooltips: TazUO reads that option nowhere."),
             (Page.Tooltip, "Tooltip font, colours, background: one fixed style."),
             (Page.Speech, "Chat without Enter: always on here (WASD and keys need the keyboard)."),
