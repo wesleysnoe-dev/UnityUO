@@ -566,6 +566,7 @@ namespace UOClient.Unity
             FoliageWind.ShowSeasons = o.seasons;
             AmbientLife.Life = o.ambientLife;
             AmbientLife.StepMarks = o.footprints;
+            SeeThroughTrees.On = o.seeThroughTrees;
             Shader.SetGlobalFloat(WaterStillId, o.animatedWater ? 0f : 1f); // WorldSprite: shimmer and shore foam
             Fx.FxCatalog.On = o.fireEffects;
             CameraRig.SetPostEffects(_ctx.Camera, o.bloom, o.colorGrading);
@@ -898,6 +899,7 @@ namespace UOClient.Unity
             _weather.Update(_ctx.Session, _ctx.Camera, _lighting.Sun.Hour); // before the light: its overcast dims it
             _lighting.Update(_ctx.Session, _ctx.World.ToUnity(_ctx.Player.AnchorPixels), _ctx.ArtScale, _ctx.Hud);
             FoliageWind.Apply(_ctx.Session, _ctx.ArtScale); // plants lean in the wind, leaves take the season
+            SeeThroughTrees.Apply(_ctx.Player); // trees in front of the player thin out round them
             _ambient ??= new AmbientLife(_ctx.Root);
             _ambient.Update(_ctx, _lighting.Sun, FoliageWind.Current(_ctx.Session), _weather.Rain, _weather.Wind, _entities.Flames, Lighting.LocalLightScale);
             if (_weather.Status != "clear")

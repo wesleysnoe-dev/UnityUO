@@ -52,6 +52,7 @@ Shader "UOClient/WorldSprite"
             float _UOFoliageSeason; // leaves' season (FoliageWind.SeasonCode): 0 as drawn, 1 spring, 2 fall, 3 winter, 4 desolation
             float _UOWindowGlow;   // ItemLights: how dark it is (0 day .. 1 night); windows' panes glow by it
             float _UOWaterStill;   // 1: no shimmer and no shore foam (the options' animated water off); unset 0: animated
+            float4 _UOSeeThrough;  // SeeThroughTrees: xy the player's middle (Unity), z the circle's radius (0 = off), w the player's depth
             #ifdef LG_SPRITE_SHADOW
             // LiveGroundCompare (TEST only; LiveGroundLighting.cs, SpriteShadow, mirrors this line for line): sun-shadow
             // receive. Each pixel is put back into the world from its sprite's foot anchor and tested against the CPU
@@ -127,10 +128,19 @@ Shader "UOClient/WorldSprite"
                 float2 world : TEXCOORD1;
                 float height : TEXCOORD2;
                 float water : TEXCOORD5;   // second UV y: 1 UO water art (shimmer); 2..3 leafy, 4..5 woody, 6..7 evergreen (PlantKind)
+                float depth : TEXCOORD6;   // world Z: the draw-order depth (smaller = nearer the camera)
             #ifdef LG_SPRITE_SHADOW
                 float4 foot : TEXCOORD3;
             #endif
             };
+
+            // A 4x4 ordered dither threshold (0..1) for a screen pixel.
+            float Bayer4(float2 screen)
+            {
+                int2 p = int2(fmod(floor(screen), 4.0));
+                const float m[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+                return (m[p.y * 4 + p.x] + 0.5) / 16.0;
+            }
 
             // UO's water art, animated without moving its pixels (that would pull neighbours in from the atlas): slow
             // rolling light swells crossing each other, a finer ripple, and sharp moving glints on the crests.
@@ -249,6 +259,7 @@ Shader "UOClient/WorldSprite"
                 o.world = mul(unity_ObjectToWorld, v.vertex).xy;
                 o.height = v.height.x;
                 o.water = v.height.y;
+                o.depth = mul(unity_ObjectToWorld, v.vertex).z;
             #ifdef LG_SPRITE_SHADOW
                 o.foot = float4(mul(unity_ObjectToWorld, float4(v.foot.xy, v.vertex.z, 1.0)).xy, v.foot.zw);
             #endif
@@ -265,6 +276,13 @@ Shader "UOClient/WorldSprite"
                 if (c.a < _Cutoff && i.water > 7.5 && i.water < 8.5 && _UOWindowGlow > 0.01 && WindowHole(i.uv))
                     return fixed4(WindowWarmth(i.world) * 0.75 * (1.0 - _UODead), 1.0);
                 clip(c.a - _Cutoff);
+                // SeeThroughTrees: a plant in front of the player thins out round them (dithered: the sprites stay
+                // opaque cutouts, so the draw order holds).
+                if (_UOSeeThrough.z > 0.5 && i.water >= 1.5 && i.water < 7.5 && i.depth < _UOSeeThrough.w)
+                {
+                    float near = 1.0 - smoothstep(0.55, 1.0, distance(i.world, _UOSeeThrough.xy) / _UOSeeThrough.z);
+                    clip(Bayer4(i.pos.xy) - near * 0.7);
+                }
                 if (_Unlit > 0.5)
                     return c * i.color;
                 fixed3 art = c.rgb;

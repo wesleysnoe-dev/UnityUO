@@ -2169,11 +2169,36 @@ public sealed class LiveGroundSpriteShadowSourceTests
             "                if (c.a < _Cutoff && i.water > 7.5 && i.water < 8.5 && _UOWindowGlow > 0.01 && WindowHole(i.uv))",
             "                    return fixed4(WindowWarmth(i.world) * 0.75 * (1.0 - _UODead), 1.0);",
         };
-        water = water.Concat(plants).ToArray();
+        // Then see-through trees (SeeThroughTrees): one global, the pixel's depth, a dither function and the fragment's test.
+        string[] seeThrough =
+        {
+            "            float4 _UOSeeThrough;  // SeeThroughTrees: xy the player's middle (Unity), z the circle's radius (0 = off), w the player's depth",
+            "                float depth : TEXCOORD6;   // world Z: the draw-order depth (smaller = nearer the camera)",
+            "                o.depth = mul(unity_ObjectToWorld, v.vertex).z;",
+        };
+        const string seeThroughFunction =
+            "\n\n            // A 4x4 ordered dither threshold (0..1) for a screen pixel.\n" +
+            "            float Bayer4(float2 screen)\n" +
+            "            {\n" +
+            "                int2 p = int2(fmod(floor(screen), 4.0));\n" +
+            "                const float m[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };\n" +
+            "                return (m[p.y * 4 + p.x] + 0.5) / 16.0;\n" +
+            "            }";
+        const string seeThroughTest =
+            "\n                // SeeThroughTrees: a plant in front of the player thins out round them (dithered: the sprites stay\n" +
+            "                // opaque cutouts, so the draw order holds).\n" +
+            "                if (_UOSeeThrough.z > 0.5 && i.water >= 1.5 && i.water < 7.5 && i.depth < _UOSeeThrough.w)\n" +
+            "                {\n" +
+            "                    float near = 1.0 - smoothstep(0.55, 1.0, distance(i.world, _UOSeeThrough.xy) / _UOSeeThrough.z);\n" +
+            "                    clip(Bayer4(i.pos.xy) - near * 0.7);\n" +
+            "                }";
+        water = water.Concat(plants).Concat(seeThrough).ToArray();
         string variant = DefaultVariant(now).Replace("\r\n", "\n");
         Assert.Contains(waterFunction, variant);
         Assert.Contains(plantFunctions, variant);
-        variant = variant.Replace(waterFunction, "").Replace(plantFunctions, "");
+        Assert.Contains(seeThroughFunction, variant);
+        Assert.Contains(seeThroughTest, variant);
+        variant = variant.Replace(waterFunction, "").Replace(plantFunctions, "").Replace(seeThroughFunction, "").Replace(seeThroughTest, "");
         string[] lines = variant.Split('\n');
         foreach (string s in spectral.Concat(water))
             Assert.Single(lines, l => l.TrimEnd('\r') == s);
