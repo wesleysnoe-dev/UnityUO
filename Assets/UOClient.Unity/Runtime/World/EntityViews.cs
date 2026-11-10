@@ -192,6 +192,7 @@ namespace UOClient.Unity
                     if (v.GivesLight)
                         Lights.Add(v.TileX, v.TileY, v.TileZ, v.Graphic, v.LightId);
             _ctx.World.AddStaticLights(Lights);
+            GatherCarriedLights();
             Fx.FxCatalog.Data = _ctx.Data;
             Lights.Walk = _ctx.Walk; // walls stop the lights
             Lights.Apply(_ctx.World, _ctx.Data.LightShapes, _ctx.ArtScale, _ctx.Player.X, _ctx.Player.Y, Lighting.LocalLightScale);
@@ -211,6 +212,33 @@ namespace UOClient.Unity
             });
             FxTest();
             _flames.Apply(_ctx.Data, _ctx.World, _ctx.ArtScale, _ctx.Player.X, _ctx.Player.Y);
+        }
+
+        /// <summary>
+        /// The lights the player and the characters near them carry (ItemLights.Carried): each worn item with the tiledata
+        /// light flag, at its bearer's drawn feet.
+        /// </summary>
+        private void GatherCarriedLights()
+        {
+            ItemLights.Carried.Clear();
+            if (_ctx.Session == null)
+                return;
+            void From(Avatar a, Core.Mobile m)
+            {
+                if (a == null || m == null || Math.Max(Math.Abs(a.X - _ctx.Player.X), Math.Abs(a.Y - _ctx.Player.Y)) > ItemLights.RangeTiles)
+                    return;
+                foreach (Core.EquippedItem e in m.Equipment.Values)
+                {
+                    StaticTileData td = _ctx.Data.TileData.GetStatic(e.Graphic);
+                    if (LightSources.IsLight(td.Flags))
+                        ItemLights.Carried.Add((a.AnchorPixels, e.Graphic, td.LightIndex));
+                }
+            }
+            if (_ctx.Session.World.Mobiles.TryGetValue(_ctx.Session.World.PlayerSerial, out Core.Mobile me))
+                From(_ctx.Player, me);
+            foreach (var kv in _others)
+                if (_ctx.Session.World.Mobiles.TryGetValue(kv.Key, out Core.Mobile m))
+                    From(kv.Value, m);
         }
 
         // RankTies' buffers, reused every frame.

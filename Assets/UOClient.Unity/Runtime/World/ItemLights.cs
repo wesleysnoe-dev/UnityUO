@@ -83,6 +83,17 @@ namespace UOClient.Unity
         }
 
         /// <summary>
+        /// Lights carried this frame (TazUO's MobileView adds one for every worn item with the tiledata light flag: a lit
+        /// torch, lantern or candle in hand): where its bearer is drawn (feet, world pixels at the art scale), the item's
+        /// graphic and its tiledata light index. They follow the bearer smoothly (no tile snapping, so no wall trace) and
+        /// take the slots after the nearest item lights.
+        /// </summary>
+        public static readonly List<(Vector2 Anchor, int Graphic, int LightIndex)> Carried = new List<(Vector2, int, int)>();
+
+        /// <summary>How high above the feet a carried light is held (art pixels): about the hand.</summary>
+        private const float CarriedHeight = 30f;
+
+        /// <summary>
         /// Effect lights this frame (Fx: a fireball lights the ground it flies over, an explosion flashes): a fractional
         /// tile position, a colour and a radius in tiles. They take the slots left after the item lights and show by day
         /// too (where the white cap makes them all but vanish).
@@ -121,6 +132,26 @@ namespace UOClient.Unity
                         float f = Mathf.PerlinNoise(t, c.X * 0.1f) * 0.7f + Mathf.PerlinNoise(t * 2.3f, c.Y * 0.1f) * 0.3f;
                         peak *= 0.78f + 0.3f * f;
                     }
+                    _positions[n] = new Vector4(at.x, at.y, s.Radius * scale, Mathf.Min(1f, peak));
+                    _colors[n] = new Vector4(r * strength, g * strength, b * strength, 0);
+                    n++;
+                }
+                foreach (var carried in Carried)
+                {
+                    if (n >= Max)
+                        break;
+                    if (!(LightSources.Resolve(carried.Graphic, carried.LightIndex) is (int shape, int color)))
+                        continue;
+                    IO.Formats.LightShape s = shapes.Get(shape);
+                    if (!s.Exists)
+                        continue;
+                    Vector2 at = world.ToUnity(new Vector2(carried.Anchor.x, carried.Anchor.y - CarriedHeight * scale));
+                    (float r, float g, float b) = LightSources.Rgb(color);
+                    // A flame in the hand breathes as the lamps do (each bearer out of step).
+                    float t = Time.time * 7f + carried.Anchor.x * 0.013f;
+                    float peak = s.Peak / 31f * (0.8f + 0.25f * Mathf.PerlinNoise(t, carried.Anchor.y * 0.01f));
+                    _tiles[n] = Vector4.zero; // moving: not traced
+                    _slotKey[n] = 0;
                     _positions[n] = new Vector4(at.x, at.y, s.Radius * scale, Mathf.Min(1f, peak));
                     _colors[n] = new Vector4(r * strength, g * strength, b * strength, 0);
                     n++;
