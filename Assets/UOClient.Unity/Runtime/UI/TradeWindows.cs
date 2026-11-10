@@ -119,9 +119,9 @@ namespace UOClient.Unity.UI
             float lineX = (W - TotalLine.width * K) / 2f;
             DrawGumpPart(rightGump, TotalLine, lineX, totalY, K);
             int total = _list.Items.Sum(it => (_order.TryGetValue(it.Serial, out int n) ? n : 0) * it.Price);
-            Text(new Rect(lineX + 42f * K, totalY, 80, 20), total.ToString(), InkBlue, 14, TextAnchor.UpperLeft, true);
+            Text(new Rect(lineX + 42f * K, totalY + 3f, 80, 20), total.ToString(), InkBlue, 14, TextAnchor.UpperLeft, true);
             if (!_list.Selling && Session.World.Player != null)
-                Text(new Rect(lineX + 162f * K, totalY, 90, 20), Session.World.Player.Gold.ToString(), InkBlue, 14, TextAnchor.UpperLeft, true);
+                Text(new Rect(lineX + 162f * K, totalY + 3f, 90, 20), Session.World.Player.Gold.ToString(), InkBlue, 14, TextAnchor.UpperLeft, true);
 
             // The band of seals: the red one accepts, the grey one clears (with their labels).
             float sealX = (W - SealBand.width * K) / 2f;
@@ -169,8 +169,8 @@ namespace UOClient.Unity.UI
                 bool over = mouse.HasValue && line.Contains(mouse.Value);
                 DrawIcon(item, y, row, mouse);
                 float mid = y + (row - 46) / 2f; // the text keeps its place in the line's middle
-                Text(new Rect(55, mid + 6, 112, 18), item.Name, over ? InkHot : Ink, 12, TextAnchor.UpperLeft, true);
-                Text(new Rect(55, mid + 24, 112, 18), $"{item.Price} gp", InkFaded, 12);
+                Text(new Rect(55, mid + 6, view.width - 55 - 48, 18), item.Name, over ? InkHot : Ink, 12, TextAnchor.UpperLeft, true);
+                Text(new Rect(55, mid + 24, view.width - 55 - 48, 18), $"{item.Price} gp", InkFaded, 12);
                 Text(new Rect(168, mid + 15, view.width - 172, 18), (item.Amount - chosen).ToString(), Ink, 12, TextAnchor.UpperRight);
                 if (GUI.Button(line, GUIContent.none, GUIStyle.none) && chosen < item.Amount)
                     _order[item.Serial] = Event.current.shift ? item.Amount : chosen + 1;

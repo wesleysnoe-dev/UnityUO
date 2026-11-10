@@ -195,34 +195,63 @@ namespace UOClient.Unity.UI
                     if ((p >> 24) != 0)
                         lums.Add((int)(((p >> 16) & 0xFF) * 3 + ((p >> 8) & 0xFF) * 6 + (p & 0xFF)) / 10);
                 }
-            // The paper: the median opaque pixel's colour (most of a part is paper).
+            // The paper: pixels near the median's brightness and not strongly coloured. Its shade drifts across the art
+            // (shadows, edges), so each pixel is measured against the paper around it (the mean of the paper pixels within
+            // 6 px, the box widened where there are few), and fades out near the part's edges.
             lums.Sort();
             int paperLum = lums.Count > 0 ? lums[lums.Count / 2] : 200;
-            double pr = 0, pg = 0, pb = 0;
-            int pn = 0;
-            for (int i = 0; i < cut.Pixels.Length; i++)
+            int w = part.width, h = part.height;
+            var n = new double[(w + 1) * (h + 1)];
+            var cr = new double[n.Length];
+            var cg = new double[n.Length];
+            var cb = new double[n.Length];
+            for (int y = 0; y < h; y++)
             {
-                uint p = cut.Pixels[i];
-                int lum = (int)(((p >> 16) & 0xFF) * 3 + ((p >> 8) & 0xFF) * 6 + (p & 0xFF)) / 10;
-                if ((p >> 24) != 0 && Mathf.Abs(lum - paperLum) < 12)
+                double rn = 0, rr = 0, rg = 0, rb = 0;
+                for (int x = 0; x < w; x++)
                 {
-                    pr += (p >> 16) & 0xFF; pg += (p >> 8) & 0xFF; pb += p & 0xFF; pn++;
+                    uint p = cut[x, y];
+                    int r = (int)((p >> 16) & 0xFF), g = (int)((p >> 8) & 0xFF), bl = (int)(p & 0xFF);
+                    int lum = (r * 3 + g * 6 + bl) / 10;
+                    if ((p >> 24) != 0 && Mathf.Abs(lum - paperLum) < 40 && Mathf.Max(r, Mathf.Max(g, bl)) - Mathf.Min(r, Mathf.Min(g, bl)) < 70)
+                    {
+                        rn++; rr += r; rg += g; rb += bl;
+                    }
+                    int i = (y + 1) * (w + 1) + x + 1, up = y * (w + 1) + x + 1;
+                    n[i] = n[up] + rn; cr[i] = cr[up] + rr; cg[i] = cg[up] + rg; cb[i] = cb[up] + rb;
                 }
             }
-            if (pn > 0)
-            {
-                pr /= pn; pg /= pn; pb /= pn;
-            }
-            for (int i = 0; i < cut.Pixels.Length; i++)
-            {
-                uint p = cut.Pixels[i];
-                if ((p >> 24) == 0)
-                    continue;
-                double dr = ((p >> 16) & 0xFF) - pr, dg = ((p >> 8) & 0xFF) - pg, db = (p & 0xFF) - pb;
-                double dist = System.Math.Sqrt(dr * dr + dg * dg + db * db);
-                double a = System.Math.Max(0.0, System.Math.Min(1.0, (dist - 28.0) / 44.0)); // paper 0, ink 1, a soft edge
-                cut.Pixels[i] = ((uint)(a * 255.0) << 24) | (p & 0xFFFFFFu);
-            }
+            double Box(double[] t, int x0, int y0, int x1, int y1) =>
+                t[y1 * (w + 1) + x1] - t[y0 * (w + 1) + x1] - t[y1 * (w + 1) + x0] + t[y0 * (w + 1) + x0];
+            var outPx = new uint[cut.Pixels.Length];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    uint p = cut[x, y];
+                    if ((p >> 24) == 0)
+                        continue;
+                    int x0, y0, x1, y1;
+                    double cnt;
+                    int rad = 6;
+                    while (true)
+                    {
+                        x0 = Mathf.Max(0, x - rad); y0 = Mathf.Max(0, y - rad); x1 = Mathf.Min(w, x + rad + 1); y1 = Mathf.Min(h, y + rad + 1);
+                        cnt = Box(n, x0, y0, x1, y1);
+                        if (cnt >= 8 || rad > 40)
+                            break;
+                        rad *= 2;
+                    }
+                    cnt = System.Math.Max(cnt, 1);
+                    double dr = ((p >> 16) & 0xFF) - Box(cr, x0, y0, x1, y1) / cnt;
+                    double dg = ((p >> 8) & 0xFF) - Box(cg, x0, y0, x1, y1) / cnt;
+                    double db = (p & 0xFF) - Box(cb, x0, y0, x1, y1) / cnt;
+                    double dist = System.Math.Sqrt(dr * dr + dg * dg + db * db);
+                    double a = System.Math.Max(0.0, System.Math.Min(1.0, (dist - 26.0) / 40.0)); // paper 0, ink 1, a soft edge
+                    double edge = System.Math.Min(System.Math.Min(x + 0.5, y + 0.5), System.Math.Min(w - x - 0.5, h - y - 0.5));
+                    a *= System.Math.Min(1.0, edge / 4.0);
+                    outPx[y * w + x] = ((uint)(a * 255.0) << 24) | (p & 0xFFFFFFu);
+                }
+            System.Array.Copy(outPx, cut.Pixels, outPx.Length);
             Texture2D tex = UnityTextures.ToTexture(Scale2x(Scale2x(cut)), $"gump 0x{id:X4} cutout");
             tex.filterMode = FilterMode.Bilinear;
             return _cutouts[(id, part)] = new UiImage { Bitmap = cut, Texture = tex };
