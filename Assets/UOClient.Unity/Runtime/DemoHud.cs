@@ -168,6 +168,9 @@ namespace UOClient.Unity
         public bool JournalVisible { get; set; } = true;
         public bool NamesVisible { get; set; } = true;
 
+        /// <summary>Our own character has a nameplate this frame, which shows the name instead of the plain one.</summary>
+        public bool PlayerPlated { get; set; }
+
         /// <summary>The journal panel's screen rect (for clicks), valid after a draw.</summary>
         public Rect JournalRect { get; private set; }
 
@@ -311,7 +314,8 @@ namespace UOClient.Unity
             {
                 foreach (var (labelName, screen, color) in Labels)
                     DrawSoftShadow(new Rect(screen.x / s - 100, screen.y / s - 26, 200, 22), labelName, _name, color);
-                DrawSoftShadow(new Rect(headScreen.x / s - 100, headScreen.y / s - 26, 200, 22), characterName, _name, new Color(0.55f, 0.75f, 1f));
+                if (!PlayerPlated)
+                    DrawSoftShadow(new Rect(headScreen.x / s - 100, headScreen.y / s - 26, 200, 22), characterName, _name, new Color(0.55f, 0.75f, 1f));
             }
 
             DrawNamePlates(s, w, h);
@@ -476,7 +480,7 @@ namespace UOClient.Unity
                 Vector2 size = _plate.CalcSize(new GUIContent(p.Name));
                 NamePlates.Layout l = NamePlates.Measure(o, size.x, size.y, p.BarCount);
                 string text = o.namePlateUseFixedWidth ? NamePlates.Fit(p.Name, NamePlates.TextRoom(l), _plateMeasure) : p.Name;
-                NamePlates.Box box = NamePlates.Place(p.Head.x / s, NamePlates.PlateBottom(p.Head.y / s, NamesVisible), l);
+                NamePlates.Box box = NamePlates.Place(p.Head.x / s, NamePlates.PlateBottom(p.Head.y / s, false) /* the plate replaces the plain name */, l);
                 // TazUO culls where the plate would sit, then moves it past earlier ones (it may then run off the bottom).
                 if (!NamePlates.OnScreen(box, w, h))
                     continue;

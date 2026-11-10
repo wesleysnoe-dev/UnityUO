@@ -72,9 +72,14 @@ namespace UOClient.Unity
 
             UpdateNamePlates(p);
 
+            // A character with a plate shows its name there only: the plain name under it read as the name twice.
+            _plated.Clear();
+            foreach (DemoHud.NamePlate plate in _ctx.Hud.Plates)
+                _plated.Add(plate.Serial);
+            _ctx.Hud.PlayerPlated = _plated.Contains(_ctx.Session.World.PlayerSerial);
             foreach (KeyValuePair<uint, Avatar> kv in _entities.Others)
             {
-                if (!_ctx.Session.World.Mobiles.TryGetValue(kv.Key, out Core.Mobile m) || string.IsNullOrEmpty(m.Name))
+                if (!_ctx.Session.World.Mobiles.TryGetValue(kv.Key, out Core.Mobile m) || string.IsNullOrEmpty(m.Name) || _plated.Contains(kv.Key))
                     continue;
                 Vector3 s = _ctx.Camera.WorldToScreenPoint(_ctx.World.ToUnity(kv.Value.AnchorPixels - new Vector2(0, 75 * _ctx.ArtScale)));
                 if (s.x < -50 || s.x > Screen.width + 50 || s.y < -50 || s.y > Screen.height + 50)
@@ -123,13 +128,14 @@ namespace UOClient.Unity
         private Color Hue(int hue) => HueColor != null ? HueColor(hue) : DemoHud.PercentFallbackColor(hue);
 
         private readonly HashSet<uint> _plateEligible = new HashSet<uint>();
+        private readonly HashSet<uint> _plated = new HashSet<uint>();
 
         /// <summary>
         /// The nameplates (TazUO's NameOverHeadManager / NameOverheadGump): every character in view, ourselves included,
         /// that the options' filter allows and that has a name, unless closed with a right-click or hidden at full health,
         /// with its bars from the hits (and our own and party members' mana / stamina) the server sent. No line of sight is
         /// checked (this client has none, nor does TazUO's plate): a plate shows for anyone drawn, culled only by the screen
-        /// and an empty name. The plain names over heads stay as well (TazUO draws both, the plate above the name).
+        /// and an empty name. Unlike TazUO (which draws both, the plate above the name), a plate replaces the plain name.
         /// DemoHud places and culls them; their order (top of the screen first) is the avoid-overlap order.
         /// </summary>
         private void UpdateNamePlates(Core.Mobile player)
