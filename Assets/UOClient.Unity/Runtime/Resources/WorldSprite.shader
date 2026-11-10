@@ -144,38 +144,60 @@ Shader "UOClient/WorldSprite"
                 return (m[p.y * 4 + p.x] + 0.5) / 16.0;
             }
 
-            // UO's water art, animated without moving its pixels (that would pull neighbours in from the atlas): long
-            // swells rolling one way with the wind (faster and choppier in a storm), a finer chop crossing them, light
-            // crests and darker troughs; glitter in the sun's or moon's colour; and in rain, rings spreading where drops
-            // land. world: Unity units (world pixels at the art scale). _UOWaterSun: x day (0 moon), y strength, z warmth;
-            // _UOWaterWeather: x rain, y wind.
-            float3 UOWaterShimmer(float3 rgb, float2 world)
+            // UO's water, drawn as real water without moving its pixels (that would pull neighbours in from the atlas): a
+            // water colour deepening from turquoise shallows (shore: the nearness of dry land, 0..1) to dark blue offshore,
+            // the art's own grain kept faintly under it; six ripple trains at their own headings and speeds (steeper and
+            // quicker in wind), wandered by a slow warp so they never repeat, rougher and calmer in broad patches as gusts
+            // cross; their slopes show a brighter sky and, where they face the light, flash with the sun's glints (gold when
+            // it is low) or the moon's (silver); and in rain, rings where drops land.
+            // world: Unity units. _UOWaterSun: x day (0 moon), y strength, z warmth; _UOWaterWeather: x rain, y wind.
+            float WaterNoise(float2 x)
+            {
+                float2 i = floor(x), f = frac(x);
+                f = f * f * (3.0 - 2.0 * f);
+                float a = frac(sin(dot(i, float2(127.1, 311.7))) * 43758.5453);
+                float b = frac(sin(dot(i + float2(1.0, 0.0), float2(127.1, 311.7))) * 43758.5453);
+                float c = frac(sin(dot(i + float2(0.0, 1.0), float2(127.1, 311.7))) * 43758.5453);
+                float d = frac(sin(dot(i + float2(1.0, 1.0), float2(127.1, 311.7))) * 43758.5453);
+                return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+            }
+
+            float3 UOWaterShimmer(float3 rgb, float2 world, float shore)
             {
                 float t = _Time.y;
                 float wind = 0.15 + _UOWaterWeather.y;
-                float speed = 0.7 + wind * 1.6;
-                float2 p = world * 0.011;
-                // The swells roll along the wind (down and right on the screen), a slower cross swell under them.
-                float w1 = sin(dot(p, float2(1.6, 0.7)) - t * speed);
-                float w2 = sin(dot(p, float2(-0.5, 1.4)) - t * speed * 0.6 + 1.7);
-                float chop = sin(dot(p, float2(3.1, 2.3)) - t * speed * 2.1) * sin(dot(p, float2(-2.6, 3.4)) + t * 1.7);
-                float swell = w1 * 0.65 + w2 * 0.35;
-                // Long bands of light and shade rolling across (the swells), the chop finer on top.
-                float band = sin(dot(p, float2(0.55, 0.25)) * 1.0 - t * speed * 0.45);
-                float light = 1.0 + (0.12 + 0.06 * wind) * swell + 0.1 * band + (0.06 + 0.05 * wind) * chop;
-                float3 c = rgb * light;
-                // Glitter: scattered glints that flash for a moment where a crest catches the light, each cell of the water
-                // with its own spot and moment (random, never a grid), more of them on the swells' crests; gold by day
-                // (warmer when the sun is low), silver under the moon.
-                float2 gc = floor(world / 11.0);
-                float gh = frac(sin(dot(gc, float2(41.3, 289.1))) * 15731.743);
-                float2 gp = frac(world / 11.0) - float2(frac(gh * 3.7), frac(gh * 9.1));
-                float flash = pow(saturate(sin(t * (1.3 + gh * 1.7) + gh * 40.0)), 18.0);
-                float spot = saturate(1.0 - length(gp * float2(2.4, 6.5)));         // a short streak along the waves
-                float glint = spot * spot * flash * step(0.55, gh) * (0.6 + 0.8 * saturate(swell));
-                float3 sunTint = lerp(float3(0.85, 0.92, 1.0), float3(1.0, 0.78, 0.45), _UOWaterSun.z);
-                float3 tint = lerp(float3(0.65, 0.72, 0.9), sunTint, _UOWaterSun.x);
-                c += glint * tint * (0.9 + 2.0 * _UOWaterSun.y);
+                float2 p = float2(world.x, world.y * 2.0); // the water is seen at an angle: ripples flattened on screen
+                // A slow wandering warp (no two places alike) and broad patches of rougher and calmer water.
+                p += 22.0 * float2(WaterNoise(p * 0.006 + t * 0.03), WaterNoise(p * 0.006 + 17.3 - t * 0.025)) - 11.0;
+                float rough = 0.45 + 1.1 * WaterNoise(world * 0.0028 + float2(t * 0.012, -t * 0.008));
+                const float2 dirs[6] = { float2(0.97, 0.24), float2(0.62, -0.78), float2(-0.29, 0.96), float2(0.83, 0.56), float2(-0.91, 0.42), float2(0.12, -0.99) };
+                const float lens[6] = { 47.3, 29.1, 18.7, 12.3, 8.9, 6.1 };
+                float2 slope = float2(0.0, 0.0);
+                [unroll] for (int k = 0; k < 6; k++)
+                {
+                    float kk = 6.2831853 / lens[k];
+                    float w = sqrt(9.8 * kk * 30.0) * (0.6 + wind); // deep water: longer ripples run faster
+                    float ph = dot(dirs[k], p) * kk - t * w + k * 1.7;
+                    float a = (0.14 + 0.2 * wind) * rough / (1.0 + k * 0.4); // steepness, the short ones gentler
+                    slope += dirs[k] * (a * cos(ph));
+                }
+                float3 n = normalize(float3(-slope, 1.0));
+                // The water's colour, shallows to deep (lighter by day), with a little of the art's own grain and hue.
+                float3 deep = lerp(float3(0.02, 0.07, 0.15), float3(0.05, 0.17, 0.32), _UOWaterSun.x);
+                float3 shallow = float3(0.10, 0.42, 0.45);
+                float3 water = lerp(deep, shallow, smoothstep(0.0, 1.0, shore));
+                float grain = dot(rgb, float3(0.299, 0.587, 0.114)) / max(dot(water, float3(0.299, 0.587, 0.114)), 0.05);
+                water = lerp(water, water * clamp(grain, 0.6, 1.6), 0.2);
+                // The ripples' light and shade, and the sky in their slopes (the steeper, the more sky).
+                float3 c = water * (0.7 + 0.55 * dot(n, normalize(float3(-0.4, 0.55, 1.0))));
+                float3 sky = lerp(float3(0.3, 0.36, 0.5), float3(0.6, 0.72, 0.86), _UOWaterSun.x);
+                c = lerp(c, sky, saturate((1.0 - n.z) * 3.0) * 0.5);
+                // Glints where a ripple faces the light (sparse, sharp, more where the water is rough): gold by day,
+                // warmer when the sun is low; silver under the moon.
+                float spec = pow(saturate(dot(n, normalize(float3(-0.25, 0.35, 1.0)))), 900.0) * saturate(rough - 0.3);
+                float3 sunTint = lerp(float3(1.0, 0.97, 0.9), float3(1.0, 0.68, 0.32), _UOWaterSun.z);
+                float3 tint = lerp(float3(0.7, 0.78, 0.95), sunTint, _UOWaterSun.x);
+                c += spec * tint * (0.6 + 3.0 * _UOWaterSun.y);
                 // Rain: on a grid of cells a drop lands in each at its own moment, and a ring spreads and fades.
                 if (_UOWaterWeather.x > 0.02)
                 {
@@ -317,7 +339,7 @@ Shader "UOClient/WorldSprite"
                     return c * i.color;
                 fixed3 art = c.rgb;
                 if (i.water > 0.5 && i.water < 1.5)
-                    c.rgb = _UOWaterStill < 0.5 ? UOWaterShimmer(c.rgb, i.world) : c.rgb; // animated water off: as drawn
+                    c.rgb = _UOWaterStill < 0.5 ? UOWaterShimmer(c.rgb, i.world, saturate((i.water - 1.0) * 2.0)) : c.rgb; // animated water off: as drawn
                 else if (_UOFoliageSeason > 0.5 && (i.water >= 1.5 && i.water < 3.5 || i.water >= 5.5 && i.water < 7.5 && _UOFoliageSeason > 2.5))
                     c.rgb = FoliageSeason(c.rgb, i.world); // leaves every season; evergreens only winter and desolation
                 if (_UOWaterStill < 0.5 && i.water > 1.01 && i.water < 1.5)
