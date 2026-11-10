@@ -14,6 +14,10 @@ namespace UOClient.Unity.UI
         public int Width => Bitmap.Width;
         public int Height => Bitmap.Height;
 
+        /// <summary>The HD picture (hued as Bitmap is) when the art has one, and its scale over Bitmap; else null and 1.</summary>
+        public Bitmap32 Hd;
+        public int HdScale = 1;
+
         /// <summary>True if the pixel at (x, y) from the top-left is opaque.</summary>
         public bool HitTest(int x, int y) =>
             x >= 0 && y >= 0 && x < Bitmap.Width && y < Bitmap.Height && (Bitmap[x, y] >> 24) != 0;
@@ -97,14 +101,14 @@ namespace UOClient.Unity.UI
                 return img;
             Bitmap32 bmp = id >= 0 && id < 0x10000 ? _data.GetGump(id) : null;
             // An HD gump from the client's art is drawn at the stock size (Bitmap) with its full detail (Texture).
-            Bitmap32 hd = bmp == null ? null : _data.GetGumpHd(id).Hd;
+            var (hd, hdScale) = bmp == null ? (null, 1) : _data.GetGumpHd(id);
             if (bmp != null && hue > 0 && hue <= _data.Hues.Entries.Length)
             {
                 bmp = HueApplier.Apply(bmp, _data.Hues.Entries[hue - 1], partial);
                 if (hd != null)
                     hd = HueApplier.Apply(hd, _data.Hues.Entries[hue - 1], partial);
             }
-            img = bmp == null ? null : new UiImage { Bitmap = bmp, Texture = Texture(bmp, hd, $"gump 0x{id:X4}") };
+            img = bmp == null ? null : new UiImage { Bitmap = bmp, Texture = Texture(bmp, hd, $"gump 0x{id:X4}"), Hd = hd, HdScale = hd != null ? hdScale : 1 };
             _gumps[(id, hue, partial)] = img;
             return img;
         }

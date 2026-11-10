@@ -223,7 +223,8 @@ namespace UOClient.Unity.UI
 
         /// <summary>
         /// The body and what is worn laid into one picture, back to front: a piece's cover pixels clear what is under them
-        /// (so the niche shows there, not black); then smoothed (edges bled, Scale2x, bilinear). Remade when what is worn changes.
+        /// (so the niche shows there, not black). Kept at the art's size (Bitmap: bounds, the hit test) and composed again
+        /// at 4x from each piece's HD art (the HD pass; Scale2x of what has none) for the texture. Remade when what is worn changes.
         /// </summary>
         private void Compose(UiImage body, int bodyGump, int bodyHue)
         {
@@ -267,11 +268,61 @@ namespace UOClient.Unity.UI
                 _covers.Add(cover);
                 Lay(d.Image.Bitmap, cover);
             }
+            // The same at 4x, from the HD art: soft outline rims laid over what is under them.
+            var big = new Bitmap32(w * DollArtScale, h * DollArtScale);
+            void LayHd(UiImage img, Bitmap32 cover)
+            {
+                Bitmap32 src = HdAt4(img);
+                for (int y = 0; y < src.Height && y < big.Height; y++)
+                    for (int x = 0; x < src.Width && x < big.Width; x++)
+                    {
+                        int cx = x / DollArtScale, cy = y / DollArtScale;
+                        if (cover != null && cx < cover.Width && cy < cover.Height && IsCover(cover[cx, cy]))
+                        {
+                            big[x, y] = 0;
+                            continue;
+                        }
+                        uint p = src[x, y];
+                        uint a = p >> 24;
+                        if (a == 0)
+                            continue;
+                        big[x, y] = a == 255 ? p : Over(p, big[x, y]);
+                    }
+            }
+            if (body != null)
+                LayHd(body, null);
+            for (int i = 0; i < _drawn.Count; i++)
+                LayHd(_drawn[i].Image, _covers[i]);
+
             if (_comp != null)
                 Object.Destroy(_comp.Texture);
-            Texture2D tex = UnityTextures.ToTexture(GumpArt.Scale2x(GumpArt.Bleed(comp, 3)), "paperdoll doll");
+            Texture2D tex = UnityTextures.ToTexture(GumpArt.Bleed(big, 2), "paperdoll doll");
             tex.filterMode = FilterMode.Bilinear;
             _comp = new UiImage { Bitmap = comp, Texture = tex };
+        }
+
+        /// <summary>The doll's texture: 4x its art (the HD pass's scale).</summary>
+        private const int DollArtScale = 4;
+
+        /// <summary>A piece at 4x: its HD art when it has it at 4x (or 2x, doubled), else its art doubled twice (Scale2x).</summary>
+        private static Bitmap32 HdAt4(UiImage img)
+        {
+            if (img.Hd != null && img.HdScale == DollArtScale)
+                return img.Hd;
+            if (img.Hd != null && img.HdScale == 2)
+                return GumpArt.Scale2x(img.Hd);
+            return GumpArt.Scale2x(GumpArt.Scale2x(img.Bitmap));
+        }
+
+        /// <summary>A part-transparent pixel laid over another (straight alpha).</summary>
+        private static uint Over(uint top, uint under)
+        {
+            float a = (top >> 24) / 255f, b = (under >> 24) / 255f;
+            float o = a + b * (1f - a);
+            if (o <= 0f)
+                return 0;
+            uint Mix(int shift) => (uint)Mathf.Clamp(Mathf.RoundToInt((((top >> shift) & 0xFF) * a + ((under >> shift) & 0xFF) * b * (1f - a)) / o), 0, 255);
+            return (uint)Mathf.RoundToInt(o * 255f) << 24 | Mix(16) << 16 | Mix(8) << 8 | Mix(0);
         }
 
         public override void OnClosed()
