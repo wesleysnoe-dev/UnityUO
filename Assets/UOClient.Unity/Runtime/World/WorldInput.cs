@@ -355,6 +355,10 @@ namespace UOClient.Unity
         /// (giving it, or loading a pack animal), into a container, corpse or like stack there, beside any other
         /// item (on its tile, on top of a table), else onto the tile under the cursor. What the server refuses bounces back.
         /// </summary>
+        /// <summary>The tile under a screen point, on the level the player stands at (a right-click's pathfinding target).</summary>
+        public Vector2Int TileAt(Vector2 screen) =>
+            _ctx.World.TileAt(_ctx.World.FromUnity(_entities.ScreenToWorld(screen)), _ctx.Player.Z);
+
         public void DropInWorld(UI.DraggedItem item, Vector2 screen)
         {
             uint under = PickAt(screen);

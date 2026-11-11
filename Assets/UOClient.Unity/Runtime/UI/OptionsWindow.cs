@@ -236,6 +236,17 @@ namespace UOClient.Unity.UI
             GUI.enabled = true;
             _indent = 0;
 
+            d.enablePathfind = Toggle("Pathfinding: right-click a spot to walk there", d.enablePathfind);
+            _indent = 20;
+            GUI.enabled = d.enablePathfind;
+            d.pathfindSingleClick = Toggle("One click is enough (else a double-click)", d.pathfindSingleClick);
+            d.useShiftToPathfind = Toggle("Only with Shift held", d.useShiftToPathfind);
+            Line(d.pathfindSingleClick && !d.useShiftToPathfind
+                ? "Every right-click on the world walks there; holding the button no longer walks."
+                : "The character finds the way round walls, items and people; walking by\nhand (keys, or holding the right button) takes over at once.", 34);
+            GUI.enabled = true;
+            _indent = 0;
+
             d.showMobilesHP = Toggle("Show characters' health", d.showMobilesHP);
             _indent = 20;
             GUI.enabled = d.showMobilesHP;

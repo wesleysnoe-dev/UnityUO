@@ -103,6 +103,8 @@ namespace UOClient.Unity
             _movement = new PlayerMovement(_ctx);
             _hudPresenter = new HudPresenter(_ctx, _entities);
             _input = new WorldInput(_ctx, _entities, _tooltip, _chatLine, _lighting, _roofs, () => _ui, () => Hotkeys);
+            _movement.TileAtScreen = _input.TileAt;
+            _movement.IsDoor = g => (_ctx.Data.TileData.GetStatic(g).Flags & TileFlags.Door) != 0;
             _effects = new EffectsLayer(MakeEffectView);
             _ctx.Camera = CameraRig.EnsureMainCamera();
             _cameraRig = new CameraRig(_ctx.Camera);
@@ -558,6 +560,12 @@ namespace UOClient.Unity
             UI.ContainerWindow.HueGumps = o.hueContainerGumps;
             _input.HoldDownKeyTab = o.holdDownKeyTab;
             _doorAutoOpen.Enabled = o.autoOpenDoors;
+            _movement.DoorsOpenThemselves = o.autoOpenDoors;
+            _movement.EnablePathfind = o.enablePathfind;
+            _movement.UseShiftToPathfind = o.useShiftToPathfind;
+            _movement.PathfindSingleClick = o.pathfindSingleClick;
+            if (!o.enablePathfind)
+                _movement.CancelPath();
             _doorAutoOpen.IfHidden = o.autoOpenDoorsIfHidden;
             UI.GridContainerWindow.DefaultToOldStyleView = o.gridContainersDefaultToOldStyleView;
             UI.GridContainerWindow.Opacity = o.containerOpacity;

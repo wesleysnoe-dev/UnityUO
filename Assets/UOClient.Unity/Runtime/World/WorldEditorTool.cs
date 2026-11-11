@@ -112,6 +112,15 @@ namespace UOClient.Unity
             }
             // -say-selftest: once there, the character speaks a few lines (short and long), for the speech bubbles;
             // -say-selftest=states: staff commands that poison, paralyze, clear and hide the character, 8 s apart.
+            // -path-selftest=x,y: once in Britain (the states test's second line), the character pathfinds to that tile.
+            if (!_pathSent && _shadowSent && Time.unscaledTime >= _shadowAt + 36f
+                && Array.Find(Environment.GetCommandLineArgs(), x => x.StartsWith("-path-selftest=", StringComparison.OrdinalIgnoreCase)) is string pathArg)
+            {
+                _pathSent = true;
+                string[] xy = pathArg.Substring(pathArg.IndexOf('=') + 1).Split(',');
+                if (xy.Length == 2 && int.TryParse(xy[0], out int tx) && int.TryParse(xy[1], out int ty))
+                    PlayerMovement.TestPathTo = new Vector2Int(tx, ty);
+            }
             // -grid-selftest[=WORD]: once there, the backpack opens as a grid window (for captures of the grid's tools).
             if (!_gridOpened && _shadowSent && Time.unscaledTime >= _shadowAt + 12f && _ctx.Session != null
                 && Array.Find(Environment.GetCommandLineArgs(), x => x.StartsWith("-grid-selftest", StringComparison.OrdinalIgnoreCase)) is string gridArg)
@@ -359,7 +368,7 @@ namespace UOClient.Unity
         }
 
         /// <summary>Every frame. <paramref name="takesKeys"/>: the world has the keyboard (not typing in chat or a text box).</summary>
-private bool _gridOpened;
+private bool _gridOpened, _pathSent;
 
                 public void Update(bool takesKeys)
         {

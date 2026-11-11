@@ -44,7 +44,7 @@ namespace UOClient.Unity.UI
             (Page.Counters, "Per-cell hotkeys: the Macros page binds keys."),
             (Page.Cooldowns, "Replace-on-trigger choice: a new trigger always starts the bar over."),
             (Page.InfoBar, "Casting and combat modifiers (lower reagent cost, faster casting...): the server sends none."),
-            (Page.General, "Pathfinding, smooth doors: this client has no pathfinder."),
+            (Page.General, "Smooth doors, auto-follow: not in this client."),
             (Page.General, "Block walking into doors: walks are left to the server to refuse."),
             (Page.Sound, "Heartbeat at low health: not played."),
             (Page.Video, "Coloured / alternative lights: lights keep light.mul's colours."),

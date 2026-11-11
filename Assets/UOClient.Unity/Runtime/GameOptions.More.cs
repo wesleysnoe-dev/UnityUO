@@ -83,6 +83,14 @@ namespace UOClient.Unity
         public int infoBarHighlightType = HudBars.HighlightTextColour;
         public string infoBarItems = HudBars.DefaultInfoBar;
 
+        // ---- pathfinding ----
+
+        /// <summary>TazUO's EnablePathfind: a double right-click on the world walks there. On here (TazUO: off).</summary>
+        public bool enablePathfind = true;
+
+        /// <summary>TazUO's UseShiftToPathfind (the click only counts with Shift held) and PathfindSingleClick (one click is enough).</summary>
+        public bool useShiftToPathfind = false, pathfindSingleClick = false;
+
         // ---- the tenth batch ----
 
         /// <summary>TazUO's HighlightOnUse for the counter bar: the cell flashes when its item is used.</summary>
@@ -138,6 +146,9 @@ namespace UOClient.Unity
             to.infoBarItems = from.infoBarItems;
             to.cooldowns = from.cooldowns;
             to.counterBarHighlightOnUse = from.counterBarHighlightOnUse;
+            to.enablePathfind = from.enablePathfind;
+            to.useShiftToPathfind = from.useShiftToPathfind;
+            to.pathfindSingleClick = from.pathfindSingleClick;
             to.enableLoginMusic = from.enableLoginMusic;
             to.useDarkNights = from.useDarkNights;
             to.tooltipTextHue = from.tooltipTextHue;
@@ -161,6 +172,7 @@ namespace UOClient.Unity
             && counterBarHighlightOnAmount == o.counterBarHighlightOnAmount && counterBarHighlightAmount == o.counterBarHighlightAmount
             && showInfoBar == o.showInfoBar && infoBarHighlightType == o.infoBarHighlightType && infoBarItems == o.infoBarItems
             && cooldowns == o.cooldowns
+            && enablePathfind == o.enablePathfind && useShiftToPathfind == o.useShiftToPathfind && pathfindSingleClick == o.pathfindSingleClick
             && counterBarHighlightOnUse == o.counterBarHighlightOnUse && enableLoginMusic == o.enableLoginMusic
             && useDarkNights == o.useDarkNights && tooltipTextHue == o.tooltipTextHue && guildMessageHue == o.guildMessageHue
             && allyMessageHue == o.allyMessageHue && namePlateFontSize == o.namePlateFontSize;
@@ -223,6 +235,9 @@ namespace UOClient.Unity
                 case "counterBarHighlightAmount": Integer(raw, ref counterBarHighlightAmount); return true;
                 case "showInfoBar": Bool(raw, ref showInfoBar); return true;
                 case "infoBarHighlightType": Integer(raw, ref infoBarHighlightType); return true;
+                case "enablePathfind": Bool(raw, ref enablePathfind); return true;
+                case "useShiftToPathfind": Bool(raw, ref useShiftToPathfind); return true;
+                case "pathfindSingleClick": Bool(raw, ref pathfindSingleClick); return true;
                 case "counterBarHighlightOnUse": Bool(raw, ref counterBarHighlightOnUse); return true;
                 case "enableLoginMusic": Bool(raw, ref enableLoginMusic); return true;
                 case "useDarkNights": Bool(raw, ref useDarkNights); return true;
@@ -283,6 +298,9 @@ namespace UOClient.Unity
                     timers.Add("\"" + FlatJson.Escape(line) + "\"");
             add("cooldowns", "[" + string.Join(", ", timers) + "]");
             add("counterBarHighlightOnUse", b(counterBarHighlightOnUse));
+            add("enablePathfind", b(enablePathfind));
+            add("useShiftToPathfind", b(useShiftToPathfind));
+            add("pathfindSingleClick", b(pathfindSingleClick));
             add("enableLoginMusic", b(enableLoginMusic));
             add("useDarkNights", b(useDarkNights));
             add("tooltipTextHue", i(tooltipTextHue));
@@ -322,6 +340,13 @@ namespace UOClient.Unity
         }
 
         // ---- rules ----
+
+        /// <summary>
+        /// Whether a right-click on the world asks for a path: pathfinding is on, Shift is held if it must be, and the
+        /// click is the second of a double-click unless one click is enough.
+        /// </summary>
+        public static bool PathfindClick(bool enabled, bool useShift, bool singleClick, bool shiftHeld, bool doubleClick) =>
+            enabled && (!useShift || shiftHeld) && (singleClick || doubleClick);
 
         /// <summary>
         /// TazUO's UseDarkNights, for this client: a light level darker than day is half as dark again, never past
