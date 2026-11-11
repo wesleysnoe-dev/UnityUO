@@ -17,7 +17,7 @@ namespace UOClient.Unity.UI
         public enum Page { Login, Connecting, Servers, Characters, Create, Profession, Skills, City }
 
         public Page Current = Page.Login;
-        public string Host = "127.0.0.1", Account = "", Password = "", Status = "";
+        public string Host = IO.ClientSettings.DefaultHost, Account = "", Password = "", Status = "";
         public int Port { get => _port; set { _port = value; _portText = value.ToString(); } }
         private int _port = 2593;
         public bool RememberPassword = true;

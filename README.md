@@ -20,12 +20,12 @@ The client logs in to a ModernUO server as an unencrypted 7.0.23.1 client. That'
 **Server and client data: `UserSettings/unity-uo-settings.json`.** The game, editor windows, CLI and tests all read this file. The game writes it on its first run, filling in the folders it detects:
 
 ```json
-{ "host": "127.0.0.1", "port": 2593,
+{ "host": "uosmallz.duckdns.org", "port": 2593,
   "uoDataPath": "C:\\Users\\…\\AppData\\Local\\UOSmallz\\UOData\\7.0.23.1\\7.0.23.1",
   "overridesPath": "C:\\Users\\…\\AppData\\Local\\UOSmallz\\Client", "hdArt": true }
 ```
 
-- **`host` / `port`:** the shard, by default the local test server. Typing another server on the login screen saves it here.
+- **`host` / `port`:** the shard, by default the live one (`uosmallz.duckdns.org:2593`); the local test server is `-server 127.0.0.1`. Typing another server on the login screen saves it here.
 - **`uoDataPath`:** the UO data files, read in place from the UO Smallz client install (the live client release), never copied into the project. When it's empty, the client uses that install's `UOData` if present, else the EA Classic install.
 - **`overridesPath`:** the UO Smallz client folder. From it the client reads `ExternalImages` (custom and replacement art), `TileData/*.csv` (the shard items in 0x4C00–0x4CFF and 0xFE00–0xFE0D), `EquipConv/*.csv` (how shard clothing is worn), and the `HDArt` pack beside it. These follow the same rules as the client's TazUO patches 0005–0010. `none` turns overrides off.
 - **`hdArt`:** draws 2x art from the HD pack where the renderer draws at 2x.

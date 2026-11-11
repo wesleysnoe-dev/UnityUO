@@ -8,7 +8,7 @@ namespace UOClient.IO
     /// windows, CLI, tests): <c>UserSettings/unity-uo-settings.json</c> in the project, overridden by launch
     /// arguments, falling back to the UO Smallz client install on this PC.
     /// <list type="bullet">
-    /// <item><c>-server host:port</c> (or <c>--server</c>): the shard. Default 127.0.0.1:2593, the local test server.</item>
+    /// <item><c>-server host:port</c> (or <c>--server</c>): the shard. Default uosmallz.duckdns.org:2593, the live shard; the local test server is -server 127.0.0.1.</item>
     /// <item><c>-uodata dir</c>: the UO data files (art, gumps, maps, tiledata, hues, multis).</item>
     /// <item><c>-overrides dir</c>: the UO Smallz client folder whose ExternalImages, TileData and EquipConv
     /// folders carry the shard's custom art and item data; <c>none</c> turns them off.</item>
@@ -19,7 +19,7 @@ namespace UOClient.IO
     public sealed class ClientSettings
     {
         public const string FileName = "unity-uo-settings.json";
-        public const string DefaultHost = "127.0.0.1";
+        public const string DefaultHost = "uosmallz.duckdns.org";
         public const int DefaultPort = 2593;
 
         // Public fields, so Unity's JsonUtility and System.Text.Json (IncludeFields) both read the file.

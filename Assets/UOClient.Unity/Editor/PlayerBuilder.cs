@@ -128,6 +128,73 @@ namespace UOClient.Editor
             return text;
         }
 
+        // ---- the package: the player as it goes to other PCs ----
+
+        public const string PackageFolder = "Builds/Package/Unity UO";
+
+        /// <summary>What the player reads from the project folder, copied beside the executable (project-relative).</summary>
+        public static readonly string[] PackagedContent =
+        {
+            "Theme",                                          // the HD art, the gump kit, the world map's markers
+            "Tools/ComfyRestyle/style/mockup_scene.png",      // the login screen's backdrop while the video loads
+        };
+
+        [MenuItem("UOClient/Package Windows Player (for other PCs)")]
+        public static void PackageFromMenu() => EditorUtility.DisplayDialog(ProductName, Package(), "OK");
+
+        /// <summary>
+        /// Builds the player, then makes Builds/Package/Unity UO: the build without the paths file that points back at this
+        /// project (so the game takes its own folder for the project's: ClientPaths.ProjectRoot), with
+        /// <see cref="PackagedContent"/> copied in. Settings, the account file, hotkeys and logs are made there on first
+        /// run; nothing of this PC's UserSettings is copied. The folder is made anew each time.
+        /// </summary>
+        public static string Package()
+        {
+            string built = Build();
+            if (!built.StartsWith(BuildResult.Succeeded.ToString()))
+                return built;
+            string from = Path.Combine(ProjectRoot, OutputFolder), to = Path.Combine(ProjectRoot, PackageFolder);
+            if (Directory.Exists(to))
+                Directory.Delete(to, true);
+            int files = CopyTree(from, to, f => Path.GetFileName(f) != ClientPaths.PathsFileName
+                                               && !f.Replace('\\', '/').Contains("_DoNotShip/"));
+            foreach (string item in PackagedContent)
+            {
+                string source = Path.Combine(ProjectRoot, item), target = Path.Combine(to, item);
+                if (Directory.Exists(source))
+                    files += CopyTree(source, target, f => !f.EndsWith(".meta"));
+                else if (File.Exists(source))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(target));
+                    File.Copy(source, target, true);
+                    files++;
+                }
+                else
+                    Debug.LogWarning("UOClient: package: " + item + " is missing from the project");
+            }
+            long bytes = 0;
+            foreach (string f in Directory.GetFiles(to, "*", SearchOption.AllDirectories))
+                bytes += new FileInfo(f).Length;
+            string text = $"Packaged: {to.Replace('\\', '/')}, {files} files, {bytes / (1024 * 1024)} MB";
+            Debug.Log("UOClient: " + text);
+            return text;
+        }
+
+        private static int CopyTree(string from, string to, System.Func<string, bool> take)
+        {
+            int n = 0;
+            foreach (string file in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+            {
+                if (!take(file))
+                    continue;
+                string target = Path.Combine(to, file.Substring(from.Length).TrimStart('\\', '/'));
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                File.Copy(file, target, true);
+                n++;
+            }
+            return n;
+        }
+
         /// <summary>The game's own emblem (the 256 px frame of the UO install's uoico.ico), stamped into the exe so shortcuts show it.</summary>
         public const string IconPath = "Assets/UOClient.Unity/Editor/Icon/uo_icon.png";
 

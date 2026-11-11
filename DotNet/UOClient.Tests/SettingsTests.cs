@@ -6,9 +6,12 @@ namespace UOClient.Tests;
 public sealed class SettingsTests
 {
     [Fact]
-    public void DefaultsToTheLocalServerAndArgumentsSwitchIt()
+    public void DefaultsToTheLiveShardAndArgumentsSwitchIt()
     {
         var s = new ClientSettings();
+        Assert.Equal("uosmallz.duckdns.org:2593", s.Server); // what a fresh install connects to
+        Assert.False(s.IsLocal);
+        s.ApplyArguments(new[] { "Unity UO.exe", "-server", "127.0.0.1" }); // the local test server, by argument
         Assert.Equal("127.0.0.1:2593", s.Server);
         Assert.True(s.IsLocal);
 
