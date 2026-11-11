@@ -4,6 +4,16 @@
 
 The client reads the player's own UO install. **EA's data files and anything derived from them, including `Exports/`, are never committed or shipped.**
 
+## Install (players)
+
+1. Download **UnityUO-Setup.cmd** from the [latest release](https://github.com/wesleysnoe-dev/UnityUO/releases/latest).
+2. Double-click it. Windows may warn about a file from the internet: choose **More info**, then **Run anyway**.
+3. It installs the game to `%LOCALAPPDATA%\UnityUO`, puts a **Unity UO** shortcut on the desktop and, if this PC does not have the Ultima Online game data yet, runs the UO Smallz installer to fetch it.
+
+To update, just start the game: the shortcut checks for a new version first and downloads only what changed. Your login, settings and hotkeys are kept. The natural ground and grass are under Options > Video > Ground.
+
+Releases are made with `Tools/Make-Release.ps1` and `Tools/Publish-Release.ps1` (after **UOClient > Package Windows Player**); the number in `VERSION` is the release's.
+
 ## Layout
 
 | Path | What |
