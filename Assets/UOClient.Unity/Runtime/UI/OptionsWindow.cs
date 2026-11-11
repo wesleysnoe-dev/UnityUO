@@ -287,6 +287,7 @@ namespace UOClient.Unity.UI
             GUI.enabled = d.enableMusic;
             d.musicVolume = Slider("Volume", d.musicVolume, 0f, 1f, Percent(d.musicVolume));
             d.enableCombatMusic = Toggle("Combat music in war mode", d.enableCombatMusic);
+            d.enableLoginMusic = Toggle("Music on the login screen", d.enableLoginMusic);
             GUI.enabled = true;
             _indent = 0;
             Line("Music: the login music now, the region music in the world; in war mode\none of the three combat tracks, until you are at peace again.", 34);
@@ -310,6 +311,10 @@ namespace UOClient.Unity.UI
                 : "Never darker than this; brighter when the server's light is.");
             GUI.enabled = true;
             _indent = 0;
+            GUI.enabled = !d.useCustomLightLevel;
+            d.useDarkNights = Toggle("Dark nights", d.useDarkNights);
+            GUI.enabled = true;
+            Line("Night and dungeons are half as dark again (not with a custom light level).");
             d.itemLights = Toggle("Light sources (lamps, torches, candles, lit windows)", d.itemLights);
             d.blackWhiteWhenDead = Toggle("Grey world while dead", d.blackWhiteWhenDead);
             d.deathScreen = Toggle("Death screen", d.deathScreen);
@@ -462,6 +467,9 @@ namespace UOClient.Unity.UI
             Line("How long the mouse rests on something before its tooltip shows.");
             d.tooltipBackgroundOpacity = IntSlider("Background", d.tooltipBackgroundOpacity, 0, 100, "%");
             d.tooltipFontSize = IntSlider("Text size", d.tooltipFontSize, GameOptions.MinTooltipFontSize, GameOptions.MaxTooltipFontSize, " px");
+            d.tooltipTextHue = HueField(0, "Text hue", d.tooltipTextHue);
+            _y += 28;
+            Line("0 keeps the usual parchment colour; the first line stays gold.");
         }
 
         private void DrawCounters(GameOptions d)
@@ -479,6 +487,7 @@ namespace UOClient.Unity.UI
             Line($"{d.counterBarAbbreviatedAmount} and more shows as {HudBars.CounterText(d.counterBarAbbreviatedAmount, true, d.counterBarAbbreviatedAmount)}.");
             _indent = 0;
             GUI.enabled = d.counterBarEnabled;
+            d.counterBarHighlightOnUse = Toggle("Flash a cell when its item is used", d.counterBarHighlightOnUse);
             d.counterBarHighlightOnAmount = Toggle("Red when few are left", d.counterBarHighlightOnAmount);
             _indent = 20;
             GUI.enabled = d.counterBarEnabled && d.counterBarHighlightOnAmount;
@@ -489,7 +498,7 @@ namespace UOClient.Unity.UI
 
         private void DrawCooldowns(GameOptions d)
         {
-            Line("When a journal line contains the trigger text, a bar with that name counts\ndown the seconds. The same trigger again starts it over. Case is ignored.", 34);
+            Line("When a journal line contains the trigger text, a bar with that name counts\ndown the seconds. The same trigger again starts it over. Case is ignored.\nStart the text with me: for your own lines only (your spell words), or with\nbuff: to start when a buff of that name appears on you.", 66);
             List<CooldownDef> defs = Cooldowns.Parse(d.cooldowns);
             bool changed = false;
             int remove = -1;
@@ -650,6 +659,10 @@ namespace UOClient.Unity.UI
             _y += 28;
             d.partyMessageHue = HueField(0, "Party", d.partyMessageHue);
             _y += 28;
+            d.guildMessageHue = HueField(0, "Guild", d.guildMessageHue);
+            d.allyMessageHue = HueField(230, "Alliance", d.allyMessageHue);
+            _y += 28;
+            Line("Guild and Alliance: 0 keeps the colour the server sends.");
             Line("What you type goes out in these: plain, \"; \" whisper, \": \" emote, \"! \" yell\n(macros too). Party: how party lines show in the chat window.", 34);
         }
 
@@ -754,6 +767,7 @@ namespace UOClient.Unity.UI
             GUI.enabled = d.nameOverheadToggled;
             _indent = 0;
             d.namePlateHeight = IntSlider("Plate height (0 = fit text)", d.namePlateHeight, 0, NamePlates.MaxHeight, "px");
+            d.namePlateFontSize = IntSlider("Text size", d.namePlateFontSize, GameOptions.MinNamePlateFontSize, GameOptions.MaxNamePlateFontSize, " px");
             d.namePlateAvoidOverlap = Toggle("Avoid overlapping plates", d.namePlateAvoidOverlap);
             Line("Right-click a plate to hide it until that character leaves view.");
             GUI.enabled = true;

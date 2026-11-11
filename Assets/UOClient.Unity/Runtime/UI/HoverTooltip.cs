@@ -69,7 +69,7 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>The options' tooltip look: the background's opacity in percent, the text size.</summary>
-        public static int BackgroundOpacity = 88, FontSize = 14;
+        public static int BackgroundOpacity = 88, FontSize = 14, TextHue;
         private int _backOpacity = -1;
 
         public void OnGUI(GameSession session, UiManager ui)
@@ -89,6 +89,7 @@ namespace UOClient.Unity.UI
                 _tooltipBack = new Texture2D(1, 1);
             }
             _tooltipStyle.fontSize = FontSize;
+            _tooltipStyle.normal.textColor = TextHue == 0 ? new Color(0.93f, 0.91f, 0.84f) : ui.Art.HueColor(TextHue, new Color(0.93f, 0.91f, 0.84f));
             if (_backOpacity != BackgroundOpacity)
             {
                 _backOpacity = BackgroundOpacity;

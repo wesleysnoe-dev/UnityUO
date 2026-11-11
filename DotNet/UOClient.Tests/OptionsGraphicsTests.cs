@@ -91,6 +91,7 @@ public sealed class OptionsGraphicsTests
                     "namePlateFixedWidth" or "namePlateHealthBarFixedWidth" => 200,
                     "namePlateHeight" => 30,
                     "tooltipFontSize" => 18,
+                    "namePlateFontSize" => 18,
                     "gridDefaultColumns" or "gridDefaultRows" => 7,
                     "counterBarCellSize" => 50,
                     "counterBarRows" => 3,

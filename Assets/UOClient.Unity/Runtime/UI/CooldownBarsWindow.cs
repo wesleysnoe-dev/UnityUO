@@ -14,11 +14,12 @@ namespace UOClient.Unity.UI
         /// <summary>The cooldowns and their running timers: shared, so timers run on while the window is closed or reopened.</summary>
         public static readonly Cooldowns Timers = new Cooldowns();
 
-        private static Vector2 _lastPosition = new Vector2(540, 110);
+        private static readonly Vector2 DefaultPosition = new Vector2(540, 110);
 
         public CooldownBarsWindow()
         {
-            Rect = new Rect(_lastPosition.x, _lastPosition.y, Cooldowns.BarWidth, 0);
+            Vector2 at = BarPositions.Get(WindowKey, DefaultPosition);
+            Rect = new Rect(at.x, at.y, Cooldowns.BarWidth, 0);
         }
 
         public override string Key => WindowKey;
@@ -31,7 +32,8 @@ namespace UOClient.Unity.UI
             var active = Timers.Active(Time.realtimeSinceStartupAsDouble);
             var (w, h) = Cooldowns.StackSize(active.Count);
             Rect.size = new Vector2(w, h);
-            _lastPosition = Rect.position;
+            if (active.Count > 0)
+                BarPositions.Track(WindowKey, Rect.position);
             Color saved = GUI.color;
             float y = 0;
             foreach (var (def, left, fraction) in active)

@@ -59,6 +59,9 @@ namespace UOClient.Unity
             public Color Color;
             public bool Line;
 
+            /// <summary>Poisoned, or with "yellow" hits: the line's fill shows it (GameOptions.HealthLineStatusColor).</summary>
+            public bool Poisoned, YellowHits;
+
             /// <summary>The % text's number, or -1 for no text.</summary>
             public int Percent;
 
@@ -129,6 +132,9 @@ namespace UOClient.Unity
 
         /// <summary>The options' HealthLineSizeMultiplier (1-5): the health lines' width (GameOptions.HealthLineWidth).</summary>
         public int HealthLineSize { get; set; } = 1;
+
+        /// <summary>The options' nameplate text size.</summary>
+        public static int PlateFontSize = 14;
         public bool WarMode { get; set; }
 
         /// <summary>The player is a ghost: a resurrection hint stays on screen.</summary>
@@ -322,6 +328,8 @@ namespace UOClient.Unity
                     DrawSoftShadow(new Rect(headScreen.x / s - 100, headScreen.y / s - 26, 200, 22), characterName, _name, new Color(0.55f, 0.75f, 1f));
             }
 
+            if (_plate.fontSize != PlateFontSize)
+                _plate.fontSize = PlateFontSize;
             DrawNamePlates(s, w, h);
 
             float barWidth = GameOptions.HealthLineWidth(HealthLineSize);
@@ -348,7 +356,8 @@ namespace UOClient.Unity
                 GUI.DrawTexture(r, _white);
                 GUI.color = new Color(0.1f, 0.02f, 0.02f, 0.95f);
                 GUI.DrawTexture(new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2), _white);
-                GUI.color = Color.Lerp(new Color(0.9f, 0.15f, 0.1f), new Color(0.2f, 0.55f, 1f), ratio);
+                GUI.color = GameOptions.HealthLineStatusColor(bar.Poisoned, bar.YellowHits) is (float sr, float sg, float sb)
+                    ? new Color(sr, sg, sb) : Color.Lerp(new Color(0.9f, 0.15f, 0.1f), new Color(0.2f, 0.55f, 1f), ratio);
                 GUI.DrawTexture(new Rect(r.x + 1, r.y + 1, (r.width - 2) * Mathf.Clamp01(ratio), r.height - 2), _white);
                 GUI.color = Color.white;
             }

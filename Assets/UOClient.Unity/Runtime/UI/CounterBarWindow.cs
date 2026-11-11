@@ -25,7 +25,13 @@ namespace UOClient.Unity.UI
         public static bool HighlightLow { get; set; }
         public static int LowBelow { get; set; } = 5;
 
-        private static Vector2 _lastPosition = new Vector2(540, 56); // kept for the run: where the bar was left
+        private static readonly Vector2 DefaultPosition = new Vector2(540, 56);
+
+        /// <summary>TazUO's HighlightOnUse: the cell flashes when its item is used.</summary>
+        public static bool HighlightOnUse { get; set; } = true;
+
+        private int _usedCell = -1;
+        private float _usedAt;
 
         private readonly List<CounterCell> _cells;
         private readonly Dictionary<(int Graphic, int Hue), (int Amount, uint First)> _totals = new Dictionary<(int, int), (int, uint)>();
@@ -38,7 +44,8 @@ namespace UOClient.Unity.UI
         public CounterBarWindow()
         {
             _cells = Load();
-            Rect = new Rect(_lastPosition.x, _lastPosition.y, 10, 10);
+            Vector2 at = BarPositions.Get(WindowKey, DefaultPosition);
+            Rect = new Rect(at.x, at.y, 10, 10);
         }
 
         public override string Key => WindowKey;
@@ -126,7 +133,7 @@ namespace UOClient.Unity.UI
             int cell = CellSize, columns = Columns, rows = Rows;
             var (w, h) = HudBars.CounterBarSize(cell, columns, rows);
             Rect.size = new Vector2(w, h);
-            _lastPosition = Rect.position;
+            BarPositions.Track(WindowKey, Rect.position);
             Count();
 
             Color saved = GUI.color;
@@ -140,7 +147,8 @@ namespace UOClient.Unity.UI
             for (int i = 0; i < columns * rows; i++)
             {
                 float x = 4 + (i % columns) * (cell + 1), y = 4 + (i / columns) * (cell + 1);
-                GUI.color = new Color(1, 1, 1, i == over ? 0.22f : 0.1f);
+                float flash = HighlightOnUse && i == _usedCell ? Mathf.Clamp01(1f - (Time.realtimeSinceStartup - _usedAt) / 0.6f) : 0f;
+                GUI.color = flash > 0 ? new Color(1f, 0.85f, 0.3f, 0.15f + 0.6f * flash) : new Color(1, 1, 1, i == over ? 0.22f : 0.1f);
                 GUI.DrawTexture(new Rect(x, y, cell, cell), Texture2D.whiteTexture);
                 GUI.color = saved;
                 CounterCell c = i < _cells.Count ? _cells[i] : new CounterCell();
@@ -181,7 +189,11 @@ namespace UOClient.Unity.UI
                 if (_lastClickCell == over && Time.realtimeSinceStartup - _lastClick < 0.4f)
                 {
                     if (_totals.TryGetValue((_cells[over].Graphic, _cells[over].Hue), out var total) && total.First != 0)
+                    {
                         Session.Use(total.First);
+                        _usedCell = over;
+                        _usedAt = Time.realtimeSinceStartup;
+                    }
                     _lastClickCell = -1;
                     e.Use();
                 }

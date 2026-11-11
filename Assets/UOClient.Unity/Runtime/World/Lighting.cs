@@ -177,7 +177,11 @@ namespace UOClient.Unity
 
         /// <summary>The overall and personal light levels the world is lit at: the server's, or the custom level (GameOptions.LightLevels).</summary>
         private static (int Overall, int Personal) ServerLevels(GameSession session) =>
-            GameOptions.LightLevels(session.World.GlobalLight, session.World.PersonalLight, CustomLightLevel, CustomLevel, CustomLevelType);
+            GameOptions.LightLevels(CustomLightLevel ? session.World.GlobalLight : GameOptions.DarkNight(session.World.GlobalLight, DarkNights),
+                session.World.PersonalLight, CustomLightLevel, CustomLevel, CustomLevelType);
+
+        /// <summary>The options' UseDarkNights (GameOptions.DarkNight).</summary>
+        public static bool DarkNights;
 
         /// <summary>How strongly item and static lights show, 0 (day, or the personal light at the overall level) to 1 (night).</summary>
         public static float LocalLightScale { get; private set; }

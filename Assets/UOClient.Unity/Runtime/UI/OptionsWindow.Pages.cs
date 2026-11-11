@@ -41,15 +41,13 @@ namespace UOClient.Unity.UI
         /// </summary>
         public static readonly (Page Page, string Text)[] NotOffered =
         {
-            (Page.Counters, "Highlight on use, per-cell hotkeys: not in this bar."),
-            (Page.Cooldowns, "Buff-icon and spell-cast triggers, replace-on-trigger choice: journal text only; a new trigger restarts."),
-            (Page.Cooldowns, "Saved bar position: the bars start in the same place each login."),
-            (Page.Counters, "Saved bar position: the bars start in the same place each login."),
+            (Page.Counters, "Per-cell hotkeys: the Macros page binds keys."),
+            (Page.Cooldowns, "Replace-on-trigger choice: a new trigger always starts the bar over."),
             (Page.InfoBar, "Casting and combat modifiers (lower reagent cost, faster casting...): the server sends none."),
             (Page.General, "Pathfinding, smooth doors: this client has no pathfinder."),
             (Page.General, "Block walking into doors: walks are left to the server to refuse."),
-            (Page.Sound, "Login music switch, heartbeat sound: the music switch covers the login music."),
-            (Page.Video, "Dark nights, coloured / alternative lights: lights keep light.mul's colours."),
+            (Page.Sound, "Heartbeat at low health: not played."),
+            (Page.Video, "Coloured / alternative lights: lights keep light.mul's colours."),
             (Page.Video, "Rock and tree shadows apart, terrain shadow level: one shadows switch."),
             (Page.Video, "Fixed sun: its place sets day, night and the shadows' side; Sun shadows off instead."),
             (Page.Video, "Natural terrain, grass, smooth ground: experimental, launch arguments only."),
@@ -57,11 +55,10 @@ namespace UOClient.Unity.UI
             (Page.Display, "Viewport size, position and lock: the world always fills the window."),
             (Page.Display, "Shadow quality, anti-aliasing: shadows are the client's own, no setting behind."),
             (Page.Tooltip, "Center mobile tooltips: TazUO reads that option nowhere."),
-            (Page.Tooltip, "Tooltip font face, text and border colours: one fixed style."),
+            (Page.Tooltip, "Tooltip font face, border colour: one font, no border."),
             (Page.Speech, "Chat without Enter: always on here (WASD and keys need the keyboard)."),
-            (Page.Speech, "Guild / alliance hues: this client sends no guild chat (AoS)."),
             (Page.Speech, "Override party hue: TazUO's recolours members' bodies, not chat."),
-            (Page.CombatSpells, "Spell hues, cursor spell names, HP colours: not drawn."),
+            (Page.CombatSpells, "Spell hues, cursor spell names: not drawn."),
             (Page.Containers, "Auto loot lists, locked slots, bands, saved window sizes: not in the grid yet."),
             (Page.Containers, "Border styles, property highlights, list view: one border style, no highlights."),
             (Page.Containers, "Nearby loot window: not in this client."),
@@ -69,8 +66,8 @@ namespace UOClient.Unity.UI
             (Page.Nameplates, "Item and corpse plates: characters only."),
             (Page.Nameplates, "Presets, saved presets, wiki link: set each option here."),
             (Page.Nameplates, "Word of Death icon: it casts a spell from the plate; not added."),
-            (Page.Nameplates, "Corner radius, plate font and font size: square plates, the HUD font."),
-            (Page.Nameplates, "New character name flash (ShowNewMobileNameIncoming): not drawn."),
+            (Page.Nameplates, "Corner radius, plate font face: square plates, the HUD font."),
+            (Page.Nameplates, "New character name flash: names over heads already show everyone in view."),
         };
 
         /// <summary>What Defaults, Cancel, Apply and Okay do, shown while the mouse is on each (in that order).</summary>

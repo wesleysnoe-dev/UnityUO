@@ -124,6 +124,34 @@ namespace UOClient.Unity
             return f <= 0.25f ? 2 : f <= 0.5f ? 1 : 0;
         }
 
+        // ---- where the bars were left ----
+
+        /// <summary>The saved places ("key=x,y" a line); lines that are not one are left out.</summary>
+        public static Dictionary<string, (int X, int Y)> ParseBarPositions(string text)
+        {
+            var at = new Dictionary<string, (int, int)>();
+            foreach (string line in (text ?? "").Split('\n', '\r'))
+            {
+                int eq = line.IndexOf('=');
+                string[] xy = eq > 0 ? line.Substring(eq + 1).Split(',') : null;
+                if (xy != null && xy.Length == 2 && int.TryParse(xy[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int x)
+                    && int.TryParse(xy[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int y)
+                    && Math.Abs(x) <= 20000 && Math.Abs(y) <= 20000)
+                    at[line.Substring(0, eq).Trim()] = (x, y);
+            }
+            return at;
+        }
+
+        public static string FormatBarPositions(Dictionary<string, (int X, int Y)> at)
+        {
+            var keys = new List<string>(at.Keys);
+            keys.Sort(StringComparer.Ordinal);
+            var lines = new List<string>();
+            foreach (string key in keys)
+                lines.Add(key + "=" + at[key].X.ToString(CultureInfo.InvariantCulture) + "," + at[key].Y.ToString(CultureInfo.InvariantCulture));
+            return string.Join("\n", lines);
+        }
+
         // ---- counter bar ----
 
         public const int MinCounterCell = 30, MaxCounterCell = 80, MaxCounterColumns = 20, MaxCounterRows = 5;

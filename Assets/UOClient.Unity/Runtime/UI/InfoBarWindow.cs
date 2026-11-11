@@ -21,12 +21,13 @@ namespace UOClient.Unity.UI
         /// <summary>The entries; setting them takes effect on the open bar at once.</summary>
         public static List<InfoBarItem> Items { get; set; } = HudBars.ParseInfoBar(HudBars.DefaultInfoBar);
 
-        private static Vector2 _lastPosition = new Vector2(540, 30);
+        private static readonly Vector2 DefaultPosition = new Vector2(540, 30);
         private static GUIStyle _measure;
 
         public InfoBarWindow()
         {
-            Rect = new Rect(_lastPosition.x, _lastPosition.y, 200, Height);
+            Vector2 at = BarPositions.Get(WindowKey, DefaultPosition);
+            Rect = new Rect(at.x, at.y, 200, Height);
         }
 
         public override string Key => WindowKey;
@@ -45,7 +46,7 @@ namespace UOClient.Unity.UI
         {
             _measure ??= new GUIStyle(GUI.skin.label) { fontSize = 12, wordWrap = false };
             InfoStats stats = StatsOf(Session.World.Player);
-            _lastPosition = Rect.position;
+            BarPositions.Track(WindowKey, Rect.position);
 
             // Laid out first, for the width.
             var parts = new List<(string Text, float Width, InfoBarItem Item)>();

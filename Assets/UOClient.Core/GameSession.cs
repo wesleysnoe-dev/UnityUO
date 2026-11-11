@@ -955,6 +955,7 @@ namespace UOClient.Core
             // GameScene.ChatOnMessageReceived: an emote sent without a hue takes the emote hue.
             if (type == 2 && hue == 0)
                 hue = SpeechOptions.Emote;
+            hue = SpeechOptions.Recolour(type, hue);
             bool system = serial == 0xFFFFFFFF || serial == 0 || string.IsNullOrEmpty(name) || name == "System";
             string link = ExtractLink(ref text);
             World.AddJournal(new JournalEntry
@@ -1114,6 +1115,12 @@ namespace UOClient.Core
 
         public ushort Speech = GameSession.SpeechHue, Whisper = 0x33, Emote = 0x21, Yell = 0x21, Party = GameSession.PartyHue;
         public bool IgnoreGuildMessages, IgnoreAllianceMessages;
+
+        /// <summary>TazUO's GuildMessageHue / AllyMessageHue: guild (13) and alliance (14) lines show in these; 0 keeps the server's colour.</summary>
+        public ushort Guild, Alliance;
+
+        public ushort Recolour(byte type, ushort hue) =>
+            type == 13 && Guild != 0 ? Guild : type == 14 && Alliance != 0 ? Alliance : hue;
 
         /// <summary>
         /// Whether an incoming line of this type is dropped before the journal sees it: guild (13) or alliance (14) with

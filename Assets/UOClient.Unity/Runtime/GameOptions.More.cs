@@ -83,6 +83,28 @@ namespace UOClient.Unity
         public int infoBarHighlightType = HudBars.HighlightTextColour;
         public string infoBarItems = HudBars.DefaultInfoBar;
 
+        // ---- the tenth batch ----
+
+        /// <summary>TazUO's HighlightOnUse for the counter bar: the cell flashes when its item is used.</summary>
+        public bool counterBarHighlightOnUse = true;
+
+        /// <summary>The login screen's music, apart from the game's (TazUO's EnableMusic covers both there).</summary>
+        public bool enableLoginMusic = true;
+
+        /// <summary>TazUO's UseDarkNights: the server's night is half as dark again (GameOptions.DarkNight). Not with a custom light level.</summary>
+        public bool useDarkNights = false;
+
+        /// <summary>The tooltip's text hue; 0 keeps this client's parchment colour.</summary>
+        public int tooltipTextHue = 0;
+
+        /// <summary>TazUO's GuildMessageHue / AllyMessageHue: guild and alliance chat in these hues; 0 keeps the server's colour.</summary>
+        public int guildMessageHue = 0, allyMessageHue = 0;
+
+        /// <summary>The nameplates' text size (TazUO's plate font size).</summary>
+        public int namePlateFontSize = 14;
+
+        public const int MinNamePlateFontSize = 10, MaxNamePlateFontSize = 24;
+
         /// <summary>TazUO's cooldown bars: "Name|Trigger text|Seconds|Hue" a line (rules in Cooldowns). None by default.</summary>
         public string cooldowns = "";
 
@@ -115,6 +137,13 @@ namespace UOClient.Unity
             to.infoBarHighlightType = from.infoBarHighlightType;
             to.infoBarItems = from.infoBarItems;
             to.cooldowns = from.cooldowns;
+            to.counterBarHighlightOnUse = from.counterBarHighlightOnUse;
+            to.enableLoginMusic = from.enableLoginMusic;
+            to.useDarkNights = from.useDarkNights;
+            to.tooltipTextHue = from.tooltipTextHue;
+            to.guildMessageHue = from.guildMessageHue;
+            to.allyMessageHue = from.allyMessageHue;
+            to.namePlateFontSize = from.namePlateFontSize;
         }
 
         private bool SameMore(GameOptions o) =>
@@ -131,7 +160,10 @@ namespace UOClient.Unity
             && counterBarAbbreviatedAmount == o.counterBarAbbreviatedAmount
             && counterBarHighlightOnAmount == o.counterBarHighlightOnAmount && counterBarHighlightAmount == o.counterBarHighlightAmount
             && showInfoBar == o.showInfoBar && infoBarHighlightType == o.infoBarHighlightType && infoBarItems == o.infoBarItems
-            && cooldowns == o.cooldowns;
+            && cooldowns == o.cooldowns
+            && counterBarHighlightOnUse == o.counterBarHighlightOnUse && enableLoginMusic == o.enableLoginMusic
+            && useDarkNights == o.useDarkNights && tooltipTextHue == o.tooltipTextHue && guildMessageHue == o.guildMessageHue
+            && allyMessageHue == o.allyMessageHue && namePlateFontSize == o.namePlateFontSize;
 
         private void ClampMore()
         {
@@ -151,6 +183,10 @@ namespace UOClient.Unity
             infoBarHighlightType = Math.Max(HudBars.HighlightTextColour, Math.Min(HudBars.HighlightBars, infoBarHighlightType));
             infoBarItems = HudBars.FormatInfoBar(HudBars.ParseInfoBar(infoBarItems));
             cooldowns = Cooldowns.Format(Cooldowns.Parse(cooldowns));
+            tooltipTextHue = ClampHue(tooltipTextHue);
+            guildMessageHue = ClampHue(guildMessageHue);
+            allyMessageHue = ClampHue(allyMessageHue);
+            namePlateFontSize = Math.Max(MinNamePlateFontSize, Math.Min(MaxNamePlateFontSize, namePlateFontSize));
         }
 
         /// <summary>The parse switch's keys of this batch; false for a key that is not one.</summary>
@@ -187,6 +223,13 @@ namespace UOClient.Unity
                 case "counterBarHighlightAmount": Integer(raw, ref counterBarHighlightAmount); return true;
                 case "showInfoBar": Bool(raw, ref showInfoBar); return true;
                 case "infoBarHighlightType": Integer(raw, ref infoBarHighlightType); return true;
+                case "counterBarHighlightOnUse": Bool(raw, ref counterBarHighlightOnUse); return true;
+                case "enableLoginMusic": Bool(raw, ref enableLoginMusic); return true;
+                case "useDarkNights": Bool(raw, ref useDarkNights); return true;
+                case "tooltipTextHue": Integer(raw, ref tooltipTextHue); return true;
+                case "guildMessageHue": Integer(raw, ref guildMessageHue); return true;
+                case "allyMessageHue": Integer(raw, ref allyMessageHue); return true;
+                case "namePlateFontSize": Integer(raw, ref namePlateFontSize); return true;
                 case "cooldowns":
                     if (TryReadStrings(raw, out List<string> timers))
                         cooldowns = string.Join("\n", timers);
@@ -239,6 +282,13 @@ namespace UOClient.Unity
                 if (line.Length > 0)
                     timers.Add("\"" + FlatJson.Escape(line) + "\"");
             add("cooldowns", "[" + string.Join(", ", timers) + "]");
+            add("counterBarHighlightOnUse", b(counterBarHighlightOnUse));
+            add("enableLoginMusic", b(enableLoginMusic));
+            add("useDarkNights", b(useDarkNights));
+            add("tooltipTextHue", i(tooltipTextHue));
+            add("guildMessageHue", i(guildMessageHue));
+            add("allyMessageHue", i(allyMessageHue));
+            add("namePlateFontSize", i(namePlateFontSize));
         }
 
         /// <summary>A JSON array of strings (["a", "b"]); false for anything else.</summary>
@@ -272,6 +322,20 @@ namespace UOClient.Unity
         }
 
         // ---- rules ----
+
+        /// <summary>
+        /// TazUO's UseDarkNights, for this client: a light level darker than day is half as dark again, never past
+        /// <see cref="MaxLightLevel"/>. The shard's night is level 12 of 30, so it becomes 18.
+        /// </summary>
+        public static int DarkNight(int overall, bool darkNights) =>
+            darkNights && overall > 0 ? Math.Min(MaxLightLevel, overall + (overall + 1) / 2) : overall;
+
+        /// <summary>
+        /// The overhead health line's fill: green while poisoned, yellow while the hits are "yellow" (blessed,
+        /// invulnerable), as TazUO's health lines; null for the usual red-to-blue.
+        /// </summary>
+        public static (float R, float G, float B)? HealthLineStatusColor(bool poisoned, bool yellowHits) =>
+            poisoned ? (0.25f, 0.8f, 0.3f) : yellowHits ? (0.95f, 0.8f, 0.2f) : ((float, float, float)?)null;
 
         /// <summary>
         /// Whether the grid's search box finds an item: every word typed is somewhere in its name or its tooltip lines

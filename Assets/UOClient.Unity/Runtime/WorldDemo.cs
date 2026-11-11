@@ -502,6 +502,12 @@ namespace UOClient.Unity
             UI.CounterBarWindow.AbbreviateFrom = o.counterBarAbbreviatedAmount;
             UI.CounterBarWindow.HighlightLow = o.counterBarHighlightOnAmount;
             UI.CounterBarWindow.LowBelow = o.counterBarHighlightAmount;
+            UI.CounterBarWindow.HighlightOnUse = o.counterBarHighlightOnUse;
+            Lighting.DarkNights = o.useDarkNights;
+            UI.HoverTooltip.TextHue = o.tooltipTextHue;
+            _speechOptions.Guild = (ushort)o.guildMessageHue;
+            _speechOptions.Alliance = (ushort)o.allyMessageHue;
+            DemoHud.PlateFontSize = o.namePlateFontSize;
             UI.InfoBarWindow.Enabled = o.showInfoBar;
             UI.InfoBarWindow.HighlightType = o.infoBarHighlightType;
             UI.InfoBarWindow.Items = HudBars.ParseInfoBar(o.infoBarItems);
@@ -683,7 +689,7 @@ namespace UOClient.Unity
         private void ApplyAudioOptions()
         {
             if (_loginMedia != null)
-                _loginMedia.MusicVolume = GameOptions.EffectiveVolume(_more.enableMusic, _musicVolume); // the login music, while it plays
+                _loginMedia.MusicVolume = GameOptions.EffectiveVolume(_more.enableMusic && _more.enableLoginMusic, _musicVolume); // the login music, while it plays
             SessionUiBinder.CombatMusic = _more.enableCombatMusic;
             if (Sound == null)
                 return;

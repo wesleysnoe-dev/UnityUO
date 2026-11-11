@@ -60,9 +60,40 @@ namespace UOClient.Unity
 
         private static string Clean(string s) => (s ?? "").Replace("|", "").Replace("\n", "").Replace("\r", "").Trim();
 
+        /// <summary>What a trigger listens to: any journal line, only your own lines ("me:..."), or a buff's name ("buff:...").</summary>
+        public enum TriggerKind { Text, OwnText, Buff }
+
+        public const string OwnPrefix = "me:", BuffPrefix = "buff:";
+
+        /// <summary>A trigger's kind and the text it looks for (the prefix taken off).</summary>
+        public static (TriggerKind Kind, string Text) Trigger(string trigger)
+        {
+            string t = (trigger ?? "").Trim();
+            if (t.StartsWith(BuffPrefix, StringComparison.OrdinalIgnoreCase))
+                return (TriggerKind.Buff, t.Substring(BuffPrefix.Length).Trim());
+            if (t.StartsWith(OwnPrefix, StringComparison.OrdinalIgnoreCase))
+                return (TriggerKind.OwnText, t.Substring(OwnPrefix.Length).Trim());
+            return (TriggerKind.Text, t);
+        }
+
         /// <summary>The line starts this cooldown: its trigger text is in it (case ignored). A blank trigger starts nothing.</summary>
-        public static bool Starts(CooldownDef d, string text) =>
-            !string.IsNullOrWhiteSpace(d.Trigger) && text != null && text.IndexOf(d.Trigger, StringComparison.OrdinalIgnoreCase) >= 0;
+        public static bool Starts(CooldownDef d, string text) => Starts(d, text, true);
+
+        /// <summary>As <see cref="Starts(CooldownDef, string)"/>; a "me:" trigger only for a line of the player's own (<paramref name="own"/>).</summary>
+        public static bool Starts(CooldownDef d, string text, bool own)
+        {
+            (TriggerKind kind, string look) = Trigger(d.Trigger);
+            return kind != TriggerKind.Buff && (kind == TriggerKind.Text || own) && look.Length > 0 && text != null
+                   && text.IndexOf(look, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>A buff with this name starts the cooldown: a "buff:" trigger whose text is in the name (case ignored).</summary>
+        public static bool StartsOnBuff(CooldownDef d, string buffName)
+        {
+            (TriggerKind kind, string look) = Trigger(d.Trigger);
+            return kind == TriggerKind.Buff && look.Length > 0 && buffName != null
+                   && buffName.IndexOf(look, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
 
         /// <summary>The time left as the bar shows it: seconds with a tenth under ten, whole seconds above, m:ss from a minute.</summary>
         public static string TimeText(double secondsLeft)
@@ -92,12 +123,20 @@ namespace UOClient.Unity
         public List<CooldownDef> Defs { get; set; } = new List<CooldownDef>();
 
         /// <summary>A journal line arrived at <paramref name="now"/> (seconds): every cooldown it triggers starts, or starts again.</summary>
-        public int OnText(string text, double now)
+        public int OnText(string text, double now) => OnText(text, now, true);
+
+        /// <summary>As <see cref="OnText(string, double)"/>; <paramref name="own"/>: the player said or cast it.</summary>
+        public int OnText(string text, double now, bool own) => Start(d => Starts(d, text, own), now);
+
+        /// <summary>A buff appeared on the player at <paramref name="now"/>: the "buff:" cooldowns naming it start.</summary>
+        public int OnBuff(string buffName, double now) => Start(d => StartsOnBuff(d, buffName), now);
+
+        private int Start(Func<CooldownDef, bool> starts, double now)
         {
             int started = 0;
             foreach (CooldownDef d in Defs)
             {
-                if (!Starts(d, text))
+                if (!starts(d))
                     continue;
                 _running.RemoveAll(r => r.Def.Name == d.Name && r.Def.Trigger == d.Trigger);
                 _running.Add(new Running { Def = d, EndsAt = now + d.Seconds });

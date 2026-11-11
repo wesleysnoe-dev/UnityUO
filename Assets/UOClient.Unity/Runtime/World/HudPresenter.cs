@@ -117,6 +117,8 @@ namespace UOClient.Unity
                     Head = new Vector2(head.x, Screen.height - head.y),
                     PercentColor = Hue(hue),
                     Serial = m.Serial,
+                    Poisoned = m.Poisoned,
+                    YellowHits = m.YellowHits,
                 });
             }
             Bar(p, _ctx.Player);

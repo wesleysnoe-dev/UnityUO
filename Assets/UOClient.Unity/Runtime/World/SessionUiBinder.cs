@@ -79,6 +79,7 @@ namespace UOClient.Unity
             s.TargetQueryRequested += OnTargetQueryRequested;
             s.World.JournalAdded += OnJournalOverhead;
             s.World.JournalAdded += OnJournalCooldowns;
+            s.BuffAdded += OnBuffCooldowns;
             s.PlayerDied += OnPlayerDied;
             s.PlayerDeadChanged += OnPlayerDeadChanged;
             _weatherLogged = WeatherType.None;
@@ -144,6 +145,7 @@ namespace UOClient.Unity
             s.TargetQueryRequested -= OnTargetQueryRequested;
             s.World.JournalAdded -= OnJournalOverhead;
             s.World.JournalAdded -= OnJournalCooldowns;
+            s.BuffAdded -= OnBuffCooldowns;
             UI.CooldownBarsWindow.Timers.Clear();
             s.PlayerDied -= OnPlayerDied;
             s.PlayerDeadChanged -= OnPlayerDeadChanged;
@@ -272,7 +274,15 @@ namespace UOClient.Unity
 
         // Every journal line may start a cooldown bar (the options' Cooldowns).
         private void OnJournalCooldowns(JournalEntry j) =>
-            UI.CooldownBarsWindow.Timers.OnText(j.Text, Time.realtimeSinceStartupAsDouble);
+            UI.CooldownBarsWindow.Timers.OnText(j.Text, Time.realtimeSinceStartupAsDouble,
+                _ctx.Session != null && j.Serial == _ctx.Session.World.PlayerSerial);
+
+        // A buff on the player may start one too ("buff:" triggers).
+        private void OnBuffCooldowns(Buff b)
+        {
+            if (_ctx.Session != null && b.Serial == _ctx.Session.World.PlayerSerial)
+                UI.CooldownBarsWindow.Timers.OnBuff(b.Title, Time.realtimeSinceStartupAsDouble);
+        }
 
         private void OnJournalOverhead(JournalEntry j)
         {
