@@ -120,6 +120,9 @@ namespace UOClient.Unity.UI
             if (_draft.Changed || _macros != null && _macros.Changed)
                 Text(new Rect(MenuX + 100, y + 5, 150, 20), "Not applied yet", Note, 12);
             float x = Rect.width - 20 - 3 * 86;
+            // The assistant (auto loot and the other agents) has a window of its own.
+            if (GUI.Button(new Rect(x - 116, y, 100, 26), "Assistant..."))
+                Ui.Command?.Invoke("assistant");
             if (GUI.Button(new Rect(x, y, 80, 26), new GUIContent("Cancel", ButtonHints[1])))
             {
                 _draft.Cancel();

@@ -934,6 +934,7 @@ namespace UOClient.Unity
             HandleInput();
             _input.Update();
             _corpseAutoOpen.Tick(_ctx.Session, _ctx.Player.X, _ctx.Player.Y);
+            _binder?.Assistant?.Tick();
             _isDoor ??= g => (_ctx.Data.TileData.GetStatic(g).Flags & TileFlags.Door) != 0;
             _doorAutoOpen.Tick(_ctx.Session, _ctx.Player.X, _ctx.Player.Y, _ctx.Player.Z, _ctx.Player.Direction, _isDoor);
             _ctx.Player.Tick(Time.deltaTime);

@@ -319,6 +319,7 @@ namespace UOClient.Unity
                 case "worldmap":
                 case "minimap":
                 case "worldchat":
+                case "assistant":
                 case "logout": // asks "Log out?" first, as the paperdoll's button
                     Command?.Invoke(verb.ToLowerInvariant());
                     break;

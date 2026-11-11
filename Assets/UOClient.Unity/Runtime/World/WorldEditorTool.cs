@@ -73,7 +73,9 @@ namespace UOClient.Unity
         private float _shadowLogAt;
         private bool _nearLightSent, _gumpsShown, _fxShown, _questionShown;
         private float _fxLogAt, _fxAt, _deathLogAt, _questionLogAt;
-        private int _deathStep;
+        private int _deathStep, _assistStep;
+        private uint _assistVictim;
+        private float _assistLogAt;
         private uint _deathVictim, _deathNext;
         private int _sayStep;
         private static readonly string[] SayLines =
@@ -222,6 +224,85 @@ namespace UOClient.Unity
                     bool there = w.Mobiles.TryGetValue(_deathVictim, out Core.Mobile v);
                     Debug.Log($"UOClient death-selftest: {t:0.0} s: victim in world {there}" + (there ? $" body {v.Body} worn {v.Equipment.Count}" : "")
                               + $"; me dead {_ctx.Session.PlayerDead} query 0x{_ctx.Session.PendingAttackQuery:X8} windows [{string.Join(" ", UI.UiManager.OpenKeysForTest())}] war {_ctx.Session.WarMode} combatant 0x{_ctx.Session.Combatant:X8} last attack 0x{_ctx.Session.LastAttack:X8}");
+                }
+            }
+            // -assistant-selftest: the character goes to the woods by Britain's moongate, the assistant window opens with
+            // gold on the auto loot list, an orc is made and killed and its corpse opened; the log follows the gold in the
+            // backpack (it must arrive by itself).
+            if (_shadowSent && Time.unscaledTime >= _shadowAt + 14f && _ctx.Session != null && Assistant.AssistantHost.Latest is Assistant.AssistantHost host
+                && Array.Exists(Environment.GetCommandLineArgs(), x => string.Equals(x, "-assistant-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                Core.World w = _ctx.Session.World;
+                float t = Time.unscaledTime - _shadowAt - 14f;
+                int px = _ctx.Player.X, py = _ctx.Player.Y, pz = _ctx.Player.Z;
+                uint NearestCreature()
+                {
+                    uint best = 0;
+                    int bestD = int.MaxValue;
+                    foreach (Core.Mobile m in w.Mobiles.Values)
+                    {
+                        int d = Math.Max(Math.Abs(m.X - px), Math.Abs(m.Y - py));
+                        if (m.Serial != w.PlayerSerial && m.Body != 400 && m.Body != 401 && d < bestD)
+                        {
+                            best = m.Serial;
+                            bestD = d;
+                        }
+                    }
+                    return best;
+                }
+                uint NearestCorpse()
+                {
+                    uint best = 0;
+                    int bestD = int.MaxValue;
+                    foreach (Core.WorldItem i in w.Items.Values)
+                    {
+                        int d = Math.Max(Math.Abs(i.X - px), Math.Abs(i.Y - py));
+                        if (i.IsCorpse && d < bestD)
+                        {
+                            best = i.Serial;
+                            bestD = d;
+                        }
+                    }
+                    return best;
+                }
+                var steps = new (float At, Action Do)[]
+                {
+                    (0f, () => _ctx.Session.Say("[self set Map Felucca")),
+                    (1.5f, () => _ctx.Session.Say("[go 1336 2012")),
+                    (3f, () =>
+                    {
+                        var loot = (Assistant.AutoLootAgent)host.Agents.Find(a => a is Assistant.AutoLootAgent);
+                        loot.SetForTest(new System.Collections.Generic.List<Core.Assistant.ItemRule>
+                        {
+                            new Core.Assistant.ItemRule { name = "Gold", graphic = 0x0EED },
+                            new Core.Assistant.ItemRule { name = "Anything magic", text = "magic", max = 3 },
+                        });
+                        UI.UiManager.OpenForTest(new Assistant.AssistantWindow(host));
+                    }),
+                    (5f, () => _ctx.Session.Say("[add orc")),
+                    (6.5f, () => _ctx.Session.TargetGround(px + 1, py, pz)),
+                    (9f, () =>
+                    {
+                        _assistVictim = NearestCreature();
+                        Debug.Log($"UOClient assistant-selftest: killing 0x{_assistVictim:X8}");
+                        _ctx.Session.Say("[kill");
+                    }),
+                    (10.5f, () => _ctx.Session.TargetObject(_assistVictim)),
+                    (14f, () =>
+                    {
+                        uint corpse = NearestCorpse();
+                        Debug.Log($"UOClient assistant-selftest: opening the corpse 0x{corpse:X8}");
+                        if (corpse != 0)
+                            _ctx.Session.Use(corpse);
+                    }),
+                };
+                if (_assistStep < steps.Length && t >= steps[_assistStep].At)
+                    steps[_assistStep++].Do();
+                if (Time.unscaledTime >= _assistLogAt)
+                {
+                    _assistLogAt = Time.unscaledTime + 1f;
+                    var loot = (Assistant.AutoLootAgent)host.Agents.Find(a => a is Assistant.AutoLootAgent);
+                    Debug.Log($"UOClient assistant-selftest: {t:0.0} s: gold in the backpack {host.CountIn(host.Backpack, 0x0EED, -1)}, loot queued {loot.QueuedForTest}, actions waiting {_ctx.Session.QueuedActions}");
                 }
             }
             // -question-selftest: once there, the attack question ("This may flag you criminal!") opens (for captures).

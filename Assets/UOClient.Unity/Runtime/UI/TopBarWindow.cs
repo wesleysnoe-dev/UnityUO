@@ -16,7 +16,7 @@ namespace UOClient.Unity.UI
         {
             ("Map", "minimap"), ("Paperdoll", "paperdoll"), ("Inventory", "backpack"), ("Journal", "journal"),
             ("Chat", "worldchat"), ("Help", "help"), ("World Map", "worldmap"), ("Skills", "skills"),
-            ("Status", "status"), ("Party", "party"), ("Groups", "groups"), ("Options", "options")
+            ("Status", "status"), ("Party", "party"), ("Groups", "groups"), ("Options", "options"), ("Assistant", "assistant")
         };
 
         private GUIStyle _button;

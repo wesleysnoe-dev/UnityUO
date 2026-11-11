@@ -16,6 +16,9 @@ namespace UOClient.Core
         public byte Flags;
         public bool AllowGround => Type == 1;
 
+        /// <summary>A cursor of the client's own (GameSession.BeginLocalTarget): the picked serial goes here, nothing to the server.</summary>
+        public System.Action<uint> Local;
+
         /// <summary>
         /// House or boat placement (0x99): preview <see cref="MultiGraphic"/> under the cursor. The server
         /// centers the multi at the targeted tile minus <see cref="MultiOffsetX"/>/Y/Z.
@@ -162,6 +165,13 @@ namespace UOClient.Core
             TargetRequest t = Target;
             if (t == null || State != SessionState.InWorld)
                 return;
+            if (t.Local != null)
+            {
+                Target = null;
+                TargetEnded?.Invoke();
+                t.Local(serial);
+                return;
+            }
             if (TargetNeedsCriminalQuery(t, serial))
             {
                 LastTarget = serial; // TazUO sets LastTargetInfo before it asks
@@ -261,7 +271,7 @@ namespace UOClient.Core
             if (t == null)
                 return;
             Target = null;
-            if (State == SessionState.InWorld)
+            if (State == SessionState.InWorld && t.Local == null)
                 _conn.Send(new PacketWriter(0x6C, 19).Byte(t.Type).UInt32(t.CursorId).Byte(t.Flags).UInt32(0)
                     .UInt16(0xFFFF).UInt16(0xFFFF).Byte(0).Byte(0).UInt16(0).ToArray());
             TargetEnded?.Invoke();

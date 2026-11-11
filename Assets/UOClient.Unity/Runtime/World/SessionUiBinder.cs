@@ -39,6 +39,9 @@ namespace UOClient.Unity
         }
 
         public UI.UiManager Ui { get; private set; }
+
+        /// <summary>The assistant's agents (auto loot...), ticked by the game each frame.</summary>
+        public Assistant.AssistantHost Assistant { get; private set; }
         public UI.ChatLog ChatLog { get; private set; }
         public Hotkeys Hotkeys { get; private set; }
         public Audio Sound { get; private set; }
@@ -61,6 +64,8 @@ namespace UOClient.Unity
             s.LiftRejected += OnLiftRejected;
 
             Ui.Command = RunCommand;
+            Assistant = new Assistant.AssistantHost();
+            Assistant.Attach(s, _ctx.Data, Ui, m => _ctx.Hud.Log(null, m));
             ChatLog = new UI.ChatLog();
             s.World.JournalAdded += ChatLog.Add;
             SyncTopBar();
@@ -129,6 +134,8 @@ namespace UOClient.Unity
             if (s == null)
                 return;
             _session = null;
+            Assistant?.Detach();
+            Assistant = null;
             s.World.PaperdollOpened -= OnPaperdollOpened;
             s.Entered -= OnEnteredWorld;
             s.World.ContainerOpened -= OnContainerOpened;
@@ -482,6 +489,14 @@ namespace UOClient.Unity
             {
                 case "help": _ctx.Session.RequestHelp(); break;
                 case "options": Ui.Open(new UI.OptionsWindow(_game)); break;
+                case "assistant":
+                    if (Assistant == null)
+                        break;
+                    if (Ui.Find("assistant") is UI.UiWindow open)
+                        Ui.Close(open);
+                    else
+                        Ui.Open(new Assistant.AssistantWindow(Assistant));
+                    break;
                 case "logout":
                     // The server saves us and closes; the game goes back to the login screen (Quit there leaves).
                     Ui.Open(new UI.ConfirmWindow("Log out?", "Return to the login screen?", () =>
