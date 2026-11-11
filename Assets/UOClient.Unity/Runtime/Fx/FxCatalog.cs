@@ -79,8 +79,6 @@ namespace UOClient.Unity.Fx
             Bitmap32 art = data?.GetStatic(graphic);
             if (art != null && art.Width > 0)
             {
-                s.ArtWidth = art.Width;
-                s.ArtHeight = art.Height;
                 // Fire-coloured pixels, but only the topmost band of them: flames burn at the top of their art, while a
                 // candelabra's or lamp's brass body below is fire-coloured too and would pull the spot down to its base.
                 bool Fiery(uint p)
@@ -118,6 +116,8 @@ namespace UOClient.Unity.Fx
                     s = new FireSpot { Found = true, X = (float)(sx / n), Y = (float)(sy / n), Width = Math.Max(3, maxX - minX + 1) };
                 else if (top != int.MaxValue)
                     s = new FireSpot { Found = false, X = art.Width / 2f, Y = top + 2, Width = Math.Max(3, art.Width / 4f) };
+                s.ArtWidth = art.Width; // after the spot is chosen: the assignments above replace the whole struct
+                s.ArtHeight = art.Height;
             }
             Spots[graphic] = s;
             return s;
