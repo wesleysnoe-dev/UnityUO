@@ -324,7 +324,9 @@ namespace UOClient.Unity.UI
 
         /// <summary>
         /// BaseHealthBarGump.OnMouseDoubleClick: ours opens the status (which replaces this bar, StatusGumpBarMutuallyExclusive);
-        /// another's is used in peace mode. TazUO attacks from here in war mode; that is left out on purpose.
+        /// another's is used in peace mode and attacked in war mode, as in TazUO. The attack matters: a press on someone
+        /// while the mouse moves (following a moving enemy) pulls their bar out under the cursor, so the second click of
+        /// a double-click lands on the bar; with nothing done here in war mode those attacks were silently lost.
         /// </summary>
         private void DoubleClicked(bool self)
         {
@@ -333,8 +335,7 @@ namespace UOClient.Unity.UI
                 Ui.Open(new StatusWindow());
                 return;
             }
-            if (!Session.WarMode)
-                Session.DoubleClick(_serial);
+            Session.DoubleClick(_serial); // GameSession.DoubleClick: an attack in war mode, a use in peace
         }
 
         /// <summary>The size TazUO centers a dragged-out bar by: the 0x0804 gump's (130 x 50 if the art is missing).</summary>
