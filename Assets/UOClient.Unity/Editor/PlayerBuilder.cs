@@ -103,6 +103,7 @@ namespace UOClient.Editor
             PlayerSettings.defaultScreenHeight = 1080;
             PlayerSettings.resizableWindow = true;
             PlayerSettings.runInBackground = true; // keep the connection and the frame loop alive when unfocused
+            ApplyIcon();
 
             string outDir = Path.Combine(ProjectRoot, outputFolder);
             Directory.CreateDirectory(outDir);
@@ -125,6 +126,28 @@ namespace UOClient.Editor
             string text = $"{s.result}: {s.outputPath}, {s.totalSize / (1024 * 1024)} MB, {s.totalTime.TotalSeconds:F0} s, {s.totalErrors} errors, {s.totalWarnings} warnings";
             Debug.Log("UOClient: build " + text);
             return text;
+        }
+
+        /// <summary>The game's own emblem (the 256 px frame of the UO install's uoico.ico), stamped into the exe so shortcuts show it.</summary>
+        public const string IconPath = "Assets/UOClient.Unity/Editor/Icon/uo_icon.png";
+
+        private static void ApplyIcon()
+        {
+            if (AssetImporter.GetAtPath(IconPath) is TextureImporter importer &&
+                (importer.textureCompression != TextureImporterCompression.Uncompressed || !importer.alphaIsTransparency || importer.mipmapEnabled))
+            {
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                importer.alphaIsTransparency = true;
+                importer.mipmapEnabled = false;
+                importer.SaveAndReimport();
+            }
+            Texture2D icon = AssetDatabase.LoadAssetAtPath<Texture2D>(IconPath);
+            if (icon == null)
+            {
+                Debug.LogWarning("UOClient: no icon at " + IconPath + "; the exe keeps Unity's default icon");
+                return;
+            }
+            PlayerSettings.SetIcons(UnityEditor.Build.NamedBuildTarget.Unknown, new[] { icon }, IconKind.Any);
         }
 
         [System.Serializable]
