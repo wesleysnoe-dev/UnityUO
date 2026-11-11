@@ -26,6 +26,9 @@ namespace UOClient.Unity.UI
 
         public void ClearForced() => _forcedHover = 0;
 
+        /// <summary>Self-tests only (-tooltip-selftest): a serial to hover and where, taken as <see cref="ForceHover"/>.</summary>
+        public static (uint Serial, Vector2 At)? ForcedForTest;
+
         /// <summary>Seconds the mouse rests before the tooltip shows (the options' tooltip delay).</summary>
         public float Delay { get; set; } = 0.4f;
 
@@ -54,6 +57,8 @@ namespace UOClient.Unity.UI
             {
                 serial = pick(mouse);
             }
+            if (_forcedHover == 0 && ForcedForTest is (uint testSerial, Vector2 testAt))
+                ForceHover(testSerial, testAt);
             if (_forcedHover != 0)
             {
                 serial = _forcedHover; // the capture tour (no real mouse)
@@ -126,7 +131,11 @@ namespace UOClient.Unity.UI
             GUI.Window(TooltipWindowId, r, _ =>
             {
                 var local = new Rect(0, 0, r.width, r.height);
+                // The options' background opacity (88 by default: the panel as drawn); the words stay solid.
+                Color was = GUI.color;
+                GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01(BackgroundOpacity / 88f));
                 IronSkin.Panel(local);
+                GUI.color = was;
                 GUI.Label(local, content, _tooltipStyle);
             }, GUIContent.none, GUIStyle.none);
             GUI.BringWindowToFront(TooltipWindowId);

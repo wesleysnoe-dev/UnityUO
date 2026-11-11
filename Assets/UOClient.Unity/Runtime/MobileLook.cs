@@ -339,7 +339,12 @@ namespace UOClient.Unity
                     look.Mounted = true;
                     look.MountGroup = anims.GroupOf(mountBody);
                     look.MountActions = anims.Actions(mountBody);
-                    look.Layers.Add(new Layer { Body = mountBody, Hue = mount.Hue & 0x3FFF, IsMount = true, Spectral = IsSpectral(mount.Hue) });
+                    // An unhued mount whose body Body.def draws as another (a faction war horse: a horse in its faction's
+                    // colour) takes that def's hue, as the same animal does on foot; without it it turned plain when ridden.
+                    int mountHue = mount.Hue & 0x3FFF;
+                    if (mountHue == 0)
+                        mountHue = anims.ReplacementHue(mountBody);
+                    look.Layers.Add(new Layer { Body = mountBody, Hue = mountHue, IsMount = true, Spectral = IsSpectral(mount.Hue) });
                 }
             }
 

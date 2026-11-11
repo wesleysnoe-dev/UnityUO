@@ -71,7 +71,10 @@ namespace UOClient.Unity
         private bool _shadowSent;
 
         private float _shadowLogAt;
-        private bool _nearLightSent, _gumpsShown;
+        private bool _nearLightSent, _gumpsShown, _fxShown;
+        private float _fxLogAt, _fxAt, _deathLogAt;
+        private int _deathStep;
+        private uint _deathVictim, _deathNext;
         private int _sayStep;
         private static readonly string[] SayLines =
         {
@@ -137,6 +140,105 @@ namespace UOClient.Unity
                 uint pack = _ctx.Session.World.Worn(_ctx.Session.World.Player, 21);
                 if (pack != 0)
                     _ctx.Session.Use(pack);
+            }
+            // -death-selftest: the character goes to the woods by Britain's moongate and makes two bots; one is attacked, then
+            // killed with the staff command, and the log follows what is left of them here; then the next nearest is
+            // double-clicked (an attack) and the log says who the server made our combatant.
+            if (_shadowSent && Time.unscaledTime >= _shadowAt + 14f && _ctx.Session != null
+                && Array.Exists(Environment.GetCommandLineArgs(), x => string.Equals(x, "-death-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                Core.World w = _ctx.Session.World;
+                uint Nearest(uint not)
+                {
+                    uint best = 0;
+                    int bestD = int.MaxValue;
+                    foreach (Core.Mobile m in w.Mobiles.Values)
+                    {
+                        int d = Math.Max(Math.Abs(m.X - _ctx.Player.X), Math.Abs(m.Y - _ctx.Player.Y));
+                        if (m.Serial != w.PlayerSerial && m.Serial != not && (m.Body == 400 || m.Body == 401) && d < bestD)
+                        {
+                            best = m.Serial;
+                            bestD = d;
+                        }
+                    }
+                    return best;
+                }
+                float t = Time.unscaledTime - _shadowAt - 14f;
+                // Out of town (no guards): the woods south of Britain's moongate, alive, with two bots made beside it.
+                int px = _ctx.Player.X, py = _ctx.Player.Y, pz = _ctx.Player.Z;
+                var steps = new (float At, Action Do)[]
+                {
+                    (0f, () => _ctx.Session.Say("[self set Map Felucca")),
+                    (1.5f, () => _ctx.Session.Say("[go 1336 2012")),
+                    (3f, () => _ctx.Session.Say("[self resurrect")),
+                    (6f, () => _ctx.Session.Say("[add playerbot")),
+                    (7.5f, () => _ctx.Session.TargetGround(px + 2, py, pz)),
+                    (9f, () => _ctx.Session.Say("[add playerbot")),
+                    (10.5f, () => _ctx.Session.TargetGround(px - 2, py, pz)),
+                    (14f, () =>
+                    {
+                        _deathVictim = Nearest(0);
+                        _ctx.Session.SetWarMode(true);
+                        Debug.Log($"UOClient death-selftest: attacking 0x{_deathVictim:X8}");
+                    }),
+                    (15f, () => _ctx.Session.DoubleClick(_deathVictim)),
+                    (19f, () =>
+                    {
+                        Debug.Log($"UOClient death-selftest: killing 0x{_deathVictim:X8}");
+                        _ctx.Session.Say("[kill");
+                    }),
+                    (20.5f, () => _ctx.Session.TargetObject(_deathVictim)),
+                    (28f, () =>
+                    {
+                        _deathNext = Nearest(_deathVictim);
+                        Debug.Log($"UOClient death-selftest: attacking the next, 0x{_deathNext:X8}");
+                        _ctx.Session.DoubleClick(_deathNext);
+                    }),
+                };
+                if (_deathStep < steps.Length && t >= steps[_deathStep].At)
+                    steps[_deathStep++].Do();
+                if (Time.unscaledTime >= _deathLogAt)
+                {
+                    _deathLogAt = Time.unscaledTime + 1f;
+                    bool there = w.Mobiles.TryGetValue(_deathVictim, out Core.Mobile v);
+                    Debug.Log($"UOClient death-selftest: {t:0.0} s: victim in world {there}" + (there ? $" body {v.Body} worn {v.Equipment.Count}" : "")
+                              + $"; me dead {_ctx.Session.PlayerDead} war {_ctx.Session.WarMode} combatant 0x{_ctx.Session.Combatant:X8} last attack 0x{_ctx.Session.LastAttack:X8}");
+                }
+            }
+            // -tooltip-selftest: once there, the backpack's tooltip shows in the middle of the screen (for captures).
+            if (_shadowSent && Time.unscaledTime >= _shadowAt + 12f && _ctx.Session != null && UI.HoverTooltip.ForcedForTest == null
+                && Array.Exists(Environment.GetCommandLineArgs(), x => string.Equals(x, "-tooltip-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                uint worn = _ctx.Session.World.Worn(_ctx.Session.World.Player, 21);
+                if (worn != 0)
+                    UI.HoverTooltip.ForcedForTest = (worn, new Vector2(700f, 300f));
+            }
+            // -fx-selftest: once there, an explosion and a heal's sparkles play on the character, and the log says every
+            // 2 s how many of the FX layer's one-shot particle systems are still alive (they must all go).
+            if (_shadowSent && Time.unscaledTime >= _shadowAt + 12f && _ctx.Session != null
+                && Array.Find(Environment.GetCommandLineArgs(), x => x.StartsWith("-fx-selftest", StringComparison.OrdinalIgnoreCase)) is string fxArg)
+            {
+                if (!_fxShown)
+                {
+                    _fxShown = true;
+                    _fxAt = Time.unscaledTime;
+                    Fx.FxParticles.LoopBurstsForTest = fxArg.EndsWith("=loop", StringComparison.OrdinalIgnoreCase); // the old behaviour
+                    foreach (ushort graphic in new ushort[] { 0x36B0, 0x376A })
+                        _ctx.Session.ShowLocalEffect(new Core.GraphicEffect { Type = Core.GraphicEffect.AtLocation, Graphic = graphic, Speed = 10, Duration = 16,
+                                                                              SourceX = _ctx.Player.X, SourceY = _ctx.Player.Y, SourceZ = _ctx.Player.Z,
+                                                                              TargetX = _ctx.Player.X, TargetY = _ctx.Player.Y, TargetZ = _ctx.Player.Z });
+                }
+                if (Time.unscaledTime >= _fxLogAt)
+                {
+                    _fxLogAt = Time.unscaledTime + (Time.unscaledTime - _fxAt < 3f ? 0.3f : 2f);
+                    int bursts = 0, motes = 0;
+                    foreach (ParticleSystem ps in UnityEngine.Object.FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None))
+                    {
+                        bursts += ps.name == "Burst" ? 1 : 0;
+                        motes += ps.name == "Motes" ? 1 : 0;
+                    }
+                    Debug.Log($"UOClient fx-selftest: {Time.unscaledTime - _fxAt:0.0} s after the effects: bursts alive {bursts}, motes alive {motes}");
+                }
             }
             // -gump-selftest=FILE: once there, the gumps written in FILE open as if the server had sent them (for captures
             // of our own windows for server gumps). Per gump: a line "x y", the layout on one line, its text lines, "---".

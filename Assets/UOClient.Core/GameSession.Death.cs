@@ -50,6 +50,11 @@ namespace UOClient.Core
             if (corpse != 0 && corpse < 0x80000000)
                 World.CorpseFalls.Add(corpse, serial, owner.Direction, running);
             MobileDying?.Invoke(serial, corpse, running);
+            // The dying mobile leaves the world here, as in TazUO (DisplayDeath re-keys it to a copy that only plays the
+            // fall and is then dropped): the server sends no remove for someone who died, only their gear leaving for the
+            // corpse, which otherwise redrew them standing naked over their own fall, there for good. One the server
+            // still shows us afterwards (a ghost we can see, a bonded pet) comes back with its next update.
+            World.RemoveWithContents(serial);
         }
 
         /// <summary>

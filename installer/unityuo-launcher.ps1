@@ -305,6 +305,10 @@ try {
             -not $have -or $have.Value.sha256 -ne $_.sha256
         })
         if (-not (Test-Installed)) { $changed = @($manifest.parts) }
+        # Never back to an older version: an install ahead of the latest release (updated from local files, or the
+        # release list answering with an old one) keeps what it has.
+        $ahead = (Test-Installed) -and $state.version -and ([int]$state.version -gt [int]$manifest.version)
+        if ($ahead) { $changed = @() }
         if ($changed.Count -gt 0) {
             if (-not $Setup) {
                 # Updating at launch: the game must not be running from here.
@@ -316,7 +320,7 @@ try {
             $state.version = $manifest.version
             Write-State $state
         }
-        elseif ($state.version -ne $manifest.version) { $state.version = $manifest.version; Write-State $state }
+        elseif (-not $ahead -and $state.version -ne $manifest.version) { $state.version = $manifest.version; Write-State $state }
 
         if ($dataInfo) {
             try { Install-HdArt $dataInfo.hdart $state; Write-State $state }
@@ -330,7 +334,7 @@ try {
 
         # The launcher itself: a newer one takes over at the next start.
         $mine = Join-Path $InstallDir $LauncherFile
-        if (-not (Test-Path $mine) -or (Get-Sha $mine) -ne $manifest.launcher.sha256) {
+        if (-not (Test-Path $mine) -or (-not $ahead -and (Get-Sha $mine) -ne $manifest.launcher.sha256)) {
             $temp = "$mine.new"
             Get-File $LauncherFile $temp 'Updating the launcher' ([long]$manifest.launcher.size)
             if ((Get-Sha $temp) -eq $manifest.launcher.sha256) { Move-Item -LiteralPath $temp -Destination $mine -Force } else { Remove-Item -LiteralPath $temp -Force }

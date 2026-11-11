@@ -24,8 +24,18 @@ namespace UOClient.Unity.UI
         /// <summary>A small dark panel with a gilt rim (the hover tooltip).</summary>
         public static void Panel(Rect r)
         {
-            GUI.DrawTexture(r, Rimmed(ref _panel, new Color(0.07f, 0.065f, 0.06f, 0.94f), new Color(0.04f, 0.035f, 0.03f, 0.94f), PaperdollSkin.GoldDim), ScaleMode.StretchToFill);
+            // Nine-sliced (the rim's corners and edges kept at their own size, only the middle stretched): stretching the
+            // whole 16 x 16 picture over the panel made the one-pixel rim a wide, blurred band, wider along the long side.
+            if (_panelStyle == null || _panelStyle.normal.background == null)
+            {
+                _panelStyle = new GUIStyle { border = new RectOffset(4, 4, 4, 4) };
+                _panelStyle.normal.background = Rimmed(ref _panel, new Color(0.07f, 0.065f, 0.06f, 0.94f), new Color(0.04f, 0.035f, 0.03f, 0.94f), PaperdollSkin.GoldDim);
+            }
+            if (Event.current.type == EventType.Repaint)
+                _panelStyle.Draw(r, false, false, false, false);
         }
+
+        private static GUIStyle _panelStyle;
 
         /// <summary>The skin our windows draw with (made on first use, inside OnGUI, from the default one).</summary>
         public static GUISkin Skin

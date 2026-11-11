@@ -175,6 +175,9 @@ namespace UOClient.Unity.Fx
             return ps;
         }
 
+        /// <summary>Self-tests only (-fx-selftest=loop): bursts loop as they did before the fix, to show the difference.</summary>
+        public static bool LoopBurstsForTest;
+
         /// <summary>An explosion's burst: a flash, a ring of fire thrown out, and sparks; it removes itself.</summary>
         public static void Burst(Vector3 at, Color color, float scale)
         {
@@ -187,6 +190,10 @@ namespace UOClient.Unity.Fx
             main.startSize = new ParticleSystem.MinMaxCurve(6f * scale, 13f * scale);
             main.startColor = Color.white;
             main.gravityModifier = -2f * scale; // the heat lifts it
+            // Once: a particle system loops by default (every 5 s), which threw a new burst at the spot for ever and never
+            // reached its stop action.
+            main.duration = 0.5f;
+            main.loop = LoopBurstsForTest;
             main.stopAction = ParticleSystemStopAction.Destroy;
             var em = ps.emission;
             em.rateOverTime = 0f;

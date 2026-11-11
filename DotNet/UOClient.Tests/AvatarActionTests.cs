@@ -138,6 +138,11 @@ public sealed class AvatarActionTests
 
         session.Inject(Moving(Orc, 753, 0x40), false);
         session.Inject(DeathAnimation(Orc, 0x40000123), false);
+        // The dying mobile left the world with its fall (TazUO re-keys it to a copy that only plays the fall), so the
+        // server's gear-to-the-corpse updates cannot redraw it standing; a second fall for it is for no one we know.
+        Assert.False(session.World.Mobiles.ContainsKey(Orc));
+        session.Inject(DeathAnimation(Orc, 0x40000124, 1), false);
+        session.Inject(Moving(Orc, 753, 0x40), false);
         session.Inject(DeathAnimation(Orc, 0x40000124, 1), false);
         session.Inject(DeathAnimation(Player, 0x40000125), false);       // never for us (DisplayDeath.cs:23)
         session.Inject(DeathAnimation(0x00000777, 0x40000126), false);   // nor for a mobile we don't know
@@ -171,8 +176,10 @@ public sealed class AvatarActionTests
         Assert.Equal(1, falls);
         Assert.Equal(2, living.DeathActions.First);
 
-        // ModernUO's OnDeath: war off, ghost body. Even with the war bit, a ghost stands in peace.
+        // ModernUO's OnDeath: war off, ghost body. Even with the war bit, a ghost stands in peace. (The ghost we are
+        // shown is a mobile again: the one that fell left the world.)
         session.Inject(Moving(Orc, 402, 0x40), false);
+        m = session.World.Mobiles[Orc];
         Assert.True(m.IsDead);
         Assert.Equal(HumanPeace, Chosen(ghost, m));
 
