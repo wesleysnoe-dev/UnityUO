@@ -505,6 +505,9 @@ namespace UOClient.Unity
             UI.InfoBarWindow.Enabled = o.showInfoBar;
             UI.InfoBarWindow.HighlightType = o.infoBarHighlightType;
             UI.InfoBarWindow.Items = HudBars.ParseInfoBar(o.infoBarItems);
+            UI.CooldownBarsWindow.Timers.Defs = UI.CounterBarWindow.SelfTest
+                ? Cooldowns.Parse("Poison|nauseous|30|63\nParalyzed|frozen|12|88\nHidden|hidden|45|946")
+                : Cooldowns.Parse(o.cooldowns);
             _binder?.SyncBars();
             UI.HoverTooltip.BackgroundOpacity = o.tooltipBackgroundOpacity;
             UI.HoverTooltip.FontSize = o.tooltipFontSize;

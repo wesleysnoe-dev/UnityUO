@@ -105,7 +105,7 @@ public sealed class OptionsGraphicsTests
                 }
                 return candidate;
             case string:
-                return f.Name == "infoBarItems" ? "Gold|Gold|53" + (char)10 + "HP|Hits|33" : "Bob" + (char)10 + "Alice"; // lists, one entry a line
+                return f.Name == "infoBarItems" ? "Gold|Gold|53" + (char)10 + "HP|Hits|33" : f.Name == "cooldowns" ? "Heal|You begin|10|63" : "Bob" + (char)10 + "Alice"; // lists, one entry a line
             default:
                 throw new InvalidOperationException(f.Name + ": no test value for " + v?.GetType());
         }

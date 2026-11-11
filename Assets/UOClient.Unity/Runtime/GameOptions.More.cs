@@ -83,6 +83,9 @@ namespace UOClient.Unity
         public int infoBarHighlightType = HudBars.HighlightTextColour;
         public string infoBarItems = HudBars.DefaultInfoBar;
 
+        /// <summary>TazUO's cooldown bars: "Name|Trigger text|Seconds|Hue" a line (rules in Cooldowns). None by default.</summary>
+        public string cooldowns = "";
+
         public static void CopyMore(GameOptions from, GameOptions to)
         {
             to.enableSound = from.enableSound;
@@ -111,6 +114,7 @@ namespace UOClient.Unity
             to.showInfoBar = from.showInfoBar;
             to.infoBarHighlightType = from.infoBarHighlightType;
             to.infoBarItems = from.infoBarItems;
+            to.cooldowns = from.cooldowns;
         }
 
         private bool SameMore(GameOptions o) =>
@@ -126,7 +130,8 @@ namespace UOClient.Unity
             && counterBarDisplayAbbreviatedAmount == o.counterBarDisplayAbbreviatedAmount
             && counterBarAbbreviatedAmount == o.counterBarAbbreviatedAmount
             && counterBarHighlightOnAmount == o.counterBarHighlightOnAmount && counterBarHighlightAmount == o.counterBarHighlightAmount
-            && showInfoBar == o.showInfoBar && infoBarHighlightType == o.infoBarHighlightType && infoBarItems == o.infoBarItems;
+            && showInfoBar == o.showInfoBar && infoBarHighlightType == o.infoBarHighlightType && infoBarItems == o.infoBarItems
+            && cooldowns == o.cooldowns;
 
         private void ClampMore()
         {
@@ -145,6 +150,7 @@ namespace UOClient.Unity
             counterBarHighlightAmount = Math.Max(1, Math.Min(60000, counterBarHighlightAmount));
             infoBarHighlightType = Math.Max(HudBars.HighlightTextColour, Math.Min(HudBars.HighlightBars, infoBarHighlightType));
             infoBarItems = HudBars.FormatInfoBar(HudBars.ParseInfoBar(infoBarItems));
+            cooldowns = Cooldowns.Format(Cooldowns.Parse(cooldowns));
         }
 
         /// <summary>The parse switch's keys of this batch; false for a key that is not one.</summary>
@@ -181,6 +187,10 @@ namespace UOClient.Unity
                 case "counterBarHighlightAmount": Integer(raw, ref counterBarHighlightAmount); return true;
                 case "showInfoBar": Bool(raw, ref showInfoBar); return true;
                 case "infoBarHighlightType": Integer(raw, ref infoBarHighlightType); return true;
+                case "cooldowns":
+                    if (TryReadStrings(raw, out List<string> timers))
+                        cooldowns = string.Join("\n", timers);
+                    return true;
                 case "infoBarItems":
                     if (TryReadStrings(raw, out List<string> entries))
                         infoBarItems = string.Join("\n", entries);
@@ -224,6 +234,11 @@ namespace UOClient.Unity
                 if (line.Length > 0)
                     entries.Add("\"" + FlatJson.Escape(line) + "\"");
             add("infoBarItems", "[" + string.Join(", ", entries) + "]");
+            var timers = new List<string>();
+            foreach (string line in (cooldowns ?? "").Split('\n'))
+                if (line.Length > 0)
+                    timers.Add("\"" + FlatJson.Escape(line) + "\"");
+            add("cooldowns", "[" + string.Join(", ", timers) + "]");
         }
 
         /// <summary>A JSON array of strings (["a", "b"]); false for anything else.</summary>

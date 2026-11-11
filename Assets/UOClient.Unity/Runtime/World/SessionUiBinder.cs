@@ -78,6 +78,7 @@ namespace UOClient.Unity
             s.AttackQueryRequested += OnAttackQueryRequested;
             s.TargetQueryRequested += OnTargetQueryRequested;
             s.World.JournalAdded += OnJournalOverhead;
+            s.World.JournalAdded += OnJournalCooldowns;
             s.PlayerDied += OnPlayerDied;
             s.PlayerDeadChanged += OnPlayerDeadChanged;
             _weatherLogged = WeatherType.None;
@@ -142,6 +143,8 @@ namespace UOClient.Unity
             s.AttackQueryRequested -= OnAttackQueryRequested;
             s.TargetQueryRequested -= OnTargetQueryRequested;
             s.World.JournalAdded -= OnJournalOverhead;
+            s.World.JournalAdded -= OnJournalCooldowns;
+            UI.CooldownBarsWindow.Timers.Clear();
             s.PlayerDied -= OnPlayerDied;
             s.PlayerDeadChanged -= OnPlayerDeadChanged;
             s.WeatherChanged -= OnWeatherChanged;
@@ -266,6 +269,10 @@ namespace UOClient.Unity
         }
 
         private void OnAnimatedForSparks(Core.ServerAnimation a) => Fx.HitSparks.Animated(_ctx.Session, a);
+
+        // Every journal line may start a cooldown bar (the options' Cooldowns).
+        private void OnJournalCooldowns(JournalEntry j) =>
+            UI.CooldownBarsWindow.Timers.OnText(j.Text, Time.realtimeSinceStartupAsDouble);
 
         private void OnJournalOverhead(JournalEntry j)
         {
@@ -522,6 +529,13 @@ namespace UOClient.Unity
             UI.UiWindow counters = Ui.Find(UI.CounterBarWindow.WindowKey), info = Ui.Find(UI.InfoBarWindow.WindowKey);
             bool showCounters = UI.CounterBarWindow.Enabled || UI.CounterBarWindow.SelfTest;
             bool showInfo = UI.InfoBarWindow.Enabled || UI.CounterBarWindow.SelfTest;
+            // The cooldown bars' window is there whenever a cooldown is set up; it draws nothing while none runs.
+            UI.UiWindow timers = Ui.Find(UI.CooldownBarsWindow.WindowKey);
+            bool showTimers = UI.CooldownBarsWindow.Timers.Defs.Count > 0;
+            if (showTimers && timers == null)
+                Ui.Open(new UI.CooldownBarsWindow());
+            else if (!showTimers && timers != null)
+                Ui.Close(timers);
             if (showCounters && counters == null)
                 Ui.Open(new UI.CounterBarWindow());
             else if (!showCounters && counters != null)

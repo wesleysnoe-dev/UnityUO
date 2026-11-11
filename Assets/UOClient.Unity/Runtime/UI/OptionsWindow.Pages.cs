@@ -9,7 +9,7 @@ namespace UOClient.Unity.UI
     /// </summary>
     public sealed partial class OptionsWindow
     {
-        public enum Page { General, Sound, Video, Display, Macros, Tooltip, Speech, CombatSpells, Containers, Nameplates, Counters, InfoBar, IgnoreList }
+        public enum Page { General, Sound, Video, Display, Macros, Tooltip, Speech, CombatSpells, Containers, Nameplates, Counters, InfoBar, Cooldowns, IgnoreList }
 
         public static readonly (Page Page, string Title)[] Pages =
         {
@@ -25,13 +25,14 @@ namespace UOClient.Unity.UI
             (Page.Nameplates, "Nameplates"),
             (Page.Counters, "Counters"),
             (Page.InfoBar, "Info Bar"),
+            (Page.Cooldowns, "Cooldowns"),
             (Page.IgnoreList, "Ignore List"),
         };
 
         /// <summary>TazUO pages this client has no system for yet: shown greyed in the side menu, never opened.</summary>
         public static readonly string[] UnavailablePages =
         {
-            "Cooldowns", "Experimental", "TazUO",
+            "Experimental", "TazUO",
         };
 
         /// <summary>
@@ -41,6 +42,8 @@ namespace UOClient.Unity.UI
         public static readonly (Page Page, string Text)[] NotOffered =
         {
             (Page.Counters, "Highlight on use, per-cell hotkeys: not in this bar."),
+            (Page.Cooldowns, "Buff-icon and spell-cast triggers, replace-on-trigger choice: journal text only; a new trigger restarts."),
+            (Page.Cooldowns, "Saved bar position: the bars start in the same place each login."),
             (Page.Counters, "Saved bar position: the bars start in the same place each login."),
             (Page.InfoBar, "Casting and combat modifiers (lower reagent cost, faster casting...): the server sends none."),
             (Page.General, "Pathfinding, smooth doors: this client has no pathfinder."),

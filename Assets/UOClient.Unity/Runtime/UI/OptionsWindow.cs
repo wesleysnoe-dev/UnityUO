@@ -80,6 +80,7 @@ namespace UOClient.Unity.UI
                     case Page.IgnoreList: DrawIgnoreList(d); break;
                     case Page.Counters: DrawCounters(d); break;
                     case Page.InfoBar: DrawInfoBar(d); break;
+                    case Page.Cooldowns: DrawCooldowns(d); break;
                 }
                 _pageHeight = DrawNotOffered(area);
                 GUI.EndScrollView();
@@ -484,6 +485,58 @@ namespace UOClient.Unity.UI
             d.counterBarHighlightAmount = IntSlider("Fewer than", d.counterBarHighlightAmount, 1, 100);
             _indent = 0;
             GUI.enabled = true;
+        }
+
+        private void DrawCooldowns(GameOptions d)
+        {
+            Line("When a journal line contains the trigger text, a bar with that name counts\ndown the seconds. The same trigger again starts it over. Case is ignored.", 34);
+            List<CooldownDef> defs = Cooldowns.Parse(d.cooldowns);
+            bool changed = false;
+            int remove = -1;
+            for (int i = 0; i < defs.Count; i++)
+            {
+                CooldownDef def = defs[i];
+                Text(new Rect(0, _y + 2, 44, 20), "Name");
+                string name = GUI.TextField(new Rect(46, _y, 130, 22), def.Name ?? "", Cooldowns.MaxNameLength);
+                Text(new Rect(186, _y + 2, 58, 20), "Seconds");
+                string secs = GUI.TextField(new Rect(246, _y, 44, 22), def.Seconds.ToString(), 4);
+                Text(new Rect(300, _y + 2, 30, 20), "Hue");
+                string hueText = GUI.TextField(new Rect(332, _y, 44, 22), def.Hue.ToString(), 4);
+                int hue = hueText.Length == 0 ? 0 : int.TryParse(hueText, out int hn) ? GameOptions.ClampHue(hn) : def.Hue;
+                GUI.color = hue == 0 ? Greyed : Art.HueColor(hue, Greyed);
+                GUI.DrawTexture(new Rect(382, _y + 3, 18, 16), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                if (GUI.Button(new Rect(408, _y, 26, 22), "X"))
+                    remove = i;
+                _y += 25;
+                Text(new Rect(0, _y + 2, 44, 20), "Text");
+                string trigger = GUI.TextField(new Rect(46, _y, 388, 22), def.Trigger ?? "", Cooldowns.MaxTriggerLength);
+                _y += 31;
+                int seconds = secs.Length == 0 ? Cooldowns.MinSeconds
+                    : int.TryParse(secs, out int sn) ? Mathf.Clamp(sn, Cooldowns.MinSeconds, Cooldowns.MaxSeconds) : def.Seconds;
+                if (name != (def.Name ?? "") || trigger != (def.Trigger ?? "") || seconds != def.Seconds || hue != def.Hue)
+                {
+                    defs[i] = new CooldownDef { Name = name.Replace("|", ""), Trigger = trigger.Replace("|", ""), Seconds = seconds, Hue = hue };
+                    changed = true;
+                }
+            }
+            if (remove >= 0)
+            {
+                defs.RemoveAt(remove);
+                changed = true;
+            }
+            if (defs.Count == 0)
+                Line("No cooldowns yet.");
+            GUI.enabled = defs.Count < Cooldowns.MaxDefs;
+            if (GUI.Button(new Rect(0, _y + 2, 70, 22), "Add"))
+            {
+                defs.Add(new CooldownDef { Name = "Bandage", Trigger = "You begin applying the bandages", Seconds = 10, Hue = 63 });
+                changed = true;
+            }
+            GUI.enabled = true;
+            _y += 32;
+            if (changed)
+                d.cooldowns = Cooldowns.Format(defs);
         }
 
         private void DrawInfoBar(GameOptions d)
