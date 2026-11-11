@@ -43,13 +43,40 @@ namespace UOClient.IO
 
         public const string EaClassicPath = @"C:\Program Files (x86)\Electronic Arts\Ultima Online Classic";
 
-        /// <summary>The data folder to read: the setting, else the UO Smallz client's own UOData, else the EA install.</summary>
+        /// <summary>
+        /// The folder this client is installed in (set once at startup). The launcher puts the game data in its UOData
+        /// and the shard's own files in its Shard/Client (HD art in Shard/HDArt), so the client needs no other install.
+        /// Null: no folder of its own (the tools, the tests).
+        /// </summary>
+        public static string OwnRoot;
+
+        /// <summary>The client's own game data folder, when the launcher has filled it (it holds tiledata.mul); else null.</summary>
+        public static string OwnDataPath =>
+            OwnRoot != null && File.Exists(Path.Combine(OwnRoot, "UOData", "tiledata.mul")) ? Path.Combine(OwnRoot, "UOData") : null;
+
+        /// <summary>The client's own shard files folder, when the launcher has put it there; else null.</summary>
+        public static string OwnOverridesPath =>
+            OwnRoot != null && Directory.Exists(Path.Combine(OwnRoot, "Shard", "Client")) ? Path.Combine(OwnRoot, "Shard", "Client") : null;
+
+        /// <summary>
+        /// A saved path inside the UO Smallz client's folder was only ever the detected default, not a choice: the
+        /// client's own folder takes its place once it exists.
+        /// </summary>
+        public static bool IsOldClientPath(string path) =>
+            !string.IsNullOrWhiteSpace(path) && path.Trim().Replace('/', '\\').StartsWith(UoSmallzRoot, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The data folder to read: a folder the player set; else the client's own UOData; else the UO Smallz client's
+        /// UOData; else the EA install.
+        /// </summary>
         public string ResolvedDataPath
         {
             get
             {
-                if (!string.IsNullOrWhiteSpace(uoDataPath))
+                if (!string.IsNullOrWhiteSpace(uoDataPath) && !(IsOldClientPath(uoDataPath) && OwnDataPath != null))
                     return uoDataPath;
+                if (OwnDataPath != null)
+                    return OwnDataPath;
                 string smallz = Path.Combine(UoSmallzRoot, "UOData", "7.0.23.1", "7.0.23.1");
                 return Directory.Exists(smallz) ? smallz : EaClassicPath;
             }
@@ -62,7 +89,8 @@ namespace UOClient.IO
             {
                 if (string.Equals(overridesPath?.Trim(), "none", StringComparison.OrdinalIgnoreCase))
                     return null;
-                string dir = !string.IsNullOrWhiteSpace(overridesPath) ? overridesPath : Path.Combine(UoSmallzRoot, "Client");
+                bool chosen = !string.IsNullOrWhiteSpace(overridesPath) && !(IsOldClientPath(overridesPath) && OwnOverridesPath != null);
+                string dir = chosen ? overridesPath : OwnOverridesPath ?? Path.Combine(UoSmallzRoot, "Client");
                 return Directory.Exists(dir) ? dir : null;
             }
         }

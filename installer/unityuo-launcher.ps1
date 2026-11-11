@@ -7,8 +7,14 @@
 #
 # A release (github.com/wesleysnoe-dev/UnityUO/releases) holds manifest.json and one zip per part. Each part is
 # checked against its SHA-256 before anything is replaced. The player's own folders (UserSettings, Logs, Library) are
-# never touched. The UO Smallz client's folder (%LOCALAPPDATA%\UOSmallz) is only read: the game data there is what this
-# client draws, and when it is missing the UO Smallz installer is fetched and run to put it there.
+# never touched.
+#
+# The client needs nothing from the UO Smallz (TazUO) client. Its game data lives in its own folder:
+#   UOData\        Ultima Online 7.0.23.1, then the shard's map files over it (the release's "maps" part)
+#   Shard\Client\  the shard's custom art and item tables (the "shard" part)
+#   Shard\HDArt\   the 2x HD art pack
+# On a PC that has the UO Smallz client, the game data and the HD pack are copied from its folder (which is only ever
+# read); otherwise they are downloaded from the addresses in the manifest and checked against their SHA-256.
 param(
     [string]$InstallDir,
     [switch]$Setup,
@@ -16,7 +22,8 @@ param(
     # Where the release files are: the latest GitHub release, or a folder (for testing a release before it is published).
     [string]$Source = 'https://github.com/wesleysnoe-dev/UnityUO/releases/latest/download',
     [string]$ShortcutName = 'Unity UO',
-    [string]$DataInstallerUrl = 'https://github.com/wesleysnoe-dev/uosmallz-client/releases/latest/download/UOSmallz-Installer-win.zip'
+    # The UO Smallz client's folder, if this PC has one: game data and HD art are copied from it, saving the downloads.
+    [string]$OldClientDir = (Join-Path $env:LOCALAPPDATA 'UOSmallz')
 )
 $ErrorActionPreference = 'Stop'
 $LauncherFile = 'unityuo-launcher.ps1'
@@ -69,8 +76,11 @@ function Get-Text([string]$name) {
     return [IO.File]::ReadAllText((Join-Path $Source $name))
 }
 function Get-File([string]$name, [string]$to, [string]$label, [long]$size) {
-    if (-not $IsUrl) { Copy-Item (Join-Path $Source $name) $to -Force; return }
-    $req = [Net.HttpWebRequest]::Create("$Source/$name"); $req.Timeout = 30000; $req.ReadWriteTimeout = 60000; $req.UserAgent = 'UnityUO-launcher'
+    # A release file by its name, or anything else by its full address.
+    $absolute = $name -match '^https?://'
+    if (-not $absolute -and -not $IsUrl) { Copy-Item (Join-Path $Source $name) $to -Force; return }
+    $address = if ($absolute) { $name } else { "$Source/$name" }
+    $req = [Net.HttpWebRequest]::Create($address); $req.Timeout = 30000; $req.ReadWriteTimeout = 60000; $req.UserAgent = 'UnityUO-launcher'
     $res = $req.GetResponse()
     $in = $res.GetResponseStream(); $out = [IO.File]::Create($to)
     try {
@@ -81,7 +91,7 @@ function Get-File([string]$name, [string]$to, [string]$label, [long]$size) {
             if ($percent -ne $shown) {
                 $shown = $percent
                 Show-Status "$label ($([Math]::Round($done / 1MB)) of $([Math]::Round($size / 1MB)) MB)" $percent
-                if ($Setup -and $percent % 10 -eq 0) { Write-Host "    $percent%" }
+                if ($Setup -and $percent % 10 -eq 0) { Write-Host "    $label $percent%" }
             }
         }
     } finally { $out.Close(); $in.Close(); $res.Close() }
@@ -92,7 +102,16 @@ function Get-Sha([string]$path) { (Get-FileHash -LiteralPath $path -Algorithm SH
 function Read-State {
     $p = Join-Path $InstallDir $StateFile
     if (Test-Path $p) { try { return Get-Content $p -Raw | ConvertFrom-Json } catch { } }
-    return [pscustomobject]@{ version = 0; parts = [pscustomobject]@{} }
+    return [pscustomobject]@{ version = 0; parts = [pscustomobject]@{}; data = [pscustomobject]@{} }
+}
+function Set-Data($state, [string]$name, [string]$value) {
+    if (-not $state.PSObject.Properties['data']) { $state | Add-Member -NotePropertyName data -NotePropertyValue ([pscustomobject]@{}) }
+    $state.data | Add-Member -NotePropertyName $name -NotePropertyValue $value -Force
+}
+function Get-Data($state, [string]$name) {
+    if (-not $state.PSObject.Properties['data']) { return $null }
+    $p = $state.data.PSObject.Properties[$name]
+    if ($p) { return $p.Value } else { return $null }
 }
 function Write-State($state) { $state | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $InstallDir $StateFile) -Encoding UTF8 }
 function Test-Kept([string]$relative) {
@@ -137,23 +156,110 @@ function Start-Game {
 }
 function Test-Installed { Test-Path (Join-Path $InstallDir 'Unity UO.exe') }
 
-# ---- the game data this client draws: the UO Smallz client's (never written from here) ----
-$DataDir = Join-Path $env:LOCALAPPDATA 'UOSmallz\UOData\7.0.23.1\7.0.23.1'
-function Test-GameData { Test-Path (Join-Path $DataDir 'tiledata.mul') }
-function Install-GameData {
-    Write-Host ''
-    Write-Host '== Game data ==' -ForegroundColor Cyan
-    Write-Host 'Unity UO draws the Ultima Online game data that the UO Smallz client installs, and this PC'
-    Write-Host 'does not have it yet. The UO Smallz installer opens next: press Enter at its questions to'
-    Write-Host 'take the defaults, and come back here when it has finished.'
-    $zip = Join-Path ([IO.Path]::GetTempPath()) 'UOSmallz-Installer-win.zip'
-    $dir = Join-Path ([IO.Path]::GetTempPath()) 'UOSmallz-Installer'
-    $wc = New-Object Net.WebClient; $wc.Headers['User-Agent'] = 'UnityUO-launcher'; $wc.DownloadFile($DataInstallerUrl, $zip)
-    if (Test-Path $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
-    [IO.Compression.ZipFile]::ExtractToDirectory($zip, $dir)
-    $bat = Get-ChildItem $dir -Recurse -Filter 'install.bat' | Select-Object -First 1
-    if (-not $bat) { throw 'The UO Smallz installer did not contain install.bat.' }
-    Start-Process cmd.exe -ArgumentList '/c', "`"$($bat.FullName)`"" -Wait
+# ---- the game data: the client's own copy ----
+$OwnData = Join-Path $InstallDir 'UOData'
+function Test-OwnData { Test-Path (Join-Path $OwnData 'tiledata.mul') }
+function Find-Data([string]$root) {
+    # The folder holding tiledata.mul and art.mul under a root, or null.
+    if (-not $root -or -not (Test-Path -LiteralPath $root)) { return $null }
+    if ((Test-Path (Join-Path $root 'tiledata.mul')) -and (Test-Path (Join-Path $root 'art.mul'))) { return $root }
+    $hit = Get-ChildItem -LiteralPath $root -Recurse -Filter 'tiledata.mul' -ErrorAction SilentlyContinue |
+        Where-Object { $_.DirectoryName -notmatch '\\_' } | Select-Object -First 1
+    if ($hit -and (Test-Path (Join-Path $hit.DirectoryName 'art.mul'))) { return $hit.DirectoryName }
+    return $null
+}
+function Test-OldData { [bool](Find-Data (Join-Path $OldClientDir 'UOData')) }
+function Copy-Tree([string]$from, [string]$to, [string[]]$skipDirs = @()) {
+    $arguments = @($from, $to, '/E', '/R:1', '/W:1', '/NFL', '/NDL', '/NJH', '/NJS', '/NP')
+    if ($skipDirs.Count -gt 0) { $arguments += '/XD'; $arguments += $skipDirs }
+    & robocopy @arguments | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "Copying $from failed (robocopy exit $LASTEXITCODE)." }
+    $global:LASTEXITCODE = 0
+}
+
+# The Ultima Online 7.0.23.1 files, once: from the UO Smallz client's folder when this PC has it, else the download.
+function Install-BaseData($info, $state) {
+    if (Test-OwnData) { return $false }
+    $from = Find-Data (Join-Path $OldClientDir 'UOData')
+    if ($from) {
+        Show-Status 'Copying the game data from your UO Smallz client (about 2 GB)...'
+        # Its backup folders (_backup-..., _magincia-source) stay behind.
+        $skip = @(Get-ChildItem -LiteralPath $from -Directory | Where-Object { $_.Name.StartsWith('_') } | ForEach-Object { $_.FullName })
+        Copy-Tree $from $OwnData $skip
+    }
+    else {
+        if (-not $info -or -not $info.url) { throw 'This release does not say where the game data comes from.' }
+        $work = Join-Path $InstallDir 'UOData.download'
+        [IO.Directory]::CreateDirectory($work) | Out-Null
+        $sfx = Join-Path $work "$($info.version).exe"
+        if ((Test-Path -LiteralPath $sfx) -and (Get-Sha $sfx) -ne $info.sha256) { [IO.File]::Delete($sfx) }
+        if (-not (Test-Path -LiteralPath $sfx)) { Get-File $info.url $sfx 'Downloading the Ultima Online game data' ([long]$info.size) }
+        if ((Get-Sha $sfx) -ne $info.sha256) { [IO.File]::Delete($sfx); throw 'The game data download is damaged (its checksum does not match). Nothing was run. Try again.' }
+        Show-Status 'Unpacking the game data (a few minutes)...' 100
+        # The same unpacking the UO Smallz installer does: the archive's own silent extract into a folder.
+        $target = Join-Path $work 'extract'
+        [IO.Directory]::CreateDirectory($target) | Out-Null
+        Start-Process -FilePath $sfx -ArgumentList "-s2 -y `"-d$target`"" -Wait
+        $found = Find-Data $target
+        if (-not $found) { throw 'The game data could not be unpacked (tiledata.mul was not found).' }
+        Copy-Tree $found $OwnData
+        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (-not (Test-OwnData)) { throw 'The game data did not arrive in the install folder.' }
+    return $true
+}
+
+# The 2x HD art pack (optional: without it the game draws the original art).
+function Install-HdArt($info, $state) {
+    if (-not $info -or -not $info.sha256) { return }
+    $dir = Join-Path $InstallDir 'Shard\HDArt'
+    if ((Get-Data $state 'hdart') -eq $info.sha256 -and (Test-Path (Join-Path $dir 'art'))) { return }
+    $oldPack = Join-Path $OldClientDir 'HDArt'
+    $oldStamp = Join-Path $OldClientDir 'hdart-version.json'
+    $oldSha = $null
+    if (Test-Path -LiteralPath $oldStamp) { try { $oldSha = (Get-Content $oldStamp -Raw | ConvertFrom-Json).sha256 } catch { } }
+    if ($oldSha -eq $info.sha256 -and (Test-Path (Join-Path $oldPack 'art'))) {
+        Show-Status 'Copying the HD art from your UO Smallz client (about 700 MB)...'
+        foreach ($sub in 'art', 'land', 'gumps', 'texmaps') {
+            if (Test-Path (Join-Path $oldPack $sub)) { Copy-Tree (Join-Path $oldPack $sub) (Join-Path $dir $sub) }
+        }
+        if (Test-Path (Join-Path $oldPack 'hd-art.json')) { Copy-Item (Join-Path $oldPack 'hd-art.json') $dir -Force }
+    }
+    else {
+        $zip = Join-Path $InstallDir 'HDArt.download.zip'
+        if ((Test-Path -LiteralPath $zip) -and (Get-Sha $zip) -ne $info.sha256) { [IO.File]::Delete($zip) }
+        if (-not (Test-Path -LiteralPath $zip)) { Get-File $info.url $zip 'Downloading the HD art' ([long]$info.size) }
+        if ((Get-Sha $zip) -ne $info.sha256) { [IO.File]::Delete($zip); throw 'The HD art download is damaged (its checksum does not match).' }
+        Show-Status 'Unpacking the HD art...' 100
+        $new = "$dir.new"
+        if (Test-Path -LiteralPath $new) { Remove-Item -LiteralPath $new -Recurse -Force }
+        [IO.Compression.ZipFile]::ExtractToDirectory($zip, $new)
+        # The pack's folders may sit one level down in the zip.
+        $root = $new
+        if (-not (Test-Path (Join-Path $root 'art'))) {
+            $inner = Get-ChildItem -LiteralPath $new -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'art') } | Select-Object -First 1
+            if (-not $inner) { Remove-Item -LiteralPath $new -Recurse -Force; throw 'The HD art pack has no art folder.' }
+            $root = $inner.FullName
+        }
+        if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $dir)) | Out-Null
+        Move-Item -LiteralPath $root -Destination $dir
+        if (Test-Path -LiteralPath $new) { Remove-Item -LiteralPath $new -Recurse -Force }
+        [IO.File]::Delete($zip)
+    }
+    Set-Data $state 'hdart' $info.sha256
+}
+
+# The map files must be the server's: the manifest names their SHA-256.
+function Test-Maps($manifest) {
+    $off = @()
+    if ($manifest.PSObject.Properties['maps']) {
+        foreach ($m in $manifest.maps.PSObject.Properties) {
+            $file = Join-Path $OwnData $m.Name
+            if (-not (Test-Path -LiteralPath $file) -or (Get-Sha $file) -ne $m.Value) { $off += $m.Name }
+        }
+    }
+    return $off
 }
 
 # =====================================================================================================================
@@ -177,6 +283,23 @@ try {
 
     if ($manifest) {
         $state = Read-State
+        $dataInfo = if ($manifest.PSObject.Properties['data']) { $manifest.data } else { $null }
+        # The game data first: the shard's map files (a part) go over it.
+        if ($dataInfo -and -not (Test-OwnData)) {
+            if ($Setup) { Write-Host ''; Write-Host '== Game data ==' -ForegroundColor Cyan }
+            try {
+                if (Install-BaseData $dataInfo.uodata $state) {
+                    if ($state.parts.PSObject.Properties['maps']) { $state.parts.PSObject.Properties.Remove('maps') }
+                    Write-State $state
+                    if ($Setup) { Write-Host '[ok] Game data installed.' -ForegroundColor Green }
+                }
+            }
+            catch {
+                # With the UO Smallz client's data to fall back on, the game still runs.
+                if (-not (Test-OldData)) { throw }
+                if ($Setup) { Write-Host "[warn] $($_.Exception.Message) Using the UO Smallz client's data for now." -ForegroundColor Yellow }
+            }
+        }
         $changed = @($manifest.parts | Where-Object {
             $have = $state.parts.PSObject.Properties[$_.name]
             -not $have -or $have.Value.sha256 -ne $_.sha256
@@ -194,6 +317,16 @@ try {
             Write-State $state
         }
         elseif ($state.version -ne $manifest.version) { $state.version = $manifest.version; Write-State $state }
+
+        if ($dataInfo) {
+            try { Install-HdArt $dataInfo.hdart $state; Write-State $state }
+            catch { if ($Setup) { Write-Host "[warn] HD art: $($_.Exception.Message) The game runs without it; setup will try again next time." -ForegroundColor Yellow } }
+            if ($Setup -and (Test-OwnData)) {
+                $off = @(Test-Maps $manifest)
+                if ($off.Count -eq 0) { Write-Host "[ok] Your map files match the UO Smallz server's." -ForegroundColor Green }
+                else { Write-Host "[warn] $($off -join ', ') differ from the server's: some places may look different in game." -ForegroundColor Yellow }
+            }
+        }
 
         # The launcher itself: a newer one takes over at the next start.
         $mine = Join-Path $InstallDir $LauncherFile
@@ -229,12 +362,8 @@ sh.Run """" & ps & """ -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -F
         $link.Save()
         Write-Host "[ok] Installed. Shortcut on the desktop: $ShortcutName" -ForegroundColor Green
 
-        if (-not (Test-GameData)) {
-            Install-GameData
-            if (-not (Test-GameData)) {
-                Write-Host '[warn] The game data is still not in the usual place. If you installed UO Smallz to another' -ForegroundColor Yellow
-                Write-Host '       folder, set "uoDataPath" in UserSettings\unity-uo-settings.json to its UOData folder.' -ForegroundColor Yellow
-            }
+        if (-not (Test-OwnData) -and -not (Test-OldData)) {
+            Write-Host '[warn] The game data is not installed yet. Run setup again when you are online.' -ForegroundColor Yellow
         }
         Write-Host ''
         Write-Host "Done. Start the game with the $ShortcutName shortcut on your desktop." -ForegroundColor Green
@@ -242,9 +371,9 @@ sh.Run """" & ps & """ -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -F
         exit 0
     }
 
-    if (-not (Test-GameData)) {
+    if (-not (Test-OwnData) -and -not (Test-OldData)) {
         Close-Status
-        [Windows.Forms.MessageBox]::Show("The Ultima Online game data was not found in $DataDir.`n`nRun UnityUO-Setup.cmd again to install it.", 'Unity UO') | Out-Null
+        [Windows.Forms.MessageBox]::Show("The Ultima Online game data is not installed yet.`n`nStart the game again while online, or run UnityUO-Setup.cmd.", 'Unity UO') | Out-Null
         exit 1
     }
     Close-Status

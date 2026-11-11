@@ -36,6 +36,7 @@ namespace UOClient.Unity
         /// <summary>Reads the settings file (writing one with the detected folders on first run), then applies launch arguments.</summary>
         public static ClientSettings Load()
         {
+            ClientSettings.OwnRoot = ClientPaths.ProjectRoot; // the install's own UOData and Shard folders, when the launcher made them
             ClientSettings s = ReadSettingsFile(orDefaults: false);
             if (s == null)
             {

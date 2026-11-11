@@ -1,4 +1,4 @@
-# Unity UO
+﻿# Unity UO
 
 **Unity UO** is an overhauled Ultima Online client in Unity 6. The code uses `UOClient` in its assembly and namespace names. It keeps UO's isometric look and adds updated art from a local ComfyUI pipeline. The target server is ModernUO. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full plan.
 
@@ -8,7 +8,7 @@ The client reads the player's own UO install. **EA's data files and anything der
 
 1. Download **UnityUO-Setup.cmd** from the [latest release](https://github.com/wesleysnoe-dev/UnityUO/releases/latest).
 2. Double-click it. Windows may warn about a file from the internet: choose **More info**, then **Run anyway**.
-3. It installs the game to `%LOCALAPPDATA%\UnityUO`, puts a **Unity UO** shortcut on the desktop and, if this PC does not have the Ultima Online game data yet, runs the UO Smallz installer to fetch it.
+3. It installs the game to `%LOCALAPPDATA%\UnityUO`, puts a **Unity UO** shortcut on the desktop and fetches the game data into the same folder: the Ultima Online 7.0.23.1 files, the shard's map and custom items, and the HD art (about 1.7 GB in all; copied from your UO Smallz client instead if this PC has one). It needs no other client installed.
 
 To update, just start the game: the shortcut checks for a new version first and downloads only what changed. Your login, settings and hotkeys are kept. The natural ground and grass are under Options > Video > Ground.
 
@@ -20,7 +20,7 @@ Releases are made with `Tools/Make-Release.ps1` and `Tools/Publish-Release.ps1` 
 |---|---|
 | `Assets/UOClient.IO/` | MUL/UOP containers, decoders for art, gumps, tiledata, hues, map and statics. Pure C#, `noEngineReferences`. |
 | `Assets/UOClient.ArtPipeline/` | `IsoCompositor`: a CPU isometric render of a map region plus a per-pixel ownership map, used for the ComfyUI restyle-and-slice workflow. |
-| `Assets/UOClient.Unity/Editor/` | **UOClient → Art Browser** (single art pieces) and **UOClient → World Preview** (a map region from original, baked or per-graphic art). |
+| `Assets/UOClient.Unity/Editor/` | **UOClient â†’ Art Browser** (single art pieces) and **UOClient â†’ World Preview** (a map region from original, baked or per-graphic art). |
 | `DotNet/` | Builds the same `Assets/` sources outside Unity (netstandard2.1, C# 9), plus the `uoclient` CLI, the `gumppreview` fixture renderer and xUnit tests. |
 
 ## Connecting to ModernUO
@@ -31,13 +31,13 @@ The client logs in to a ModernUO server as an unencrypted 7.0.23.1 client. That'
 
 ```json
 { "host": "uosmallz.duckdns.org", "port": 2593,
-  "uoDataPath": "C:\\Users\\…\\AppData\\Local\\UOSmallz\\UOData\\7.0.23.1\\7.0.23.1",
-  "overridesPath": "C:\\Users\\…\\AppData\\Local\\UOSmallz\\Client", "hdArt": true }
+  "uoDataPath": "C:\\Users\\â€¦\\AppData\\Local\\UOSmallz\\UOData\\7.0.23.1\\7.0.23.1",
+  "overridesPath": "C:\\Users\\â€¦\\AppData\\Local\\UOSmallz\\Client", "hdArt": true }
 ```
 
 - **`host` / `port`:** the shard, by default the live one (`uosmallz.duckdns.org:2593`); the local test server is `-server 127.0.0.1`. Typing another server on the login screen saves it here.
 - **`uoDataPath`:** the UO data files, read in place from the UO Smallz client install (the live client release), never copied into the project. When it's empty, the client uses that install's `UOData` if present, else the EA Classic install.
-- **`overridesPath`:** the UO Smallz client folder. From it the client reads `ExternalImages` (custom and replacement art), `TileData/*.csv` (the shard items in 0x4C00–0x4CFF and 0xFE00–0xFE0D), `EquipConv/*.csv` (how shard clothing is worn), and the `HDArt` pack beside it. These follow the same rules as the client's TazUO patches 0005–0010. `none` turns overrides off.
+- **`overridesPath`:** the UO Smallz client folder. From it the client reads `ExternalImages` (custom and replacement art), `TileData/*.csv` (the shard items in 0x4C00â€“0x4CFF and 0xFE00â€“0xFE0D), `EquipConv/*.csv` (how shard clothing is worn), and the `HDArt` pack beside it. These follow the same rules as the client's TazUO patches 0005â€“0010. `none` turns overrides off.
 - **`hdArt`:** draws 2x art from the HD pack where the renderer draws at 2x.
 
 Launch arguments win over the file: `-server host:port`, `-uodata <dir>`, `-overrides <dir>|none`. The CLI takes the same with `--`. Switching to the live shard is only `-server uosmallz.duckdns.org:2593`. Read [LIVE_PARITY.md](LIVE_PARITY.md) first.
@@ -45,7 +45,7 @@ Launch arguments win over the file: `-server host:port`, `-uodata <dir>`, `-over
 **Account:** the test account lives in `UserSettings/uoclient-account.json`, which git ignores, and holds no server:
 
 ```json
-{ "account": "…", "password": "…", "character": "Adventurer", "startCity": "Britain", "clientVersion": "7.0.23.1" }
+{ "account": "â€¦", "password": "â€¦", "character": "Adventurer", "startCity": "Britain", "clientVersion": "7.0.23.1" }
 ```
 
 With `accountHandler.enableAutoAccountCreation` on, the account is created on first login, and the character is created in `startCity` if it doesn't exist.
@@ -83,11 +83,11 @@ The packet log blanks password fields.
 | Assembly | What |
 |---|---|
 | `Assets/UOClient.Net/` | TCP connection on a background reader thread, Huffman decompression, packet framing by the version-adjusted length table, packet reader and writer. |
-| `Assets/UOClient.Core/` | `GameSession`: login → server list → relay → game login → character select or create → world. Handles world packets (mobiles, items, equipment, status, speech and cliloc, light) and sequence-numbered movement with server rejections. `World` is the client-side model with events. |
+| `Assets/UOClient.Core/` | `GameSession`: login â†’ server list â†’ relay â†’ game login â†’ character select or create â†’ world. Handles world packets (mobiles, items, equipment, status, speech and cliloc, light) and sequence-numbered movement with server rejections. `World` is the client-side model with events. |
 
 ## In Unity
 
-**UOClient → Play World Demo** opens `Assets/Scenes/WorldDemo.unity`, creating it on first use, and presses Play.
+**UOClient â†’ Play World Demo** opens `Assets/Scenes/WorldDemo.unity`, creating it on first use, and presses Play.
 
 **Online** (the default when the account file exists and the server is up):
 - Logs in and plays the character from the account file. Walking is server-confirmed: each step is predicted locally and snaps back if the server rejects it.
@@ -95,10 +95,10 @@ The packet log blanks password fields.
 - Draws ground items such as doors, signs and lamp posts.
 - The journal shows live speech, chat and system messages. Press Enter to talk.
 - Lighting follows the server's light level. T overrides it.
-- The map streams in 16×16-tile chunks as you walk. A background thread composes each chunk; the main thread spends at most about 4 ms per frame uploading finished ones, and chunks far behind you are unloaded with their textures. Depth comes from each sprite's own sort key (see `DepthKey`), so chunks built separately still sort correctly against each other and against characters.
+- The map streams in 16Ã—16-tile chunks as you walk. A background thread composes each chunk; the main thread spends at most about 4 ms per frame uploading finished ones, and chunks far behind you are unloaded with their textures. Depth comes from each sprite's own sort key (see `DepthKey`), so chunks built separately still sort correctly against each other and against characters.
 - Character frames (per look, action and direction) and ground-item sprites (per graphic and hue) are built on a second background thread. The main thread copies finished pixels within about 2 ms per frame; until then a character keeps its last frames.
 - Steps are paced on real time at the server's walk and run delays. Starting steps early makes ModernUO's movement throttle reject them, which shows up as rubber-banding.
-- F3 shows frame-time stats and the breakdown of the last hitch (our own Update sections, garbage collections, and Unity's player loop, editor loop, render, GPU wait and IMGUI). Two 60-step runs through Britain in the editor measured an average of 6.4–6.6 ms, a 99th percentile of about 18 ms, a worst frame of 22–24 ms, and no frames over 33 ms.
+- F3 shows frame-time stats and the breakdown of the last hitch (our own Update sections, garbage collections, and Unity's player loop, editor loop, render, GPU wait and IMGUI). Two 60-step runs through Britain in the editor measured an average of 6.4â€“6.6 ms, a 99th percentile of about 18 ms, a worst frame of 22â€“24 ms, and no frames over 33 ms.
 
 **Windows (gumps)**, online:
 - **P** opens your paperdoll, **B** your backpack, **F1** the server's help menu.
@@ -119,15 +119,15 @@ The packet log blanks password fields.
 - **Houses and boats:** drawn from multi.mul, and walkable. Upper floors hide while you're inside.
 - **Spell effects** (missiles, explosions, auras, lightning), **sound effects** and **region music**. Volumes are in Options.
 - **Spellbooks:** double-click a book to open it. Magery, Necromancy and Chivalry books look like the classic book: click a name in the index to open its page; double-click a name or a page's icon to cast (`0xBF 0x1C`). A single click never casts. Drag an icon out to get a floating spell icon; double-click it to cast. Hovering an icon shows its tooltip. Other schools show a list; click a spell there to cast it from that book.
-- **Top bar:** UO Smallz client buttons — Map, Paperdoll, Inventory, Journal, Chat, Help, World Map, Skills, Status, Groups (`[groups`, the server's Group Finder) and Options.
+- **Top bar:** UO Smallz client buttons â€” Map, Paperdoll, Inventory, Journal, Chat, Help, World Map, Skills, Status, Groups (`[groups`, the server's Group Finder) and Options.
 - **Shard chat window** (Chat):
   - Tabs: All, Global, Trade, Faction, Guild, Whispers and News, with unread counts.
   - The message box sends on the tab's channel: `[g`, `[t`, `[f`, `[gu`, `[w Name`.
   - Double-click a line to whisper that player.
-  - Offers carry Join / View / Fill buttons. The client says `[uoclient 1` at login so the server sends them, and strips the `{{link …}}` marker from the text.
+  - Offers carry Join / View / Fill buttons. The client says `[uoclient 1` at login so the server sends them, and strips the `{{link â€¦}}` marker from the text.
 - **World map:** the whole facet. Drag to pan, scroll to zoom, Center to follow you again. It is drawn once on a background thread and cached under `Library/UOClient`.
 - **Dropping in the world:** goes where you release it: the tile under the mouse, a character (give / pack animal) or an item (chest, stack), as in the classic client.
-- **Macros:** `UserSettings/unity-uo-hotkeys.json` (`cast Heal`, `skill Hiding`, `bandageself`, `lasttarget`, `say …`, …). The defaults are on F2 and F4–F9; edit the file, then press Reload in Options.
+- **Macros:** `UserSettings/unity-uo-hotkeys.json` (`cast Heal`, `skill Hiding`, `bandageself`, `lasttarget`, `say â€¦`, â€¦). The defaults are on F2 and F4â€“F9; edit the file, then press Reload in Options.
 
 **Offline** (no account file, or the server isn't reachable): a look-and-feel demo with no server:
 - Britain around the restyled house, drawn in real time from batched atlas meshes with depth-sorted cutout sprites. The baked ComfyUI art is used where it exists, and upscaled original art everywhere else.
@@ -142,7 +142,7 @@ Region, character name, baked folder and zoom are fields on the **UO World Demo*
 
 ### Standalone build
 
-**UOClient → Build Windows Player (Unity UO)** builds `Builds/Windows/Unity UO.exe` from the world demo scene: windowed at 1920×1080 by default, resizable, and kept running in the background. It also writes `unity-uo-paths.json` next to the exe, pointing at this project, so the player uses the project's baked art and `UserSettings` account file without copying them into the build.
+**UOClient â†’ Build Windows Player (Unity UO)** builds `Builds/Windows/Unity UO.exe` from the world demo scene: windowed at 1920Ã—1080 by default, resizable, and kept running in the background. It also writes `unity-uo-paths.json` next to the exe, pointing at this project, so the player uses the project's baked art and `UserSettings` account file without copying them into the build.
 
 To run the measured route unattended (it writes the report to `Library/UOClient/demo_capture_done.txt`, then quits):
 
@@ -152,15 +152,15 @@ To run the measured route unattended (it writes the report to `Library/UOClient/
 
 Measured on this machine with vSync on: an average of 6.1 ms (164 fps, the display's refresh rate), a 99th percentile of 7.4 ms, a worst frame of 15.5 ms, and no frames over 33 ms, over a 60-step run across several chunks with 42 characters in view. The editor's numbers on the same route are about 18 ms for the 99th percentile and 23 ms for the worst frame. The difference is editor overhead.
 
-**UOClient → World Preview** renders a map region inside the editor with the art pipeline's compositor. It's a preview of the art, not the game renderer.
+**UOClient â†’ World Preview** renders a map region inside the editor with the art pipeline's compositor. It's a preview of the art, not the game renderer.
 
 - **Art:**
-  - *Original*: the UO install, at scale 1–4×.
+  - *Original*: the UO install, at scale 1â€“4Ã—.
   - *Baked*: a folder from `bake`. It defaults to `Exports/comfy_test/baked`.
   - *Sprites*: a folder from `slice`.
 - **Roofs** hides roofs. **Coverage** tints baked or sliced art by pixel source.
 - **Controls:** drag to pan, scroll to zoom around the cursor. **Fit** and **1:1** reset the view. Click a pixel to show the placement that drew it.
-- **Defaults:** the region starts on the restyled test house (map 0, 1460,1664, 14×14).
+- **Defaults:** the region starts on the restyled test house (map 0, 1460,1664, 14Ã—14).
 
 To type-check the editor code while the project is open in Unity:
 
@@ -212,14 +212,14 @@ It is a software copy of `ServerGumpWindow`'s drawing as the gump opens, not a U
    dotnet run --project DotNet/UOClient.Cli -- compose 0 1408 1664 64 64 Exports/britain_bank_noroof --no-roofs
    ```
 
-2. Run each `composite.png` through ComfyUI at 2×. With ComfyUI running on `127.0.0.1:8188`:
+2. Run each `composite.png` through ComfyUI at 2Ã—. With ComfyUI running on `127.0.0.1:8188`:
 
    ```bash
    E:/ComfyUI/python_embeded/python.exe Tools/ComfyRestyle/restyle.py Exports/britain_bank
    ```
 
    This writes `restyled.png` and `restyle_graph.json` into the folder. The pipeline:
-   - 4x-UltraSharp upscale down to 2×, then SDXL img2img (DreamShaper XL, denoise 0.55)
+   - 4x-UltraSharp upscale down to 2Ã—, then SDXL img2img (DreamShaper XL, denoise 0.55)
    - ControlNet Union in tile mode, so edges stay on UO's tile grid
    - IP-Adapter style transfer from `Tools/ComfyRestyle/style/mockup_scene.png`
 
@@ -251,7 +251,7 @@ Sloped land is skipped by the slicer for now. Its HD form will be texmaps.
 
 ### Baking per placement (towns)
 
-Per-graphic slicing can't reproduce AI-painted art without seams (see ARCHITECTURE.md §7). For fixed map content, bake instead. Every land tile and static keeps exactly the pixels ComfyUI painted for it, including sloped land:
+Per-graphic slicing can't reproduce AI-painted art without seams (see ARCHITECTURE.md Â§7). For fixed map content, bake instead. Every land tile and static keeps exactly the pixels ComfyUI painted for it, including sloped land:
 
 ```bash
 dotnet run --project DotNet/UOClient.Cli -- bake Exports/britain_bank_baked Exports/britain_bank Exports/britain_bank_noroof
@@ -262,7 +262,7 @@ dotnet run --project DotNet/UOClient.Cli -- reassemble 0 1408 1664 64 64 Exports
 ```
 
 The output folder holds:
-- `placements.bin`: placement key → atlas rect plus offset from the tile anchor
+- `placements.bin`: placement key â†’ atlas rect plus offset from the tile anchor
 - `page_NNN.png`: the atlas pages
 - `report.csv`: per-placement pixel sources
 - `coverage/`: the pages tinted by source (green = painted in place, cyan = roofless pass, yellow = per-graphic slice, red = color-matched original)
@@ -276,7 +276,7 @@ The output folder holds:
 - [x] CPU compositor with ownership map; Britain renders correctly
 - [x] Unity editor Art Browser; all assemblies compile in Unity 6000.6.8f1
 - [x] Stretched (sloped) land: texmap quads from the four corner heights, with face shading. UV orientation is checked against the land art in the tests.
-- [x] Restyle-and-slice: composite save/load, 2× rendering with sprite overrides, slicer with multi-placement merge and color-matched fallback, roofless pass, coverage overlays. Identity round-trip is pixel-exact in tests.
+- [x] Restyle-and-slice: composite save/load, 2Ã— rendering with sprite overrides, slicer with multi-placement merge and color-matched fallback, roofless pass, coverage overlays. Identity round-trip is pixel-exact in tests.
 - [x] ComfyUI restyle driver (`Tools/ComfyRestyle/restyle.py`) and seam scoring
 - [x] Per-placement baking with atlas pages; ComfyUI block reproduced exactly (seam score 0.0 vs 16.1 sliced)
 - [ ] Roofless pass as an inpaint of the main pass (consistent look across the roof line); chunked baking with overlapping margins for whole towns
@@ -285,7 +285,7 @@ The output folder holds:
 - [ ] Hue application, animations, multis, cliloc, fonts
 - [x] Batched Unity world renderer: atlas meshes, depth-sorted cutout sprites, roof hiding (built-in pipeline; URP later)
 - [x] Networking to ModernUO: login, character creation, world entry, mobiles, items, equipment, speech, light, server-confirmed movement. Tested headless and in Unity against the local shard.
-- [ ] Mobiles in anim2–anim5 / UOP animations (bodyconv.def, mobtypes.txt), mounts
+- [ ] Mobiles in anim2â€“anim5 / UOP animations (bodyconv.def, mobtypes.txt), mounts
 - [x] Streaming map chunks on a background thread; minimap built off the main thread
 - [x] Character frames and item sprites built off the main thread; step pacing matched to the server
 - [x] Standalone Windows player ("Unity UO") with an unattended performance run

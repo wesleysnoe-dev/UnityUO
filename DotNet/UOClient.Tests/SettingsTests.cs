@@ -6,6 +6,39 @@ namespace UOClient.Tests;
 public sealed class SettingsTests
 {
     [Fact]
+    public void ItsOwnDataFolder_WinsOverTheOldClients_ButNotOverAChoice()
+    {
+        string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "uoclient-own-" + System.Guid.NewGuid().ToString("N"));
+        string oldData = System.IO.Path.Combine(ClientSettings.UoSmallzRoot, "UOData", "7.0.23.1", "7.0.23.1");
+        string oldClient = System.IO.Path.Combine(ClientSettings.UoSmallzRoot, "Client");
+        try
+        {
+            ClientSettings.OwnRoot = root;
+            Assert.Null(ClientSettings.OwnDataPath);                 // nothing there yet: as before
+            Assert.Null(ClientSettings.OwnOverridesPath);
+            Assert.Equal(oldData, new ClientSettings { uoDataPath = oldData }.ResolvedDataPath);
+
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(root, "UOData"));
+            System.IO.File.WriteAllText(System.IO.Path.Combine(root, "UOData", "tiledata.mul"), "");
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(root, "Shard", "Client"));
+            string own = System.IO.Path.Combine(root, "UOData"), ownShard = System.IO.Path.Combine(root, "Shard", "Client");
+            Assert.Equal(own, new ClientSettings().ResolvedDataPath);
+            Assert.Equal(own, new ClientSettings { uoDataPath = oldData }.ResolvedDataPath);          // a saved old default
+            Assert.Equal(own, new ClientSettings { uoDataPath = oldData.Replace('\\', '/') }.ResolvedDataPath);
+            Assert.Equal(@"D:\uo", new ClientSettings { uoDataPath = @"D:\uo" }.ResolvedDataPath);    // the player's own choice stays
+            Assert.Equal(ownShard, new ClientSettings().ResolvedOverridesPath);
+            Assert.Equal(ownShard, new ClientSettings { overridesPath = oldClient }.ResolvedOverridesPath);
+            Assert.Null(new ClientSettings { overridesPath = "none" }.ResolvedOverridesPath);
+        }
+        finally
+        {
+            ClientSettings.OwnRoot = null;
+            if (System.IO.Directory.Exists(root))
+                System.IO.Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void DefaultsToTheLiveShardAndArgumentsSwitchIt()
     {
         var s = new ClientSettings();

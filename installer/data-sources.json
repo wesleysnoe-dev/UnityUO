@@ -1,0 +1,21 @@
+{
+  "uodata": {
+    "version": "7.0.23.1",
+    "url": "https://mirror.ashkantra.de/fullclients/7.0.23.1.exe",
+    "sha256": "23b0548252bb4e6f39afbddac2e64f8deb862fbfaccb1303b87895d295e01839",
+    "size": 973997977
+  },
+  "hdart": {
+    "url": "https://github.com/wesleysnoe-dev/uosmallz-client/releases/download/hd-art-1/UOSmallz-HDArt-2x.zip",
+    "sha256": "8ac8351a65fb93110c2dd7a5aa43201b6d843c1466efaae897d59230a6baec07",
+    "size": 667911622
+  },
+  "maps": {
+    "map0.mul": "64e5a0b530e071da69e5f698680b0e0043a49aa9aa025322781d4f55b4dfcbc4",
+    "statics0.mul": "2e362abf4cc55521bd2f673d6f71577fd7b42f9a3b4c293f5a998a7cfb5657c4",
+    "staidx0.mul": "e8f9d96eaa33775428cf260b2a70146c8a6e1af98caac554642484718566789d",
+    "map2.mul": "d96b97c092cb2a4597866bee49e8360adfadb257cddde3a9a4d95c041c59c87c",
+    "statics2.mul": "3601d3a1f60ebb2389eb51466317d7c86c5265a8d6d59f6065e3ef78aaad380a",
+    "staidx2.mul": "cb9c75fb38a9005a15ea971c464953b8b013d0d3ebf00e757c812407250fa0ff"
+  }
+}
