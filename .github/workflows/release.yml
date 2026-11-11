@@ -1,0 +1,40 @@
+# Publishes a release from files pushed to the release-staging branch.
+#
+# The game is built on a PC with Unity (it cannot be built here), so Tools/Publish-Release.ps1 pushes the finished
+# files (Tools/Make-Release.ps1) as one commit on release-staging:
+#   assets/   manifest.json, UnityUO-<part>.zip, unityuo-launcher.ps1, UnityUO-Setup.cmd
+#   VERSION   the release number        NOTES.md   the release's text
+# This workflow makes release v<VERSION> from them, marks it latest (what the launcher and the setup file download
+# from), and deletes the branch again so the zips do not stay in the repository. A version that already has a
+# release is refused: raise VERSION for a new one.
+name: Publish release
+
+on:
+  push:
+    branches: [release-staging]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          v="$(tr -d '[:space:]' < VERSION)"
+          case "$v" in ''|*[!0-9]*) echo "VERSION must be a number, got '$v'"; exit 1 ;; esac
+          if gh release view "v$v" >/dev/null 2>&1; then
+            echo "Release v$v already exists. Raise VERSION and publish again."; exit 1
+          fi
+          test -f assets/manifest.json && test -f assets/unityuo-launcher.ps1 && test -f assets/UnityUO-Setup.cmd
+          gh release create "v$v" assets/* --target main --title "Unity UO v$v" --notes-file NOTES.md --latest
+
+      - name: Remove the staging branch
+        if: always()
+        run: git push origin --delete release-staging
