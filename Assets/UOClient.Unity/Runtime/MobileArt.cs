@@ -22,6 +22,7 @@ namespace UOClient.Unity
     {
         public AtlasSlot Slot;
         public int OriginalWidth, OriginalHeight;
+        public int EmptyBelow; // rows without an opaque pixel at the bottom of the art, scaled pixels (ShadowRules.BaseLift)
     }
 
     /// <summary>
@@ -182,6 +183,16 @@ namespace UOClient.Unity
             return null;
         }
 
+        /// <summary>Rows without an opaque pixel at the bottom of bottom-up colours (as <see cref="DynamicAtlas.ToColors"/>).</summary>
+        private static int EmptyRowsBelow(Color32[] colors, int width, int height)
+        {
+            for (int y = 0; y < height; y++)
+                for (int x = 0, i = y * width; x < width; x++, i++)
+                    if (colors[i].a >= UOClient.IO.Formats.ShadowRules.OpaqueAlpha)
+                        return y;
+            return height;
+        }
+
         /// <summary>Copies finished art into the atlas (within the budget) and uploads it; call once per frame before rendering.</summary>
         public void Flush()
         {
@@ -199,7 +210,8 @@ namespace UOClient.Unity
                     {
                         Slot = _atlas.Add(r.Width, r.Height, r.Pixels),
                         OriginalWidth = r.Width / _scale,
-                        OriginalHeight = r.Height / _scale
+                        OriginalHeight = r.Height / _scale,
+                        EmptyBelow = EmptyRowsBelow(r.Pixels, r.Width, r.Height)
                     };
                     continue;
                 }

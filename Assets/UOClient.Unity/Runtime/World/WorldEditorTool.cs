@@ -71,7 +71,7 @@ namespace UOClient.Unity
         private bool _shadowSent;
 
         private float _shadowLogAt;
-        private bool _nearLightSent;
+        private bool _nearLightSent, _gumpsShown;
         private int _sayStep;
         private static readonly string[] SayLines =
         {
@@ -137,6 +137,35 @@ namespace UOClient.Unity
                 uint pack = _ctx.Session.World.Worn(_ctx.Session.World.Player, 21);
                 if (pack != 0)
                     _ctx.Session.Use(pack);
+            }
+            // -gump-selftest=FILE: once there, the gumps written in FILE open as if the server had sent them (for captures
+            // of our own windows for server gumps). Per gump: a line "x y", the layout on one line, its text lines, "---".
+            if (!_gumpsShown && _shadowSent && Time.unscaledTime >= _shadowAt + 12f && _ctx.Session != null
+                && Array.Find(Environment.GetCommandLineArgs(), x => x.StartsWith("-gump-selftest=", StringComparison.OrdinalIgnoreCase)) is string gumpArg)
+            {
+                _gumpsShown = true;
+                uint n = 0;
+                string[] all = System.IO.File.ReadAllLines(gumpArg.Substring(gumpArg.IndexOf('=') + 1));
+                var blocks = new System.Collections.Generic.List<System.Collections.Generic.List<string>> { new System.Collections.Generic.List<string>() };
+                foreach (string line in all)
+                {
+                    if (line.Trim() == "---")
+                        blocks.Add(new System.Collections.Generic.List<string>());
+                    else
+                        blocks[blocks.Count - 1].Add(line);
+                }
+                foreach (System.Collections.Generic.List<string> block in blocks)
+                {
+                    if (block.Count < 2)
+                        continue;
+                    string[] rows = block.ToArray();
+                    string[] xy = rows[0].Split(' ');
+                    var texts = new string[Math.Max(0, rows.Length - 2)];
+                    Array.Copy(rows, 2, texts, 0, texts.Length);
+                    n++;
+                    _ctx.Session.ShowLocalGump(new Core.ServerGump { Serial = 0x7F000000 + n, TypeId = 0x7F000000 + n, X = int.Parse(xy[0]), Y = int.Parse(xy[1]),
+                                                                    Commands = Core.ServerGump.ParseLayout(rows[1]), Lines = texts });
+                }
             }
             string sayArg = Array.Find(Environment.GetCommandLineArgs(), a => a.StartsWith("-say-selftest", StringComparison.OrdinalIgnoreCase));
             string[] lines = sayArg != null && sayArg.EndsWith("=states", StringComparison.OrdinalIgnoreCase) ? StateLines : SayLines;

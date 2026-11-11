@@ -190,7 +190,22 @@ namespace UOClient.Unity
                 Ui.Open(new UI.ContainerWindow(c.Serial, c.Gump));
         }
 
-        private void OnGumpOpened(ServerGump g) => Ui.Open(new UI.ServerGumpWindow(g));
+        private void OnGumpOpened(ServerGump g)
+        {
+            // The public moongate's menu is shown in the game's own look (MoongateWindow); every other gump as sent.
+            MoongateMenu gate = MoongateMenu.TryRead(g.Commands);
+            if (gate != null)
+                Ui.Open(new UI.MoongateWindow(g, gate));
+            // The hairstylist's three menus likewise (BarberWindows).
+            else if (BarberMenus.ReadServices(g) is BarberMenus.Services services)
+                Ui.Open(new UI.BarberServicesWindow(g, services));
+            else if (BarberMenus.ReadStyles(g) is BarberMenus.Styles styles)
+                Ui.Open(new UI.BarberStylesWindow(g, styles));
+            else if (BarberMenus.ReadColours(g) is BarberMenus.Colours colours)
+                Ui.Open(new UI.BarberColoursWindow(g, colours));
+            else
+                Ui.Open(new UI.ServerGumpWindow(g));
+        }
 
         private void OnLiftRejected(int reason)
         {

@@ -574,9 +574,9 @@ namespace UOClient.Unity
                 }
                 if (!groups.TryGetValue(texture, out var g))
                     groups[texture] = g = (new List<Vector3>(), new List<Vector2>(), new List<int>(), new List<Color32>(), new List<Vector2>());
-                // An object stands on the bottom of its art (statics are drawn with their foot on the tile's lower corner).
+                // From the object's own lowest row, not the art's bottom edge on the tile's lower corner (ShadowRules.BaseLift).
                 CharacterShadow.AddQuad(g.V, g.Uv, g.I, g.C, CharacterShadow.Tint(strength, sun), this, perPixel, uv, false,
-                    q.Left, q.Top, q.Width, q.Height, q.Top + q.Height, q.Depth, g.H, q.CutHeight);
+                    q.Left, q.Top, q.Width, q.Height, q.Top + q.Height - q.ShadowLift, q.Depth, g.H, q.CutHeight);
             }
             foreach (KeyValuePair<int, (List<Vector3> V, List<Vector2> Uv, List<int> I, List<Color32> C, List<Vector2> H)> g in groups)
             {
@@ -742,6 +742,7 @@ namespace UOClient.Unity
 
             // Unique art (sloped land, baked placements) is packed into the chunk's own texture.
             var uniques = new List<(Bitmap32 Bitmap, int Quad)>();
+            var shadowLifts = new Dictionary<Bitmap32, int>(); // per art: where its shadow starts (ShadowRules.BaseLift)
             int tie = 0, lastDiagonal = int.MinValue, lastPriority = int.MinValue;
             DrawKind lastKind = DrawKind.Land;
             bool trace = TraceTile.HasValue && TraceTile.Value.x / ChunkSize == cx && TraceTile.Value.y / ChunkSize == cy;
@@ -835,6 +836,13 @@ namespace UOClient.Unity
                     Indoors = overhead.TryGetValue((it.X, it.Y), out int over) && over >= it.Z + 16,
                     Shadow = _outlineShadows && it.Kind == DrawKind.Static && ShadowRules.CastsOutline(tileData.GetStatic(it.Graphic), (int)(it.Height / _scale))
                 };
+                if (quad.Shadow)
+                {
+                    if (!shadowLifts.TryGetValue(bmp, out int lift))
+                        shadowLifts[bmp] = lift = ShadowRules.BaseLift( // the art's rows as drawn (world pixels)
+                            (int)(ShadowRules.EmptyRowsBelow(bmp.Pixels, bmp.Width, bmp.Height) * (float)it.Height / Math.Max(1, bmp.Height)), _scale);
+                    quad.ShadowLift = lift;
+                }
                 if (unique)
                     uniques.Add((bmp, build.Quads.Count));
                 else if (_claimed.Add(bmp))
@@ -998,6 +1006,7 @@ namespace UOClient.Unity
             public int U, V;        // unique art position in the chunk texture
             public float FootX, FootY, FootZ, FootKind; // foot anchor (world-screen pixels, UO Z, kind) for the TEST sprite shadow
             public bool Shadow; // casts its own outline as a sun shadow (ShadowRules, CharacterShadow)
+            public float ShadowLift; // world pixels from the art's bottom edge up to where its shadow starts (ShadowRules.BaseLift)
             public bool Traced; // diagnosis (-tiletrace): on the traced tile
             public bool Water;  // UO water art: shimmers (WorldSprite)
             public float Plant; // PlantKind code: sways in the wind, leaves take the season (WorldSprite)

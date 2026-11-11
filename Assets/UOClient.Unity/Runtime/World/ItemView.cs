@@ -213,7 +213,7 @@ namespace UOClient.Unity
             // The edge of what was drawn this frame: a corpse's body (every worn layer) or the item's art.
             bool show = _renderer.enabled && ObjectHighlight.OutlinesInWorld(Selected, IsBody, _locked, ObjectHighlight.HighlightGameObjects);
             _outline.Update(show, _art, LastSlot, LastRect, LastMirror, LastDepth, LastCut);
-            // Its sun shadow: the art laid on the ground from its base (statics stand on the bottom of their art).
+            // Its sun shadow: the art laid on the ground from the object's own lowest row (ShadowRules.BaseLift).
             if (_shadowPending && _sprite != null)
             {
                 _shadowPending = false;
@@ -224,7 +224,8 @@ namespace UOClient.Unity
             {
                 bool drawn = _renderer.enabled && _sprite != null;
                 _shadow.Update(drawn, world, drawn ? _art.Atlas.Page(LastSlot.Page) : null, drawn ? _art.Atlas.Uv(LastSlot) : default, false,
-                    _item.Left, _item.Top, _item.Width, _item.Height, new Vector2(0f, _item.Top + _item.Height), LastDepth,
+                    _item.Left, _item.Top, _item.Width, _item.Height,
+                    new Vector2(0f, _item.Top + _item.Height - (drawn ? ShadowRules.BaseLift(_sprite.EmptyBelow, _scale) : 0)), LastDepth,
                     _item.X, _item.Y, _item.Z);
             }
         }

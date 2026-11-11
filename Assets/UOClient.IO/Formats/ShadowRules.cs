@@ -33,5 +33,28 @@ namespace UOClient.IO.Formats
                 return false;
             return td.Height >= MinHeight || (td.Flags & TileFlags.Foliage) != 0 || artHeight >= MinArtHeight;
         }
+
+        /// <summary>A pixel at least this opaque is part of the object (the shadow shader's cutoff, 0.3).</summary>
+        public const int OpaqueAlpha = 77;
+
+        /// <summary>
+        /// A static's art ends on its tile's lower corner, but the object in it stands on the tile: most stop short of the
+        /// art's bottom edge (a rock, a trunk: about half a tile, 22 pixels at 1x). The shadow is laid from the object's
+        /// own lowest row, so it meets it; never from higher than the tile's centre, where a piece hanging in the air (a
+        /// tree's leaves) has its ground.
+        /// </summary>
+        /// <param name="emptyRows">Rows without an opaque pixel at the bottom of the art (at the art's scale).</param>
+        /// <returns>How far above the art's bottom edge the shadow starts (same pixels).</returns>
+        public static int BaseLift(int emptyRows, int scale) => System.Math.Max(0, System.Math.Min(emptyRows, 22 * System.Math.Max(1, scale)));
+
+        /// <summary>Rows without an opaque pixel at the bottom of top-down ARGB art; the whole height when it is empty.</summary>
+        public static int EmptyRowsBelow(uint[] argb, int width, int height)
+        {
+            for (int y = height - 1; y >= 0; y--)
+                for (int x = 0, i = y * width; x < width; x++, i++)
+                    if ((argb[i] >> 24) >= OpaqueAlpha)
+                        return height - 1 - y;
+            return height;
+        }
     }
 }

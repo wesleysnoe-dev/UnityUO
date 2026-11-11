@@ -314,6 +314,9 @@ namespace UOClient.Core
         /// Answers a server gump. Button 0 means "closed". Switches are the ids of checked checkboxes and
         /// radios; text entries are (id, text). The gump is removed locally.
         /// </summary>
+        /// <summary>Self-tests only (-gump-selftest): shows a gump made here as if the server had sent it.</summary>
+        public void ShowLocalGump(ServerGump gump) => World.AddGump(gump);
+
         public void ReplyGump(ServerGump gump, int buttonId, IList<int> switches, IList<(int Id, string Text)> texts)
         {
             World.RemoveGump(gump);

@@ -63,4 +63,24 @@ public class ShadowRulesTests
             UOClient.LiveGroundCompare.StaticOccluders.OutlineCasters = false;
         }
     }
+    [Theory]
+    [InlineData(0, 1, 0)]   // the object reaches the art's bottom edge: as before
+    [InlineData(18, 1, 18)] // a rock that stops 18 rows short: from its own lowest row
+    [InlineData(60, 1, 22)] // a tree's leaves, high in the art: from the tile's centre, never higher
+    [InlineData(60, 2, 44)] // the same at 2x art
+    [InlineData(30, 2, 30)]
+    public void BaseLift_ObjectsLowestRow_AtMostHalfATile(int empty, int scale, int lift) =>
+        Assert.Equal(lift, ShadowRules.BaseLift(empty, scale));
+
+    [Fact]
+    public void EmptyRowsBelow_CountsRowsUnderTheLowestOpaquePixel()
+    {
+        var art = new uint[4 * 5];                 // top-down, 4 wide, 5 tall
+        art[1 * 4 + 2] = 0xFF112233;               // opaque on row 1
+        art[3 * 4 + 0] = 0x20FFFFFF;               // too faint to count (under the shadow shader's cutoff) on row 3
+        Assert.Equal(3, ShadowRules.EmptyRowsBelow(art, 4, 5));
+        art[4 * 4 + 3] = 0x80FFFFFF;
+        Assert.Equal(0, ShadowRules.EmptyRowsBelow(art, 4, 5));
+        Assert.Equal(5, ShadowRules.EmptyRowsBelow(new uint[20], 4, 5));
+    }
 }
