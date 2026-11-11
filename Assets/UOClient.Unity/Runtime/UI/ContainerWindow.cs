@@ -49,16 +49,17 @@ namespace UOClient.Unity.UI
         /// The container's own hue, wherever it is: on the ground, inside another container, or worn (a backpack). TazUO
         /// reads Item.Hue from its one item list; here those are three.
         /// </summary>
-        private ushort ContainerHue()
+        private ushort ContainerHue() => HueOf(Session.World, _serial);
+
+        internal static ushort HueOf(World world, uint serial)
         {
-            World world = Session.World;
-            if (world.Items.TryGetValue(_serial, out WorldItem ground))
+            if (world.Items.TryGetValue(serial, out WorldItem ground))
                 return ground.Hue;
-            if (world.Contained.TryGetValue(_serial, out ContainedItem inside))
+            if (world.Contained.TryGetValue(serial, out ContainedItem inside))
                 return inside.Hue;
             foreach (Core.Mobile m in world.Mobiles.Values)
                 foreach (EquippedItem e in m.Equipment.Values)
-                    if (e.Serial == _serial)
+                    if (e.Serial == serial)
                         return e.Hue;
             return 0;
         }

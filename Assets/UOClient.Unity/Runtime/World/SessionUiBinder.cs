@@ -177,7 +177,8 @@ namespace UOClient.Unity
         // A container already open (in either style) is brought forward as it is: both use the same window key.
         private void OnContainerOpened(OpenContainer c)
         {
-            if (GameOptions.OpensGrid(UI.GridContainerWindow.DefaultToOldStyleView, c.Gump))
+            bool corpse = _ctx.Session != null && _ctx.Session.World.Items.TryGetValue(c.Serial, out WorldItem w) && w.IsCorpse;
+            if (GameOptions.OpensGrid(UI.GridContainerWindow.DefaultToOldStyleView, c.Gump, corpse, CorpseContainerStyle))
                 Ui.Open(new UI.GridContainerWindow(c.Serial, c.Gump));
             else
                 Ui.Open(new UI.ContainerWindow(c.Serial, c.Gump));
@@ -228,6 +229,9 @@ namespace UOClient.Unity
             if (_session?.PendingTargetQuery == null && Ui.Find(UI.QuestionWindow.KeyFor("target")) is UI.UiWindow w)
                 Ui.Close(w);
         }
+
+        /// <summary>The options' corpse container style (GameOptions.CorpseStyle*).</summary>
+        public static int CorpseContainerStyle;
 
         /// <summary>The options' combat music switch (TazUO's EnableCombatMusic).</summary>
         public static bool CombatMusic = true;

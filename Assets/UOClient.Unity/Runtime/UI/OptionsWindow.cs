@@ -565,8 +565,17 @@ namespace UOClient.Unity.UI
             d.gridContainerScaleItems = Toggle("Also scale items", d.gridContainerScaleItems);
             d.containerOpacity = IntSlider("Opacity", d.containerOpacity, GameOptions.MinContainerOpacity, GameOptions.MaxContainerOpacity, "%");
             Line($"Grid windows only: {GameOptions.GridItemSize(d.gridContainersScale)}-pixel cells; the background and border\nat this opacity, items always solid. Classic gumps use Container scale.", 34);
+            d.gridDefaultColumns = IntSlider("Columns", d.gridDefaultColumns, GameOptions.MinGridCells, GameOptions.MaxGridCells);
+            d.gridDefaultRows = IntSlider("Rows", d.gridDefaultRows, GameOptions.MinGridCells, GameOptions.MaxGridCells);
+            d.gridBorderAlpha = IntSlider("Cell lines", d.gridBorderAlpha, 0, 100, "%");
+            d.gridHideBorder = Toggle("Hide the window border", d.gridHideBorder);
+            d.gridUseContainerHue = Toggle("Background in the container's colour", d.gridUseContainerHue);
+            d.gridAutoSort = Toggle("Sort new windows by kind and colour", d.gridAutoSort);
+            d.gridContainerSearchMode = Choice("Search", d.gridContainerSearchMode, 130, "Only show matches", "Dim the others");
+            Line("Each grid has a search box (name and tooltip words), a Sort switch and,\non a corpse, Loot: everything shown goes to your backpack.", 34);
             GUI.enabled = true;
             _indent = 0;
+            d.corpseContainerStyle = Choice("Corpses open", d.corpseContainerStyle, 100, "As containers", "As a grid", "Classic");
         }
 
         private void DrawNameplates(GameOptions d)

@@ -33,6 +33,35 @@ namespace UOClient.Unity
 
         public const int MaxIgnoredNames = 100, MaxIgnoredNameLength = 40;
 
+        // ---- the grid containers' tools and look (the seventh batch) ----
+
+        /// <summary>TazUO's GridContainerSearchMode: what the grid's search box does with items that do not match.</summary>
+        public int gridContainerSearchMode = GridSearchOnlyShow;
+
+        public const int GridSearchOnlyShow = 0, GridSearchHighlight = 1;
+
+        /// <summary>New grid windows start sorted by kind and colour (the window's Sort button switches it).</summary>
+        public bool gridAutoSort = false;
+
+        /// <summary>TazUO's GridBorderAlpha, percent: the line round each cell. 75 is the look this client always had.</summary>
+        public int gridBorderAlpha = 75;
+
+        /// <summary>TazUO's Grid_HideBorder: the window's own border is not drawn.</summary>
+        public bool gridHideBorder = false;
+
+        /// <summary>TazUO's Grid_UseContainerHue: the background takes a dyed container's colour.</summary>
+        public bool gridUseContainerHue = false;
+
+        /// <summary>TazUO's Grid_DefaultColumns / Grid_DefaultRows: the grid window's size in cells.</summary>
+        public int gridDefaultColumns = 5, gridDefaultRows = 5;
+
+        public const int MinGridCells = 3, MaxGridCells = 12;
+
+        /// <summary>TazUO's corpse container style: corpses open as other containers do, always as a grid, or always classic.</summary>
+        public int corpseContainerStyle = CorpseStyleAsContainers;
+
+        public const int CorpseStyleAsContainers = 0, CorpseStyleGrid = 1, CorpseStyleClassic = 2;
+
         public static void CopyMore(GameOptions from, GameOptions to)
         {
             to.enableSound = from.enableSound;
@@ -42,18 +71,35 @@ namespace UOClient.Unity
             to.tooltipBackgroundOpacity = from.tooltipBackgroundOpacity;
             to.tooltipFontSize = from.tooltipFontSize;
             to.ignoreList = from.ignoreList;
+            to.gridContainerSearchMode = from.gridContainerSearchMode;
+            to.gridAutoSort = from.gridAutoSort;
+            to.gridBorderAlpha = from.gridBorderAlpha;
+            to.gridHideBorder = from.gridHideBorder;
+            to.gridUseContainerHue = from.gridUseContainerHue;
+            to.gridDefaultColumns = from.gridDefaultColumns;
+            to.gridDefaultRows = from.gridDefaultRows;
+            to.corpseContainerStyle = from.corpseContainerStyle;
         }
 
         private bool SameMore(GameOptions o) =>
             enableSound == o.enableSound && enableMusic == o.enableMusic && enableFootstepsSound == o.enableFootstepsSound
             && enableCombatMusic == o.enableCombatMusic && tooltipBackgroundOpacity == o.tooltipBackgroundOpacity
-            && tooltipFontSize == o.tooltipFontSize && ignoreList == o.ignoreList;
+            && tooltipFontSize == o.tooltipFontSize && ignoreList == o.ignoreList
+            && gridContainerSearchMode == o.gridContainerSearchMode && gridAutoSort == o.gridAutoSort
+            && gridBorderAlpha == o.gridBorderAlpha && gridHideBorder == o.gridHideBorder
+            && gridUseContainerHue == o.gridUseContainerHue && gridDefaultColumns == o.gridDefaultColumns
+            && gridDefaultRows == o.gridDefaultRows && corpseContainerStyle == o.corpseContainerStyle;
 
         private void ClampMore()
         {
             tooltipBackgroundOpacity = Math.Max(0, Math.Min(100, tooltipBackgroundOpacity));
             tooltipFontSize = Math.Max(MinTooltipFontSize, Math.Min(MaxTooltipFontSize, tooltipFontSize));
             ignoreList = string.Join("\n", IgnoredNames(ignoreList));
+            gridContainerSearchMode = Math.Max(GridSearchOnlyShow, Math.Min(GridSearchHighlight, gridContainerSearchMode));
+            gridBorderAlpha = Math.Max(0, Math.Min(100, gridBorderAlpha));
+            gridDefaultColumns = Math.Max(MinGridCells, Math.Min(MaxGridCells, gridDefaultColumns));
+            gridDefaultRows = Math.Max(MinGridCells, Math.Min(MaxGridCells, gridDefaultRows));
+            corpseContainerStyle = Math.Max(CorpseStyleAsContainers, Math.Min(CorpseStyleClassic, corpseContainerStyle));
         }
 
         /// <summary>The parse switch's keys of this batch; false for a key that is not one.</summary>
@@ -72,6 +118,14 @@ namespace UOClient.Unity
                     if (TryReadStrings(raw, out List<string> names))
                         ignoreList = string.Join("\n", names);
                     return true;
+                case "gridContainerSearchMode": Integer(raw, ref gridContainerSearchMode); return true;
+                case "gridAutoSort": Bool(raw, ref gridAutoSort); return true;
+                case "gridBorderAlpha": Integer(raw, ref gridBorderAlpha); return true;
+                case "gridHideBorder": Bool(raw, ref gridHideBorder); return true;
+                case "gridUseContainerHue": Bool(raw, ref gridUseContainerHue); return true;
+                case "gridDefaultColumns": Integer(raw, ref gridDefaultColumns); return true;
+                case "gridDefaultRows": Integer(raw, ref gridDefaultRows); return true;
+                case "corpseContainerStyle": Integer(raw, ref corpseContainerStyle); return true;
                 default: return false;
             }
         }
@@ -88,6 +142,14 @@ namespace UOClient.Unity
             foreach (string name in IgnoredNames(ignoreList))
                 quoted.Add("\"" + FlatJson.Escape(name) + "\"");
             add("ignoreList", "[" + string.Join(", ", quoted) + "]");
+            add("gridContainerSearchMode", i(gridContainerSearchMode));
+            add("gridAutoSort", b(gridAutoSort));
+            add("gridBorderAlpha", i(gridBorderAlpha));
+            add("gridHideBorder", b(gridHideBorder));
+            add("gridUseContainerHue", b(gridUseContainerHue));
+            add("gridDefaultColumns", i(gridDefaultColumns));
+            add("gridDefaultRows", i(gridDefaultRows));
+            add("corpseContainerStyle", i(corpseContainerStyle));
         }
 
         /// <summary>A JSON array of strings (["a", "b"]); false for anything else.</summary>
@@ -121,6 +183,47 @@ namespace UOClient.Unity
         }
 
         // ---- rules ----
+
+        /// <summary>
+        /// Whether the grid's search box finds an item: every word typed is somewhere in its name or its tooltip lines
+        /// (case ignored). An empty search finds everything.
+        /// </summary>
+        public static bool GridMatches(string search, string name, IEnumerable<string> lines)
+        {
+            if (string.IsNullOrWhiteSpace(search))
+                return true;
+            foreach (string word in search.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                bool found = name != null && name.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!found && lines != null)
+                    foreach (string line in lines)
+                        if (line != null && line.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            found = true;
+                            break;
+                        }
+                if (!found)
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>The grid's sort (TazUO's: by graphic, then hue), the serial last so equal items keep one order.</summary>
+        public static int GridSortCompare(int graphicA, int hueA, uint serialA, int graphicB, int hueB, uint serialB) =>
+            graphicA != graphicB ? graphicA.CompareTo(graphicB) : hueA != hueB ? hueA.CompareTo(hueB) : serialA.CompareTo(serialB);
+
+        /// <summary>
+        /// Whether a container opens as a grid: <see cref="OpensGrid(bool, ushort)"/>, except that a corpse follows
+        /// <paramref name="corpseStyle"/> when that is not "as containers".
+        /// </summary>
+        public static bool OpensGrid(bool defaultToOldStyleView, ushort gump, bool corpse, int corpseStyle)
+        {
+            if (corpse && corpseStyle == CorpseStyleGrid)
+                return !GridNeverOpens(gump);
+            if (corpse && corpseStyle == CorpseStyleClassic)
+                return false;
+            return OpensGrid(defaultToOldStyleView, gump);
+        }
 
         /// <summary>The volume a player hears: the slider's, or nothing with its switch off.</summary>
         public static float EffectiveVolume(bool enabled, float volume) => enabled ? volume : 0f;

@@ -112,6 +112,23 @@ namespace UOClient.Unity
             }
             // -say-selftest: once there, the character speaks a few lines (short and long), for the speech bubbles;
             // -say-selftest=states: staff commands that poison, paralyze, clear and hide the character, 8 s apart.
+            // -grid-selftest[=WORD]: once there, the backpack opens as a grid window (for captures of the grid's tools).
+            if (!_gridOpened && _shadowSent && Time.unscaledTime >= _shadowAt + 12f && _ctx.Session != null
+                && Array.Find(Environment.GetCommandLineArgs(), x => x.StartsWith("-grid-selftest", StringComparison.OrdinalIgnoreCase)) is string gridArg)
+            {
+                _gridOpened = true;
+                // -grid-selftest=WORD: the window opens sorted, with WORD in its search box.
+                int eq = gridArg.IndexOf('=');
+                if (eq > 0)
+                {
+                    UI.GridContainerWindow.InitialSearch = gridArg.Substring(eq + 1);
+                    UI.GridContainerWindow.AutoSort = true;
+                }
+                UI.GridContainerWindow.DefaultToOldStyleView = false;
+                uint pack = _ctx.Session.World.Worn(_ctx.Session.World.Player, 21);
+                if (pack != 0)
+                    _ctx.Session.Use(pack);
+            }
             string sayArg = Array.Find(Environment.GetCommandLineArgs(), a => a.StartsWith("-say-selftest", StringComparison.OrdinalIgnoreCase));
             string[] lines = sayArg != null && sayArg.EndsWith("=states", StringComparison.OrdinalIgnoreCase) ? StateLines : SayLines;
             float gap = lines == StateLines ? 6f : 2.5f;
@@ -342,7 +359,9 @@ namespace UOClient.Unity
         }
 
         /// <summary>Every frame. <paramref name="takesKeys"/>: the world has the keyboard (not typing in chat or a text box).</summary>
-        public void Update(bool takesKeys)
+private bool _gridOpened;
+
+                public void Update(bool takesKeys)
         {
             UI.UiManager ui = _ui();
             WorldLayerClient layer = Layer;

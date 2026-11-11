@@ -49,6 +49,22 @@ namespace UOClient.Unity.UI
         /// <summary>The options' GridContainerScaleItems (TazUO's): the art scales with the cells (GameOptions.GridArtSize).</summary>
         public static bool ScaleItems { get; set; } = GameOptions.Defaults().gridContainerScaleItems;
 
+        /// <summary>The options' grid tools and look (GameOptions.More.cs): search mode, sorted from the start, cell line, border, hue, size.</summary>
+        public static int SearchMode { get; set; } = GameOptions.GridSearchOnlyShow;
+        public static bool AutoSort { get; set; }
+        public static int CellBorderOpacity { get; set; } = 75;
+        public static bool HideBorder { get; set; }
+        public static bool UseContainerHue { get; set; }
+        public static int Columns { get; set; } = DefaultColumns;
+        public static int Rows { get; set; } = DefaultRows;
+
+        /// <summary>What a new window's search box starts with (-grid-selftest=WORD); empty in play.</summary>
+        public static string InitialSearch = "";
+
+        private string _search = InitialSearch;
+        private bool _sorted = AutoSort;
+        private readonly HashSet<uint> _dimmed = new HashSet<uint>(); // highlight search: the items that do not match
+
         // The opaque bounds of each item art (TazUO's GetRealArtBounds), by the art it was measured on.
         private static readonly Dictionary<UiImage, (int X, int Y, int Width, int Height)> Bounds =
             new Dictionary<UiImage, (int, int, int, int)>();
@@ -73,7 +89,7 @@ namespace UOClient.Unity.UI
         /// <summary>The window's size follows the cell size (again each frame, so a new scale takes at once).</summary>
         private void FitToCells()
         {
-            var (w, h) = WindowSize(Cell);
+            var (w, h) = WindowSize(Cell, Columns, Rows);
             Rect.size = new Vector2(w, h);
         }
 
@@ -85,6 +101,7 @@ namespace UOClient.Unity.UI
         private void Collect()
         {
             _items.Clear();
+            _dimmed.Clear();
             _wornLayers.Clear();
             bool corpse = Session.World.Items.TryGetValue(_serial, out WorldItem self) && self.IsCorpse;
             if (corpse && self.CorpseEquipment != null)
@@ -94,9 +111,50 @@ namespace UOClient.Unity.UI
             {
                 StaticTileData tile = Art.Data.TileData.GetStatic(item.Graphic);
                 _wornLayers.TryGetValue(item.Serial, out byte worn);
-                if (GameOptions.GridListsItem(corpse, worn, (tile.Flags & TileFlags.Wearable) != 0, tile.Layer))
-                    _items.Add(item);
+                if (!GameOptions.GridListsItem(corpse, worn, (tile.Flags & TileFlags.Wearable) != 0, tile.Layer))
+                    continue;
+                if (!string.IsNullOrWhiteSpace(_search))
+                {
+                    Session.Properties.TryGetValue(item.Serial, out PropertyList props);
+                    if (!GameOptions.GridMatches(_search, tile.Name, props?.Lines.Select(PlainText)))
+                    {
+                        if (SearchMode == GameOptions.GridSearchOnlyShow)
+                            continue;
+                        _dimmed.Add(item.Serial);
+                    }
+                }
+                _items.Add(item);
             }
+            if (_sorted)
+                _items.Sort((a, b) => GameOptions.GridSortCompare(a.Graphic, a.Hue, a.Serial, b.Graphic, b.Hue, b.Serial));
+        }
+
+        private bool CanLootAll => IsCorpse && !IsPlayerBackpack && Session.World.Worn(Session.World.Player, 21) != 0;
+
+        /// <summary>Everything listed goes to the backpack, one lift at a time at the server's pace (the action queue).</summary>
+        private void LootAll()
+        {
+            uint pack = Session.World.Worn(Session.World.Player, 21);
+            if (pack == 0)
+                return;
+            foreach (ContainedItem item in _items.ToList())
+            {
+                Session.Lift(item.Serial, item.Amount);
+                Session.DropInto(item.Serial, pack, 0xFFFF, 0xFFFF);
+            }
+        }
+
+        /// <summary>The search box, the Sort switch and, on a corpse, Loot (everything shown to the backpack).</summary>
+        private void DrawTools(int windowWidth)
+        {
+            var t = ToolsArea(windowWidth);
+            bool loot = CanLootAll;
+            float buttons = 44 + (loot ? 44 : 0);
+            _search = GUI.TextField(new Rect(t.X + 1, t.Y + 1, Mathf.Max(20, t.Width - buttons - 4), t.Height - 3), _search ?? "", 30);
+            float x = t.X + t.Width - buttons;
+            _sorted = GUI.Toggle(new Rect(x, t.Y + 1, 42, t.Height - 3), _sorted, "Sort", GUI.skin.button);
+            if (loot && GUI.Button(new Rect(x + 44, t.Y + 1, 42, t.Height - 3), "Loot"))
+                LootAll();
         }
 
         private string ContainerName()
@@ -147,24 +205,34 @@ namespace UOClient.Unity.UI
             int cell = Cell;
             float alpha = GameOptions.GridBackgroundAlpha(Opacity);
             int w = (int)Rect.width, h = (int)Rect.height;
-            var area = ScrollArea(w, h);
+            var area = ScrollAreaUnderTools(w, h);
             var view = new Rect(area.X, area.Y, area.Width - ScrollbarWidth, area.Height);
 
             // Background (AlphaBlendControl: black, Grid_UseContainerHue off) and the default border, both at the opacity.
-            Fill(new Rect(BorderWidth, BorderWidth, w - BorderWidth * 2, h - BorderWidth * 2), new Color(0, 0, 0, alpha));
+            // With Grid_UseContainerHue a dyed container's colour, darkened, takes the black's place.
+            Color back = Color.black;
+            ushort ownHue = UseContainerHue ? ContainerWindow.HueOf(Session.World, _serial) : (ushort)0;
+            if (ownHue != 0)
+                back = Art.HueColor(ownHue, Color.black) * 0.45f;
+            back.a = alpha;
+            Fill(new Rect(BorderWidth, BorderWidth, w - BorderWidth * 2, h - BorderWidth * 2), back);
             Color saved = GUI.color;
-            GUI.color = new Color(1, 1, 1, alpha);
-            UiImage hb = Art.Gump(BorderHorizontal), vb = Art.Gump(BorderVertical);
-            DrawTiled(hb, 0, 0, w, BorderWidth);
-            DrawTiled(hb, 0, h - BorderWidth, w, BorderWidth);
-            DrawTiled(vb, 0, BorderWidth, BorderWidth, h - BorderWidth * 2);
-            DrawTiled(vb, w - BorderWidth, BorderWidth, BorderWidth, h - BorderWidth * 2);
-            GUI.color = saved;
+            if (!HideBorder)
+            {
+                GUI.color = new Color(1, 1, 1, alpha);
+                UiImage hb = Art.Gump(BorderHorizontal), vb = Art.Gump(BorderVertical);
+                DrawTiled(hb, 0, 0, w, BorderWidth);
+                DrawTiled(hb, 0, h - BorderWidth, w, BorderWidth);
+                DrawTiled(vb, 0, BorderWidth, BorderWidth, h - BorderWidth * 2);
+                DrawTiled(vb, w - BorderWidth, BorderWidth, BorderWidth, h - BorderWidth * 2);
+                GUI.color = saved;
+            }
 
             Collect();
             Color textColor = Art.HueColor(TextHue, new Color(0.9f, 0.95f, 1f));
             Text(new Rect(BorderWidth + 2, BorderWidth + 2, w - BorderWidth * 2 - 4, LabelHeight - 2),
                  Title(ContainerName(), _items.Count), textColor, 12);
+            DrawTools(w);
 
             CellOrigins(_items.Count, cell, area.Width, _origins);
             _maxScroll = MaxScroll(_origins, cell, area.Height);
@@ -185,7 +253,7 @@ namespace UOClient.Unity.UI
                     continue;
                 var cellRect = new Rect(ox, y, cell, cell);
                 Fill(cellRect, new Color(0, 0, 0, CellBackgroundAlpha));
-                var edge = new Color(1, 1, 1, CellBorderAlpha);
+                var edge = new Color(1, 1, 1, CellBorderOpacity / 100f);
                 Fill(new Rect(ox, y, cell, 1), edge);
                 Fill(new Rect(ox, y + cell - 1, cell, 1), edge);
                 Fill(new Rect(ox, y + 1, 1, cell - 2), edge);
@@ -205,7 +273,13 @@ namespace UOClient.Unity.UI
                     DrawPart(outline?.Texture, new Rect(art.x - px, art.y - py, art.width + 2 * px, art.height + 2 * py),
                              (b.X, b.Y, b.Width + 2, b.Height + 2), outline?.Width ?? 0, outline?.Height ?? 0);
                 }
+                // Highlight search: what does not match is faint.
+                bool dim = _dimmed.Contains(item.Serial);
+                if (dim)
+                    GUI.color = new Color(1, 1, 1, 0.22f);
                 DrawPart(img.Texture, art, b, img.Width, img.Height);
+                if (dim)
+                    GUI.color = saved;
 
                 // GridItem's count: the amount of a stackable (Generic) item, bottom-left of the cell.
                 if (item.Amount > 1 && (Art.Data.TileData.GetStatic(item.Graphic).Flags & TileFlags.Generic) != 0)
@@ -245,7 +319,7 @@ namespace UOClient.Unity.UI
         /// <summary>The item under a window point and the art pixel there (the drag's grab point), or null.</summary>
         private (ContainedItem Item, Vector2 Grab)? ItemAt(Vector2 local)
         {
-            var area = ScrollArea((int)Rect.width, (int)Rect.height);
+            var area = ScrollAreaUnderTools((int)Rect.width, (int)Rect.height);
             int cell = Cell;
             int i = CellAt(_origins, cell, local.x - area.X, local.y - area.Y, area.Width, area.Height, _scroll);
             if (i < 0 || i >= _items.Count)

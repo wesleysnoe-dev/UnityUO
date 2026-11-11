@@ -43,6 +43,26 @@ namespace UOClient.Unity.UI
              LabelHeight + BorderWidth * 2 + (cell + YSpacing) * DefaultRows);
 
         /// <summary>The scroll area inside the border, under the label (LayoutControls), in window pixels; its right 14 are the bar.</summary>
+        /// <summary>The row under the title with the search box and the Sort and Loot buttons.</summary>
+        public const int ToolsHeight = 22;
+
+        /// <summary>Narrower than this the tools row has no room (three small cells across).</summary>
+        public const int MinToolsWidth = 170;
+
+        /// <summary>The window for <paramref name="columns"/> x <paramref name="rows"/> cells, with the tools row.</summary>
+        public static (int Width, int Height) WindowSize(int cell, int columns, int rows) =>
+            (Math.Max(MinToolsWidth, BorderWidth * 2 + ScrollbarWidth + cell * columns + XSpacing * (columns + 1)),
+             LabelHeight + ToolsHeight + BorderWidth * 2 + (cell + YSpacing) * rows);
+
+        /// <summary>The tools row (window pixels).</summary>
+        public static (int X, int Y, int Width, int Height) ToolsArea(int windowWidth) =>
+            (BorderWidth, BorderWidth + LabelHeight, Math.Max(0, windowWidth - BorderWidth * 2), ToolsHeight);
+
+        /// <summary>The scroll area under the title and the tools row.</summary>
+        public static (int X, int Y, int Width, int Height) ScrollAreaUnderTools(int windowWidth, int windowHeight) =>
+            (BorderWidth, BorderWidth + LabelHeight + ToolsHeight, Math.Max(0, windowWidth - BorderWidth * 2),
+             Math.Max(0, windowHeight - BorderWidth * 2 - LabelHeight - ToolsHeight));
+
         public static (int X, int Y, int Width, int Height) ScrollArea(int windowWidth, int windowHeight) =>
             (BorderWidth, BorderWidth + LabelHeight, Math.Max(0, windowWidth - BorderWidth * 2),
              Math.Max(0, windowHeight - BorderWidth * 2 - LabelHeight));

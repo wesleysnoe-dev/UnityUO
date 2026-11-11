@@ -91,6 +91,7 @@ public sealed class OptionsGraphicsTests
                     "namePlateFixedWidth" or "namePlateHealthBarFixedWidth" => 200,
                     "namePlateHeight" => 30,
                     "tooltipFontSize" => 18,
+                    "gridDefaultColumns" or "gridDefaultRows" => 7,
                     _ => i == 1 ? 0 : 1,
                 };
                 if (f.Name is "resolutionWidth" or "resolutionHeight")

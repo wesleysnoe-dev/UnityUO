@@ -333,7 +333,7 @@ public sealed class OptionsBatch5Tests
     {
         // Opacity and grid containers are offered now; what the grid lacks is listed, each with a reason.
         Assert.DoesNotContain(OptionsWindow.NotOffered, n => n.Text.StartsWith("Container opacity", StringComparison.Ordinal));
-        Assert.Contains(OptionsWindow.NotOffered, n => n.Page == OptionsWindow.Page.Containers && n.Text.Contains("search"));
+        Assert.Contains(OptionsWindow.NotOffered, n => n.Page == OptionsWindow.Page.Containers && n.Text.Contains("Auto loot"));
         Assert.DoesNotContain("Nameplates", OptionsWindow.UnavailablePages);
     }
 }

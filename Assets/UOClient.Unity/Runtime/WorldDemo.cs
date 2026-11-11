@@ -486,6 +486,14 @@ namespace UOClient.Unity
             GameOptions.CopyMore(o, _more);
             ApplyAudioOptions();
             Avatar.Footsteps = o.enableFootstepsSound;
+            UI.GridContainerWindow.SearchMode = o.gridContainerSearchMode;
+            UI.GridContainerWindow.AutoSort = o.gridAutoSort;
+            UI.GridContainerWindow.CellBorderOpacity = o.gridBorderAlpha;
+            UI.GridContainerWindow.HideBorder = o.gridHideBorder;
+            UI.GridContainerWindow.UseContainerHue = o.gridUseContainerHue;
+            UI.GridContainerWindow.Columns = o.gridDefaultColumns;
+            UI.GridContainerWindow.Rows = o.gridDefaultRows;
+            SessionUiBinder.CorpseContainerStyle = o.corpseContainerStyle;
             UI.HoverTooltip.BackgroundOpacity = o.tooltipBackgroundOpacity;
             UI.HoverTooltip.FontSize = o.tooltipFontSize;
             _speechOptions.IgnoredNames.Clear();
