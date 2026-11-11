@@ -13,11 +13,14 @@ namespace UOClient.Unity.Assistant
         public override bool Themed => true;
         public override string Key => "assistant";
 
-        private const float Width = 720f, Height = 500f, Pad = 16f, ListW = 150f, TitleH = 30f;
+        private const float Width = 840f, Height = 640f, Pad = 16f, ListW = 150f, TitleH = 30f;
         private static readonly string[] Groups = { "General", "Agents", "Filters" };
 
         private readonly AssistantHost _host;
         private static string _chosen; // remembered while the game runs
+
+        /// <summary>Self-tests only (-assistant-tour): the tab to show.</summary>
+        public static string ChosenForTest { set => _chosen = value; }
         private Vector2 _scroll;
         private GUIStyle _title, _group, _item;
 

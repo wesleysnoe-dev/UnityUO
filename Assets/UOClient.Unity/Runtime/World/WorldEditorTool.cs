@@ -73,7 +73,7 @@ namespace UOClient.Unity
         private float _shadowLogAt;
         private bool _nearLightSent, _gumpsShown, _fxShown, _questionShown;
         private float _fxLogAt, _fxAt, _deathLogAt, _questionLogAt;
-        private int _deathStep, _assistStep;
+        private int _deathStep, _assistStep, _tourTab = -1;
         private uint _assistVictim;
         private float _assistLogAt;
         private uint _deathVictim, _deathNext;
@@ -303,6 +303,21 @@ namespace UOClient.Unity
                     _assistLogAt = Time.unscaledTime + 1f;
                     var loot = (Assistant.AutoLootAgent)host.Agents.Find(a => a is Assistant.AutoLootAgent);
                     Debug.Log($"UOClient assistant-selftest: {t:0.0} s: gold in the backpack {host.CountIn(host.Backpack, 0x0EED, -1)}, loot queued {loot.QueuedForTest}, actions waiting {_ctx.Session.QueuedActions}");
+                }
+            }
+            // -assistant-tour: once there, the assistant window opens and shows each tool's tab in turn, 4 s each (for
+            // captures; the log names the tab on show).
+            if (_shadowSent && Time.unscaledTime >= _shadowAt + 12f && _ctx.Session != null && Assistant.AssistantHost.Latest is Assistant.AssistantHost tourHost
+                && Array.Exists(Environment.GetCommandLineArgs(), x => string.Equals(x, "-assistant-tour", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (_tourTab < 0)
+                    UI.UiManager.OpenForTest(new Assistant.AssistantWindow(tourHost));
+                int tab = Mathf.Min(tourHost.Agents.Count - 1, (int)((Time.unscaledTime - _shadowAt - 12f) / 4f));
+                if (tab != _tourTab)
+                {
+                    _tourTab = tab;
+                    Assistant.AssistantWindow.ChosenForTest = tourHost.Agents[tab].Name;
+                    Debug.Log($"UOClient assistant-tour: tab {tab}: {tourHost.Agents[tab].Name}");
                 }
             }
             // -question-selftest: once there, the attack question ("This may flag you criminal!") opens (for captures).

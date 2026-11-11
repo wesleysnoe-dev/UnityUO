@@ -69,6 +69,12 @@ namespace UOClient.Unity
             return s;
         }
 
+        /// <summary>
+        /// The assistant's sound and music filters: asked with the id of each sound in earshot, and of each track the
+        /// server asks for; true keeps it silent. Null unless a filter is in use.
+        /// </summary>
+        public static Func<int, bool> SoundFilter, MusicFilter;
+
         /// <summary>Plays a sound heard from <paramref name="dx"/>, <paramref name="dy"/> tiles away from the player.</summary>
         public void PlaySound(int id, int dx, int dy)
         {
@@ -76,6 +82,8 @@ namespace UOClient.Unity
                 return;
             float distance = Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dy));
             if (distance > HearingRange)
+                return;
+            if (SoundFilter != null && SoundFilter(id))
                 return;
             AudioClip clip = Clip(id);
             if (_soundLogs < 5)
@@ -113,6 +121,9 @@ namespace UOClient.Unity
         /// <summary>Switches to a region's music (fading the old track out); the same id keeps playing.</summary>
         public void PlayMusic(int id)
         {
+            // A filtered track is as if the server never asked for it: what was playing goes on (as TazUO's PlayMusic).
+            if (id != StopMusicId && MusicFilter != null && MusicFilter(id))
+                return;
             _regionMusic = id;
             if (!_combat)
                 Switch(id);

@@ -98,6 +98,15 @@ namespace UOClient.Core
 
         public const ushort CorpseGraphic = 0x2006;
 
+        /// <summary>A copy that differs only in its looks: what the assistant's graphic filter has drawn in the item's place.</summary>
+        public WorldItem DrawnAs(ushort graphic, ushort hue)
+        {
+            var copy = (WorldItem)MemberwiseClone();
+            copy.Graphic = graphic;
+            copy.Hue = hue;
+            return copy;
+        }
+
         /// <summary>
         /// The direction byte of 0xF3 / 0x1A. ModernUO writes <c>Item.Light</c> there, the same field as
         /// <c>Item.Direction</c> (Item.cs:679-704), and a corpse takes its owner's (Corpse.cs:216).
@@ -428,8 +437,16 @@ namespace UOClient.Core
             }
         }
 
+        /// <summary>
+        /// The assistant's journal filter: a line it answers true for is dropped before anything sees it (the journal,
+        /// the chat log, overhead text). Null unless the filter is in use.
+        /// </summary>
+        public Func<JournalEntry, bool> JournalFilter;
+
         internal void AddJournal(JournalEntry e)
         {
+            if (JournalFilter != null && JournalFilter(e))
+                return;
             Journal.Add(e);
             if (Journal.Count > 200)
                 Journal.RemoveAt(0);

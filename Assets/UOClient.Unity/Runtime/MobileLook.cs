@@ -284,6 +284,12 @@ namespace UOClient.Unity
             || body == 0x03E2 || body == 0x02E8 || body == 0x02E9 || body == 0x04E5;
 
         /// <summary>
+        /// The assistant's graphic filter: given a body and hue as sent, the body and hue to draw instead. Null unless
+        /// the filter is in use.
+        /// </summary>
+        public static Func<int, int, (int Body, int Hue)> BodyFilter;
+
+        /// <summary>
         /// Builds a look from a body and worn items (graphic, hue per layer), resolving each item's animation.
         /// <see cref="Body"/> stays the body as sent; the art is drawn from <see cref="AnimationLibrary.AnimationBody"/>, so a
         /// ghost (402/403, 607/608, 694/695) draws as its living body, as TazUO's MobileView does. A ghost also draws no
@@ -295,6 +301,8 @@ namespace UOClient.Unity
         public static MobileLook From(UOData data, int body, int hue, IEnumerable<(byte Layer, int Graphic, int Hue)> equipment,
             bool bondedDead = false)
         {
+            if (BodyFilter != null)
+                (body, hue) = BodyFilter(body, hue);
             var look = new MobileLook();
             AnimationLibrary anims = data.AnimationLibrary;
             int drawn = AnimationLibrary.AnimationBody(body);

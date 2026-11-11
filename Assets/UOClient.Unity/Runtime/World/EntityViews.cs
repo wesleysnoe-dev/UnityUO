@@ -725,8 +725,16 @@ namespace UOClient.Unity
                 v.Dispose();
             }
             MobileLook corpseLook = item.IsCorpse ? CorpseDraw.Look(_ctx.Data, _ctx.Session.World, item) : null;
+            if (ItemFilter != null)
+                item = ItemFilter(item);
             _items[item.Serial] = new ItemView(_ctx.Data, _ctx.MobileArt, _ctx.Root, _ctx.Shader, _ctx.ArtScale, item, corpseLook);
         }
+
+        /// <summary>
+        /// The assistant's graphic filter: given an item on the ground, the item to draw in its place (itself, or a copy
+        /// with another graphic or hue). Null unless the filter is in use.
+        /// </summary>
+        public static Func<WorldItem, WorldItem> ItemFilter;
 
         private void RefreshCorpse(ItemView v, WorldItem corpse) =>
             v.SetCorpseLook(CorpseDraw.Look(_ctx.Data, _ctx.Session.World, corpse), CorpseDraw.Action(_ctx.Data.AnimationLibrary, corpse));

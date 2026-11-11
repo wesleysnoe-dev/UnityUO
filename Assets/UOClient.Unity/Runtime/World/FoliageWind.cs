@@ -33,7 +33,10 @@ namespace UOClient.Unity
         public static bool ShowSeasons = true;
 
         /// <summary>The season the world is drawn in for the server's <paramref name="season"/>: summer while seasons are off.</summary>
-        public static Season Shown(Season season) => ShowSeasons ? season : Season.Summer;
+        public static Season Shown(Season season) => !ShowSeasons ? Season.Summer : SeasonFilter != null ? SeasonFilter(season) : season;
+
+        /// <summary>The assistant's season filter: the season to show for the one the server sent. Null unless the filter is in use.</summary>
+        public static Func<Season, Season> SeasonFilter;
 
         private static readonly Season? Forced = ForcedSeason();
 

@@ -365,6 +365,9 @@ namespace UOClient.Unity
             // A fresh list from the same vendor (asked again, or after a trade) replaces the open one's stale stock and prices.
             var shop = new UI.ShopWindow(list);
             CloseByKey(shop.Key);
+            // The assistant (auto buy / auto sell) ordered from this list already: there is nothing left to choose.
+            if (ReferenceEquals(list, _session.AnsweredShop))
+                return;
             if (list.Selling)
                 Ui.Open(shop);
             else

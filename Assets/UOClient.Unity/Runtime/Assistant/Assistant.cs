@@ -29,7 +29,21 @@ namespace UOClient.Unity.Assistant
         /// <summary>Every agent, in the window's order. A new tool is one line here and one file.</summary>
         private static IEnumerable<AssistantAgent> Create()
         {
+            yield return new FriendsAgent();
             yield return new AutoLootAgent();
+            yield return new ScavengerAgent();
+            yield return new OrganizerAgent();
+            yield return new DressAgent();
+            yield return new AutoBuyAgent();
+            yield return new AutoSellAgent();
+            yield return new BandageAgent();
+            yield return new SelfHealAgent();
+            yield return new StatLockAgent();
+            yield return new JournalFilterAgent();
+            yield return new SoundFilterAgent();
+            yield return new MusicFilterAgent();
+            yield return new GraphicFilterAgent();
+            yield return new SeasonFilterAgent();
         }
 
         /// <summary>Self-tests only: the host of the session now running.</summary>
