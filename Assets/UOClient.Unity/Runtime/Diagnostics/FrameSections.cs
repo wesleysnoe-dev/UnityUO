@@ -32,6 +32,10 @@ namespace UOClient.Unity
         public readonly List<string> Hitches = new List<string>();
         public float HitchThresholdMs = 33f;
 
+        /// <summary>-hitchlog: every hitch also goes to the log (the first 400).</summary>
+        public bool Log = Array.IndexOf(Environment.GetCommandLineArgs(), "-hitchlog") >= 0;
+        private int _logged;
+
         public void Begin(string name)
         {
             if (!_watch.IsRunning)
@@ -49,7 +53,7 @@ namespace UOClient.Unity
             Begin(null);
             double total = lastFrameSeconds * 1000.0;
             int gc0 = GC.CollectionCount(0) - _gcAtStart, gc2 = GC.CollectionCount(2) - _gc2AtStart;
-            if (total > HitchThresholdMs && Hitches.Count < 40)
+            if (total > HitchThresholdMs && (Hitches.Count < 40 || Log && _logged < 400))
             {
                 double inUpdate = _current.Sum(s => s.Ms);
                 string parts = string.Join(", ", _current.Where(s => s.Ms >= 0.5).Select(s => $"{s.Name} {s.Ms:F1}"));
@@ -60,8 +64,12 @@ namespace UOClient.Unity
                     if (ms >= 0.5)
                         unity.Add($"{Markers[i].Label} {ms:F1}");
                 }
-                Hitches.Add($"{total:F0} ms frame: Update {inUpdate:F1} ms [{parts}], outside Update {total - inUpdate:F0} ms, " +
-                            $"GC gen0 {gc0} gen2 {gc2}; Unity: {string.Join(", ", unity)}");
+                string line = $"{total:F0} ms frame: Update {inUpdate:F1} ms [{parts}], outside Update {total - inUpdate:F0} ms, " +
+                              $"GC gen0 {gc0} gen2 {gc2}; Unity: {string.Join(", ", unity)}";
+                if (Hitches.Count < 40)
+                    Hitches.Add(line);
+                if (Log && _logged++ < 400)
+                    UnityEngine.Debug.Log("[hitch] " + line);
             }
             _current.Clear();
             _watch.Restart();

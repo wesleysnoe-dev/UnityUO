@@ -202,8 +202,12 @@ namespace UOClient.Unity
         /// a loaded chunk stays on screen and is swapped for its new build in one frame when that is ready (no gap);
         /// builds already running for them are discarded.
         /// </summary>
-        public void RebuildArea(int x0, int y0, int x1, int y1)
+        public void RebuildArea(int x0, int y0, int x1, int y1) => RebuildArea(x0, y0, x1, y1, false);
+
+        private void RebuildArea(int x0, int y0, int x1, int y1, bool soft)
         {
+            if (!soft)
+                _softBatch = false;
             bool added = false;
             for (int cy = Math.Max(0, y0 / ChunkSize); cy <= y1 / ChunkSize; cy++)
                 for (int cx = Math.Max(0, x0 / ChunkSize); cx <= x1 / ChunkSize; cx++)
@@ -237,11 +241,17 @@ namespace UOClient.Unity
 
         private float _batchStarted;
 
-        /// <summary>Rebuilds every loaded chunk (the time of day moved the terrain's baked sun), swapped in as one batch.</summary>
+        // RebuildLoaded's batch: each chunk swaps in as its build arrives (within Update's integrate budget) instead of
+        // all in one frame. The ground's shape is the same, only its baked light moved a step, so old and new chunks
+        // meet without a crack, and 81 chunks attached in one frame was a 120-200 ms freeze every sun step.
+        private bool _softBatch;
+
+        /// <summary>Rebuilds every loaded chunk (the time of day moved the terrain's baked sun), each swapped in as it is ready.</summary>
         public void RebuildLoaded()
         {
             if (_chunks.Count == 0)
                 return;
+            _softBatch = _replacing.Count == 0; // an editor batch under way keeps its all-at-once swap
             int x0 = int.MaxValue, y0 = int.MaxValue, x1 = int.MinValue, y1 = int.MinValue;
             foreach ((int cx, int cy) in _chunks.Keys)
             {
@@ -250,7 +260,7 @@ namespace UOClient.Unity
                 x1 = Math.Max(x1, cx);
                 y1 = Math.Max(y1, cy);
             }
-            RebuildArea(x0 * ChunkSize, y0 * ChunkSize, x1 * ChunkSize + ChunkSize - 1, y1 * ChunkSize + ChunkSize - 1);
+            RebuildArea(x0 * ChunkSize, y0 * ChunkSize, x1 * ChunkSize + ChunkSize - 1, y1 * ChunkSize + ChunkSize - 1, true);
         }
 
         // Loaded chunks whose new build (RebuildArea) replaces them when it is ready.
@@ -377,6 +387,16 @@ namespace UOClient.Unity
             }
             // RebuildArea: the old chunks stay on screen until every new build of the batch is in; then they all swap in
             // this frame, so neighbouring chunks never show a crack between old and new edges.
+            if (replacing && _softBatch)
+            {
+                _replacing.Remove(chunkKey);
+                if (_held.Remove(chunkKey, out ChunkBuild older))
+                    older.Land?.Dispose();
+                if (_chunks.Remove(chunkKey, out Chunk old))
+                    old.Dispose();
+                Attach(build);
+                return;
+            }
             if (replacing)
             {
                 _held[chunkKey] = build;

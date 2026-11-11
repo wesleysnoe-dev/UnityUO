@@ -310,7 +310,11 @@ namespace UOClient.Unity
             Matrix4x4 saved = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1));
 
-            if (NamesVisible)
+            // Names, health lines and speech only draw: nothing in them takes input, so they run for the repaint alone
+            // (IMGUI calls this for the layout pass and every mouse and key event too).
+            bool paint = Event.current.type == EventType.Repaint;
+
+            if (NamesVisible && paint)
             {
                 foreach (var (labelName, screen, color) in Labels)
                     DrawSoftShadow(new Rect(screen.x / s - 100, screen.y / s - 26, 200, 22), labelName, _name, color);
@@ -323,6 +327,8 @@ namespace UOClient.Unity
             float barWidth = GameOptions.HealthLineWidth(HealthLineSize);
             foreach (HealthBar bar in HealthBars)
             {
+                if (!paint)
+                    break;
                 if (bar.Percent >= 0)
                 {
                     // Over the name label (it sits 26 px above the head point), or where it would be with names off; over
@@ -351,6 +357,8 @@ namespace UOClient.Unity
             _stacked.Clear();
             foreach (var (text, screen, color, size, stack) in Overheads)
             {
+                if (!paint)
+                    break;
                 _overhead.fontSize = size;
                 var content = new GUIContent(text);
                 if (stack == 0)

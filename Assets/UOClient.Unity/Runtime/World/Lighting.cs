@@ -36,6 +36,19 @@ namespace UOClient.Unity
 
         private readonly float _fixedHour = StartHour();
 
+        /// <summary>-sunspin S: the sun moves one baked step every S seconds through the day (checks of the sun step's cost).</summary>
+        private static float StartSpin()
+        {
+            string[] args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i + 1 < args.Length; i++)
+                if (string.Equals(args[i], "-sunspin", System.StringComparison.OrdinalIgnoreCase)
+                    && float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float s))
+                    return Mathf.Max(1f, s);
+            return 0f;
+        }
+
+        private readonly float _spinSeconds = StartSpin();
+
         /// <summary>
         /// The terrain's baked sun (LiveGroundLighting.SetSun), set by the LiveGround presenter: called with the sun's
         /// (x, y, up) each time it moves a step (<see cref="SunStepHours"/>), then <see cref="SunStepped"/> asks for the
@@ -104,7 +117,8 @@ namespace UOClient.Unity
                 target = new TimeOfDay(target.Name, target.Ambient * SeasonTint(shownSeason), target.Light, target.Vignette);
 
             // The sun: the shard's clock where the player stands (or the T key's time, or -hour). Golden light low in the sky.
-            double hour = !float.IsNaN(_fixedHour) ? _fixedHour
+            double hour = _spinSeconds > 0f ? 8.0 + Mathf.Floor(Time.realtimeSinceStartup / _spinSeconds) % 18 * SunStepHours
+                : !float.IsNaN(_fixedHour) ? _fixedHour
                 : _timeOverride >= 0 ? SunClock.HourFor(Times[_timeOverride].Name)
                 : session != null ? SunClock.Hour(System.DateTime.UtcNow, session.World.Map, session.World.Player?.X ?? 0)
                 : 14.0;

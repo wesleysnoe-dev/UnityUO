@@ -21,6 +21,8 @@ namespace UOClient.Unity.Fx
         {
             public bool Found;
             public float X, Y, Width;
+            /// <summary>The art's own size (0 when there is none): placing a flame needs no decode.</summary>
+            public int ArtWidth, ArtHeight;
         }
 
         private static readonly Dictionary<int, FlameKind> Kinds = new Dictionary<int, FlameKind>();
@@ -77,6 +79,8 @@ namespace UOClient.Unity.Fx
             Bitmap32 art = data?.GetStatic(graphic);
             if (art != null && art.Width > 0)
             {
+                s.ArtWidth = art.Width;
+                s.ArtHeight = art.Height;
                 // Fire-coloured pixels, but only the topmost band of them: flames burn at the top of their art, while a
                 // candelabra's or lamp's brass body below is fire-coloured too and would pull the spot down to its base.
                 bool Fiery(uint p)

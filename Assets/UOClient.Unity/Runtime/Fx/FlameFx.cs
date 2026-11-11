@@ -110,12 +110,12 @@ namespace UOClient.Unity.Fx
 
         private static void Place(Transform t, UOData data, IWorldSpace world, int scale, Source s)
         {
-            var art = data.GetStatic(s.Graphic);
-            if (art == null)
-                return;
+            // The spot keeps the art's size: this runs for every live flame every frame, and GetStatic decodes from disk.
             FxCatalog.FireSpot spot = FxCatalog.Spot(data, s.Graphic);
+            if (spot.ArtWidth <= 0)
+                return;
             var it = new DrawItem { Kind = DrawKind.Static, Graphic = (ushort)s.Graphic, X = s.X, Y = s.Y, Z = (sbyte)s.Z };
-            var (left, top, _, _) = IsoCompositor.PlacementRect(it, scale, art.Width, art.Height);
+            var (left, top, _, _) = IsoCompositor.PlacementRect(it, scale, spot.ArtWidth, spot.ArtHeight);
             // the flame rises from the lower part of the fire pixels
             Vector2 at = world.ToUnity(new Vector2(left + spot.X * scale, top + (spot.Y + 2f) * scale));
             t.position = new Vector3(at.x, at.y, world.DepthFor(it) - 1f);

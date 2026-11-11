@@ -165,15 +165,33 @@ namespace UOClient.Unity
             if (!_statics.TryGetValue(key, out StaticCell[] block))
                 _statics[key] = block = _map.ReadStaticBlock(x >> 3, y >> 3);
 
-            var result = new List<StaticCell>();
+            // One array per tile, kept: shadows, roofs and lights ask for the same tiles every frame.
+            long tile = ((long)x << 32) | (uint)y;
+            if (_tiles.TryGetValue(tile, out StaticCell[] known))
+                return known;
+            int count = 0;
             foreach (StaticCell s in block)
                 if (s.X == (x & 7) && s.Y == (y & 7))
-                    result.Add(s);
-            if (_extra.TryGetValue((x, y), out List<(uint Owner, StaticCell Cell)> extra))
+                    count++;
+            _extra.TryGetValue((x, y), out List<(uint Owner, StaticCell Cell)> extra);
+            if (extra != null)
+                count += extra.Count;
+            StaticCell[] result = count == 0 ? Array.Empty<StaticCell>() : new StaticCell[count];
+            int n = 0;
+            foreach (StaticCell s in block)
+                if (s.X == (x & 7) && s.Y == (y & 7))
+                    result[n++] = s;
+            if (extra != null)
                 foreach (var e in extra)
-                    result.Add(e.Cell);
-            return result.ToArray();
+                    result[n++] = e.Cell;
+            if (_tiles.Count > 60000)
+                _tiles.Clear();
+            _tiles[tile] = result;
+            return result;
         }
+
+        // StaticsAt's answers by tile; a house or boat part arriving or leaving drops its tile.
+        private readonly Dictionary<long, StaticCell[]> _tiles = new Dictionary<long, StaticCell[]>();
 
         // Houses and boats: their fixed parts count as statics while they stand there.
         private readonly Dictionary<(int, int), List<(uint Owner, StaticCell Cell)>> _extra = new Dictionary<(int, int), List<(uint, StaticCell)>>();
@@ -194,6 +212,7 @@ namespace UOClient.Unity
         {
             if (!_extra.TryGetValue((x, y), out var list))
                 _extra[(x, y)] = list = new List<(uint, StaticCell)>();
+            _tiles.Remove(((long)x << 32) | (uint)y);
             list.Add((owner, new StaticCell { Graphic = graphic, X = (byte)(x & 7), Y = (byte)(y & 7), Z = (sbyte)Math.Max(-128, Math.Min(127, z)) }));
         }
 
@@ -204,6 +223,7 @@ namespace UOClient.Unity
                 if (kv.Value.RemoveAll(e => e.Owner == owner) > 0)
                 {
                     (int x, int y) = kv.Key;
+                    _tiles.Remove(((long)x << 32) | (uint)y);
                     x0 = Math.Min(x0, x); y0 = Math.Min(y0, y); x1 = Math.Max(x1, x); y1 = Math.Max(y1, y);
                 }
             if (x0 <= x1)

@@ -183,9 +183,32 @@ namespace UOClient.IO.Formats
             return result;
         }
 
+        // GetLand's blocks: single-tile readers (walking, shadows, falling leaves) ask for the same few blocks thousands
+        // of times a second, and each ReadLandBlock is a file read and a new array. Dropped when an override changes.
+        private readonly System.Collections.Generic.Dictionary<long, LandCell[]> _landCache =
+            new System.Collections.Generic.Dictionary<long, LandCell[]>();
+        private int _landCacheVersion = -1;
+
         public LandCell GetLand(int x, int y)
         {
-            return ReadLandBlock(x >> 3, y >> 3)[((y & 7) << 3) | (x & 7)];
+            long key = ((long)(x >> 3) << 32) | (uint)(y >> 3);
+            int cell = ((y & 7) << 3) | (x & 7);
+            lock (_landCache)
+            {
+                if (_landCacheVersion != OverrideVersion || _landCache.Count > 4096)
+                {
+                    _landCache.Clear();
+                    _landCacheVersion = OverrideVersion;
+                }
+                if (_landCache.TryGetValue(key, out LandCell[] cached))
+                    return cached[cell];
+            }
+            int version = OverrideVersion;
+            LandCell[] block = ReadLandBlock(x >> 3, y >> 3);
+            lock (_landCache)
+                if (version == OverrideVersion && _landCacheVersion == version)
+                    _landCache[key] = block;
+            return block[cell];
         }
 
         public void Dispose()
