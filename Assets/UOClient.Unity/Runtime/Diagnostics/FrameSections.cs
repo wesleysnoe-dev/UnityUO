@@ -36,6 +36,30 @@ namespace UOClient.Unity
         public bool Log = Array.IndexOf(Environment.GetCommandLineArgs(), "-hitchlog") >= 0;
         private int _logged;
 
+        // -hitchlog: the average frame every 600 frames, by section and by Unity's own phases.
+        private readonly Dictionary<string, double> _sums = new Dictionary<string, double>();
+        private int _summed;
+
+        private void Average(double total)
+        {
+            void Sum(string key, double ms) => _sums[key] = (_sums.TryGetValue(key, out double v) ? v : 0) + ms;
+            Sum("frame", total);
+            foreach ((string name, double ms) in _current)
+                Sum(name, ms);
+            for (int i = 0; i < Markers.Length; i++)
+                if (_recorders[i].Valid)
+                    Sum("unity " + Markers[i].Label, _recorders[i].LastValue / 1e6);
+            if (++_summed < 600)
+                return;
+            var parts = new List<string>();
+            foreach (KeyValuePair<string, double> kv in _sums)
+                if (kv.Value / _summed >= 0.05)
+                    parts.Add($"{kv.Key} {kv.Value / _summed:F2}");
+            UnityEngine.Debug.Log("[frames] avg ms over 600: " + string.Join(", ", parts));
+            _sums.Clear();
+            _summed = 0;
+        }
+
         public void Begin(string name)
         {
             if (!_watch.IsRunning)
@@ -71,6 +95,8 @@ namespace UOClient.Unity
                 if (Log && _logged++ < 400)
                     UnityEngine.Debug.Log("[hitch] " + line);
             }
+            if (Log)
+                Average(total);
             _current.Clear();
             _watch.Restart();
             _gcAtStart = GC.CollectionCount(0);
