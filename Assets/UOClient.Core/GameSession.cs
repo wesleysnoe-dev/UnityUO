@@ -48,7 +48,8 @@ namespace UOClient.Core
     /// </summary>
     public sealed partial class GameSession : IDisposable
     {
-        private const double PingInterval = 30;
+        // Well inside ModernUO's 30 s idle timeout: at 30 the ping could land just after the deadline.
+        private const double PingInterval = 10;
 
         private readonly LoginSettings _settings;
         private readonly Dictionary<byte, Action<PacketReader>> _handlers = new Dictionary<byte, Action<PacketReader>>();
@@ -429,7 +430,16 @@ namespace UOClient.Core
             _conn.Dispose();
             // A server listening on 0.0.0.0 may relay its LAN address; the host we reached it by works too.
             string host = ip == "0.0.0.0" ? _settings.Host : ip;
-            Connect(host, port);
+            try
+            {
+                Connect(host, port);
+            }
+            catch (Exception e)
+            {
+                // Say why, rather than the "closed by client" the old connection's Dispose left behind.
+                SetState(SessionState.Disconnected, $"Could not reach the game server {host}:{port}: {e.Message}");
+                return;
+            }
             SetState(SessionState.GameLogin, $"Connecting to game server {host}:{port}");
 
             // Compression must be on before the login goes out: on a fast link the reply can be read before Send returns.
@@ -798,10 +808,11 @@ namespace UOClient.Core
 
         private void MoveAck(PacketReader r)
         {
-            r.ReadByte(); // seq
+            int seq = r.ReadByte();
             byte noto = r.ReadByte();
-            if (_pendingSteps.Count > 0)
-                _pendingSteps.Dequeue();
+            // The answer to the oldest step in flight. One for a step from before a resync is not ours any more.
+            if (_pendingSteps.Contains(seq))
+                while (_pendingSteps.Dequeue() != seq) { }
             Mobile p = World.Player;
             if (p != null)
                 p.Notoriety = noto;
@@ -809,10 +820,16 @@ namespace UOClient.Core
 
         private void MoveDenied(PacketReader r)
         {
-            r.ReadByte(); // seq
+            int seq = r.ReadByte();
             int x = r.ReadUInt16(), y = r.ReadUInt16();
             byte dir = r.ReadByte();
             sbyte z = r.ReadSByte();
+            // After the server resets movement (a teleport, a turn it set, a rejected step) it rejects every step that was
+            // still on its way, one 0x21 each. By then we may have a new step in flight, numbered from 0 again: a reject
+            // that names none of the steps in flight must not throw that one away and pull the player back, or the
+            // server moves on its own and the client stays a tile behind for each.
+            if (_pendingSteps.Count > 0 && !_pendingSteps.Contains(seq))
+                return;
             _moveSeq = 0;
             _pendingSteps.Clear();
 
