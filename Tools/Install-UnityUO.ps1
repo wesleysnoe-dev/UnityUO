@@ -7,9 +7,9 @@ param(
     [string]$Package = (Join-Path (Split-Path -Parent $PSScriptRoot) 'Builds\Package\Unity UO'),
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'UnityUO'),
     [string]$ShortcutName = 'Unity UO (installed)',
-    # The shard's look: the natural ground and the grass on it. They are launch switches, not options, and the
-    # ground renderer only runs against a server that is not this PC with -liveground-anyhost. '' for the classic land.
-    [string]$Arguments = '-liveground -liveground-anyhost -groundbackend terrain -terrainstyle natural -grass',
+    # Extra launch switches for the shortcut. None by default: the natural ground and grass are options now
+    # (Options > Video > Ground), so the shortcut needs nothing.
+    [string]$Arguments = '',
     # Only remake the shortcut (the game may be running from the install).
     [switch]$ShortcutOnly
 )

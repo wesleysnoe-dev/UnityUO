@@ -118,6 +118,8 @@ namespace UOClient.Unity
                 ApplyOptions(saved);
             // Shadows are built into characters and chunks as they are made: fixed for the run, before any world.
             CharacterShadow.StartWith(_graphics.shadows);
+            // The natural ground and its grass, likewise fixed for the run.
+            GroundStart.StartWith(_more.naturalGround, _more.groundGrass, LaunchOptions.FromCommandLine().LiveGround);
 
             try
             {
@@ -254,15 +256,17 @@ namespace UOClient.Unity
         /// </summary>
         private ILandBackendSwitch CreateLiveGround(LaunchOptions launch)
         {
-            if (!launch.LiveGround)
+            // -liveground, or the options' natural ground (GameOptions.GroundLaunch).
+            (bool liveGround, string backend) = GameOptions.GroundLaunch(GroundStart.Natural, launch.LiveGround, launch.GroundBackend);
+            if (!liveGround)
                 return null;
             Type type = Type.GetType("UOClient.LiveGroundCompare.LiveGroundController, UOClient.LiveGroundCompare");
             if (type == null)
             {
-                Debug.LogWarning("UOClient: -liveground given but LiveGroundCompare is not in this build; original land.");
+                Debug.LogWarning("UOClient: the natural ground was asked for but LiveGroundCompare is not in this build; original land.");
                 return null;
             }
-            return (ILandBackendSwitch)Activator.CreateInstance(type, launch.LiveGround, launch.GroundBackend, _ctx.ArtScale);
+            return (ILandBackendSwitch)Activator.CreateInstance(type, liveGround, backend, _ctx.ArtScale);
         }
 
         // ---- offline ----

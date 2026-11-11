@@ -37,12 +37,14 @@ namespace UOClient.LiveGroundCompare
             _scale = scale;
             _mesh = new MeshLandEmitter(scale);
             // -liveground-anyhost is read here so WorldDemo's 3-argument creation stays as it is.
-            _switch = new LiveGroundSwitch(optIn, LaunchOptions.FromCommandLine().LiveGroundAnyHost, requested, Apply);
+            // The options' natural ground is for the shard players are on, so it counts as any-host too.
+            _switch = new LiveGroundSwitch(optIn, LaunchOptions.FromCommandLine().LiveGroundAnyHost || GroundStart.Natural, requested, Apply);
 
             var go = new GameObject("LiveGround TEST indicator");
             UnityEngine.Object.DontDestroyOnLoad(go);
             _overlay = go.AddComponent<LiveGroundOverlay>();
             _overlay.Controller = this;
+            _overlay.enabled = !GroundStart.ByOptionOnly; // the status strip is the developer's: not for the option
             Report("created");
         }
 

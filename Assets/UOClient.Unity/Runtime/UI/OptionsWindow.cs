@@ -330,6 +330,17 @@ namespace UOClient.Unity.UI
             d.blackWhiteWhenDead = Toggle("Grey world while dead", d.blackWhiteWhenDead);
             d.deathScreen = Toggle("Death screen", d.deathScreen);
 
+            Section("Ground");
+            d.naturalGround = Toggle("Natural ground (after restart)", d.naturalGround);
+            Line("Blended earth, grass, sand and rock on a lit terrain, in place of the map's\nflat tiles. Off: the classic land.", 34);
+            if (d.naturalGround != GroundStart.Natural)
+                Line(d.naturalGround ? "On from the next start (saved with Okay)." : "Off from the next start (saved with Okay).");
+            _indent = 20;
+            GUI.enabled = d.naturalGround;
+            d.groundGrass = Toggle("Grass on it", d.groundGrass);
+            GUI.enabled = true;
+            _indent = 0;
+
             Section("Shadows");
             d.shadows = Toggle("Shadows (after restart)", d.shadows);
             Line("Characters, items, trees and buildings cast them, by sun, moon and lamps.");

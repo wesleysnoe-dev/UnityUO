@@ -83,6 +83,18 @@ namespace UOClient.Unity
         public int infoBarHighlightType = HudBars.HighlightTextColour;
         public string infoBarItems = HudBars.DefaultInfoBar;
 
+        // ---- the ground ----
+
+        /// <summary>
+        /// The natural ground: blended ground materials on a lit terrain instead of the map's flat tile art (the launch
+        /// switches -liveground -groundbackend terrain -terrainstyle natural). Takes effect at the next start. Off: the
+        /// classic land.
+        /// </summary>
+        public bool naturalGround = false;
+
+        /// <summary>Grass standing on the natural ground (-grass). Only with <see cref="naturalGround"/>; at the next start.</summary>
+        public bool groundGrass = true;
+
         // ---- pathfinding ----
 
         /// <summary>TazUO's EnablePathfind: a double right-click on the world walks there. On here (TazUO: off).</summary>
@@ -146,6 +158,8 @@ namespace UOClient.Unity
             to.infoBarItems = from.infoBarItems;
             to.cooldowns = from.cooldowns;
             to.counterBarHighlightOnUse = from.counterBarHighlightOnUse;
+            to.naturalGround = from.naturalGround;
+            to.groundGrass = from.groundGrass;
             to.enablePathfind = from.enablePathfind;
             to.useShiftToPathfind = from.useShiftToPathfind;
             to.pathfindSingleClick = from.pathfindSingleClick;
@@ -172,6 +186,7 @@ namespace UOClient.Unity
             && counterBarHighlightOnAmount == o.counterBarHighlightOnAmount && counterBarHighlightAmount == o.counterBarHighlightAmount
             && showInfoBar == o.showInfoBar && infoBarHighlightType == o.infoBarHighlightType && infoBarItems == o.infoBarItems
             && cooldowns == o.cooldowns
+            && naturalGround == o.naturalGround && groundGrass == o.groundGrass
             && enablePathfind == o.enablePathfind && useShiftToPathfind == o.useShiftToPathfind && pathfindSingleClick == o.pathfindSingleClick
             && counterBarHighlightOnUse == o.counterBarHighlightOnUse && enableLoginMusic == o.enableLoginMusic
             && useDarkNights == o.useDarkNights && tooltipTextHue == o.tooltipTextHue && guildMessageHue == o.guildMessageHue
@@ -235,6 +250,8 @@ namespace UOClient.Unity
                 case "counterBarHighlightAmount": Integer(raw, ref counterBarHighlightAmount); return true;
                 case "showInfoBar": Bool(raw, ref showInfoBar); return true;
                 case "infoBarHighlightType": Integer(raw, ref infoBarHighlightType); return true;
+                case "naturalGround": Bool(raw, ref naturalGround); return true;
+                case "groundGrass": Bool(raw, ref groundGrass); return true;
                 case "enablePathfind": Bool(raw, ref enablePathfind); return true;
                 case "useShiftToPathfind": Bool(raw, ref useShiftToPathfind); return true;
                 case "pathfindSingleClick": Bool(raw, ref pathfindSingleClick); return true;
@@ -298,6 +315,8 @@ namespace UOClient.Unity
                     timers.Add("\"" + FlatJson.Escape(line) + "\"");
             add("cooldowns", "[" + string.Join(", ", timers) + "]");
             add("counterBarHighlightOnUse", b(counterBarHighlightOnUse));
+            add("naturalGround", b(naturalGround));
+            add("groundGrass", b(groundGrass));
             add("enablePathfind", b(enablePathfind));
             add("useShiftToPathfind", b(useShiftToPathfind));
             add("pathfindSingleClick", b(pathfindSingleClick));
@@ -340,6 +359,13 @@ namespace UOClient.Unity
         }
 
         // ---- rules ----
+
+        /// <summary>
+        /// The land backend the game starts with: what the launch switches ask for when -liveground is given, else the
+        /// terrain backend when the natural ground option is on, else none (the classic land).
+        /// </summary>
+        public static (bool LiveGround, string Backend) GroundLaunch(bool optionNaturalGround, bool liveGroundArgument, string backendArgument) =>
+            liveGroundArgument ? (true, backendArgument) : optionNaturalGround ? (true, "terrain") : (false, (string)null);
 
         /// <summary>
         /// Whether a right-click on the world asks for a path: pathfinding is on, Shift is held if it must be, and the

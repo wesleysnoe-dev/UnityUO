@@ -16,8 +16,11 @@ namespace UOClient.LiveGroundCompare
     /// </summary>
     public static class GrassBuilder
     {
-        public static readonly bool Enabled = Array.Exists(Environment.GetCommandLineArgs(),
+        private static readonly bool FromLaunch = Array.Exists(Environment.GetCommandLineArgs(),
             a => string.Equals(a, "-grass", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>-grass, or the options' grass on the natural ground (fixed at startup: GroundStart).</summary>
+        public static bool Enabled => FromLaunch || UOClient.Unity.GroundStart.Grass;
 
         public const string ShaderResource = "LiveGroundCompareGrass";
 

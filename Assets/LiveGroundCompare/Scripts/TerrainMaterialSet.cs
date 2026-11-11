@@ -56,7 +56,7 @@ namespace UOClient.LiveGroundCompare
             for (int i = 0; i + 1 < args.Length; i++)
                 if (string.Equals(args[i], "-terrainstyle", StringComparison.OrdinalIgnoreCase))
                     return string.Equals(args[i + 1], "natural", StringComparison.OrdinalIgnoreCase);
-            return false;
+            return UOClient.Unity.GroundStart.Natural; // the options' natural ground, when no switch says otherwise
         }
 
         public static TerrainMaterialSet TryCreate(UOData data, out string error)

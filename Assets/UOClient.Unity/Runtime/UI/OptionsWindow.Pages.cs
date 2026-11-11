@@ -50,7 +50,6 @@ namespace UOClient.Unity.UI
             (Page.Video, "Coloured / alternative lights: lights keep light.mul's colours."),
             (Page.Video, "Rock and tree shadows apart, terrain shadow level: one shadows switch."),
             (Page.Video, "Fixed sun: its place sets day, night and the shadows' side; Sun shadows off instead."),
-            (Page.Video, "Natural terrain, grass, smooth ground: experimental, launch arguments only."),
             (Page.Video, "Target aura, mouse thread, upscaling filters: not in this client."),
             (Page.Display, "Viewport size, position and lock: the world always fills the window."),
             (Page.Display, "Shadow quality, anti-aliasing: shadows are the client's own, no setting behind."),

@@ -93,6 +93,23 @@ public class OptionsBatch10Tests
     }
 
     [Fact]
+    public void TheGround_StartsFromTheSwitches_ElseTheOption()
+    {
+        Assert.False(GameOptions.Defaults().naturalGround);
+        Assert.True(GameOptions.Defaults().groundGrass);
+        Assert.Equal((false, (string)null), GameOptions.GroundLaunch(false, false, null));   // the classic land
+        Assert.Equal((true, "terrain"), GameOptions.GroundLaunch(true, false, null));         // the option alone
+        Assert.Equal((true, "mesh"), GameOptions.GroundLaunch(true, true, "mesh"));           // the switches win
+        Assert.Equal((true, (string)null), GameOptions.GroundLaunch(false, true, null));
+        var o = GameOptions.Defaults();
+        o.naturalGround = true;
+        o.groundGrass = false;
+        GameOptions back = GameOptions.Parse(o.ToJson());
+        Assert.True(back.naturalGround);
+        Assert.False(back.groundGrass);
+    }
+
+    [Fact]
     public void Pages_DropTheNotesNowDone()
     {
         Assert.DoesNotContain(OptionsWindow.NotOffered, n => n.Text.Contains("Saved bar position"));
