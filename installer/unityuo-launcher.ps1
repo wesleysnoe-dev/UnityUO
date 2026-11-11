@@ -152,7 +152,14 @@ function Install-Part($part, $state) {
 function Start-Game {
     if ($NoLaunch) { return }
     $exe = Join-Path $InstallDir 'Unity UO.exe'
-    if (Test-Path $exe) { Start-Process $exe -WorkingDirectory $InstallDir }
+    if (Test-Path $exe) {
+        # The game's own log, kept with the install (Logs is never touched by an update) so a problem can be looked at.
+        $logs = Join-Path $InstallDir 'Logs'
+        [IO.Directory]::CreateDirectory($logs) | Out-Null
+        $log = Join-Path $logs 'game.log'
+        if (Test-Path $log) { Move-Item -LiteralPath $log -Destination (Join-Path $logs 'game-previous.log') -Force }
+        Start-Process $exe -WorkingDirectory $InstallDir -ArgumentList "-logFile `"$log`""
+    }
 }
 function Test-Installed { Test-Path (Join-Path $InstallDir 'Unity UO.exe') }
 

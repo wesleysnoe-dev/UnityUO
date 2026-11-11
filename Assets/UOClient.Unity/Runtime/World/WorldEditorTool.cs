@@ -71,8 +71,8 @@ namespace UOClient.Unity
         private bool _shadowSent;
 
         private float _shadowLogAt;
-        private bool _nearLightSent, _gumpsShown, _fxShown;
-        private float _fxLogAt, _fxAt, _deathLogAt;
+        private bool _nearLightSent, _gumpsShown, _fxShown, _questionShown;
+        private float _fxLogAt, _fxAt, _deathLogAt, _questionLogAt;
         private int _deathStep;
         private uint _deathVictim, _deathNext;
         private int _sayStep;
@@ -171,28 +171,47 @@ namespace UOClient.Unity
                     (0f, () => _ctx.Session.Say("[self set Map Felucca")),
                     (1.5f, () => _ctx.Session.Say("[go 1336 2012")),
                     (3f, () => _ctx.Session.Say("[self resurrect")),
+                    (4.5f, () => _ctx.Session.Say("[self set Blessed false")),
                     (6f, () => _ctx.Session.Say("[add playerbot")),
                     (7.5f, () => _ctx.Session.TargetGround(px + 2, py, pz)),
                     (9f, () => _ctx.Session.Say("[add playerbot")),
                     (10.5f, () => _ctx.Session.TargetGround(px - 2, py, pz)),
-                    (14f, () =>
+                    // The first bot down to one hit point, then we are a plain player (the server treats staff apart:
+                    // they see ghosts and pass every attack rule), and it dies to a real attack.
+                    (13f, () =>
                     {
                         _deathVictim = Nearest(0);
+                        _ctx.Session.Say("[set Hits 1");
+                    }),
+                    (14.5f, () => _ctx.Session.TargetObject(_deathVictim)),
+                    (16f, () => _ctx.Session.Say("[self set AccessLevel Player")),
+                    (18f, () =>
+                    {
                         _ctx.Session.SetWarMode(true);
                         Debug.Log($"UOClient death-selftest: attacking 0x{_deathVictim:X8}");
                     }),
-                    (15f, () => _ctx.Session.DoubleClick(_deathVictim)),
-                    (19f, () =>
+                    (19f, () => _ctx.Session.DoubleClick(_deathVictim)),
+                    (20f, () =>
                     {
-                        Debug.Log($"UOClient death-selftest: killing 0x{_deathVictim:X8}");
-                        _ctx.Session.Say("[kill");
+                        if (_ctx.Session.PendingAttackQuery != 0)
+                        {
+                            Debug.Log("UOClient death-selftest: the attack question came up; answering yes");
+                            _ctx.Session.AnswerAttackQuery(_ctx.Session.PendingAttackQuery, true);
+                        }
                     }),
-                    (20.5f, () => _ctx.Session.TargetObject(_deathVictim)),
-                    (28f, () =>
+                    (34f, () =>
                     {
                         _deathNext = Nearest(_deathVictim);
                         Debug.Log($"UOClient death-selftest: attacking the next, 0x{_deathNext:X8}");
                         _ctx.Session.DoubleClick(_deathNext);
+                    }),
+                    (35f, () =>
+                    {
+                        if (_ctx.Session.PendingAttackQuery != 0)
+                        {
+                            Debug.Log("UOClient death-selftest: the attack question came up; answering yes");
+                            _ctx.Session.AnswerAttackQuery(_ctx.Session.PendingAttackQuery, true);
+                        }
                     }),
                 };
                 if (_deathStep < steps.Length && t >= steps[_deathStep].At)
@@ -202,8 +221,20 @@ namespace UOClient.Unity
                     _deathLogAt = Time.unscaledTime + 1f;
                     bool there = w.Mobiles.TryGetValue(_deathVictim, out Core.Mobile v);
                     Debug.Log($"UOClient death-selftest: {t:0.0} s: victim in world {there}" + (there ? $" body {v.Body} worn {v.Equipment.Count}" : "")
-                              + $"; me dead {_ctx.Session.PlayerDead} war {_ctx.Session.WarMode} combatant 0x{_ctx.Session.Combatant:X8} last attack 0x{_ctx.Session.LastAttack:X8}");
+                              + $"; me dead {_ctx.Session.PlayerDead} query 0x{_ctx.Session.PendingAttackQuery:X8} windows [{string.Join(" ", UI.UiManager.OpenKeysForTest())}] war {_ctx.Session.WarMode} combatant 0x{_ctx.Session.Combatant:X8} last attack 0x{_ctx.Session.LastAttack:X8}");
                 }
+            }
+            // -question-selftest: once there, the attack question ("This may flag you criminal!") opens (for captures).
+            if (!_questionShown && _shadowSent && Time.unscaledTime >= _shadowAt + 12f
+                && Array.Exists(Environment.GetCommandLineArgs(), x => string.Equals(x, "-question-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                _questionShown = true;
+                UI.UiManager.OpenForTest(new UI.QuestionWindow("attack", UI.QuestionWindow.CriminalText, yes => Debug.Log($"UOClient question-selftest: answered {yes}")));
+            }
+            if (_questionShown && Time.unscaledTime >= _questionLogAt)
+            {
+                _questionLogAt = Time.unscaledTime + 3f;
+                Debug.Log($"UOClient question-selftest: windows [{string.Join(" ", UI.UiManager.OpenKeysForTest())}]");
             }
             // -tooltip-selftest: once there, the backpack's tooltip shows in the middle of the screen (for captures).
             if (_shadowSent && Time.unscaledTime >= _shadowAt + 12f && _ctx.Session != null && UI.HoverTooltip.ForcedForTest == null

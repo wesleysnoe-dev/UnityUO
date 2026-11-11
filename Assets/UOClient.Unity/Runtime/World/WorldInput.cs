@@ -201,8 +201,18 @@ namespace UOClient.Unity
             }
 
             // A split stack rides the cursor with the button up: the next click is its drop, not a world click.
-            if (!Input.GetMouseButtonDown(0) || UI.UiRouting.WorldPress(OverWindowOrJournal(ui), ui.Dragging != null, fieldFocused: false) != UI.UiRouting.Press.World)
+            if (!Input.GetMouseButtonDown(0))
                 return;
+            if (UI.UiRouting.WorldPress(OverWindowOrJournal(ui), ui.Dragging != null, fieldFocused: false) != UI.UiRouting.Press.World)
+            {
+                // In the play log while in war mode: a press that never reached the world is why an attack "did nothing".
+                if (_ctx.Session.WarMode)
+                {
+                    (float ux, float uy) = UI.UiRouting.ScreenToUi(Input.mousePosition.x, Input.mousePosition.y, Screen.height, ui.Scale);
+                    Debug.Log($"UOClient combat: press not the world's: over a window {ui.IsOverUi(Input.mousePosition)} ({ui.TopWindowAt(new Vector2(ux, uy))?.Key ?? "none"}), dragging {ui.Dragging != null}");
+                }
+                return;
+            }
             // The world editor's brush has the left mouse (panel open, pointer over the world).
             if (WorldEditorTool.CapturesLeftMouse)
                 return;
@@ -264,6 +274,8 @@ namespace UOClient.Unity
             _pendingClick = doubleClick ? 0 : picked;
             // Nothing with a serial there: a map static (tree, wall, sign) is named locally, as the classic client does.
             _pendingStatic = picked == 0 && !doubleClick ? _entities.PickStatic(mouse) : null;
+            if (_ctx.Session.WarMode)
+                Debug.Log($"UOClient combat: world press picked 0x{picked:X8}, double-click {doubleClick}");
             if (picked == 0 || !doubleClick)
                 return; // a single click goes out once the double-click time passes
             _ctx.Session.DoubleClick(picked);

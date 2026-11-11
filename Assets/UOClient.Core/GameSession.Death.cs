@@ -44,6 +44,7 @@ namespace UOClient.Core
             uint serial = r.ReadUInt32();
             uint corpse = r.ReadUInt32();
             bool running = r.ReadUInt32() != 0;
+            CombatTrace?.Invoke($"server: 0x{serial:X8} dies (corpse 0x{corpse:X8}); known here: {World.Mobiles.ContainsKey(serial)}");
             if (serial == World.PlayerSerial || !World.Mobiles.TryGetValue(serial, out Mobile owner))
                 return;
             // The corpse stays hidden until the fall is over, then faces the way its owner did (DisplayDeath.cs:40-48).

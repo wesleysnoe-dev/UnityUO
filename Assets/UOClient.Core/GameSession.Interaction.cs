@@ -113,6 +113,9 @@ namespace UOClient.Core
         {
             if (State != SessionState.InWorld)
                 return;
+            CombatTrace?.Invoke($"double-click 0x{serial:X8}: war mode {WarMode}, known mobile {World.Mobiles.ContainsKey(serial)}"
+                                + (World.Mobiles.TryGetValue(serial, out Mobile dm) ? $", body {dm.Body}, notoriety {dm.Notoriety}" : "")
+                                + $" -> {(AttacksOnDoubleClick(serial, World.PlayerSerial, WarMode) ? "attack" : "use")}");
             if (AttacksOnDoubleClick(serial, World.PlayerSerial, WarMode))
             {
                 _conn.Send(StatusRequest(serial));

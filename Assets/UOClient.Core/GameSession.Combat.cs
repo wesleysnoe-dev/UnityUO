@@ -67,8 +67,18 @@ namespace UOClient.Core
         {
             _handlers[0x6C] = TargetCursor;
             _handlers[0x99] = MultiTargetCursor;
-            _handlers[0x72] = r => { WarMode = r.ReadBool(); WarModeChanged?.Invoke(WarMode); };
-            _handlers[0xAA] = r => { Combatant = r.ReadUInt32(); SetLastAttack(Combatant); };
+            _handlers[0x72] = r =>
+            {
+                WarMode = r.ReadBool();
+                CombatTrace?.Invoke($"server: war mode {WarMode}");
+                WarModeChanged?.Invoke(WarMode);
+            };
+            _handlers[0xAA] = r =>
+            {
+                Combatant = r.ReadUInt32();
+                CombatTrace?.Invoke($"server: combatant 0x{Combatant:X8}");
+                SetLastAttack(Combatant);
+            };
             _handlers[0x17] = HealthBarState;
             _handlers[0xA1] = r => Stat(r, (m, max, cur) => { m.HitsMax = max; m.Hits = cur; });
             _handlers[0xA2] = r => Stat(r, (m, max, cur) => { m.ManaMax = max; m.Mana = cur; });
@@ -296,15 +306,23 @@ namespace UOClient.Core
                 return;
             if (NeedsCriminalQuery(serial))
             {
+                CombatTrace?.Invoke($"attack 0x{serial:X8}: asks first (an innocent); question already up for it: {PendingAttackQuery == serial}");
                 if (PendingAttackQuery == serial)
                     return;
                 PendingAttackQuery = serial;
                 AttackQueryRequested?.Invoke(serial);
                 return;
             }
+            CombatTrace?.Invoke($"attack 0x{serial:X8}: sent");
             SetLastAttack(serial);
             _conn.Send(AttackRequest(serial));
         }
+
+        /// <summary>
+        /// A line for the play log about a double-click, an attack, the server's answer or a death (set by the game; null
+        /// in tests). Kept on: a few lines per fight, and the only record of why an attack did not happen.
+        /// </summary>
+        public Action<string> CombatTrace { get; set; }
 
         /// <summary>
         /// The player's answer to the attack question for <paramref name="serial"/>: yes sends 0x05 (only that, as TazUO's
@@ -313,6 +331,7 @@ namespace UOClient.Core
         /// </summary>
         public void AnswerAttackQuery(uint serial, bool yes)
         {
+            CombatTrace?.Invoke($"attack question for 0x{serial:X8} answered {(yes ? "yes" : "no")} (waiting on 0x{PendingAttackQuery:X8})");
             if (serial == 0 || PendingAttackQuery != serial)
                 return;
             PendingAttackQuery = 0;

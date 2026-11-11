@@ -740,6 +740,7 @@ namespace UOClient.Unity
             characterName = login.CharacterName;
             _sessionHost = login.Host; // LiveGroundCompare's host guard checks the server actually logged in to
             _ctx.Session = new GameSession(login);
+            _ctx.Session.CombatTrace = line => Debug.Log("UOClient combat: " + line);
             // Every handler below is guarded: once the session ends (TearDownSession) none of them runs again.
             _life.Begin(_ctx.Session);
             // World editor (-worldeditor, WORLD_EDITOR.md): painted regions from the server, drawn and walked on.

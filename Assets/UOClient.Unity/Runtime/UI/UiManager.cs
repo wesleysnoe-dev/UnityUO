@@ -287,8 +287,22 @@ namespace UOClient.Unity.UI
         private readonly List<UiWindow> _windows = new List<UiWindow>();
         private bool _restack; // the list order changed outside a click: IMGUI's stacking is to follow it (OnGUI)
 
+        private static UiManager _latest;
+
+        /// <summary>Self-tests only: the keys of the windows open in the latest UI, front last.</summary>
+        public static IEnumerable<string> OpenKeysForTest()
+        {
+            if (_latest != null)
+                foreach (UiWindow w in _latest._windows)
+                    yield return w.Key;
+        }
+
+        /// <summary>Self-tests only: opens a window in the latest UI.</summary>
+        public static void OpenForTest(UiWindow window) => _latest?.Open(window);
+
         public UiManager(GameSession session, GumpArt art, Cliloc cliloc)
         {
+            _latest = this;
             Session = session;
             Art = art;
             Cliloc = cliloc;
