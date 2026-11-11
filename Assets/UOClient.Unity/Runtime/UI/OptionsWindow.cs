@@ -575,6 +575,7 @@ namespace UOClient.Unity.UI
 
         private void DrawInfoBar(GameOptions d)
         {
+            d.bottomHud = Toggle("Bottom HUD (orbs and action bar)", d.bottomHud);
             d.showInfoBar = Toggle("Show the info bar", d.showInfoBar);
             d.infoBarHighlightType = Choice("Warnings", d.infoBarHighlightType, 110, "Text colour", "Bars");
             Line(d.infoBarHighlightType == HudBars.HighlightTextColour

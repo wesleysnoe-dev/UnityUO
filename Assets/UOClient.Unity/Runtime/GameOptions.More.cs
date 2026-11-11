@@ -95,6 +95,9 @@ namespace UOClient.Unity
         /// <summary>Grass standing on the natural ground (-grass). Only with <see cref="naturalGround"/>; at the next start.</summary>
         public bool groundGrass = true;
 
+        /// <summary>The bottom HUD (BottomHudWindow): health and mana orbs, stamina, action slots. Replaces the three bars top-left.</summary>
+        public bool bottomHud = true;
+
         // ---- pathfinding ----
 
         /// <summary>TazUO's EnablePathfind: a double right-click on the world walks there. On here (TazUO: off).</summary>
@@ -160,6 +163,7 @@ namespace UOClient.Unity
             to.counterBarHighlightOnUse = from.counterBarHighlightOnUse;
             to.naturalGround = from.naturalGround;
             to.groundGrass = from.groundGrass;
+            to.bottomHud = from.bottomHud;
             to.enablePathfind = from.enablePathfind;
             to.useShiftToPathfind = from.useShiftToPathfind;
             to.pathfindSingleClick = from.pathfindSingleClick;
@@ -186,7 +190,7 @@ namespace UOClient.Unity
             && counterBarHighlightOnAmount == o.counterBarHighlightOnAmount && counterBarHighlightAmount == o.counterBarHighlightAmount
             && showInfoBar == o.showInfoBar && infoBarHighlightType == o.infoBarHighlightType && infoBarItems == o.infoBarItems
             && cooldowns == o.cooldowns
-            && naturalGround == o.naturalGround && groundGrass == o.groundGrass
+            && naturalGround == o.naturalGround && groundGrass == o.groundGrass && bottomHud == o.bottomHud
             && enablePathfind == o.enablePathfind && useShiftToPathfind == o.useShiftToPathfind && pathfindSingleClick == o.pathfindSingleClick
             && counterBarHighlightOnUse == o.counterBarHighlightOnUse && enableLoginMusic == o.enableLoginMusic
             && useDarkNights == o.useDarkNights && tooltipTextHue == o.tooltipTextHue && guildMessageHue == o.guildMessageHue
@@ -252,6 +256,7 @@ namespace UOClient.Unity
                 case "infoBarHighlightType": Integer(raw, ref infoBarHighlightType); return true;
                 case "naturalGround": Bool(raw, ref naturalGround); return true;
                 case "groundGrass": Bool(raw, ref groundGrass); return true;
+                case "bottomHud": Bool(raw, ref bottomHud); return true;
                 case "enablePathfind": Bool(raw, ref enablePathfind); return true;
                 case "useShiftToPathfind": Bool(raw, ref useShiftToPathfind); return true;
                 case "pathfindSingleClick": Bool(raw, ref pathfindSingleClick); return true;
@@ -317,6 +322,7 @@ namespace UOClient.Unity
             add("counterBarHighlightOnUse", b(counterBarHighlightOnUse));
             add("naturalGround", b(naturalGround));
             add("groundGrass", b(groundGrass));
+            add("bottomHud", b(bottomHud));
             add("enablePathfind", b(enablePathfind));
             add("useShiftToPathfind", b(useShiftToPathfind));
             add("pathfindSingleClick", b(pathfindSingleClick));

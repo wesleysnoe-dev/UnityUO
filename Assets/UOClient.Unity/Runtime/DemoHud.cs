@@ -411,12 +411,17 @@ namespace UOClient.Unity
 
             if (Visible)
             {
-                DrawStatus(new Rect(14, 14 + TopInset, 290, 112));
+                if (!StatusBarsHidden)
+                    DrawStatus(new Rect(14, 14 + TopInset, 290, 112));
                 if (MinimapVisible)
                     DrawMinimap(new Rect(w - MinimapSize - 22, 14 + TopInset, MinimapSize + 8, MinimapSize + 8));
                 if (JournalVisible)
                 {
-                    var jr = new Rect(Mathf.Max(320, w * 0.5f - 330), h - 214, Mathf.Min(660, w - 340), 200);
+                    // With the bottom HUD on, the middle of the bottom edge is its place: the journal sits in the corner
+                    // to its left, as wide as the room there allows.
+                    var jr = StatusBarsHidden
+                        ? new Rect(14, h - 214, Mathf.Clamp((w - UI.BottomHudLayout.Width(w)) / 2f - 28f, 260f, 560f), 200)
+                        : new Rect(Mathf.Max(320, w * 0.5f - 330), h - 214, Mathf.Min(660, w - 340), 200);
                     JournalRect = new Rect(jr.x * s, jr.y * s, jr.width * s, jr.height * s);
                     DrawJournal(jr);
                 }
@@ -424,8 +429,10 @@ namespace UOClient.Unity
                 {
                     JournalRect = Rect.zero;
                 }
-                GUI.Label(new Rect(16, h - 44, 300, 18), TimeName + "  ·  " + "T time  R roofs  H hud", _small);
-                GUI.Label(new Rect(16, h - 26, Mathf.Max(300, w * 0.5f - 350), 18), Summary, _small);
+                // The two small lines of the corner: above the journal when it has moved there.
+                float notes = StatusBarsHidden && JournalVisible ? h - 214 - 40 : h - 44;
+                GUI.Label(new Rect(16, notes, 300, 18), TimeName + "  ·  " + "T time  R roofs  H hud", _small);
+                GUI.Label(new Rect(16, notes + 18, Mathf.Max(300, w * 0.5f - 350), 18), Summary, _small);
             }
 
             float death = DeathScreenEnabled ? DeathScreenUntil - Time.unscaledTime : 0f;
@@ -588,6 +595,9 @@ namespace UOClient.Unity
             Color32 c32 = c;
             return new NamePlates.Rgb(c32.r, c32.g, c32.b);
         }
+
+        /// <summary>The bottom HUD is on (its orbs show hits, mana and stamina): the three bars top-left are not drawn.</summary>
+        public bool StatusBarsHidden { get; set; }
 
         private void DrawStatus(Rect r)
         {

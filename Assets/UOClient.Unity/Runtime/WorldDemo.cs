@@ -515,6 +515,8 @@ namespace UOClient.Unity
             _speechOptions.Alliance = (ushort)o.allyMessageHue;
             DemoHud.PlateFontSize = o.namePlateFontSize;
             UI.InfoBarWindow.Enabled = o.showInfoBar;
+            UI.BottomHudWindow.Enabled = o.bottomHud;
+            _ctx.Hud.StatusBarsHidden = o.bottomHud; // the orbs say it: the three bars top-left go
             UI.InfoBarWindow.HighlightType = o.infoBarHighlightType;
             UI.InfoBarWindow.Items = HudBars.ParseInfoBar(o.infoBarItems);
             UI.CooldownBarsWindow.Timers.Defs = UI.CounterBarWindow.SelfTest

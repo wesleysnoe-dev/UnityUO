@@ -64,6 +64,7 @@ namespace UOClient.Unity
             s.LiftRejected += OnLiftRejected;
 
             Ui.Command = RunCommand;
+            UI.BottomHudWindow.Say = m => _ctx.Hud.Log(null, m);
             Assistant = new Assistant.AssistantHost();
             Assistant.Attach(s, _ctx.Data, Ui, m => _ctx.Hud.Log(null, m));
             ChatLog = new UI.ChatLog();
@@ -587,6 +588,11 @@ namespace UOClient.Unity
                 Ui.Open(new UI.InfoBarWindow());
             else if (!showInfo && info != null)
                 Ui.Close(info);
+            UI.UiWindow bottom = Ui.Find(UI.BottomHudWindow.WindowKey);
+            if (UI.BottomHudWindow.Enabled && bottom == null)
+                Ui.Open(new UI.BottomHudWindow());
+            else if (!UI.BottomHudWindow.Enabled && bottom != null)
+                Ui.Close(bottom);
         }
 
         public void SyncTopBar()

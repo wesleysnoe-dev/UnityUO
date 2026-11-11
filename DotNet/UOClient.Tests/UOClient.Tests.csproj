@@ -28,6 +28,7 @@
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\GameOptions.Graphics.cs" Link="Unity\GameOptions.Graphics.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\GameOptions.More.cs" Link="Unity\GameOptions.More.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\HudBars.Rules.cs" Link="Unity\HudBars.Rules.cs" />
+    <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\UI\BottomHud.Layout.cs" Link="Unity\BottomHud.Layout.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\Cooldowns.Rules.cs" Link="Unity\Cooldowns.Rules.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\World\GroundStart.cs" Link="Unity\GroundStart.cs" />
     <Compile Include="$(AssetsDir)UOClient.Unity\Runtime\NamePlates.cs" Link="Unity\NamePlates.cs" Condition="Exists('$(AssetsDir)UOClient.Unity\Runtime\NamePlates.cs')" />

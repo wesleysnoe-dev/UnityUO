@@ -1,0 +1,687 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+using UOClient.Core;
+
+namespace UOClient.Unity.UI
+{
+    /// <summary>
+    /// The bottom HUD: a health orb and a mana orb at the ends of a panel along the bottom of the screen, the stamina
+    /// bar across its top, a row of action slots (a spell, a skill or an item each: click to use, right-click to choose)
+    /// and the menu buttons with the war / peace switch. It sizes itself to the screen (BottomHudLayout) and stays put:
+    /// it is neither closed nor moved; the options switch it off. The orbs' levels glide to their value, a lost chunk
+    /// lingers pale for a moment, and the health orb flashes when hit; poison turns it green.
+    /// </summary>
+    public sealed class BottomHudWindow : UiWindow
+    {
+        public const string WindowKey = "bottomhud";
+
+        /// <summary>A line for the player (the journal's system text); set by the game.</summary>
+        public static Action<string> Say;
+
+        /// <summary>The options' switch (GameOptions.More.cs bottomHud).</summary>
+        public static bool Enabled { get; set; } = true;
+
+        public override bool Themed => true;
+        public override string Key => WindowKey;
+        public override bool CanClose => false;
+        public override bool ClosesOnEsc => false;
+        public override bool Movable => false;
+        public override bool StepsAsideOnOpen => false;
+
+        [Serializable]
+        private sealed class Saved
+        {
+            public List<HudSlot> slots = new List<HudSlot>();
+        }
+
+        private static string FilePath => Path.Combine(ClientPaths.ProjectRoot, "UserSettings", "unity-uo-hudbar.json");
+
+        private readonly Saved _saved;
+        private float _hits = -1f, _mana = -1f, _stam = -1f, _hitsTrail, _manaTrail, _flash, _lastHits = -1f;
+        private GUIStyle _number, _small, _menu, _slotText;
+
+        private static readonly (string Label, string Command)[] Menu =
+        {
+            ("Paperdoll", "paperdoll"), ("Pack", "backpack"), ("Skills", "skills"), ("Journal", "journal"),
+            ("Map", "worldmap"), ("Options", "options"), ("Assistant", "assistant")
+        };
+
+        public BottomHudWindow()
+        {
+            _saved = Load();
+            Rect = new Rect(0, 0, BottomHudLayout.MinWidth, BottomHudLayout.Height);
+        }
+
+        private static Saved Load()
+        {
+            try
+            {
+                if (File.Exists(FilePath))
+                    return JsonUtility.FromJson<Saved>(File.ReadAllText(FilePath)) ?? new Saved();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"UOClient hud: could not read the action bar ({e.Message}); starting empty.");
+            }
+            return new Saved();
+        }
+
+        private void Save()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
+                File.WriteAllText(FilePath, JsonUtility.ToJson(_saved, true));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"UOClient hud: could not save the action bar ({e.Message}).");
+            }
+        }
+
+        /// <summary>Sets a slot (the picker's answer) and saves.</summary>
+        public void SetSlot(int index, HudSlot slot)
+        {
+            while (_saved.slots.Count <= index)
+                _saved.slots.Add(new HudSlot());
+            _saved.slots[index] = slot ?? new HudSlot();
+            Save();
+        }
+
+        public override void Draw()
+        {
+            EnsureStyles();
+            float sw = Screen.width / Ui.Scale, sh = Screen.height / Ui.Scale;
+            float width = BottomHudLayout.Width(sw), height = BottomHudLayout.Height;
+            Rect = new Rect(Mathf.Round((sw - width) / 2f), sh - height - 4f, width, height);
+
+            Mobile me = Session.World.Player;
+            if (me == null)
+                return;
+            float hits = BottomHudLayout.Ratio(me.Hits, me.HitsMax), mana = BottomHudLayout.Ratio(me.Mana, me.ManaMax),
+                  stam = BottomHudLayout.Ratio(me.Stamina, me.StaminaMax);
+            if (Event.current.type == EventType.Repaint)
+                Animate(hits, mana, stam);
+
+            float orb = BottomHudLayout.Orb;
+            (float px, float pw) = BottomHudLayout.Panel(width);
+            float panelY = height - BottomHudLayout.PanelHeight;
+
+            // The panel, with the stamina bar along its top edge.
+            IronSkin.Frame(new Rect(px, panelY, pw, BottomHudLayout.PanelHeight));
+            var bar = new Rect(px + BottomHudLayout.Overlap + 6f, panelY - BottomHudLayout.StaminaHeight + 3f,
+                               pw - 2f * (BottomHudLayout.Overlap + 6f), BottomHudLayout.StaminaHeight);
+            Fill(bar, PaperdollSkin.GoldDim);
+            Fill(new Rect(bar.x + 1, bar.y + 1, bar.width - 2, bar.height - 2), new Color(0.05f, 0.045f, 0.04f));
+            var filled = new Rect(bar.x + 2, bar.y + 2, (bar.width - 4) * Mathf.Clamp01(_stam), bar.height - 4);
+            float low = _stam < 0.25f ? 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f) : 0f; // nearly spent: it pulses
+            Fill(filled, Color.Lerp(new Color(0.85f, 0.66f, 0.2f), new Color(1f, 0.35f, 0.2f), low));
+            if (filled.width > 4f)
+            {
+                // A band of light running along it, so the bar reads as alive even when it is not changing.
+                const float band = 70f;
+                float at = Mathf.Repeat(Time.unscaledTime * 90f, filled.width + band) - band;
+                GUI.BeginGroup(filled);
+                Tint(new Rect(at, 0, band, filled.height), Orbs.Sheen, new Color(1f, 1f, 1f, 0.5f));
+                GUI.EndGroup();
+            }
+            GUI.Label(bar, $"{me.Stamina} / {me.StaminaMax}", _small);
+
+            DrawSlots(width, panelY);
+            DrawMenu(px, pw, panelY);
+
+            // The orbs over the panel's ends.
+            bool poisoned = (me.Flags & 0x04) != 0;
+            DrawOrb(new Rect(0, height - orb, orb, orb), _hitsOrb, _hits, _hitsTrail, poisoned ? new Color(0.25f, 0.75f, 0.2f) : new Color(0.82f, 0.1f, 0.08f),
+                    $"{me.Hits}", $"/ {me.HitsMax}", _flash);
+            DrawOrb(new Rect(width - orb, height - orb, orb, orb), _manaOrb, _mana, _manaTrail, new Color(0.14f, 0.32f, 0.9f), $"{me.Mana}", $"/ {me.ManaMax}", 0f);
+        }
+
+        private void Animate(float hits, float mana, float stam)
+        {
+            float dt = Mathf.Min(0.1f, Time.unscaledDeltaTime);
+            if (_hits < 0f)
+            {
+                _hits = _hitsTrail = hits;
+                _mana = _manaTrail = mana;
+                _stam = stam;
+                _lastHits = hits;
+            }
+            if (hits < _lastHits - 0.004f)
+                _flash = 1f; // struck
+            _lastHits = hits;
+            _flash = Mathf.Max(0f, _flash - dt * 2.2f);
+            _hits = BottomHudLayout.Ease(_hits, hits, dt);
+            _mana = BottomHudLayout.Ease(_mana, mana, dt);
+            _stam = BottomHudLayout.Ease(_stam, stam, dt);
+            // What was lost lingers pale, then drains after the level; a gain takes the trail with it at once.
+            _hitsTrail = _hitsTrail < _hits ? _hits : BottomHudLayout.Ease(_hitsTrail, _hits, dt, 2.2f);
+            _manaTrail = _manaTrail < _mana ? _mana : BottomHudLayout.Ease(_manaTrail, _mana, dt, 2.2f);
+        }
+
+        // ---- the orbs ----
+
+        private readonly LiquidOrb _hitsOrb = new LiquidOrb(0.0f), _manaOrb = new LiquidOrb(3.7f);
+
+        private void DrawOrb(Rect r, LiquidOrb orb, float level, float trail, Color liquid, string value, string max, float flash)
+        {
+            // The liquid is alive: its surface rolls, its body swirls and bubbles rise (LiquidOrb paints it as it goes).
+            if (Event.current.type == EventType.Repaint)
+                orb.Paint(level, trail, liquid, Time.unscaledTime);
+            GUI.DrawTexture(r, orb.Texture);
+            Tint(r, Orbs.Glass, Color.white);
+            if (flash > 0.01f)
+                Tint(r, Orbs.Disc, new Color(1f, 0.25f, 0.2f, 0.45f * flash));
+            Tint(r, Orbs.Rim, Color.white);
+            var text = new Rect(r.x, r.y + r.height * 0.34f, r.width, 26f);
+            Shadowed(text, value, _number);
+            Shadowed(new Rect(r.x, text.yMax - 6f, r.width, 18f), max, _small);
+        }
+
+        /// <summary>
+        /// An orb's moving liquid, painted into a small texture about 30 times a second: a surface that rolls in two
+        /// waves, a body that swirls (two layers of drifting noise), a bright line under the surface, what was just
+        /// lost shown pale above it, and a few bubbles rising. Cheap: 128 x 128 pixels, the waves worked out per column.
+        /// </summary>
+        private sealed class LiquidOrb
+        {
+            private const int N = 128, Noise = 64;
+            private const float Inner = 0.93f;
+            private static float[] _noise;
+
+            private readonly Texture2D _texture;
+            private readonly Color32[] _px = new Color32[N * N];
+            private readonly float[] _surface = new float[N];
+            private readonly float _phase;
+            private float _nextAt;
+
+            public Texture2D Texture => _texture;
+
+            public LiquidOrb(float phase)
+            {
+                _phase = phase;
+                _texture = new Texture2D(N, N, TextureFormat.RGBA32, false)
+                {
+                    hideFlags = HideFlags.HideAndDontSave, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear
+                };
+            }
+
+            /// <summary>Smooth noise that tiles, sampled with wrap-around.</summary>
+            private static float Sample(float x, float y)
+            {
+                if (_noise == null)
+                {
+                    var rng = new System.Random(7);
+                    var raw = new float[Noise * Noise];
+                    for (int i = 0; i < raw.Length; i++)
+                        raw[i] = (float)rng.NextDouble();
+                    _noise = new float[Noise * Noise];
+                    for (int j = 0; j < Noise; j++) // one blur pass: soft blobs rather than grit
+                        for (int i = 0; i < Noise; i++)
+                        {
+                            float sum = 0f;
+                            for (int dj = -2; dj <= 2; dj++)
+                                for (int di = -2; di <= 2; di++)
+                                    sum += raw[((j + dj + Noise) % Noise) * Noise + (i + di + Noise) % Noise];
+                            _noise[j * Noise + i] = sum / 25f;
+                        }
+                }
+                x *= Noise;
+                y *= Noise;
+                int x0 = Mathf.FloorToInt(x), y0 = Mathf.FloorToInt(y);
+                float fx = x - x0, fy = y - y0;
+                int xa = ((x0 % Noise) + Noise) % Noise, xb = (xa + 1) % Noise, ya = ((y0 % Noise) + Noise) % Noise, yb = (ya + 1) % Noise;
+                float top = Mathf.Lerp(_noise[ya * Noise + xa], _noise[ya * Noise + xb], fx);
+                float bottom = Mathf.Lerp(_noise[yb * Noise + xa], _noise[yb * Noise + xb], fx);
+                return (Mathf.Lerp(top, bottom, fy) - 0.5f) * 4f + 0.5f; // the blur flattened it: stretch it back out
+            }
+
+            public void Paint(float level, float trail, Color liquid, float now)
+            {
+                if (now < _nextAt)
+                    return;
+                _nextAt = now + 1f / 30f;
+                float t = now + _phase;
+                level = Mathf.Clamp01(level);
+                trail = Mathf.Clamp01(trail);
+                // The surface's height per column; the waves calm as the orb nears empty or full.
+                float calm = Mathf.Clamp01(Mathf.Min(level, 1f - level) * 8f);
+                float baseY = -Inner + 2f * Inner * level, trailY = -Inner + 2f * Inner * trail;
+                for (int i = 0; i < N; i++)
+                {
+                    float x = (i + 0.5f) / N * 2f - 1f;
+                    _surface[i] = baseY + calm * (0.028f * Mathf.Sin(x * 6.5f + t * 2.1f) + 0.017f * Mathf.Sin(x * 12.5f - t * 3.3f));
+                }
+                for (int j = 0; j < N; j++)
+                {
+                    float y = (j + 0.5f) / N * 2f - 1f; // row 0 is the bottom
+                    for (int i = 0; i < N; i++)
+                    {
+                        float x = (i + 0.5f) / N * 2f - 1f;
+                        float d2 = x * x + y * y;
+                        if (d2 > 0.9f)
+                        {
+                            float d = Mathf.Sqrt(d2);
+                            if (d >= Inner + 0.02f)
+                            {
+                                _px[j * N + i] = default;
+                                continue;
+                            }
+                        }
+                        float edge = d2 / (Inner * Inner);
+                        float alpha = Mathf.Clamp01((Inner * Inner - d2) * 30f);
+                        float r = 0.035f, g = 0.03f, b = 0.03f; // the empty glass
+                        float s = _surface[i];
+                        if (y <= s)
+                        {
+                            float n = Sample(x * 0.55f + t * 0.021f, y * 0.55f - t * 0.034f) * 0.6f
+                                      + Sample(x * 1.15f - t * 0.043f + 0.37f, y * 1.15f + t * 0.017f) * 0.4f;
+                            float body = 0.5f + 0.75f * Mathf.Clamp01(n);
+                            body *= 0.72f + 0.28f * (y + 1f) * 0.5f;                   // deeper is darker
+                            float glow = Mathf.Clamp01(1f - (s - y) / 0.075f);        // the bright line under the surface
+                            r = liquid.r * body + glow * 0.42f;
+                            g = liquid.g * body + glow * 0.34f;
+                            b = liquid.b * body + glow * 0.34f;
+                            // Bubbles: three columns of them, each rising and winking out near the top.
+                            for (int k = 0; k < 3; k++)
+                            {
+                                float bx = -0.45f + k * 0.42f + 0.06f * Mathf.Sin(t * (0.9f + k * 0.3f) + k);
+                                float rise = Mathf.Repeat(t * (0.16f + k * 0.045f) + k * 0.37f, 1f);
+                                float by = -Inner + rise * (s + Inner);
+                                float dx = x - bx, dy = y - by;
+                                float size = 0.035f + 0.012f * k;
+                                float inBubble = 1f - (dx * dx + dy * dy) / (size * size);
+                                if (inBubble > 0f)
+                                {
+                                    float add = inBubble * 0.3f * (1f - rise);
+                                    r += add;
+                                    g += add;
+                                    b += add;
+                                }
+                            }
+                        }
+                        else if (y <= trailY)
+                        {
+                            r = Mathf.Lerp(r, liquid.r + 0.25f, 0.5f);
+                            g = Mathf.Lerp(g, liquid.g + 0.25f, 0.5f);
+                            b = Mathf.Lerp(b, liquid.b + 0.25f, 0.5f);
+                        }
+                        float shade = Mathf.Lerp(1f, 0.5f, edge * edge); // a ball, not a coin
+                        _px[j * N + i] = new Color32((byte)(Mathf.Clamp01(r * shade) * 255f), (byte)(Mathf.Clamp01(g * shade) * 255f),
+                                                     (byte)(Mathf.Clamp01(b * shade) * 255f), (byte)(alpha * 247f));
+                    }
+                }
+                _texture.SetPixels32(_px);
+                _texture.Apply(false);
+            }
+        }
+
+        // ---- the action slots ----
+
+        private void DrawSlots(float width, float panelY)
+        {
+            int n = BottomHudLayout.SlotCount(width);
+            List<HudSlot> slots = BottomHudLayout.Fit(_saved.slots, n);
+            Event e = Event.current;
+            for (int i = 0; i < n; i++)
+            {
+                var r = new Rect(BottomHudLayout.SlotX(width, i), panelY + BottomHudLayout.SlotTop, BottomHudLayout.Slot, BottomHudLayout.Slot);
+                HudSlot s = slots[i];
+                bool over = r.Contains(e.mousePosition);
+                Fill(r, over ? PaperdollSkin.Gold : PaperdollSkin.GoldDim);
+                Fill(new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2), new Color(0.045f, 0.04f, 0.037f));
+                DrawSlotFace(s, new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4));
+                if (e.type == EventType.MouseDown && over)
+                {
+                    if (e.button == 1 || s.Kind == HudSlotKind.Empty)
+                        Ui.Open(new HudSlotPicker(this, i));
+                    else if (e.button == 0)
+                        Activate(s);
+                    e.Use();
+                }
+                if (over && s.Kind != HudSlotKind.Empty && e.type == EventType.Repaint)
+                    HoveredText = SlotName(s) + "\nRight-click to change";
+            }
+        }
+
+        private void DrawSlotFace(HudSlot s, Rect r)
+        {
+            switch (s.Kind)
+            {
+                case HudSlotKind.Spell:
+                {
+                    UiImage icon = Art.Gump(SpellIcon(s.id));
+                    if (icon != null)
+                        GUI.DrawTexture(r, icon.Texture, ScaleMode.ScaleToFit);
+                    else
+                        GUI.Label(r, s.label, _slotText);
+                    break;
+                }
+                case HudSlotKind.Skill:
+                    GUI.Label(r, s.label, _slotText);
+                    break;
+                case HudSlotKind.Item:
+                {
+                    UiImage img = Art.Item(s.graphic, Math.Max(0, s.hue));
+                    if (img != null && img.Width > 0 && img.Height > 0)
+                    {
+                        float k = Mathf.Min(1f, Mathf.Min(r.width / img.Width, r.height / img.Height));
+                        GUI.DrawTexture(new Rect(r.center.x - img.Width * k / 2f, r.center.y - img.Height * k / 2f, img.Width * k, img.Height * k), img.Texture);
+                    }
+                    int have = CountInPack(s.graphic, s.hue);
+                    Shadowed(new Rect(r.x, r.yMax - 15f, r.width - 2f, 14f), have > 999 ? "999+" : have.ToString(), _small, TextAnchor.LowerRight,
+                             have == 0 ? new Color(1f, 0.4f, 0.35f) : IronSkin.Text);
+                    break;
+                }
+            }
+        }
+
+        /// <summary>The magery spells' small icons run from gump 0x08C0; the other schools have their own runs (SpellbookWindow).</summary>
+        private static int SpellIcon(int spell) => spell >= 1 && spell <= 64 ? 0x08C0 + spell - 1 : 0;
+
+        public static string SlotName(HudSlot s)
+        {
+            switch (s.Kind)
+            {
+                case HudSlotKind.Spell: return "Cast " + s.label;
+                case HudSlotKind.Skill: return "Use " + s.label;
+                case HudSlotKind.Item: return "Use " + s.label;
+                default: return "Empty";
+            }
+        }
+
+        private void Activate(HudSlot s)
+        {
+            switch (s.Kind)
+            {
+                case HudSlotKind.Spell:
+                    Session.CastSpell(s.id);
+                    break;
+                case HudSlotKind.Skill:
+                    Session.UseSkill(s.id);
+                    break;
+                case HudSlotKind.Item:
+                {
+                    uint item = FindInPack(s.graphic, s.hue);
+                    if (item != 0)
+                        Session.Use(item);
+                    else
+                        BottomHudWindow.Say?.Invoke($"You have no {s.label}.");
+                    break;
+                }
+            }
+        }
+
+        /// <summary>The backpack and every bag in it whose contents the server has sent.</summary>
+        private IEnumerable<ContainedItem> PackItems()
+        {
+            uint pack = Session.World.Worn(Session.World.Player, 21);
+            if (pack == 0)
+                yield break;
+            var bags = new HashSet<uint> { pack };
+            for (bool grew = true; grew;)
+            {
+                grew = false;
+                foreach (ContainedItem c in Session.World.Contained.Values)
+                    if (bags.Contains(c.Container) && Session.World.OpenContainers.ContainsKey(c.Serial) && bags.Add(c.Serial))
+                        grew = true;
+            }
+            foreach (ContainedItem c in Session.World.Contained.Values)
+                if (bags.Contains(c.Container))
+                    yield return c;
+        }
+
+        private uint FindInPack(int graphic, int hue)
+        {
+            foreach (ContainedItem c in PackItems())
+                if (c.Graphic == graphic && (hue < 0 || c.Hue == hue))
+                    return c.Serial;
+            return 0;
+        }
+
+        private int CountInPack(int graphic, int hue)
+        {
+            int n = 0;
+            foreach (ContainedItem c in PackItems())
+                if (c.Graphic == graphic && (hue < 0 || c.Hue == hue))
+                    n += Math.Max(1, c.Amount);
+            return n;
+        }
+
+        // ---- the menu row ----
+
+        private void DrawMenu(float px, float pw, float panelY)
+        {
+            float y = panelY + BottomHudLayout.SlotTop + BottomHudLayout.Slot + 5f;
+            float left = px + BottomHudLayout.Overlap + 8f, right = px + pw - BottomHudLayout.Overlap - 8f;
+            const float warW = 78f;
+            float each = Mathf.Min(86f, (right - left - warW - 8f) / Menu.Length);
+            for (int i = 0; i < Menu.Length; i++)
+                if (GUI.Button(new Rect(left + i * each, y, each - 3f, BottomHudLayout.MenuHeight), Menu[i].Label, _menu))
+                    Ui.Command?.Invoke(Menu[i].Command);
+
+            // War or peace, said plainly and switched here.
+            bool war = Session.WarMode;
+            Color was = GUI.backgroundColor, text = _menu.normal.textColor;
+            GUI.backgroundColor = war ? new Color(1f, 0.35f, 0.3f) : Color.white;
+            _menu.normal.textColor = _menu.hover.textColor = war ? new Color(1f, 0.55f, 0.45f) : IronSkin.ButtonText;
+            if (GUI.Button(new Rect(right - warW, y, warW, BottomHudLayout.MenuHeight), war ? "WAR" : "Peace", _menu))
+                Session.SetWarMode(!war);
+            _menu.normal.textColor = text;
+            _menu.hover.textColor = IronSkin.TextHot;
+            GUI.backgroundColor = was;
+        }
+
+        // ---- drawing helpers ----
+
+        private void EnsureStyles()
+        {
+            if (_number != null)
+                return;
+            _number = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 22, fontStyle = FontStyle.Bold };
+            if (PaperdollSkin.SerifFont != null)
+                _number.font = PaperdollSkin.SerifFont;
+            _number.normal.textColor = new Color(1f, 0.97f, 0.9f);
+            _small = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 10, padding = new RectOffset(0, 0, 0, 0) };
+            _small.normal.textColor = IronSkin.Text;
+            _menu = new GUIStyle(GUI.skin.button) { fontSize = 11, padding = new RectOffset(2, 2, 1, 1) };
+            _slotText = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 10, wordWrap = true, padding = new RectOffset(1, 1, 1, 1) };
+            _slotText.normal.textColor = IronSkin.ButtonText;
+        }
+
+        private static void Fill(Rect r, Color c)
+        {
+            Color was = GUI.color;
+            GUI.color = c;
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = was;
+        }
+
+        private static void Tint(Rect r, Texture2D t, Color c)
+        {
+            Color was = GUI.color;
+            GUI.color = c;
+            GUI.DrawTexture(r, t);
+            GUI.color = was;
+        }
+
+        private static void Shadowed(Rect r, string text, GUIStyle style, TextAnchor? anchor = null, Color? color = null)
+        {
+            TextAnchor a = style.alignment;
+            Color c = style.normal.textColor;
+            if (anchor != null)
+                style.alignment = anchor.Value;
+            style.normal.textColor = new Color(0, 0, 0, 0.85f);
+            GUI.Label(new Rect(r.x + 1, r.y + 1, r.width, r.height), text, style);
+            style.normal.textColor = color ?? c;
+            GUI.Label(r, text, style);
+            style.normal.textColor = c;
+            style.alignment = a;
+        }
+
+        /// <summary>The orbs' pictures, painted once: a soft-edged disc, the glass over the liquid, and the gilt rim.</summary>
+        private static class Orbs
+        {
+            private const int N = 256;
+            private static Texture2D _disc, _glass, _rim;
+
+            public static Texture2D Disc => _disc ??= Paint((d, x, y) =>
+            {
+                // A solid disc inside the rim, a little darker toward its edge (a ball, not a coin).
+                float a = Mathf.Clamp01((0.93f - d) * 60f);
+                float shade = Mathf.Lerp(1f, 0.55f, Mathf.Clamp01(d / 0.93f) * Mathf.Clamp01(d / 0.93f));
+                return new Color(shade, shade, shade, a);
+            });
+
+            public static Texture2D Glass => _glass ??= Paint((d, x, y) =>
+            {
+                if (d > 0.93f)
+                    return Color.clear;
+                // A soft highlight up and to the left, and the ball's own shadow round the lower edge.
+                float hx = x + 0.34f, hy = y - 0.4f;
+                float light = Mathf.Clamp01(1f - Mathf.Sqrt(hx * hx * 1.2f + hy * hy * 2.6f) / 0.5f);
+                float edge = Mathf.Clamp01((d - 0.62f) / 0.31f);
+                float dark = edge * edge * Mathf.Clamp01(0.55f - y * 0.45f) * 0.75f;
+                return light > dark ? new Color(1f, 1f, 1f, light * light * 0.42f) : new Color(0f, 0f, 0f, dark);
+            });
+
+            public static Texture2D Rim => _rim ??= Paint((d, x, y) =>
+            {
+                // A gilt ring with a dark line each side, lit from above.
+                float ring = Mathf.Clamp01(1f - Mathf.Abs(d - 0.945f) / 0.055f);
+                if (ring <= 0f)
+                    return Color.clear;
+                float lit = Mathf.Lerp(0.55f, 1.15f, Mathf.Clamp01(0.5f + y * 0.5f));
+                Color gold = new Color(0.86f * lit, 0.69f * lit, 0.38f * lit);
+                Color c = Color.Lerp(new Color(0.08f, 0.06f, 0.04f), gold, Mathf.Clamp01(ring * 2.2f - 0.55f));
+                c.a = Mathf.Clamp01(ring * 6f);
+                return c;
+            });
+
+            /// <summary>A soft vertical band, clear at both sides (the stamina bar's travelling light).</summary>
+            public static Texture2D Sheen => _sheen ??= Paint((d, x, y) => new Color(1f, 1f, 1f, Mathf.Pow(Mathf.Clamp01(1f - Mathf.Abs(x)), 2f)));
+            private static Texture2D _sheen;
+
+            /// <summary>Paints a square picture from (distance from the centre 0..1.4, x, y) with x right and y up, -1..1.</summary>
+            private static Texture2D Paint(Func<float, float, float, Color> at)
+            {
+                var t = new Texture2D(N, N, TextureFormat.RGBA32, true)
+                {
+                    hideFlags = HideFlags.HideAndDontSave, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear
+                };
+                var px = new Color[N * N];
+                for (int j = 0; j < N; j++)
+                    for (int i = 0; i < N; i++)
+                    {
+                        float x = (i + 0.5f) / N * 2f - 1f, y = (j + 0.5f) / N * 2f - 1f; // row 0 is the bottom
+                        px[j * N + i] = at(Mathf.Sqrt(x * x + y * y), x, y);
+                    }
+                t.SetPixels(px);
+                t.Apply(true, true);
+                return t;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Chooses what an action slot does: a spell, a skill, or an item pointed at (a client-side cursor); or empties it.
+    /// </summary>
+    public sealed class HudSlotPicker : UiWindow
+    {
+        public override bool Themed => true;
+        public override string Key => "hudslot";
+
+        private readonly BottomHudWindow _hud;
+        private readonly int _index;
+        private int _tab;
+        private Vector2 _scroll;
+        private GUIStyle _title, _row;
+
+        public HudSlotPicker(BottomHudWindow hud, int index)
+        {
+            _hud = hud;
+            _index = index;
+            Rect = new Rect(0, 0, 360, 420);
+        }
+
+        public override void OnOpened()
+        {
+            float sw = Screen.width / Ui.Scale, sh = Screen.height / Ui.Scale;
+            Rect.position = new Vector2(Mathf.Round((sw - Rect.width) / 2f), Mathf.Round(sh - BottomHudLayout.Height - Rect.height - 16f));
+        }
+
+        public override void Draw()
+        {
+            if (_title == null)
+            {
+                _title = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 16 };
+                _title.normal.textColor = PaperdollSkin.Gold;
+                if (PaperdollSkin.SerifFont != null)
+                    _title.font = PaperdollSkin.SerifFont;
+                _row = new GUIStyle(GUI.skin.button) { alignment = TextAnchor.MiddleLeft, padding = new RectOffset(10, 6, 2, 2), fontSize = 13 };
+            }
+            DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
+            GUI.Label(new Rect(16, 12, Rect.width - 32, 24), $"Action slot {_index + 1}", _title);
+
+            GUILayout.BeginArea(new Rect(16, 44, Rect.width - 32, Rect.height - 60));
+            _tab = GUILayout.Toolbar(_tab, new[] { "Spell", "Skill", "Item" });
+            GUILayout.Space(6);
+            _scroll = GUILayout.BeginScrollView(_scroll);
+            switch (_tab)
+            {
+                case 0:
+                    for (int i = 0; i < SpellNames.Magery.Length; i++)
+                        if (GUILayout.Button($"{i / 8 + 1}.  {SpellNames.Magery[i]}", _row, GUILayout.Height(24)))
+                            Choose(new HudSlot { kind = (int)HudSlotKind.Spell, id = i + 1, label = SpellNames.Magery[i] });
+                    break;
+                case 1:
+                    for (int id = 0; id < GameSession.SkillNames.Length; id++)
+                        if (GameSession.UsableSkills.Contains(id) && GUILayout.Button(GameSession.SkillNames[id], _row, GUILayout.Height(24)))
+                            Choose(new HudSlot { kind = (int)HudSlotKind.Skill, id = id, label = GameSession.SkillNames[id] });
+                    break;
+                default:
+                    GUILayout.Label("Point at an item (a potion, bandages, a tool). The slot then uses the first one like it in your backpack, and shows how many you have.");
+                    if (GUILayout.Button("Target an item", GUILayout.Height(28)))
+                    {
+                        BottomHudWindow hud = _hud;
+                        int index = _index;
+                        GameSession session = Session;
+                        string NameOf(int graphic) => Art.Data.TileData.GetStatic(graphic).Name?.Trim() ?? $"0x{graphic:X4}";
+                        BottomHudWindow.Say?.Invoke("Target the item for the slot.");
+                        session.BeginLocalTarget(serial =>
+                        {
+                            int graphic = -1, hue = -1;
+                            if (session.World.Contained.TryGetValue(serial, out ContainedItem c))
+                            {
+                                graphic = c.Graphic;
+                                hue = c.Hue;
+                            }
+                            else if (session.World.Items.TryGetValue(serial, out WorldItem w) && !w.IsMulti)
+                            {
+                                graphic = w.Graphic;
+                                hue = w.Hue;
+                            }
+                            if (graphic < 0)
+                                return;
+                            hud.SetSlot(index, new HudSlot { kind = (int)HudSlotKind.Item, graphic = graphic, hue = hue == 0 ? -1 : hue, label = NameOf(graphic) });
+                        });
+                        Close();
+                    }
+                    break;
+            }
+            GUILayout.EndScrollView();
+            GUILayout.Space(6);
+            if (GUILayout.Button("Empty this slot", GUILayout.Height(26)))
+                Choose(new HudSlot());
+            GUILayout.EndArea();
+        }
+
+        private void Choose(HudSlot slot)
+        {
+            _hud.SetSlot(_index, slot);
+            Close();
+        }
+    }
+}
