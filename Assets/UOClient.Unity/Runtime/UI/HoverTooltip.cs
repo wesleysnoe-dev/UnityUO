@@ -68,6 +68,10 @@ namespace UOClient.Unity.UI
             _hoverText = text; // the same element's text may change (a countdown) without restarting the delay
         }
 
+        /// <summary>The options' tooltip look: the background's opacity in percent, the text size.</summary>
+        public static int BackgroundOpacity = 88, FontSize = 14;
+        private int _backOpacity = -1;
+
         public void OnGUI(GameSession session, UiManager ui)
         {
             if (session == null || (_hoverSerial == 0 && string.IsNullOrEmpty(_hoverText))
@@ -83,7 +87,12 @@ namespace UOClient.Unity.UI
                 _tooltipStyle = new GUIStyle(GUI.skin.label) { richText = true, wordWrap = true, fontSize = 14, alignment = TextAnchor.UpperCenter, padding = new RectOffset(8, 8, 6, 6) };
                 _tooltipStyle.normal.textColor = new Color(0.93f, 0.91f, 0.84f);
                 _tooltipBack = new Texture2D(1, 1);
-                _tooltipBack.SetPixel(0, 0, new Color(0.05f, 0.04f, 0.03f, 0.88f));
+            }
+            _tooltipStyle.fontSize = FontSize;
+            if (_backOpacity != BackgroundOpacity)
+            {
+                _backOpacity = BackgroundOpacity;
+                _tooltipBack.SetPixel(0, 0, new Color(0.05f, 0.04f, 0.03f, BackgroundOpacity / 100f));
                 _tooltipBack.Apply();
             }
             // TazUO's buff text is wrapped in <left> (BuffDebuff.Receive); everything else is centered.

@@ -90,6 +90,7 @@ public sealed class OptionsGraphicsTests
                     "nameOverheadFlags" => NamePlates.Humanoid,
                     "namePlateFixedWidth" or "namePlateHealthBarFixedWidth" => 200,
                     "namePlateHeight" => 30,
+                    "tooltipFontSize" => 18,
                     _ => i == 1 ? 0 : 1,
                 };
                 if (f.Name is "resolutionWidth" or "resolutionHeight")
@@ -99,6 +100,8 @@ public sealed class OptionsGraphicsTests
                     return f.Name == "resolutionWidth" ? 1280 : 720;
                 }
                 return candidate;
+            case string:
+                return "Bob" + (char)10 + "Alice"; // the ignore list: names, one per line
             default:
                 throw new InvalidOperationException(f.Name + ": no test value for " + v?.GetType());
         }

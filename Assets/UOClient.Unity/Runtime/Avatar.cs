@@ -243,6 +243,9 @@ namespace UOClient.Unity
         /// <summary>A footstep to play (sound id, tile x, tile y): the client makes these itself (TazUO ProcessFootstepsSound).</summary>
         public static Action<int, int, int> FootstepSound;
 
+        /// <summary>The options' footsteps switch (TazUO's EnableFootstepsSound).</summary>
+        public static bool Footsteps = true;
+
         private float _nextStepSoundAt;
         private int _stepSoundOffset;
 
@@ -252,7 +255,7 @@ namespace UOClient.Unity
         /// </summary>
         private void Footstep(int x, int y, bool run)
         {
-            if (FootstepSound == null || _look == null || Dead || !MobileLook.IsHumanGraphic(_look.Body) || Time.time < _nextStepSoundAt)
+            if (!Footsteps || FootstepSound == null || _look == null || Dead || !MobileLook.IsHumanGraphic(_look.Body) || Time.time < _nextStepSoundAt)
                 return;
             int inc = _stepSoundOffset, id = 0x012B, delayMs = 400;
             if (_look.Mounted)

@@ -112,6 +112,8 @@ namespace UOClient.Unity
             s.SoundPlayed += OnSoundPlayed;
             s.MusicRequested += OnMusicRequested;
             Avatar.FootstepSound = (id, x, y) => OnSoundPlayed(id, x, y, 0); // the client's own footsteps
+            if (UI.OptionsWindow.LaunchPage != null)
+                Ui.Open(new UI.OptionsWindow(_game));
         }
 
         /// <summary>
@@ -227,7 +229,15 @@ namespace UOClient.Unity
                 Ui.Close(w);
         }
 
-        private void OnWarModeChanged(bool war) => _ctx.Hud.WarMode = war;
+        /// <summary>The options' combat music switch (TazUO's EnableCombatMusic).</summary>
+        public static bool CombatMusic = true;
+
+        private void OnWarModeChanged(bool war)
+        {
+            _ctx.Hud.WarMode = war;
+            // One of the three combat tracks while in war mode; the region's music again in peace.
+            Sound?.SetCombatMusic(war && CombatMusic, war && CombatMusic ? Sound.RandomCombatTrack() : 0);
+        }
 
         /// <summary>TazUO's OpenHealthBarForLastAttack (on by default, hardcoded here; nothing is written to the settings).</summary>
         private void OnLastAttackSet(uint serial) => UI.HealthBarWindow.ShowLastAttack(Ui, serial);

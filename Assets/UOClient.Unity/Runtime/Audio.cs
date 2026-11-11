@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
 using UOClient.IO;
@@ -111,6 +112,42 @@ namespace UOClient.Unity
 
         /// <summary>Switches to a region's music (fading the old track out); the same id keeps playing.</summary>
         public void PlayMusic(int id)
+        {
+            _regionMusic = id;
+            if (!_combat)
+                Switch(id);
+        }
+
+        // The music the server last asked for (the region's): what plays again when the combat music ends.
+        private int _regionMusic = -1;
+        private bool _combat;
+
+        /// <summary>
+        /// The combat music (TazUO's EnableCombatMusic): on, <paramref name="track"/> plays over the region's music; off,
+        /// the region's comes back (or silence, if the server asked for none).
+        /// </summary>
+        public void SetCombatMusic(bool on, int track)
+        {
+            if (on == _combat)
+                return;
+            _combat = on;
+            Switch(on ? track : _regionMusic >= 0 ? _regionMusic : StopMusicId);
+        }
+
+        /// <summary>
+        /// A combat track at random: the tracks of Config.txt whose file is named for combat (GenericCombat, ...); this
+        /// data has none at ClassicUO's ids 38-40, which are only the fallback.
+        /// </summary>
+        public int RandomCombatTrack()
+        {
+            if (_data == null)
+                return GameOptions.FirstCombatMusic;
+            _tracks ??= ReadTracks(Path.Combine(_data.Directory, "Music", "Digital", "Config.txt"));
+            List<int> ids = GameOptions.CombatTracks(_tracks.Select(t => (t.Key, t.Value.File)));
+            return ids[UnityEngine.Random.Range(0, ids.Count)];
+        }
+
+        private void Switch(int id)
         {
             if (_data == null || id == _musicId)
                 return;

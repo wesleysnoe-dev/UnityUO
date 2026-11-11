@@ -411,6 +411,7 @@ namespace UOClient.Unity
             GameOptions o = CurrentOptionsButNamePlates();
             GameOptions.CopyNamePlates(_ctx.Hud.NamePlateOptions, o);
             GameOptions.CopyGraphics(_graphics, o); // "keep" display values stay keep; the window shows the live ones
+            GameOptions.CopyMore(_more, o);
             return o;
         }
 
@@ -424,8 +425,8 @@ namespace UOClient.Unity
             uiScale = UI.UiScale.Setting,
             highlightGameObjects = ObjectHighlight.HighlightGameObjects,
             tooltipDelay = _tooltip.Delay,
-            soundVolume = Sound != null ? Sound.SoundVolume : _soundVolume,
-            musicVolume = Sound != null ? Sound.MusicVolume : _musicVolume,
+            soundVolume = _soundVolume,
+            musicVolume = _musicVolume,
             criminalActionQuery = _ctx.Session != null ? _ctx.Session.CriminalActionQuery : _criminalActionQuery,
             beneficialCriminalActionQuery = _ctx.Session != null ? _ctx.Session.BeneficialCriminalActionQuery : _beneficialCriminalActionQuery,
             alwaysRun = _movement.AlwaysRun,
@@ -482,7 +483,14 @@ namespace UOClient.Unity
             _tooltip.Delay = o.tooltipDelay;
             _soundVolume = o.soundVolume;
             _musicVolume = o.musicVolume;
+            GameOptions.CopyMore(o, _more);
             ApplyAudioOptions();
+            Avatar.Footsteps = o.enableFootstepsSound;
+            UI.HoverTooltip.BackgroundOpacity = o.tooltipBackgroundOpacity;
+            UI.HoverTooltip.FontSize = o.tooltipFontSize;
+            _speechOptions.IgnoredNames.Clear();
+            foreach (string name in GameOptions.IgnoredNames(o.ignoreList))
+                _speechOptions.IgnoredNames.Add(name);
             _criminalActionQuery = o.criminalActionQuery;
             _beneficialCriminalActionQuery = o.beneficialCriminalActionQuery;
             ApplyCombatOptions();
@@ -646,14 +654,20 @@ namespace UOClient.Unity
 
         public void SaveOptions(GameOptions options) => GameOptionsStore.Save(options);
 
+        // The sixth batch's options as last applied (GameOptions.More.cs).
+        private readonly GameOptions _more = GameOptions.Defaults();
+
         private void ApplyAudioOptions()
         {
             if (_loginMedia != null)
-                _loginMedia.MusicVolume = _musicVolume; // the login music, while it plays
+                _loginMedia.MusicVolume = GameOptions.EffectiveVolume(_more.enableMusic, _musicVolume); // the login music, while it plays
+            SessionUiBinder.CombatMusic = _more.enableCombatMusic;
             if (Sound == null)
                 return;
-            Sound.SoundVolume = _soundVolume;
-            Sound.MusicVolume = _musicVolume;
+            Sound.SoundVolume = GameOptions.EffectiveVolume(_more.enableSound, _soundVolume);
+            Sound.MusicVolume = GameOptions.EffectiveVolume(_more.enableMusic, _musicVolume);
+            if (!_more.enableCombatMusic)
+                Sound.SetCombatMusic(false, 0);
         }
 
         private void ApplyCombatOptions()

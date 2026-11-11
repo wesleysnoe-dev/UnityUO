@@ -950,7 +950,7 @@ namespace UOClient.Core
 
         private void AddSpeech(uint serial, string name, string text, ushort hue, byte type)
         {
-            if (string.IsNullOrWhiteSpace(text) || SpeechOptions.Drops(type))
+            if (string.IsNullOrWhiteSpace(text) || SpeechOptions.Drops(type) || SpeechOptions.Ignores(name))
                 return;
             // GameScene.ChatOnMessageReceived: an emote sent without a hue takes the emote hue.
             if (type == 2 && hue == 0)
@@ -1119,6 +1119,12 @@ namespace UOClient.Core
         /// Whether an incoming line of this type is dropped before the journal sees it: guild (13) or alliance (14) with
         /// its ignore on, as TazUO's MessageManager.HandleMessage returns before raising MessageReceived.
         /// </summary>
+        /// <summary>TazUO's ignore list: what a character with one of these names says is dropped the same way (case ignored).</summary>
+        public readonly System.Collections.Generic.HashSet<string> IgnoredNames =
+            new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+
+        public bool Ignores(string name) => IgnoredNames.Count > 0 && !string.IsNullOrEmpty(name) && IgnoredNames.Contains(name.Trim());
+
         public bool Drops(byte type) => (type == 13 && IgnoreGuildMessages) || (type == 14 && IgnoreAllianceMessages);
     }
 }

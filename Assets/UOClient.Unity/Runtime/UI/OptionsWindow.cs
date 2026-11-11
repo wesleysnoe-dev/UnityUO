@@ -33,6 +33,17 @@ namespace UOClient.Unity.UI
             _game = game;
             _draft = new OptionsDraft(game.CurrentOptions, game.ApplyOptions, game.SaveOptions);
             Rect = new Rect(240, 100, Width, Height);
+            if (LaunchPage != null && System.Enum.TryParse(LaunchPage, true, out Page page))
+                _page = page;
+        }
+
+        /// <summary>-options-page NAME: the options window opens on that page once in the world (for captures).</summary>
+        public static readonly string LaunchPage = PageArgument(System.Environment.GetCommandLineArgs());
+
+        private static string PageArgument(string[] args)
+        {
+            int at = System.Array.FindIndex(args, a => string.Equals(a, "-options-page", System.StringComparison.OrdinalIgnoreCase));
+            return at >= 0 && at + 1 < args.Length ? args[at + 1] : null;
         }
 
         public override string Key => "options";
@@ -66,6 +77,7 @@ namespace UOClient.Unity.UI
                     case Page.CombatSpells: DrawCombat(d); break;
                     case Page.Containers: DrawContainers(d); break;
                     case Page.Nameplates: DrawNameplates(d); break;
+                    case Page.IgnoreList: DrawIgnoreList(d); break;
                 }
                 _pageHeight = DrawNotOffered(area);
                 GUI.EndScrollView();
@@ -257,13 +269,24 @@ namespace UOClient.Unity.UI
         {
             // Sound effects only exist with the session's Audio: greyed until then (the draft keeps its value).
             bool effects = _game.Sound != null;
-            GUI.enabled = effects;
-            d.soundVolume = Slider("Sound volume", d.soundVolume, 0f, 1f, Percent(d.soundVolume));
+            d.enableSound = Toggle("Sound effects", d.enableSound);
+            _indent = 20;
+            GUI.enabled = effects && d.enableSound;
+            d.soundVolume = Slider("Volume", d.soundVolume, 0f, 1f, Percent(d.soundVolume));
+            GUI.enabled = d.enableSound;
+            d.enableFootstepsSound = Toggle("Footsteps", d.enableFootstepsSound);
             GUI.enabled = true;
+            _indent = 0;
             if (!effects)
                 Line("Sound effects start when you log in; unavailable until then.");
-            d.musicVolume = Slider("Music volume", d.musicVolume, 0f, 1f, Percent(d.musicVolume));
-            Line("Music: the login music now, the region music in the world.");
+            d.enableMusic = Toggle("Music", d.enableMusic);
+            _indent = 20;
+            GUI.enabled = d.enableMusic;
+            d.musicVolume = Slider("Volume", d.musicVolume, 0f, 1f, Percent(d.musicVolume));
+            d.enableCombatMusic = Toggle("Combat music in war mode", d.enableCombatMusic);
+            GUI.enabled = true;
+            _indent = 0;
+            Line("Music: the login music now, the region music in the world; in war mode\none of the three combat tracks, until you are at peace again.", 34);
             d.reproduceSoundsInBackground = Toggle("Play sound and music in the background", d.reproduceSoundsInBackground);
             Line("Off: silent while another window has the focus (TazUO's background sound).");
         }
@@ -434,6 +457,35 @@ namespace UOClient.Unity.UI
             Line("Off hides the text tooltips of buffs, gump parts and spell icons;\nitem and character properties still show (as TazUO).", 34);
             d.tooltipDelay = Slider("Delay", d.tooltipDelay, 0f, GameOptions.MaxTooltipDelay, d.tooltipDelay.ToString("0.00") + " s");
             Line("How long the mouse rests on something before its tooltip shows.");
+            d.tooltipBackgroundOpacity = IntSlider("Background", d.tooltipBackgroundOpacity, 0, 100, "%");
+            d.tooltipFontSize = IntSlider("Text size", d.tooltipFontSize, GameOptions.MinTooltipFontSize, GameOptions.MaxTooltipFontSize, " px");
+        }
+
+        private string _ignoreName = "";
+
+        private void DrawIgnoreList(GameOptions d)
+        {
+            Line("What these characters say is dropped as it arrives: overhead, journal,\nchat window and file. Names as shown over their heads; case is ignored.", 34);
+            Text(new Rect(0, _y + 2, 60, 20), "Name");
+            _ignoreName = GUI.TextField(new Rect(62, _y, 220, 22), _ignoreName, GameOptions.MaxIgnoredNameLength);
+            List<string> names = GameOptions.IgnoredNames(d.ignoreList);
+            GUI.enabled = _ignoreName.Trim().Length > 0 && names.Count < GameOptions.MaxIgnoredNames;
+            if (GUI.Button(new Rect(290, _y, 60, 22), "Add"))
+            {
+                d.ignoreList = GameOptions.AddIgnored(d.ignoreList, _ignoreName);
+                _ignoreName = "";
+            }
+            GUI.enabled = true;
+            _y += 32;
+            if (names.Count == 0)
+                Line("Nobody is ignored.");
+            foreach (string name in names)
+            {
+                Text(new Rect(8, _y + 2, 270, 20), name);
+                if (GUI.Button(new Rect(290, _y, 60, 22), "Remove"))
+                    d.ignoreList = GameOptions.RemoveIgnored(d.ignoreList, name);
+                _y += 26;
+            }
         }
 
         private void DrawSpeech(GameOptions d)
