@@ -56,22 +56,33 @@ namespace UOClient.Unity.UI
         /// <summary>The panel between the orbs: (x, width) inside the HUD.</summary>
         public static (float X, float Width) Panel(float width) => (Orb - Overlap, width - 2f * (Orb - Overlap));
 
-        /// <summary>How many action slots fit the panel (its inner width less the margins), within the limits.</summary>
+        /// <summary>The pager after the last slot (up, the bar's number, down): its width, and the bars there are.</summary>
+        public const float Pager = 24f;
+        public const int Pages = 5;
+
+        /// <summary>How many action slots fit the panel (its inner width less the margins and the pager), within the limits.</summary>
         public static int SlotCount(float width)
         {
-            float inner = Panel(width).Width - 2f * (Overlap + 8f);
+            float inner = Panel(width).Width - 2f * (Overlap + 8f) - Pager - SlotGap;
             int n = (int)Math.Floor((inner + SlotGap) / (Slot + SlotGap));
             return Math.Max(MinSlots, Math.Min(MaxSlots, n));
         }
 
-        /// <summary>The index-th slot's left edge inside the HUD, the row centred in the panel.</summary>
+        /// <summary>The slots and the pager after them, as one row.</summary>
+        private static float RowWidth(int slots) => slots * Slot + (slots - 1) * SlotGap + SlotGap + Pager;
+
+        /// <summary>The index-th slot's left edge inside the HUD, the row (slots, then the pager) centred in the panel.</summary>
         public static float SlotX(float width, int index)
         {
-            int n = SlotCount(width);
-            float row = n * Slot + (n - 1) * SlotGap;
             (float px, float pw) = Panel(width);
-            return px + (pw - row) / 2f + index * (Slot + SlotGap);
+            return px + (pw - RowWidth(SlotCount(width))) / 2f + index * (Slot + SlotGap);
         }
+
+        /// <summary>The pager's left edge: just after the last slot, on the mana orb's side.</summary>
+        public static float PagerX(float width) => SlotX(width, SlotCount(width) - 1) + Slot + SlotGap;
+
+        /// <summary>The bar an arrow leads to: one up or down, coming round at the ends.</summary>
+        public static int NextPage(int page, int step) => ((page + step) % Pages + Pages) % Pages;
 
         /// <summary>
         /// A shown value following the real one: it closes a share of the gap each second (quick at first, settling), and

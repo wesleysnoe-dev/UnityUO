@@ -33,14 +33,41 @@ namespace UOClient.Unity.UI
         [Serializable]
         private sealed class Saved
         {
+            public List<HudSlot> slots = new List<HudSlot>(); // the first bar (and the whole file before there were more)
+            public List<Bar> more = new List<Bar>();          // the second bar on
+            public int page;                                  // the bar on show
+        }
+
+        [Serializable]
+        private sealed class Bar
+        {
             public List<HudSlot> slots = new List<HudSlot>();
+        }
+
+        /// <summary>A bar's slots (made if it has none yet).</summary>
+        private List<HudSlot> BarSlots(int page)
+        {
+            if (page <= 0)
+                return _saved.slots;
+            while (_saved.more.Count < page)
+                _saved.more.Add(new Bar());
+            return _saved.more[page - 1].slots ??= new List<HudSlot>();
+        }
+
+        /// <summary>The bar on show, 0-based.</summary>
+        private int Page => Mathf.Clamp(_saved.page, 0, BottomHudLayout.Pages - 1);
+
+        private void TurnPage(int step)
+        {
+            _saved.page = BottomHudLayout.NextPage(Page, step);
+            Save();
         }
 
         private static string FilePath => Path.Combine(ClientPaths.ProjectRoot, "UserSettings", "unity-uo-hudbar.json");
 
         private readonly Saved _saved;
         private float _hits = -1f, _mana = -1f, _stam = -1f, _hitsTrail, _manaTrail, _flash, _lastHits = -1f;
-        private GUIStyle _number, _small, _menu, _slotText;
+        private GUIStyle _number, _small, _menu, _slotText, _pager, _pageNumber;
 
         private static readonly (string Label, string Command)[] Menu =
         {
@@ -81,12 +108,13 @@ namespace UOClient.Unity.UI
             }
         }
 
-        /// <summary>Sets a slot (the picker's answer) and saves.</summary>
-        public void SetSlot(int index, HudSlot slot)
+        /// <summary>Sets a slot of a bar (the picker's answer) and saves.</summary>
+        public void SetSlot(int page, int index, HudSlot slot)
         {
-            while (_saved.slots.Count <= index)
-                _saved.slots.Add(new HudSlot());
-            _saved.slots[index] = slot ?? new HudSlot();
+            List<HudSlot> slots = BarSlots(page);
+            while (slots.Count <= index)
+                slots.Add(new HudSlot());
+            slots[index] = slot ?? new HudSlot();
             Save();
         }
 
@@ -323,8 +351,10 @@ namespace UOClient.Unity.UI
         private void DrawSlots(float width, float panelY)
         {
             int n = BottomHudLayout.SlotCount(width);
-            List<HudSlot> slots = BottomHudLayout.Fit(_saved.slots, n);
+            int page = Page;
+            List<HudSlot> slots = BottomHudLayout.Fit(BarSlots(page), n);
             Event e = Event.current;
+            DrawPager(width, panelY, page);
             for (int i = 0; i < n; i++)
             {
                 var r = new Rect(BottomHudLayout.SlotX(width, i), panelY + BottomHudLayout.SlotTop, BottomHudLayout.Slot, BottomHudLayout.Slot);
@@ -336,7 +366,7 @@ namespace UOClient.Unity.UI
                 if (e.type == EventType.MouseDown && over)
                 {
                     if (e.button == 1 || s.Kind == HudSlotKind.Empty)
-                        Ui.Open(new HudSlotPicker(this, i));
+                        Ui.Open(new HudSlotPicker(this, page, i));
                     else if (e.button == 0)
                         Activate(s);
                     e.Use();
@@ -344,6 +374,29 @@ namespace UOClient.Unity.UI
                 if (over && s.Kind != HudSlotKind.Empty && e.type == EventType.Repaint)
                     HoveredText = SlotName(s) + "\nRight-click to change";
             }
+        }
+
+        /// <summary>
+        /// Between the slots and the mana orb: up, the bar's number, down. The wheel over the slots turns the bars too.
+        /// </summary>
+        private void DrawPager(float width, float panelY, int page)
+        {
+            float x = BottomHudLayout.PagerX(width), y = panelY + BottomHudLayout.SlotTop, w = BottomHudLayout.Pager;
+            const float arrow = 15f;
+            if (GUI.Button(new Rect(x, y, w, arrow), "\u25B2", _pager))
+                TurnPage(-1);
+            GUI.Label(new Rect(x, y + arrow, w, BottomHudLayout.Slot - 2f * arrow), (page + 1).ToString(), _pageNumber);
+            if (GUI.Button(new Rect(x, y + BottomHudLayout.Slot - arrow, w, arrow), "\u25BC", _pager))
+                TurnPage(1);
+            Event e = Event.current;
+            var row = new Rect(BottomHudLayout.SlotX(width, 0), y, x + w - BottomHudLayout.SlotX(width, 0), BottomHudLayout.Slot);
+            if (e.type == EventType.ScrollWheel && row.Contains(e.mousePosition))
+            {
+                TurnPage(e.delta.y > 0 ? 1 : -1);
+                e.Use();
+            }
+            if (e.type == EventType.Repaint && new Rect(x, y, w, BottomHudLayout.Slot).Contains(e.mousePosition))
+                HoveredText = $"Action bar {page + 1} of {BottomHudLayout.Pages}";
         }
 
         private void DrawSlotFace(HudSlot s, Rect r)
@@ -489,6 +542,9 @@ namespace UOClient.Unity.UI
             _menu = new GUIStyle(GUI.skin.button) { fontSize = 11, padding = new RectOffset(2, 2, 1, 1) };
             _slotText = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 10, wordWrap = true, padding = new RectOffset(1, 1, 1, 1) };
             _slotText.normal.textColor = IronSkin.ButtonText;
+            _pager = new GUIStyle(GUI.skin.button) { fontSize = 8, padding = new RectOffset(0, 0, 0, 0), alignment = TextAnchor.MiddleCenter };
+            _pageNumber = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 13, fontStyle = FontStyle.Bold, padding = new RectOffset(0, 0, 0, 0) };
+            _pageNumber.normal.textColor = PaperdollSkin.Gold;
         }
 
         private static void Fill(Rect r, Color c)
@@ -594,14 +650,15 @@ namespace UOClient.Unity.UI
         public override string Key => "hudslot";
 
         private readonly BottomHudWindow _hud;
-        private readonly int _index;
+        private readonly int _page, _index;
         private int _tab;
         private Vector2 _scroll;
         private GUIStyle _title, _row;
 
-        public HudSlotPicker(BottomHudWindow hud, int index)
+        public HudSlotPicker(BottomHudWindow hud, int page, int index)
         {
             _hud = hud;
+            _page = page;
             _index = index;
             Rect = new Rect(0, 0, 360, 420);
         }
@@ -623,7 +680,7 @@ namespace UOClient.Unity.UI
                 _row = new GUIStyle(GUI.skin.button) { alignment = TextAnchor.MiddleLeft, padding = new RectOffset(10, 6, 2, 2), fontSize = 13 };
             }
             DrawResizePic(9200, 0, 0, Rect.width, Rect.height);
-            GUI.Label(new Rect(16, 12, Rect.width - 32, 24), $"Action slot {_index + 1}", _title);
+            GUI.Label(new Rect(16, 12, Rect.width - 32, 24), $"Bar {_page + 1}, slot {_index + 1}", _title);
 
             GUILayout.BeginArea(new Rect(16, 44, Rect.width - 32, Rect.height - 60));
             _tab = GUILayout.Toolbar(_tab, new[] { "Spell", "Skill", "Item" });
@@ -646,7 +703,7 @@ namespace UOClient.Unity.UI
                     if (GUILayout.Button("Target an item", GUILayout.Height(28)))
                     {
                         BottomHudWindow hud = _hud;
-                        int index = _index;
+                        int index = _index, page = _page;
                         GameSession session = Session;
                         string NameOf(int graphic) => Art.Data.TileData.GetStatic(graphic).Name?.Trim() ?? $"0x{graphic:X4}";
                         BottomHudWindow.Say?.Invoke("Target the item for the slot.");
@@ -665,7 +722,7 @@ namespace UOClient.Unity.UI
                             }
                             if (graphic < 0)
                                 return;
-                            hud.SetSlot(index, new HudSlot { kind = (int)HudSlotKind.Item, graphic = graphic, hue = hue == 0 ? -1 : hue, label = NameOf(graphic) });
+                            hud.SetSlot(page, index, new HudSlot { kind = (int)HudSlotKind.Item, graphic = graphic, hue = hue == 0 ? -1 : hue, label = NameOf(graphic) });
                         });
                         Close();
                     }
@@ -680,7 +737,7 @@ namespace UOClient.Unity.UI
 
         private void Choose(HudSlot slot)
         {
-            _hud.SetSlot(_index, slot);
+            _hud.SetSlot(_page, _index, slot);
             Close();
         }
     }

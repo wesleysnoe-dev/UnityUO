@@ -26,11 +26,20 @@ public class BottomHudLayoutTests
                 Assert.True(BottomHudLayout.SlotX(width, 0) >= px, $"the first slot starts inside the panel at {width}");
                 Assert.True(BottomHudLayout.SlotX(width, n - 1) + BottomHudLayout.Slot <= px + pw, $"the last slot ends inside the panel at {width}");
             }
-            // The row is centred: as much room before the first slot as after the last.
-            float before = BottomHudLayout.SlotX(width, 0) - px, after = px + pw - BottomHudLayout.SlotX(width, n - 1) - BottomHudLayout.Slot;
+            // The row (the slots, then the pager on the mana orb's side) is centred: as much room before as after.
+            float before = BottomHudLayout.SlotX(width, 0) - px, after = px + pw - BottomHudLayout.PagerX(width) - BottomHudLayout.Pager;
             Assert.Equal(before, after, 2);
+            Assert.True(BottomHudLayout.PagerX(width) > BottomHudLayout.SlotX(width, n - 1) + BottomHudLayout.Slot, "the pager comes after the last slot");
         }
         Assert.True(BottomHudLayout.SlotCount(1040f) > BottomHudLayout.SlotCount(700f), "a wider screen has more slots");
+    }
+
+    [Fact]
+    public void Pages_TurnBothWays_AndComeRound()
+    {
+        Assert.Equal(1, BottomHudLayout.NextPage(0, 1));
+        Assert.Equal(BottomHudLayout.Pages - 1, BottomHudLayout.NextPage(0, -1)); // up from the first: the last
+        Assert.Equal(0, BottomHudLayout.NextPage(BottomHudLayout.Pages - 1, 1));  // down from the last: the first
     }
 
     [Fact]
