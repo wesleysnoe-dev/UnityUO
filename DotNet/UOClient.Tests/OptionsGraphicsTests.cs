@@ -92,6 +92,9 @@ public sealed class OptionsGraphicsTests
                     "namePlateHeight" => 30,
                     "tooltipFontSize" => 18,
                     "gridDefaultColumns" or "gridDefaultRows" => 7,
+                    "counterBarCellSize" => 50,
+                    "counterBarRows" => 3,
+                    "counterBarAbbreviatedAmount" => 5000,
                     _ => i == 1 ? 0 : 1,
                 };
                 if (f.Name is "resolutionWidth" or "resolutionHeight")
@@ -102,7 +105,7 @@ public sealed class OptionsGraphicsTests
                 }
                 return candidate;
             case string:
-                return "Bob" + (char)10 + "Alice"; // the ignore list: names, one per line
+                return f.Name == "infoBarItems" ? "Gold|Gold|53" + (char)10 + "HP|Hits|33" : "Bob" + (char)10 + "Alice"; // lists, one entry a line
             default:
                 throw new InvalidOperationException(f.Name + ": no test value for " + v?.GetType());
         }

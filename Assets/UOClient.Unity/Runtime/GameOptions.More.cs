@@ -62,6 +62,27 @@ namespace UOClient.Unity
 
         public const int CorpseStyleAsContainers = 0, CorpseStyleGrid = 1, CorpseStyleClassic = 2;
 
+        // ---- the counter bar and the info bar (the eighth batch; rules in HudBars) ----
+
+        /// <summary>TazUO's CounterBarEnabled: the bar of item counts is shown. Its cells are kept in their own file.</summary>
+        public bool counterBarEnabled = false;
+
+        /// <summary>TazUO's CounterBarCellSize, CounterBarColumns and CounterBarRows.</summary>
+        public int counterBarCellSize = 40, counterBarColumns = 5, counterBarRows = 1;
+
+        /// <summary>TazUO's CounterBarDisplayAbbreviatedAmount / CounterBarAbbreviatedAmount: counts from that number up are shown in thousands.</summary>
+        public bool counterBarDisplayAbbreviatedAmount = false;
+        public int counterBarAbbreviatedAmount = 1000;
+
+        /// <summary>TazUO's CounterBarHighlightOnAmount / CounterBarHighlightAmount: a count below that number is red.</summary>
+        public bool counterBarHighlightOnAmount = false;
+        public int counterBarHighlightAmount = 5;
+
+        /// <summary>TazUO's ShowInfoBar and InfoBarHighlightType (text colour or bars), and the bar's entries ("Label|Var|Hue" a line).</summary>
+        public bool showInfoBar = false;
+        public int infoBarHighlightType = HudBars.HighlightTextColour;
+        public string infoBarItems = HudBars.DefaultInfoBar;
+
         public static void CopyMore(GameOptions from, GameOptions to)
         {
             to.enableSound = from.enableSound;
@@ -79,6 +100,17 @@ namespace UOClient.Unity
             to.gridDefaultColumns = from.gridDefaultColumns;
             to.gridDefaultRows = from.gridDefaultRows;
             to.corpseContainerStyle = from.corpseContainerStyle;
+            to.counterBarEnabled = from.counterBarEnabled;
+            to.counterBarCellSize = from.counterBarCellSize;
+            to.counterBarColumns = from.counterBarColumns;
+            to.counterBarRows = from.counterBarRows;
+            to.counterBarDisplayAbbreviatedAmount = from.counterBarDisplayAbbreviatedAmount;
+            to.counterBarAbbreviatedAmount = from.counterBarAbbreviatedAmount;
+            to.counterBarHighlightOnAmount = from.counterBarHighlightOnAmount;
+            to.counterBarHighlightAmount = from.counterBarHighlightAmount;
+            to.showInfoBar = from.showInfoBar;
+            to.infoBarHighlightType = from.infoBarHighlightType;
+            to.infoBarItems = from.infoBarItems;
         }
 
         private bool SameMore(GameOptions o) =>
@@ -88,7 +120,13 @@ namespace UOClient.Unity
             && gridContainerSearchMode == o.gridContainerSearchMode && gridAutoSort == o.gridAutoSort
             && gridBorderAlpha == o.gridBorderAlpha && gridHideBorder == o.gridHideBorder
             && gridUseContainerHue == o.gridUseContainerHue && gridDefaultColumns == o.gridDefaultColumns
-            && gridDefaultRows == o.gridDefaultRows && corpseContainerStyle == o.corpseContainerStyle;
+            && gridDefaultRows == o.gridDefaultRows && corpseContainerStyle == o.corpseContainerStyle
+            && counterBarEnabled == o.counterBarEnabled && counterBarCellSize == o.counterBarCellSize
+            && counterBarColumns == o.counterBarColumns && counterBarRows == o.counterBarRows
+            && counterBarDisplayAbbreviatedAmount == o.counterBarDisplayAbbreviatedAmount
+            && counterBarAbbreviatedAmount == o.counterBarAbbreviatedAmount
+            && counterBarHighlightOnAmount == o.counterBarHighlightOnAmount && counterBarHighlightAmount == o.counterBarHighlightAmount
+            && showInfoBar == o.showInfoBar && infoBarHighlightType == o.infoBarHighlightType && infoBarItems == o.infoBarItems;
 
         private void ClampMore()
         {
@@ -100,6 +138,13 @@ namespace UOClient.Unity
             gridDefaultColumns = Math.Max(MinGridCells, Math.Min(MaxGridCells, gridDefaultColumns));
             gridDefaultRows = Math.Max(MinGridCells, Math.Min(MaxGridCells, gridDefaultRows));
             corpseContainerStyle = Math.Max(CorpseStyleAsContainers, Math.Min(CorpseStyleClassic, corpseContainerStyle));
+            counterBarCellSize = Math.Max(HudBars.MinCounterCell, Math.Min(HudBars.MaxCounterCell, counterBarCellSize));
+            counterBarColumns = Math.Max(1, Math.Min(HudBars.MaxCounterColumns, counterBarColumns));
+            counterBarRows = Math.Max(1, Math.Min(HudBars.MaxCounterRows, counterBarRows));
+            counterBarAbbreviatedAmount = Math.Max(1000, Math.Min(1000000, counterBarAbbreviatedAmount));
+            counterBarHighlightAmount = Math.Max(1, Math.Min(60000, counterBarHighlightAmount));
+            infoBarHighlightType = Math.Max(HudBars.HighlightTextColour, Math.Min(HudBars.HighlightBars, infoBarHighlightType));
+            infoBarItems = HudBars.FormatInfoBar(HudBars.ParseInfoBar(infoBarItems));
         }
 
         /// <summary>The parse switch's keys of this batch; false for a key that is not one.</summary>
@@ -126,6 +171,20 @@ namespace UOClient.Unity
                 case "gridDefaultColumns": Integer(raw, ref gridDefaultColumns); return true;
                 case "gridDefaultRows": Integer(raw, ref gridDefaultRows); return true;
                 case "corpseContainerStyle": Integer(raw, ref corpseContainerStyle); return true;
+                case "counterBarEnabled": Bool(raw, ref counterBarEnabled); return true;
+                case "counterBarCellSize": Integer(raw, ref counterBarCellSize); return true;
+                case "counterBarColumns": Integer(raw, ref counterBarColumns); return true;
+                case "counterBarRows": Integer(raw, ref counterBarRows); return true;
+                case "counterBarDisplayAbbreviatedAmount": Bool(raw, ref counterBarDisplayAbbreviatedAmount); return true;
+                case "counterBarAbbreviatedAmount": Integer(raw, ref counterBarAbbreviatedAmount); return true;
+                case "counterBarHighlightOnAmount": Bool(raw, ref counterBarHighlightOnAmount); return true;
+                case "counterBarHighlightAmount": Integer(raw, ref counterBarHighlightAmount); return true;
+                case "showInfoBar": Bool(raw, ref showInfoBar); return true;
+                case "infoBarHighlightType": Integer(raw, ref infoBarHighlightType); return true;
+                case "infoBarItems":
+                    if (TryReadStrings(raw, out List<string> entries))
+                        infoBarItems = string.Join("\n", entries);
+                    return true;
                 default: return false;
             }
         }
@@ -150,6 +209,21 @@ namespace UOClient.Unity
             add("gridDefaultColumns", i(gridDefaultColumns));
             add("gridDefaultRows", i(gridDefaultRows));
             add("corpseContainerStyle", i(corpseContainerStyle));
+            add("counterBarEnabled", b(counterBarEnabled));
+            add("counterBarCellSize", i(counterBarCellSize));
+            add("counterBarColumns", i(counterBarColumns));
+            add("counterBarRows", i(counterBarRows));
+            add("counterBarDisplayAbbreviatedAmount", b(counterBarDisplayAbbreviatedAmount));
+            add("counterBarAbbreviatedAmount", i(counterBarAbbreviatedAmount));
+            add("counterBarHighlightOnAmount", b(counterBarHighlightOnAmount));
+            add("counterBarHighlightAmount", i(counterBarHighlightAmount));
+            add("showInfoBar", b(showInfoBar));
+            add("infoBarHighlightType", i(infoBarHighlightType));
+            var entries = new List<string>();
+            foreach (string line in (infoBarItems ?? "").Split('\n'))
+                if (line.Length > 0)
+                    entries.Add("\"" + FlatJson.Escape(line) + "\"");
+            add("infoBarItems", "[" + string.Join(", ", entries) + "]");
         }
 
         /// <summary>A JSON array of strings (["a", "b"]); false for anything else.</summary>

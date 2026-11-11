@@ -67,6 +67,7 @@ namespace UOClient.Unity
             // TazUO brings its buff gump back from the saved layout; we save none, so it opens with each session
             // (closed, the status window's buff button opens it again).
             Ui.Open(new UI.BuffBarWindow());
+            SyncBars();
             Hotkeys = new Hotkeys(GameContext.ProjectRoot) { Log = m => _ctx.Hud.Log(null, m), Command = RunCommand };
             s.TargetRequested += OnTargetRequested;
             s.TargetEnded += OnTargetEnded;
@@ -513,6 +514,24 @@ namespace UOClient.Unity
         }
 
         /// <summary>The top bar with the classic paperdoll; none with the modern one (its buttons are the paperdoll's).</summary>
+        /// <summary>Opens or closes the counter bar and the info bar as the options say (they stay open across Apply).</summary>
+        public void SyncBars()
+        {
+            if (Ui == null || _ctx?.Session == null)
+                return;
+            UI.UiWindow counters = Ui.Find(UI.CounterBarWindow.WindowKey), info = Ui.Find(UI.InfoBarWindow.WindowKey);
+            bool showCounters = UI.CounterBarWindow.Enabled || UI.CounterBarWindow.SelfTest;
+            bool showInfo = UI.InfoBarWindow.Enabled || UI.CounterBarWindow.SelfTest;
+            if (showCounters && counters == null)
+                Ui.Open(new UI.CounterBarWindow());
+            else if (!showCounters && counters != null)
+                Ui.Close(counters);
+            if (showInfo && info == null)
+                Ui.Open(new UI.InfoBarWindow());
+            else if (!showInfo && info != null)
+                Ui.Close(info);
+        }
+
         public void SyncTopBar()
         {
             if (Ui == null || _ctx?.Session == null)

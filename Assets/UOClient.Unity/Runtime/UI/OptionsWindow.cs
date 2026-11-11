@@ -78,6 +78,8 @@ namespace UOClient.Unity.UI
                     case Page.Containers: DrawContainers(d); break;
                     case Page.Nameplates: DrawNameplates(d); break;
                     case Page.IgnoreList: DrawIgnoreList(d); break;
+                    case Page.Counters: DrawCounters(d); break;
+                    case Page.InfoBar: DrawInfoBar(d); break;
                 }
                 _pageHeight = DrawNotOffered(area);
                 GUI.EndScrollView();
@@ -459,6 +461,85 @@ namespace UOClient.Unity.UI
             Line("How long the mouse rests on something before its tooltip shows.");
             d.tooltipBackgroundOpacity = IntSlider("Background", d.tooltipBackgroundOpacity, 0, 100, "%");
             d.tooltipFontSize = IntSlider("Text size", d.tooltipFontSize, GameOptions.MinTooltipFontSize, GameOptions.MaxTooltipFontSize, " px");
+        }
+
+        private void DrawCounters(GameOptions d)
+        {
+            d.counterBarEnabled = Toggle("Show the counter bar", d.counterBarEnabled);
+            Line("Drag an item from a bag onto a cell: the cell counts that kind in your\nbackpack, bags inside it included. Double-click a cell to use one,\nright-click to clear it. The item itself goes back where it was.", 50);
+            GUI.enabled = d.counterBarEnabled;
+            d.counterBarColumns = IntSlider("Columns", d.counterBarColumns, 1, HudBars.MaxCounterColumns);
+            d.counterBarRows = IntSlider("Rows", d.counterBarRows, 1, HudBars.MaxCounterRows);
+            d.counterBarCellSize = IntSlider("Cell size", d.counterBarCellSize, HudBars.MinCounterCell, HudBars.MaxCounterCell, " px");
+            d.counterBarDisplayAbbreviatedAmount = Toggle("Shorten large counts", d.counterBarDisplayAbbreviatedAmount);
+            _indent = 20;
+            GUI.enabled = d.counterBarEnabled && d.counterBarDisplayAbbreviatedAmount;
+            d.counterBarAbbreviatedAmount = IntSlider("From", d.counterBarAbbreviatedAmount / 1000, 1, 100, "K") * 1000;
+            Line($"{d.counterBarAbbreviatedAmount} and more shows as {HudBars.CounterText(d.counterBarAbbreviatedAmount, true, d.counterBarAbbreviatedAmount)}.");
+            _indent = 0;
+            GUI.enabled = d.counterBarEnabled;
+            d.counterBarHighlightOnAmount = Toggle("Red when few are left", d.counterBarHighlightOnAmount);
+            _indent = 20;
+            GUI.enabled = d.counterBarEnabled && d.counterBarHighlightOnAmount;
+            d.counterBarHighlightAmount = IntSlider("Fewer than", d.counterBarHighlightAmount, 1, 100);
+            _indent = 0;
+            GUI.enabled = true;
+        }
+
+        private void DrawInfoBar(GameOptions d)
+        {
+            d.showInfoBar = Toggle("Show the info bar", d.showInfoBar);
+            d.infoBarHighlightType = Choice("Warnings", d.infoBarHighlightType, 110, "Text colour", "Bars");
+            Line(d.infoBarHighlightType == HudBars.HighlightTextColour
+                ? "Hits, mana and stamina turn orange at half and red at a quarter;\nweight at 80% and when full."
+                : "A thin bar under hits, mana, stamina and weight shows how full each is.", 34);
+            List<InfoBarItem> items = HudBars.ParseInfoBar(d.infoBarItems);
+            string[] vars = System.Enum.GetNames(typeof(InfoVar));
+            Text(new Rect(0, _y, 100, 20), "Label", Heading, 13, TextAnchor.UpperLeft, true);
+            Text(new Rect(108, _y, 150, 20), "Shows", Heading, 13, TextAnchor.UpperLeft, true);
+            Text(new Rect(286, _y, 60, 20), "Hue", Heading, 13, TextAnchor.UpperLeft, true);
+            _y += 24;
+            bool changed = false;
+            int remove = -1;
+            for (int i = 0; i < items.Count; i++)
+            {
+                InfoBarItem item = items[i];
+                string label = GUI.TextField(new Rect(0, _y, 100, 22), item.Label ?? "", HudBars.MaxInfoLabelLength);
+                int at = (int)item.Var;
+                if (GUI.Button(new Rect(108, _y, 24, 22), "<"))
+                    at = (at + vars.Length - 1) % vars.Length;
+                Text(new Rect(134, _y + 2, 118, 20), vars[(int)item.Var], Color.white, 13, TextAnchor.UpperCenter);
+                if (GUI.Button(new Rect(254, _y, 24, 22), ">"))
+                    at = (at + 1) % vars.Length;
+                string typed = GUI.TextField(new Rect(286, _y, 50, 22), item.Hue.ToString(), 4);
+                int hue = typed.Length == 0 ? 0 : int.TryParse(typed, out int n) ? GameOptions.ClampHue(n) : item.Hue;
+                GUI.color = hue == 0 ? Greyed : Art.HueColor(hue, Greyed);
+                GUI.DrawTexture(new Rect(342, _y + 3, 22, 16), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                if (GUI.Button(new Rect(372, _y, 26, 22), "X"))
+                    remove = i;
+                if (label != (item.Label ?? "") || at != (int)item.Var || hue != item.Hue)
+                {
+                    items[i] = new InfoBarItem { Label = label.Replace("|", ""), Var = (InfoVar)at, Hue = hue };
+                    changed = true;
+                }
+                _y += 26;
+            }
+            if (remove >= 0)
+            {
+                items.RemoveAt(remove);
+                changed = true;
+            }
+            GUI.enabled = items.Count < HudBars.MaxInfoBarItems;
+            if (GUI.Button(new Rect(0, _y + 2, 70, 22), "Add"))
+            {
+                items.Add(new InfoBarItem { Label = "Gold", Var = InfoVar.Gold, Hue = 53 });
+                changed = true;
+            }
+            GUI.enabled = true;
+            _y += 32;
+            if (changed)
+                d.infoBarItems = HudBars.FormatInfoBar(items);
         }
 
         private string _ignoreName = "";

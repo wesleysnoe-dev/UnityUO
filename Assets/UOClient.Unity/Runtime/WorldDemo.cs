@@ -494,6 +494,18 @@ namespace UOClient.Unity
             UI.GridContainerWindow.Columns = o.gridDefaultColumns;
             UI.GridContainerWindow.Rows = o.gridDefaultRows;
             SessionUiBinder.CorpseContainerStyle = o.corpseContainerStyle;
+            UI.CounterBarWindow.Enabled = o.counterBarEnabled;
+            UI.CounterBarWindow.CellSize = o.counterBarCellSize;
+            UI.CounterBarWindow.Columns = o.counterBarColumns;
+            UI.CounterBarWindow.Rows = o.counterBarRows;
+            UI.CounterBarWindow.Abbreviate = o.counterBarDisplayAbbreviatedAmount;
+            UI.CounterBarWindow.AbbreviateFrom = o.counterBarAbbreviatedAmount;
+            UI.CounterBarWindow.HighlightLow = o.counterBarHighlightOnAmount;
+            UI.CounterBarWindow.LowBelow = o.counterBarHighlightAmount;
+            UI.InfoBarWindow.Enabled = o.showInfoBar;
+            UI.InfoBarWindow.HighlightType = o.infoBarHighlightType;
+            UI.InfoBarWindow.Items = HudBars.ParseInfoBar(o.infoBarItems);
+            _binder?.SyncBars();
             UI.HoverTooltip.BackgroundOpacity = o.tooltipBackgroundOpacity;
             UI.HoverTooltip.FontSize = o.tooltipFontSize;
             _speechOptions.IgnoredNames.Clear();
