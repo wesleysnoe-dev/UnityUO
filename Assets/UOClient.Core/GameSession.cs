@@ -390,7 +390,10 @@ namespace UOClient.Core
                 0 => "Server: incorrect name or password",
                 1 => "Server: someone is already using this account",
                 2 => "Server: your account has been blocked",
-                5 => "Server: another character from this account is in the world",
+                // ModernUO's CharInWorld: a character of the account is still in the world (a logout takes up to five
+                // minutes outside an inn or a house), so no other may be played or created until it has gone.
+                5 => "Your other character is still in the world. Logging out takes up to 5 minutes unless you log out "
+                     + "in an inn or your house. Try again in a few minutes.",
                 _ => $"Server popup {reason}"
             };
             // A refused Play or Create keeps the connection: back to the character list, with the reason.

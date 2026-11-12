@@ -397,8 +397,26 @@ namespace UOClient.Unity.UI
                 Failed("");
             }
             if (!string.IsNullOrEmpty(Status) && Status != "Choose a character")
-                Note(new Rect(p.x, p.yMax + 10, p.width, 30), Status);
+            {
+                // A refusal (the server would not play or create): a dark plaque with the reason, wrapped, so it is seen;
+                // before, one small line under the list that players missed.
+                var plaque = new Rect(p.x, p.yMax + 10, p.width, 64);
+                Color was = GUI.color;
+                GUI.color = new Color(0.12f, 0.04f, 0.03f, 0.88f);
+                GUI.DrawTexture(plaque, Texture2D.whiteTexture);
+                GUI.color = was;
+                if (_refusal == null)
+                {
+                    _refusal = new GUIStyle(GUI.skin.label) { wordWrap = true, fontSize = 15, alignment = TextAnchor.MiddleCenter };
+                    if (PaperdollSkin.SerifFont != null)
+                        _refusal.font = PaperdollSkin.SerifFont;
+                    _refusal.normal.textColor = new Color(1f, 0.82f, 0.62f);
+                }
+                GUI.Label(new Rect(plaque.x + 12, plaque.y + 4, plaque.width - 24, plaque.height - 8), Status, _refusal);
+            }
         }
+
+        private GUIStyle _refusal;
 
         // ---- drawing helpers ----
 

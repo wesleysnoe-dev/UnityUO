@@ -126,6 +126,14 @@ namespace UOClient.Unity.UI
         /// The login tour's (LoginTour) way through creation: a step shown as a player would reach it, with a name and a
         /// profession chosen; nothing is sent.
         /// </summary>
+        /// <summary>The login tour's "create": the city page's Create Character button, pressed.</summary>
+        internal void TourCreate()
+        {
+            _new.Name = _new.Name.Trim();
+            Current = Page.Connecting;
+            _session.CreateCharacter(_new);
+        }
+
         internal void TourShow(Page page, string name, int profession)
         {
             if (page == Page.Create)

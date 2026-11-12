@@ -161,8 +161,11 @@ namespace UOClient.Unity
                     string loginShots = Path.Combine(ProjectRoot, LoginCaptureRequestFile);
                     if (File.Exists(loginShots))
                     {
+                        string ask = File.ReadAllText(loginShots).Trim();
                         File.Delete(loginShots);
-                        StartCoroutine(new LoginTour(_ctx, _login, () => Accounts.ReadLogin(Settings)).Run());
+                        // "create NAME" in the request: the tour goes on to create that character as a player would.
+                        string create = ask.StartsWith("create ", StringComparison.OrdinalIgnoreCase) ? ask.Substring(7).Trim() : null;
+                        StartCoroutine(new LoginTour(_ctx, _login, () => Accounts.ReadLogin(Settings), create).Run());
                     }
                 }
                 else

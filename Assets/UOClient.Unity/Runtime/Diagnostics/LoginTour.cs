@@ -18,11 +18,14 @@ namespace UOClient.Unity
         private readonly LoginFlow _login;
         private readonly Func<LoginSettings> _account;
 
-        public LoginTour(GameContext ctx, LoginFlow login, Func<LoginSettings> account)
+        private readonly string _create;
+
+        public LoginTour(GameContext ctx, LoginFlow login, Func<LoginSettings> account, string create = null)
         {
             _ctx = ctx;
             _login = login;
             _account = account;
+            _create = create;
         }
 
         public IEnumerator Run()
@@ -58,12 +61,30 @@ namespace UOClient.Unity
                 };
                 foreach (var step in steps)
                 {
-                    _login.Screen.TourShow(step.Page, "Aldric", step.Profession);
+                    _login.Screen.TourShow(step.Page, _create ?? "Aldric", step.Profession);
                     yield return WaitFrames(30);
                     ScreenCapture.CaptureScreenshot(Path.Combine(dir, step.Shot));
                     yield return WaitFrames(10);
                 }
-                report += $"; characters [{string.Join(", ", _ctx.Session.Characters)}]; cities [{string.Join(", ", _ctx.Session.Cities.ConvertAll(c => $"{c.Name} {c.X},{c.Y} map {c.Map} #{c.Cliloc}"))}]";
+                report += $"; characters [{string.Join(", ", _ctx.Session.Characters)}]; cities [{string.Join(", ", _ctx.Session.Cities.ConvertAll(c => $"{c.Index}:{c.Name} {c.X},{c.Y} map {c.Map} #{c.Cliloc}"))}]";
+                if (_create != null)
+                {
+                    // As the player: Create Character on the city page; then follow what happens for 20 s.
+                    Debug.Log($"UOClient login-tour: creating '{_create}' (state {_ctx.Session.State})");
+                    _login.Screen.TourCreate();
+                    float stop = Time.realtimeSinceStartup + 20f;
+                    string last = null;
+                    while (Time.realtimeSinceStartup < stop)
+                    {
+                        string now = $"page {_login.Screen.Current}, session {_ctx.Session?.State}, status {_login.Screen.Status}";
+                        if (now != last)
+                            Debug.Log("UOClient login-tour: " + now);
+                        last = now;
+                        yield return null;
+                    }
+                    File.WriteAllText(Path.Combine(dir, "login_capture_done.txt"), report + "; after create: " + last);
+                    yield break;
+                }
             }
             _ctx.Session?.Dispose();
             _ctx.Session = null;
