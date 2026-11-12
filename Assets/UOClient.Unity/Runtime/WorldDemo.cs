@@ -540,6 +540,7 @@ namespace UOClient.Unity
             UI.ContainerWindow.DoubleClickToLoot = o.doubleClickToLootInsideContainers;
             UI.UiManager.HoldShiftToSplitStack = o.holdShiftToSplitStack;
             UI.UiManager.OpenAnimations = o.animateBooksAndScrolls;
+            UI.UiManager.GlintOnOpen = o.animateBooksAndScrolls; // the windows' glint goes with the other opening animations
             UI.PaperdollWindow.Modern = o.modernPaperdoll;
             _binder?.SyncTopBar();
             _tooltip.UseTooltip = o.useTooltip;

@@ -65,6 +65,9 @@ namespace UOClient.Unity.UI
         /// <summary>Called every frame before drawing, for windows that track the world (e.g. close when their container goes away).</summary>
         public virtual bool StillValid => true;
 
+        /// <summary>When the window opened (unscaled seconds): its glint (WindowGlint) runs from then.</summary>
+        public float OpenedAt = -10f;
+
         /// <summary>
         /// Whether a point of the window's box (window-local) is the window's: the pointer there is over it. Most windows
         /// fill their box; one with gaps (the bottom HUD round its orbs) leaves those to the world.
@@ -342,6 +345,9 @@ namespace UOClient.Unity.UI
         /// <summary>Where server gumps were left, by type id, for this session (TazUO's position cache).</summary>
         public GumpPositions ServerGumpPositions { get; } = new GumpPositions();
 
+        /// <summary>New-style windows glint as they open (on with the opening animations).</summary>
+        public static bool GlintOnOpen = true;
+
         public T Open<T>(T window) where T : UiWindow
         {
             // Windows already gone (a server gump closed just before this one is sent again) close first, so the
@@ -363,6 +369,7 @@ namespace UOClient.Unity.UI
                 }
             }
             window.Ui = this;
+            window.OpenedAt = Time.unscaledTime;
             _windows.Add(window);
             _restack = true;
             window.OnOpened();
@@ -655,6 +662,10 @@ namespace UOClient.Unity.UI
             {
                 GUI.skin = skinWas;
             }
+
+            // A new-style window that can be closed (not the HUD's fixed pieces) glints along its frame as it opens.
+            if (w.Themed && w.CanClose && GlintOnOpen)
+                WindowGlint.Draw(w.Rect.size, Time.unscaledTime - w.OpenedAt, IronSkin.BorderFor(new Rect(0, 0, w.Rect.width, w.Rect.height)));
 
             // Last, so controls drawn above take their clicks first: the rest of the window moves it.
             if (Dragging == null && w.Movable)

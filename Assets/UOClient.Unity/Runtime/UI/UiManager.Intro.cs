@@ -75,6 +75,7 @@ namespace UOClient.Unity.UI
             T opened = Open(window);
             if (wasOpen || !OpenAnimations || !ReferenceEquals(opened, window))
                 return opened;
+            opened.OpenedAt = Time.unscaledTime + IntroSeconds * 0.85f; // the glint once it has unrolled or opened
             UiImage art = kind == WindowIntro.Book
                 ? Art.ItemDetailed(graphic) ?? Art.ItemDetailed(BookGraphic)
                 : Art.Item(graphic) ?? Art.Item(ScrollGraphic);
