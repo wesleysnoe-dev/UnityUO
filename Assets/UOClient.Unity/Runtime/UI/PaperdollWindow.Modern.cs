@@ -24,6 +24,9 @@ namespace UOClient.Unity.UI
         private const float ButtonH = 36f, ButtonGap = 6f, PlaqueGap = 8f, PlaqueH = 60f;
         private const float DollScale = 1.45f, SlotSize = 34f, IconSize = 32f, IconGap = 10f;
 
+        /// <summary>The painted niche's opening as shares of its picture: between the columns, from under the arch to the floor.</summary>
+        private const float NicheLeft = 0.21f, NicheRight = 0.79f, NicheTop = 0.19f, NicheFloor = 0.905f;
+
         private static float ModernWidth(bool self) => Border + DollW + (self ? ColumnGap + ColumnW : 0f) + Border;
         private const float ModernHeight = Border + IconBand + DollH + PlaqueGap + PlaqueH + Border;
         private static Rect DollRect => new Rect(Border, Border + IconBand, DollW, DollH);
@@ -110,9 +113,17 @@ namespace UOClient.Unity.UI
             {
                 minX = 0; minY = 0; maxX = 180; maxY = 240;
             }
-            _dollScale = Mathf.Min(DollScale, (doll.width - 16f) / (maxX - minX), (doll.height - 16f) / (maxY - minY));
-            _bodyAt = new Vector2(doll.x + doll.width / 2f - (minX + maxX) / 2f * _dollScale,
-                                  doll.y + doll.height / 2f - (minY + maxY) / 2f * _dollScale);
+            // With the painted niche, the doll stands inside its arch with its feet on the niche's floor (the opening's
+            // shares of the picture, measured from Resources/Paperdoll/doll_backdrop: between the columns, under the arch,
+            // down to where the back wall meets the floor). Without it, centred in the doll's area as before.
+            Rect fit = PaperdollSkin.Piece("doll_backdrop") != null
+                ? new Rect(doll.x + doll.width * NicheLeft, doll.y + doll.height * NicheTop,
+                           doll.width * (NicheRight - NicheLeft), doll.height * (NicheFloor - NicheTop))
+                : new Rect(doll.x + 8f, doll.y + 8f, doll.width - 16f, doll.height - 16f);
+            _dollScale = Mathf.Min(DollScale, fit.width / (maxX - minX), fit.height / (maxY - minY));
+            bool onFloor = PaperdollSkin.Piece("doll_backdrop") != null;
+            _bodyAt = new Vector2(fit.center.x - (minX + maxX) / 2f * _dollScale,
+                                  onFloor ? fit.yMax - maxY * _dollScale : fit.center.y - (minY + maxY) / 2f * _dollScale);
 
             LayoutSlots(m, doll);
 
