@@ -73,7 +73,8 @@ namespace UOClient.Unity
         private float _shadowLogAt;
         private bool _nearLightSent, _gumpsShown, _fxShown, _questionShown;
         private float _fxLogAt, _fxAt, _deathLogAt, _questionLogAt;
-        private int _deathStep, _assistStep, _tourTab = -1;
+        private int _deathStep, _assistStep, _tourTab = -1, _cmdStep = -1;
+        private float _cmdLogAt;
         private uint _assistVictim;
         private float _assistLogAt;
         private uint _deathVictim, _deathNext;
@@ -318,6 +319,29 @@ namespace UOClient.Unity
                     _tourTab = tab;
                     Assistant.AssistantWindow.ChosenForTest = tourHost.Agents[tab].Name;
                     Debug.Log($"UOClient assistant-tour: tab {tab}: {tourHost.Agents[tab].Name}");
+                }
+            }
+            // -command-selftest=a,b,c: once there, those button commands are run 3 s apart, and every journal line that
+            // arrives is written to the log (what the server answered) with the windows open.
+            if (_shadowSent && Time.unscaledTime >= _shadowAt + 12f && _ctx.Session != null
+                && Array.Find(Environment.GetCommandLineArgs(), x => x.StartsWith("-command-selftest=", StringComparison.OrdinalIgnoreCase)) is string cmdArg)
+            {
+                if (_cmdStep < 0)
+                {
+                    _cmdStep = 0;
+                    _ctx.Session.World.JournalAdded += j => Debug.Log($"UOClient command-selftest: journal: {j.Name}: {j.Text}");
+                }
+                string[] commands = cmdArg.Substring(cmdArg.IndexOf('=') + 1).Split(',');
+                float ct = Time.unscaledTime - _shadowAt - 12f;
+                if (_cmdStep < commands.Length && ct >= _cmdStep * 3f)
+                {
+                    Debug.Log($"UOClient command-selftest: running \"{commands[_cmdStep]}\"");
+                    UI.UiManager.CommandForTest(commands[_cmdStep++]);
+                }
+                if (Time.unscaledTime >= _cmdLogAt)
+                {
+                    _cmdLogAt = Time.unscaledTime + 3f;
+                    Debug.Log($"UOClient command-selftest: windows [{string.Join(" ", UI.UiManager.OpenKeysForTest())}] hud {_ctx.Hud.Visible} journal {_ctx.Hud.JournalVisible}");
                 }
             }
             // -question-selftest: once there, the attack question ("This may flag you criminal!") opens (for captures).

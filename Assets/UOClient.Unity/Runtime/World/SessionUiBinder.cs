@@ -511,7 +511,19 @@ namespace UOClient.Unity
                         _session.Logout();
                     }));
                     break;
-                case "journal": _ctx.Hud.JournalVisible = !_ctx.Hud.JournalVisible; break;
+                case "journal":
+                    // The journal is part of the HUD: with the HUD switched off (the options, or the H key) the button
+                    // used to flip a journal nobody could see. Asking for the journal brings the HUD back with it.
+                    if (!_ctx.Hud.Visible)
+                    {
+                        _ctx.Hud.Visible = true;
+                        _ctx.Hud.JournalVisible = true;
+                    }
+                    else
+                    {
+                        _ctx.Hud.JournalVisible = !_ctx.Hud.JournalVisible;
+                    }
+                    break;
                 case "skills": Ui.Open(new UI.SkillsWindow()); break;
                 case "chat": _chatLine.Open(); break;
                 case "quests": _ctx.Session.RequestQuestMenu(); break;

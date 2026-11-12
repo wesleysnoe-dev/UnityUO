@@ -297,6 +297,9 @@ namespace UOClient.Unity.UI
                     yield return w.Key;
         }
 
+        /// <summary>Self-tests only: runs a button's command (the paperdoll's, the HUD's) in the latest UI.</summary>
+        public static void CommandForTest(string command) => _latest?.Command?.Invoke(command);
+
         /// <summary>Self-tests only: opens a window in the latest UI.</summary>
         public static void OpenForTest(UiWindow window) => _latest?.Open(window);
 
