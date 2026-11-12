@@ -429,16 +429,16 @@ public sealed class GameOptionsTests
         Assert.Subset(MacroDraft.Verbs.ToHashSet(), MacroDraft.VerbsWithArgument.ToHashSet());
     }
 
-    /// <summary>Only the options window's Okay writes the hotkeys file through the editor (SaveBindings), reached via MacroDraft.Okay.</summary>
+    /// <summary>Only the options window's Apply and Okay write the hotkeys file through the editor (SaveBindings), via MacroDraft.Okay.</summary>
     [Fact]
-    public void OnlyOkaySavesMacros()
+    public void OnlyApplyAndOkaySaveMacros()
     {
         string runtime = Path.Combine(RepoRoot(), "Assets", "UOClient.Unity", "Runtime");
         var files = Directory.GetFiles(runtime, "*.cs", SearchOption.AllDirectories);
         Assert.Equal(new[] { "OptionsWindow.cs" }, files.Where(f => File.ReadAllText(f).Contains(".SaveBindings(")).Select(Path.GetFileName));
         string window = File.ReadAllText(Path.Combine(runtime, "UI", "OptionsWindow.cs"));
-        // Handed to the draft as its save; the window calls the draft's Okay only from its Okay button.
-        Assert.Single(System.Text.RegularExpressions.Regex.Matches(window, @"_macros\?\.Okay\(\)"));
+        // Handed to the draft as its save; the window calls the draft's Okay from its Apply and Okay buttons.
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(window, @"_macros\?\.Okay\(\)").Count);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(window, @"hk\.SaveBindings\("));
     }
 

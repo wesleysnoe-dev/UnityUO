@@ -155,7 +155,7 @@ public sealed class LoginMediaTests
         Assert.Equal(4, OptionsWindow.ButtonHints.Length);
         Assert.StartsWith("Defaults", OptionsWindow.ButtonHints[0]);
         Assert.Contains("Nothing is saved", OptionsWindow.ButtonHints[1]);
-        Assert.Contains("Nothing is saved", OptionsWindow.ButtonHints[2]);
+        Assert.Contains("saves", OptionsWindow.ButtonHints[2]); // Apply saves too: closing the game after it keeps them
         Assert.StartsWith("Apply", OptionsWindow.ButtonHints[2]);
         Assert.Contains("unity-uo-options.json", OptionsWindow.ButtonHints[3]);
     }

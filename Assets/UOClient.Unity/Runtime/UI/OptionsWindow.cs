@@ -129,10 +129,12 @@ namespace UOClient.Unity.UI
                 _macros?.Cancel();
                 Close();
             }
+            // Apply saves as well as Okay: players press Apply and close the game, and expected their options kept
+            // (they were for that run only). The window stays open.
             if (GUI.Button(new Rect(x + 86, y, 80, 26), new GUIContent("Apply", ButtonHints[2])))
             {
-                _draft.Apply();
-                _macros?.Apply();
+                _draft.Okay();
+                _macros?.Okay();
             }
             if (GUI.Button(new Rect(x + 172, y, 80, 26), new GUIContent("Okay", ButtonHints[3])))
             {

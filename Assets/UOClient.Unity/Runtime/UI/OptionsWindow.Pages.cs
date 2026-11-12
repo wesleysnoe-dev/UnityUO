@@ -74,7 +74,7 @@ namespace UOClient.Unity.UI
         {
             "Defaults: resets the options (not macros) to the defaults; nothing changes until Apply or Okay.",
             "Cancel: closes, dropping changes not applied. Nothing is saved.",
-            "Apply: uses the changes now, for this run only. Nothing is saved.",
+            "Apply: uses the changes now and saves them; the window stays open.",
             "Okay: uses the changes and saves them (unity-uo-options.json; edited macros: unity-uo-hotkeys.json).",
         };
 
