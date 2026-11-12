@@ -25,7 +25,7 @@ namespace UOClient.Unity.UI
         private const float DollScale = 1.45f, SlotSize = 34f, IconSize = 32f, IconGap = 10f;
 
         /// <summary>The painted niche's opening as shares of its picture: between the columns, from under the arch to the floor.</summary>
-        private const float NicheLeft = 0.21f, NicheRight = 0.79f, NicheTop = 0.19f, NicheFloor = 0.905f;
+        private const float NicheLeft = 0.21f, NicheRight = 0.79f, NicheTop = 0.225f, NicheFloor = 0.94f;
 
         private static float ModernWidth(bool self) => Border + DollW + (self ? ColumnGap + ColumnW : 0f) + Border;
         private const float ModernHeight = Border + IconBand + DollH + PlaqueGap + PlaqueH + Border;
