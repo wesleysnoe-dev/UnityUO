@@ -157,6 +157,10 @@ namespace UOClient.Unity.UI
             }
             GUI.Label(bar, $"{me.Stamina} / {me.StaminaMax}", _small);
 
+            // The tooltip is whatever the pointer is over this frame: without this the last slot's stayed up while
+            // the pointer sat on a menu button, as if the slot were still the thing pointed at.
+            if (Event.current.type == EventType.Repaint)
+                HoveredText = null;
             DrawSlots(width, panelY);
             DrawMenu(px, pw, panelY);
 
