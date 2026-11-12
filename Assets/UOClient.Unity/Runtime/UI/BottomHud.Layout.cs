@@ -99,6 +99,33 @@ namespace UOClient.Unity.UI
         /// <summary>A ratio 0..1, 0 when the maximum is unknown.</summary>
         public static float Ratio(int value, int max) => max <= 0 ? 0f : Math.Max(0f, Math.Min(1f, value / (float)max));
 
+        /// <summary>
+        /// How long a slot stays dark after use, in seconds. The server does not say, so these are the shard's usual waits
+        /// with no casting bonuses: a Magery spell's cast time ((3 + circle) / 4 s) plus the 1.5 s recovery; a Necromancy
+        /// or Chivalry spell 1 s plus the recovery; a skill 10 s (most skills' wait); bandages 11 s less 1 s per 20
+        /// dexterity (at least 3 s); a heal, cure or refresh potion 10 s; any other item 1 s (the action delay).
+        /// </summary>
+        public static float Cooldown(HudSlot s, int dex)
+        {
+            switch (s?.Kind ?? HudSlotKind.Empty)
+            {
+                case HudSlotKind.Spell:
+                    if (s.id >= 1 && s.id <= 64)
+                        return (3 + (s.id - 1) / 8 + 1) * 0.25f + 1.5f;
+                    return 2.5f;
+                case HudSlotKind.Skill:
+                    return 10f;
+                case HudSlotKind.Item:
+                    if (s.graphic == 0x0E21 || s.graphic == 0x0EE9)
+                        return Math.Max(3f, 11f - dex / 20);
+                    if (s.graphic == 0x0F0C || s.graphic == 0x0F07 || s.graphic == 0x0F0B)
+                        return 10f;
+                    return 1f;
+                default:
+                    return 0f;
+            }
+        }
+
         /// <summary>The slots a saved list gives the bar: as many as fit, the missing ones empty.</summary>
         public static List<HudSlot> Fit(List<HudSlot> saved, int count)
         {

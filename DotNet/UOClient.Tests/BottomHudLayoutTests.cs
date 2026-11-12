@@ -34,6 +34,24 @@ public class BottomHudLayoutTests
         Assert.True(BottomHudLayout.SlotCount(1040f) > BottomHudLayout.SlotCount(700f), "a wider screen has more slots");
     }
 
+    [Theory]
+    [InlineData(1, 0, 0, 2.5f)]       // Clumsy, first circle: (3 + 1) / 4 + 1.5
+    [InlineData(1, 64, 0, 4.25f)]     // an eighth-circle spell: (3 + 8) / 4 + 1.5
+    [InlineData(1, 101, 0, 2.5f)]     // Necromancy
+    [InlineData(2, 21, 0, 10f)]       // a skill
+    [InlineData(0, 0, 0, 0f)]         // empty
+    public void Cooldown_BySlotKind(int kind, int id, int dex, float seconds) =>
+        Assert.Equal(seconds, BottomHudLayout.Cooldown(new HudSlot { kind = kind, id = id == 0 ? 1 : id }, dex) * (kind == 0 ? 0 : 1), 3);
+
+    [Theory]
+    [InlineData(0x0E21, 0, 11f)]      // bandages, no dexterity
+    [InlineData(0x0E21, 100, 6f)]     // 100 dexterity: 11 - 5
+    [InlineData(0x0E21, 200, 3f)]     // never under 3
+    [InlineData(0x0F0C, 50, 10f)]     // a heal potion
+    [InlineData(0x1F14, 50, 1f)]      // anything else: the action delay
+    public void Cooldown_ForItems(int graphic, int dex, float seconds) =>
+        Assert.Equal(seconds, BottomHudLayout.Cooldown(new HudSlot { kind = 3, graphic = graphic }, dex), 3);
+
     [Fact]
     public void Pages_TurnBothWays_AndComeRound()
     {

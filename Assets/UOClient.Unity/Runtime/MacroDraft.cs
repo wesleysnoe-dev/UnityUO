@@ -28,7 +28,7 @@ namespace UOClient.Unity
             "targetself", "bandageself", "use", "target", "useobject", "lastobject", "record", "playmacro", "cancel",
             "backpack", "paperdoll", "skills", "status", "journal", "options", "help", "party", "worldmap", "minimap",
             "worldchat", "logout", "attacklast", "targetnext", "targetnearest", "lastspell", "lastskill", "ability", "bow",
-            "salute", "opendoor", "delay", "wait", "assistant",
+            "salute", "opendoor", "delay", "wait", "assistant", "slot", "nextbar", "prevbar",
         };
 
         /// <summary>The actions that need something after them (<c>cast Heal</c>, <c>use 0x0E21</c>, <c>ability primary</c>, <c>delay 500</c>).</summary>

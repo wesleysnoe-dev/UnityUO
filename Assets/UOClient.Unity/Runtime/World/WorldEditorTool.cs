@@ -73,7 +73,8 @@ namespace UOClient.Unity
         private float _shadowLogAt;
         private bool _nearLightSent, _gumpsShown, _fxShown, _questionShown;
         private float _fxLogAt, _fxAt, _deathLogAt, _questionLogAt;
-        private int _deathStep, _assistStep, _tourTab = -1, _cmdStep = -1;
+        private int _deathStep, _assistStep, _tourTab = -1, _cmdStep = -1, _hudStep;
+        private float _hudLogAt;
         private float _cmdLogAt;
         private uint _assistVictim;
         private float _assistLogAt;
@@ -342,6 +343,45 @@ namespace UOClient.Unity
                 {
                     _cmdLogAt = Time.unscaledTime + 3f;
                     Debug.Log($"UOClient command-selftest: windows [{string.Join(" ", UI.UiManager.OpenKeysForTest())}] hud {_ctx.Hud.Visible} journal {_ctx.Hud.JournalVisible}");
+                }
+            }
+            // -hud-selftest: the character goes to the woods by Britain's moongate, makes an orc beside it and attacks it
+            // (the target frame), then uses action slots 4 and 1 by their keys (the cooldown sweeps); the log follows.
+            if (_shadowSent && Time.unscaledTime >= _shadowAt + 14f && _ctx.Session != null
+                && Array.Exists(Environment.GetCommandLineArgs(), x => string.Equals(x, "-hud-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                Core.World hw = _ctx.Session.World;
+                float ht = Time.unscaledTime - _shadowAt - 14f;
+                int hx = _ctx.Player.X, hy = _ctx.Player.Y, hz = _ctx.Player.Z;
+                uint Orc()
+                {
+                    foreach (Core.Mobile m in hw.Mobiles.Values)
+                        if (m.Serial != hw.PlayerSerial && m.Body != 400 && m.Body != 401 && Math.Max(Math.Abs(m.X - hx), Math.Abs(m.Y - hy)) <= 3)
+                            return m.Serial;
+                    return 0;
+                }
+                var hsteps = new (float At, Action Do)[]
+                {
+                    (0f, () => _ctx.Session.Say("[self set Map Felucca")),
+                    (1.5f, () => _ctx.Session.Say("[go 1336 2012")),
+                    (3f, () => _ctx.Session.Say("[add orc")),
+                    (4.5f, () => _ctx.Session.TargetGround(hx + 2, hy, hz)),
+                    (7f, () => _ctx.Session.SetWarMode(true)),
+                    (8f, () =>
+                    {
+                        uint orc = Orc();
+                        Debug.Log($"UOClient hud-selftest: attacking 0x{orc:X8}");
+                        _ctx.Session.DoubleClick(orc);
+                    }),
+                    (12f, () => { Debug.Log("UOClient hud-selftest: slot 4 by key"); Hotkeys.SlotPressed?.Invoke(3); }),
+                    (12.5f, () => { Debug.Log("UOClient hud-selftest: slot 1 by key"); Hotkeys.SlotPressed?.Invoke(0); }),
+                };
+                if (_hudStep < hsteps.Length && ht >= hsteps[_hudStep].At)
+                    hsteps[_hudStep++].Do();
+                if (Time.unscaledTime >= _hudLogAt)
+                {
+                    _hudLogAt = Time.unscaledTime + 2f;
+                    Debug.Log($"UOClient hud-selftest: {ht:0.0} s: combatant 0x{_ctx.Session.Combatant:X8} last attack 0x{_ctx.Session.LastAttack:X8} windows [{string.Join(" ", UI.UiManager.OpenKeysForTest())}]");
                 }
             }
             // -question-selftest: once there, the attack question ("This may flag you criminal!") opens (for captures).

@@ -57,6 +57,14 @@ namespace UOClient.Unity.UI
         /// <summary>The bar on show, 0-based.</summary>
         private int Page => Mathf.Clamp(_saved.page, 0, BottomHudLayout.Pages - 1);
 
+        public override void OnClosed()
+        {
+            if (Hotkeys.SlotPressed == _slotKey)
+                Hotkeys.SlotPressed = null;
+            if (Hotkeys.BarTurned == _barKey)
+                Hotkeys.BarTurned = null;
+        }
+
         private void TurnPage(int step)
         {
             _saved.page = BottomHudLayout.NextPage(Page, step);
@@ -75,9 +83,22 @@ namespace UOClient.Unity.UI
             ("Map", "worldmap"), ("Options", "options"), ("Assistant", "assistant")
         };
 
+        private readonly Action<int> _slotKey, _barKey;
+        private readonly Dictionary<string, (float Start, float End)> _cool = new Dictionary<string, (float, float)>();
+        private float _width = BottomHudLayout.MinWidth;
+
         public BottomHudWindow()
         {
             _saved = Load();
+            // The number row (Hotkeys): the slots of the bar on show.
+            _slotKey = i =>
+            {
+                if (i < BottomHudLayout.SlotCount(_width))
+                    Use(Page, i, BottomHudLayout.Fit(BarSlots(Page), BottomHudLayout.SlotCount(_width))[i]);
+            };
+            _barKey = TurnPage;
+            Hotkeys.SlotPressed = _slotKey;
+            Hotkeys.BarTurned = _barKey;
             Rect = new Rect(0, 0, BottomHudLayout.MinWidth, BottomHudLayout.Height);
         }
 
@@ -123,6 +144,7 @@ namespace UOClient.Unity.UI
             EnsureStyles();
             float sw = Screen.width / Ui.Scale, sh = Screen.height / Ui.Scale;
             float width = BottomHudLayout.Width(sw), height = BottomHudLayout.Height;
+            _width = width;
             Rect = new Rect(Mathf.Round((sw - width) / 2f), sh - height - 4f, width, height);
 
             Mobile me = Session.World.Player;
@@ -367,12 +389,14 @@ namespace UOClient.Unity.UI
                 Fill(r, over ? PaperdollSkin.Gold : PaperdollSkin.GoldDim);
                 Fill(new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2), new Color(0.045f, 0.04f, 0.037f));
                 DrawSlotFace(s, new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4));
+                DrawCooldown(page, i, new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2));
+                Shadowed(new Rect(r.x + 3, r.y + 1, 14, 13), Hotkeys.SlotKeyLabel(i), _small, TextAnchor.UpperLeft, PaperdollSkin.GoldFaded);
                 if (e.type == EventType.MouseDown && over)
                 {
                     if (e.button == 1 || s.Kind == HudSlotKind.Empty)
                         Ui.Open(new HudSlotPicker(this, page, i));
                     else if (e.button == 0)
-                        Activate(s);
+                        Use(page, i, s);
                     e.Use();
                 }
                 if (over && s.Kind != HudSlotKind.Empty && e.type == EventType.Repaint)
@@ -436,7 +460,11 @@ namespace UOClient.Unity.UI
         }
 
         /// <summary>The magery spells' small icons run from gump 0x08C0; the other schools have their own runs (SpellbookWindow).</summary>
-        private static int SpellIcon(int spell) => spell >= 1 && spell <= 64 ? 0x08C0 + spell - 1 : 0;
+        public static int SpellIcon(int spell) =>
+            spell >= 1 && spell <= 64 ? 0x08C0 + spell - 1
+            : spell >= 101 && spell < 101 + SpellNames.Necromancy.Length ? 0x5000 + spell - 101
+            : spell >= 201 && spell < 201 + SpellNames.Chivalry.Length ? 0x5100 + spell - 201
+            : 0;
 
         public static string SlotName(HudSlot s)
         {
@@ -449,7 +477,39 @@ namespace UOClient.Unity.UI
             }
         }
 
-        private void Activate(HudSlot s)
+        /// <summary>Uses a slot unless its cooldown is still running, and starts its cooldown.</summary>
+        private void Use(int page, int index, HudSlot s)
+        {
+            if (s == null || s.Kind == HudSlotKind.Empty)
+                return;
+            string key = page + ":" + index;
+            float now = Time.unscaledTime;
+            if (_cool.TryGetValue(key, out var c) && now < c.End)
+                return;
+            if (Activate(s))
+                _cool[key] = (now, now + BottomHudLayout.Cooldown(s, Session.World.Player?.Dex ?? 0));
+        }
+
+        /// <summary>A running cooldown: the slot darkened from the top down to the time left, and the seconds over it.</summary>
+        private void DrawCooldown(int page, int index, Rect r)
+        {
+            if (!_cool.TryGetValue(page + ":" + index, out var c))
+                return;
+            float now = Time.unscaledTime, left = c.End - now;
+            if (left <= 0f)
+            {
+                _cool.Remove(page + ":" + index);
+                return;
+            }
+            float share = Mathf.Clamp01(left / Mathf.Max(0.01f, c.End - c.Start));
+            Fill(new Rect(r.x, r.y, r.width, r.height * share), new Color(0f, 0f, 0f, 0.62f));
+            Fill(new Rect(r.x, r.y + r.height * share - 1f, r.width, 1f), new Color(1f, 0.85f, 0.45f, 0.7f));
+            if (left >= 1f)
+                Shadowed(r, Mathf.CeilToInt(left).ToString(), _number);
+        }
+
+        /// <summary>Does what a slot holds; false when there was nothing to do (no such item).</summary>
+        private bool Activate(HudSlot s)
         {
             switch (s.Kind)
             {
@@ -465,10 +525,14 @@ namespace UOClient.Unity.UI
                     if (item != 0)
                         Session.Use(item);
                     else
+                    {
                         BottomHudWindow.Say?.Invoke($"You have no {s.label}.");
+                        return false;
+                    }
                     break;
                 }
             }
+            return true;
         }
 
         /// <summary>The backpack and every bag in it whose contents the server has sent.</summary>
@@ -655,7 +719,7 @@ namespace UOClient.Unity.UI
 
         private readonly BottomHudWindow _hud;
         private readonly int _page, _index;
-        private int _tab;
+        private int _tab, _school;
         private Vector2 _scroll;
         private GUIStyle _title, _row;
 
@@ -693,10 +757,27 @@ namespace UOClient.Unity.UI
             switch (_tab)
             {
                 case 0:
-                    for (int i = 0; i < SpellNames.Magery.Length; i++)
-                        if (GUILayout.Button($"{i / 8 + 1}.  {SpellNames.Magery[i]}", _row, GUILayout.Height(24)))
-                            Choose(new HudSlot { kind = (int)HudSlotKind.Spell, id = i + 1, label = SpellNames.Magery[i] });
+                {
+                    int was = _school;
+                    _school = GUILayout.Toolbar(_school, new[] { "Magery", "Necromancy", "Chivalry" });
+                    if (_school != was)
+                        _scroll = Vector2.zero;
+                    string[] names = _school == 1 ? SpellNames.Necromancy : _school == 2 ? SpellNames.Chivalry : SpellNames.Magery;
+                    int first = _school == 1 ? 101 : _school == 2 ? 201 : 1;
+                    for (int i = 0; i < names.Length; i++)
+                    {
+                        GUILayout.BeginHorizontal();
+                        UiImage icon = Art.Gump(BottomHudWindow.SpellIcon(first + i));
+                        Rect ir = GUILayoutUtility.GetRect(24, 24, GUILayout.Width(24), GUILayout.Height(24));
+                        if (icon != null)
+                            GUI.DrawTexture(ir, icon.Texture, ScaleMode.ScaleToFit);
+                        string label = _school == 0 ? $"{i / 8 + 1}.  {names[i]}" : names[i];
+                        if (GUILayout.Button(label, _row, GUILayout.Height(24)))
+                            Choose(new HudSlot { kind = (int)HudSlotKind.Spell, id = first + i, label = names[i] });
+                        GUILayout.EndHorizontal();
+                    }
                     break;
+                }
                 case 1:
                     for (int id = 0; id < GameSession.SkillNames.Length; id++)
                         if (GameSession.UsableSkills.Contains(id) && GUILayout.Button(GameSession.SkillNames[id], _row, GUILayout.Height(24)))

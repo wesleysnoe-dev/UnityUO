@@ -600,11 +600,16 @@ namespace UOClient.Unity
                 Ui.Open(new UI.InfoBarWindow());
             else if (!showInfo && info != null)
                 Ui.Close(info);
-            UI.UiWindow bottom = Ui.Find(UI.BottomHudWindow.WindowKey);
+            UI.UiWindow bottom = Ui.Find(UI.BottomHudWindow.WindowKey), frame = Ui.Find(UI.TargetFrameWindow.WindowKey);
             if (UI.BottomHudWindow.Enabled && bottom == null)
                 Ui.Open(new UI.BottomHudWindow());
             else if (!UI.BottomHudWindow.Enabled && bottom != null)
                 Ui.Close(bottom);
+            // The target frame comes with the bottom HUD.
+            if (UI.BottomHudWindow.Enabled && frame == null)
+                Ui.Open(new UI.TargetFrameWindow());
+            else if (!UI.BottomHudWindow.Enabled && frame != null)
+                Ui.Close(frame);
         }
 
         public void SyncTopBar()

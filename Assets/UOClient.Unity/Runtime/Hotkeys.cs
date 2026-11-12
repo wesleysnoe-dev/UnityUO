@@ -81,6 +81,24 @@ namespace UOClient.Unity
         /// <summary>Client-side actions the macros can open (paperdoll buttons and the like).</summary>
         public Action<string> Command;
 
+        /// <summary>
+        /// The bottom HUD's action bar: a slot to use (0-based) and a bar to turn to (+1 down, -1 up). Set while the HUD is
+        /// open. The number row 1..0, - and = use the slots unless a binding has that key.
+        /// </summary>
+        public static Action<int> SlotPressed;
+        public static Action<int> BarTurned;
+
+        /// <summary>The number row in slot order: 1..9, 0, -, =.</summary>
+        public static readonly KeyCode[] SlotKeys =
+        {
+            KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6,
+            KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0, KeyCode.Minus, KeyCode.Equals
+        };
+
+        /// <summary>A slot's key as it reads on the slot.</summary>
+        public static string SlotKeyLabel(int index) =>
+            index < 0 || index >= SlotKeys.Length ? "" : index < 9 ? (index + 1).ToString() : index == 9 ? "0" : index == 10 ? "-" : "=";
+
         public Hotkeys(string projectRoot)
         {
             FilePath = Path.Combine(projectRoot, "UserSettings", "unity-uo-hotkeys.json");
@@ -180,6 +198,11 @@ namespace UOClient.Unity
             foreach (var p in _parsed)
                 if (Input.GetKeyDown(p.Key) && p.Ctrl == ctrl && p.Alt == alt && p.Shift == shift)
                     Run(session, p.Binding.action);
+            // The action bar's keys: the number row alone uses a slot (a key bound to something else keeps it).
+            if (SlotPressed != null && !ctrl && !alt && !shift)
+                for (int i = 0; i < SlotKeys.Length; i++)
+                    if (Input.GetKeyDown(SlotKeys[i]) && !Claims(SlotKeys[i]))
+                        SlotPressed(i);
             // Classic UO's window keys, unless bound to something else: Alt+P the paperdoll, Alt+I the backpack.
             if (alt && !ctrl && !shift)
                 foreach (var (key, action) in new[] { (KeyCode.P, "paperdoll"), (KeyCode.I, "backpack") })
@@ -308,6 +331,15 @@ namespace UOClient.Unity
                 case "record": ToggleRecording(session); break;
                 case "playmacro": Play(session); break;
                 case "cancel": session.CancelTarget(); break;
+                // The bottom HUD's action bar: "slot 3" uses the third slot of the bar on show; "nextbar" / "prevbar" turn it.
+                case "slot":
+                    if (int.TryParse(arg, out int slotNumber) && slotNumber >= 1)
+                        SlotPressed?.Invoke(slotNumber - 1);
+                    else
+                        Log?.Invoke($"Bad slot \"{arg}\" (1 or more).");
+                    break;
+                case "nextbar": BarTurned?.Invoke(1); break;
+                case "prevbar": BarTurned?.Invoke(-1); break;
                 case "backpack": session.OpenBackpack(); break;
                 case "paperdoll": session.OpenPaperdoll(); break;
                 case "skills":
