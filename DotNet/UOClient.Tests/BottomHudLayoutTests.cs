@@ -8,15 +8,15 @@ public class BottomHudLayoutTests
 {
     [Theory]
     [InlineData(1920f, 960f)]   // half the screen
-    [InlineData(3440f, 1040f)]  // an ultrawide: no wider than the most
-    [InlineData(1280f, 700f)]   // a small screen: no narrower than the least
+    [InlineData(3440f, 1180f)]  // an ultrawide: no wider than the most
+    [InlineData(1280f, 840f)]   // a small screen: no narrower than the least
     [InlineData(640f, 640f)]    // a tiny one: never wider than the screen
     public void Width_FollowsTheScreen(float screen, float width) => Assert.Equal(width, BottomHudLayout.Width(screen));
 
     [Fact]
     public void Slots_FillThePanel_WithinTheLimits_AndStayInsideIt()
     {
-        foreach (float width in new[] { 640f, 700f, 820f, 960f, 1040f })
+        foreach (float width in new[] { 640f, 840f, 900f, 960f, 1180f })
         {
             int n = BottomHudLayout.SlotCount(width);
             Assert.InRange(n, BottomHudLayout.MinSlots, BottomHudLayout.MaxSlots);
@@ -31,7 +31,7 @@ public class BottomHudLayoutTests
             Assert.Equal(before, after, 2);
             Assert.True(BottomHudLayout.PagerX(width) > BottomHudLayout.SlotX(width, n - 1) + BottomHudLayout.Slot, "the pager comes after the last slot");
         }
-        Assert.True(BottomHudLayout.SlotCount(1040f) > BottomHudLayout.SlotCount(700f), "a wider screen has more slots");
+        Assert.True(BottomHudLayout.SlotCount(BottomHudLayout.MaxWidth) > BottomHudLayout.SlotCount(BottomHudLayout.MinWidth), "a wider screen has more slots");
     }
 
     [Theory]
@@ -51,6 +51,22 @@ public class BottomHudLayoutTests
     [InlineData(0x1F14, 50, 1f)]      // anything else: the action delay
     public void Cooldown_ForItems(int graphic, int dex, float seconds) =>
         Assert.Equal(seconds, BottomHudLayout.Cooldown(new HudSlot { kind = 3, graphic = graphic }, dex), 3);
+
+    [Fact]
+    public void Covers_ThePanelAndTheHolders_NotTheGapsAboveThePanel()
+    {
+        const float w = 960f;
+        float h = BottomHudLayout.Height;
+        (float px, float pw) = BottomHudLayout.Panel(w);
+        (float lx, float ly) = BottomHudLayout.OrbCentre(w, true);
+        (float rx, float ry) = BottomHudLayout.OrbCentre(w, false);
+        Assert.True(BottomHudLayout.Covers(w, px + pw / 2f, h - 30f));            // on the panel
+        Assert.True(BottomHudLayout.Covers(w, lx, ly));                           // in the health orb
+        Assert.True(BottomHudLayout.Covers(w, rx, ry));                           // in the mana orb
+        Assert.False(BottomHudLayout.Covers(w, w / 2f, 10f));                     // high above the panel's middle: the world
+        Assert.False(BottomHudLayout.Covers(w, 4f, 4f));                          // the box's corner, outside the ring
+        Assert.Equal(w - lx, rx, 3);                                              // the orbs mirror each other
+    }
 
     [Fact]
     public void Pages_TurnBothWays_AndComeRound()

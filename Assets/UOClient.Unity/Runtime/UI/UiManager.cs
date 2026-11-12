@@ -65,6 +65,12 @@ namespace UOClient.Unity.UI
         /// <summary>Called every frame before drawing, for windows that track the world (e.g. close when their container goes away).</summary>
         public virtual bool StillValid => true;
 
+        /// <summary>
+        /// Whether a point of the window's box (window-local) is the window's: the pointer there is over it. Most windows
+        /// fill their box; one with gaps (the bottom HUD round its orbs) leaves those to the world.
+        /// </summary>
+        public virtual bool Covers(Vector2 local) => true;
+
         /// <summary>The item or mobile under the mouse in this window (for tooltips), or 0; windows set it while drawing.</summary>
         public uint Hovered { get; protected set; }
 
@@ -452,6 +458,18 @@ namespace UOClient.Unity.UI
         public UiWindow TopWindowAt(Vector2 uiPoint)
         {
             int top = UiRouting.TopAt(_windows.Count, _rectOf, uiPoint.x, uiPoint.y);
+            // A window whose box holds the point but not its shape (Covers) lets the pointer through to what is below.
+            while (top >= 0 && !_windows[top].Covers(uiPoint - _windows[top].Rect.position))
+            {
+                int below = -1;
+                for (int i = top - 1; i >= 0; i--)
+                    if (_windows[i].Rect.Contains(uiPoint))
+                    {
+                        below = i;
+                        break;
+                    }
+                top = below;
+            }
             return top >= 0 ? _windows[top] : null;
         }
 

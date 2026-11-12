@@ -155,12 +155,11 @@ namespace UOClient.Unity.UI
             if (Event.current.type == EventType.Repaint)
                 Animate(hits, mana, stam);
 
-            float orb = BottomHudLayout.Orb;
             (float px, float pw) = BottomHudLayout.Panel(width);
             float panelY = height - BottomHudLayout.PanelHeight;
 
             // The panel, with the stamina bar along its top edge.
-            IronSkin.Frame(new Rect(px, panelY, pw, BottomHudLayout.PanelHeight));
+            DrawPanel(new Rect(px, panelY, pw, BottomHudLayout.PanelHeight));
             var bar = new Rect(px + BottomHudLayout.Overlap + 6f, panelY - BottomHudLayout.StaminaHeight + 3f,
                                pw - 2f * (BottomHudLayout.Overlap + 6f), BottomHudLayout.StaminaHeight);
             Fill(bar, PaperdollSkin.GoldDim);
@@ -188,9 +187,47 @@ namespace UOClient.Unity.UI
 
             // The orbs over the panel's ends.
             bool poisoned = (me.Flags & 0x04) != 0;
-            DrawOrb(new Rect(0, height - orb, orb, orb), _hitsOrb, _hits, _hitsTrail, poisoned ? new Color(0.25f, 0.75f, 0.2f) : new Color(0.82f, 0.1f, 0.08f),
+            DrawOrb(width, true, _hitsOrb, _hits, _hitsTrail, poisoned ? new Color(0.25f, 0.75f, 0.2f) : new Color(0.82f, 0.1f, 0.08f),
                     $"{me.Hits}", $"/ {me.HitsMax}", _flash);
-            DrawOrb(new Rect(width - orb, height - orb, orb, orb), _manaOrb, _mana, _manaTrail, new Color(0.14f, 0.32f, 0.9f), $"{me.Mana}", $"/ {me.ManaMax}", 0f);
+            DrawOrb(width, false, _manaOrb, _mana, _manaTrail, new Color(0.14f, 0.32f, 0.9f), $"{me.Mana}", $"/ {me.ManaMax}", 0f);
+        }
+
+        /// <summary>Only the panel and the holders take the pointer; the rest of the HUD's box is the world's.</summary>
+        public override bool Covers(Vector2 local) => BottomHudLayout.Covers(Rect.width, local.x, local.y);
+
+        // ---- the art (Resources/Hud, made from the generated pictures by tools/hud_art_prepare.py) ----
+
+        private static Texture2D _holderArt, _panelArt, _slotArt;
+        private static bool _artLooked;
+
+        private static void LoadArt()
+        {
+            if (_artLooked)
+                return;
+            _artLooked = true;
+            _holderArt = Resources.Load<Texture2D>("Hud/orb_holder");
+            _panelArt = Resources.Load<Texture2D>("Hud/hud_panel");
+            _slotArt = Resources.Load<Texture2D>("Hud/slot_frame");
+        }
+
+        /// <summary>
+        /// The panel: the art's two ends at their own shape (scaled to the panel's height) and its plain middle stretched
+        /// between them, so the knotwork never squashes whatever the screen's width. Without the art, the iron frame.
+        /// </summary>
+        private static void DrawPanel(Rect r)
+        {
+            LoadArt();
+            if (_panelArt == null)
+            {
+                IronSkin.Frame(r);
+                return;
+            }
+            const float capShare = 0.18f;
+            float k = r.height / _panelArt.height;
+            float cap = Mathf.Min(_panelArt.width * capShare * k, r.width * 0.3f);
+            GUI.DrawTextureWithTexCoords(new Rect(r.x, r.y, cap, r.height), _panelArt, new Rect(0, 0, capShare, 1));
+            GUI.DrawTextureWithTexCoords(new Rect(r.x + cap, r.y, r.width - 2f * cap, r.height), _panelArt, new Rect(capShare, 0, 1f - 2f * capShare, 1));
+            GUI.DrawTextureWithTexCoords(new Rect(r.xMax - cap, r.y, cap, r.height), _panelArt, new Rect(1f - capShare, 0, capShare, 1));
         }
 
         private void Animate(float hits, float mana, float stam)
@@ -219,8 +256,14 @@ namespace UOClient.Unity.UI
 
         private readonly LiquidOrb _hitsOrb = new LiquidOrb(0.0f), _manaOrb = new LiquidOrb(3.7f);
 
-        private void DrawOrb(Rect r, LiquidOrb orb, float level, float trail, Color liquid, string value, string max, float flash)
+        private void DrawOrb(float width, bool left, LiquidOrb orb, float level, float trail, Color liquid, string value, string max, float flash)
         {
+            LoadArt();
+            (float cx, float cy) = BottomHudLayout.OrbCentre(width, left);
+            float size = BottomHudLayout.Orb;
+            if (_holderArt != null)
+                size = BottomHudLayout.OrbArt * BottomHudLayout.OrbOpening * 1.04f / 0.93f; // the liquid fills the opening, under its rim
+            var r = new Rect(cx - size / 2f, cy - size / 2f, size, size);
             // The liquid is alive: its surface rolls, its body swirls and bubbles rise (LiquidOrb paints it as it goes).
             if (Event.current.type == EventType.Repaint)
                 orb.Paint(level, trail, liquid, Time.unscaledTime);
@@ -228,7 +271,17 @@ namespace UOClient.Unity.UI
             Tint(r, Orbs.Glass, Color.white);
             if (flash > 0.01f)
                 Tint(r, Orbs.Disc, new Color(1f, 0.25f, 0.2f, 0.45f * flash));
-            Tint(r, Orbs.Rim, Color.white);
+            if (_holderArt != null)
+            {
+                // The holder over the liquid; the mana side's is the health side's in a mirror.
+                float a = BottomHudLayout.OrbArt;
+                var hr = new Rect(cx - a / 2f, cy - a / 2f, a, a);
+                GUI.DrawTextureWithTexCoords(hr, _holderArt, left ? new Rect(0, 0, 1, 1) : new Rect(1, 0, -1, 1));
+            }
+            else
+            {
+                Tint(r, Orbs.Rim, Color.white);
+            }
             var text = new Rect(r.x, r.y + r.height * 0.34f, r.width, 26f);
             Shadowed(text, value, _number);
             Shadowed(new Rect(r.x, text.yMax - 6f, r.width, 18f), max, _small);
@@ -386,10 +439,28 @@ namespace UOClient.Unity.UI
                 var r = new Rect(BottomHudLayout.SlotX(width, i), panelY + BottomHudLayout.SlotTop, BottomHudLayout.Slot, BottomHudLayout.Slot);
                 HudSlot s = slots[i];
                 bool over = r.Contains(e.mousePosition);
-                Fill(r, over ? PaperdollSkin.Gold : PaperdollSkin.GoldDim);
-                Fill(new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2), new Color(0.045f, 0.04f, 0.037f));
-                DrawSlotFace(s, new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4));
-                DrawCooldown(page, i, new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2));
+                LoadArt();
+                Rect face = r;
+                if (_slotArt != null)
+                {
+                    // The frame spans the slot and its gap; the picture sits in its opening.
+                    float f = BottomHudLayout.Slot + BottomHudLayout.SlotGap, o = f * BottomHudLayout.SlotOpening;
+                    var fr = new Rect(r.center.x - f / 2f, r.center.y - f / 2f, f, f);
+                    face = new Rect(r.center.x - o / 2f, r.center.y - o / 2f, o, o);
+                    Fill(face, new Color(0.03f, 0.028f, 0.026f, 0.92f));
+                    DrawSlotFace(s, face);
+                    DrawCooldown(page, i, face);
+                    GUI.DrawTexture(fr, _slotArt);
+                    if (over)
+                        Fill(face, new Color(1f, 0.85f, 0.5f, 0.12f));
+                }
+                else
+                {
+                    Fill(r, over ? PaperdollSkin.Gold : PaperdollSkin.GoldDim);
+                    Fill(new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2), new Color(0.045f, 0.04f, 0.037f));
+                    DrawSlotFace(s, new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4));
+                    DrawCooldown(page, i, new Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2));
+                }
                 Shadowed(new Rect(r.x + 3, r.y + 1, 14, 13), Hotkeys.SlotKeyLabel(i), _small, TextAnchor.UpperLeft, PaperdollSkin.GoldFaded);
                 if (e.type == EventType.MouseDown && over)
                 {

@@ -38,23 +38,54 @@ namespace UOClient.Unity.UI
     /// </summary>
     public static class BottomHudLayout
     {
-        public const float Orb = 124f;          // an orb's diameter
-        public const float PanelHeight = 86f;   // the middle panel
+        public const float Orb = 124f;          // the orb's liquid (its square)
+        public const float OrbArt = 200f;       // the holder drawn round it (Resources/Hud/orb_holder.png)
+        public const float PanelHeight = 92f;   // the middle panel
         public const float StaminaHeight = 12f; // the bar on top of the panel
-        public const float Slot = 46f, SlotGap = 5f, SlotTop = 10f;
+        public const float Slot = 50f, SlotGap = 4f, SlotTop = 12f;
         public const float MenuHeight = 20f;
-        public const float Overlap = 22f;       // how far the panel runs under each orb
-        public const float MinWidth = 700f, MaxWidth = 1040f;
+        public const float Overlap = OrbArt / 2f + 4f; // how far a holder reaches over the panel's end
+        public const float MinWidth = 840f, MaxWidth = 1180f;
         public const int MinSlots = 6, MaxSlots = 12;
 
-        /// <summary>The whole HUD's height: an orb stands taller than the panel.</summary>
-        public const float Height = Orb + 6f;
+        /// <summary>The share of the holder's width its round opening takes (measured from the art).</summary>
+        public const float OrbOpening = 0.561f;
+
+        /// <summary>The share of the slot frame's width its square opening takes (measured from the art).</summary>
+        public const float SlotOpening = 0.655f;
+
+        /// <summary>The whole HUD's height: a holder stands taller than the panel.</summary>
+        public const float Height = OrbArt + 4f;
+
+        /// <summary>An orb's centre inside the HUD: the left (health) or the right (mana).</summary>
+        public static (float X, float Y) OrbCentre(float width, bool left) =>
+            (left ? OrbArt / 2f : width - OrbArt / 2f, Height - OrbArt / 2f - 2f);
+
+        /// <summary>
+        /// Whether a point of the HUD's box is part of it: the panel with the stamina bar on top, or inside a holder's
+        /// ring. The rest of the box (above the panel, between and beside the holders) is the world's: a click there
+        /// walks, picks up or attacks as anywhere else.
+        /// </summary>
+        public static bool Covers(float width, float x, float y)
+        {
+            (float px, float pw) = Panel(width);
+            if (x >= px && x <= px + pw && y >= Height - PanelHeight - StaminaHeight && y <= Height)
+                return true;
+            float reach = OrbArt * 0.48f;
+            foreach (bool left in new[] { true, false })
+            {
+                (float cx, float cy) = OrbCentre(width, left);
+                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= reach * reach)
+                    return true;
+            }
+            return false;
+        }
 
         public static float Width(float screenWidth) =>
             Math.Max(Math.Min(MinWidth, screenWidth), Math.Min(Math.Min(MaxWidth, screenWidth), screenWidth * 0.5f));
 
         /// <summary>The panel between the orbs: (x, width) inside the HUD.</summary>
-        public static (float X, float Width) Panel(float width) => (Orb - Overlap, width - 2f * (Orb - Overlap));
+        public static (float X, float Width) Panel(float width) => (OrbArt / 2f, width - OrbArt);
 
         /// <summary>The pager after the last slot (up, the bar's number, down): its width, and the bars there are.</summary>
         public const float Pager = 24f;
