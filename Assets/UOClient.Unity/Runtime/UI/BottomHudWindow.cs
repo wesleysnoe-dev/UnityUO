@@ -188,8 +188,17 @@ namespace UOClient.Unity.UI
             // The orbs over the panel's ends.
             bool poisoned = (me.Flags & 0x04) != 0;
             DrawOrb(width, true, _hitsOrb, _hits, _hitsTrail, poisoned ? new Color(0.25f, 0.75f, 0.2f) : new Color(0.82f, 0.1f, 0.08f),
-                    $"{me.Hits}", $"/ {me.HitsMax}", _flash);
-            DrawOrb(width, false, _manaOrb, _mana, _manaTrail, new Color(0.14f, 0.32f, 0.9f), $"{me.Mana}", $"/ {me.ManaMax}", 0f);
+                    $"{me.Hits}", $"/ {me.HitsMax}", _flash, poisoned ? null : "orb_red");
+            DrawOrb(width, false, _manaOrb, _mana, _manaTrail, new Color(0.14f, 0.32f, 0.9f), $"{me.Mana}", $"/ {me.ManaMax}", 0f, "orb_blue");
+            // Sparkles where something just happened (a slot used, health coming back).
+            if (_healed)
+            {
+                _healed = false;
+                (float hx, float hy) = BottomHudLayout.OrbCentre(width, true);
+                float o = BottomHudLayout.Orb * 1.2f;
+                _bursts.Play("sparkle", new Rect(hx - o / 2f, hy - o / 2f, o, o));
+            }
+            _bursts.Draw();
         }
 
         /// <summary>Only the panel and the holders take the pointer; the rest of the HUD's box is the world's.</summary>
@@ -242,6 +251,8 @@ namespace UOClient.Unity.UI
             }
             if (hits < _lastHits - 0.004f)
                 _flash = 1f; // struck
+            if (hits > _lastHits + 0.03f && _lastHits >= 0f)
+                _healed = true; // a heal: sparkles over the orb
             _lastHits = hits;
             _flash = Mathf.Max(0f, _flash - dt * 2.2f);
             _hits = BottomHudLayout.Ease(_hits, hits, dt);
@@ -254,9 +265,12 @@ namespace UOClient.Unity.UI
 
         // ---- the orbs ----
 
+        private readonly FlipBursts _bursts = new FlipBursts();
+        private bool _healed;
         private readonly LiquidOrb _hitsOrb = new LiquidOrb(0.0f), _manaOrb = new LiquidOrb(3.7f);
 
-        private void DrawOrb(float width, bool left, LiquidOrb orb, float level, float trail, Color liquid, string value, string max, float flash)
+        private void DrawOrb(float width, bool left, LiquidOrb orb, float level, float trail, Color liquid, string value, string max, float flash,
+                             string flip = null)
         {
             LoadArt();
             (float cx, float cy) = BottomHudLayout.OrbCentre(width, left);
@@ -268,6 +282,25 @@ namespace UOClient.Unity.UI
             if (Event.current.type == EventType.Repaint)
                 orb.Paint(level, trail, liquid, Time.unscaledTime);
             GUI.DrawTexture(r, orb.Texture);
+            // The generated liquid (a looping video of it swirling, Resources/Hud/anim) under the painted surface line:
+            // shown from just below the surface down, so the rolling surface and what was lost stay the painted ones.
+            FlipBook swirl = flip != null ? FlipBook.Get(flip) : null;
+            if (swirl != null && level > 0.01f)
+            {
+                float baseY = -0.93f + 1.86f * Mathf.Clamp01(level);
+                float surface = r.y + r.height * (1f - (baseY + 1f) / 2f) + r.height * 0.03f;
+                float inner = r.width * 0.93f;
+                var disc = new Rect(r.center.x - inner / 2f, r.center.y - inner / 2f, inner, inner);
+                if (surface < disc.yMax)
+                {
+                    GUI.BeginGroup(new Rect(disc.x, surface, disc.width, disc.yMax - surface));
+                    Color was = GUI.color;
+                    GUI.color = new Color(1f, 1f, 1f, 0.92f);
+                    GUI.DrawTexture(new Rect(0, disc.y - surface, disc.width, disc.height), swirl.At(Time.unscaledTime, true));
+                    GUI.color = was;
+                    GUI.EndGroup();
+                }
+            }
             Tint(r, Orbs.Glass, Color.white);
             if (flash > 0.01f)
                 Tint(r, Orbs.Disc, new Color(1f, 0.25f, 0.2f, 0.45f * flash));
@@ -558,7 +591,16 @@ namespace UOClient.Unity.UI
             if (_cool.TryGetValue(key, out var c) && now < c.End)
                 return;
             if (Activate(s))
+            {
                 _cool[key] = (now, now + BottomHudLayout.Cooldown(s, Session.World.Player?.Dex ?? 0));
+                if (page == Page && index < BottomHudLayout.SlotCount(_width))
+                {
+                    float f = BottomHudLayout.Slot * 1.8f;
+                    float sx = BottomHudLayout.SlotX(_width, index) + BottomHudLayout.Slot / 2f;
+                    float sy = BottomHudLayout.Height - BottomHudLayout.PanelHeight + BottomHudLayout.SlotTop + BottomHudLayout.Slot / 2f;
+                    _bursts.Play("sparkle", new Rect(sx - f / 2f, sy - f / 2f, f, f));
+                }
+            }
         }
 
         /// <summary>A running cooldown: the slot darkened from the top down to the time left, and the seconds over it.</summary>
