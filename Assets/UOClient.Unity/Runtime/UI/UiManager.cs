@@ -135,9 +135,11 @@ namespace UOClient.Unity.UI
             if (img == null || w <= 0 || h <= 0)
                 return;
             GUI.BeginGroup(new Rect(x, y, w, h));
+            // Each tile a pixel larger than its step, so the next overlaps it: at a UI scale that is not a whole number the
+            // tiles' edges fall between screen pixels and filtering left a one-pixel seam of whatever is behind.
             for (float ty = 0; ty < h; ty += img.Height)
                 for (float tx = 0; tx < w; tx += img.Width)
-                    GUI.DrawTexture(new Rect(tx, ty, img.Width, img.Height), img.Texture);
+                    GUI.DrawTexture(new Rect(tx, ty, img.Width + (tx + img.Width < w ? 1f : 0f), img.Height + (ty + img.Height < h ? 1f : 0f)), img.Texture);
             GUI.EndGroup();
         }
 
