@@ -51,6 +51,31 @@ namespace UOClient.Unity
         private float _rain, _snow, _fog, _storm, _wind = 0.15f;
         private float _nextFlash = 6f, _flashAge = 99f;
 
+        /// <summary>
+        /// How long the server's weather lasts without being said again. ModernUO repeats it every 30 seconds to players
+        /// inside a weather area but never says "clear" when they leave it, its cloud drifts off or its spell of rain
+        /// ends; so, as the classic clients do, weather not heard of for this long is over.
+        /// </summary>
+        public const float Expiry = 90f;
+
+        private static Weather _heard;
+        private static float _heardAt;
+
+        /// <summary>
+        /// The server's weather <paramref name="w"/> if it is still current, else null (not heard of for
+        /// <see cref="Expiry"/> seconds). Each 0x65 makes a new Weather, so a new one is the server speaking again, even
+        /// about the same rain. Used here and by the HUD's plain streaks.
+        /// </summary>
+        public static Weather Current(Weather w)
+        {
+            if (!ReferenceEquals(w, _heard))
+            {
+                _heard = w;
+                _heardAt = Time.unscaledTime;
+            }
+            return w != null && Time.unscaledTime - _heardAt <= Expiry ? w : null;
+        }
+
         public string Status { get; private set; } = "clear";
 
         /// <summary>The rain falling now (eased), 0..1, and the wind's slant (AmbientLife reads them).</summary>
@@ -107,7 +132,9 @@ namespace UOClient.Unity
                 _flashAge = 99f;
             }
             string kind = ShowWeather ? _forced : "clear";
-            Weather w = ShowWeather ? session?.Weather : null;
+            Weather w = Current(session?.Weather);
+            if (!ShowWeather)
+                w = null;
             if (kind == null && w != null)
             {
                 float amount = w.Count <= 0 ? 0f : Mathf.Clamp01(0.35f + w.Count / 70f * 0.65f);

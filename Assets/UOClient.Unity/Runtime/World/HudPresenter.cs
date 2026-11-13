@@ -41,10 +41,11 @@ namespace UOClient.Unity
                 return;
 
             // Weather: rain or snow particles while the server's weather has something falling.
-            Core.Weather weather = _ctx.Session.Weather;
-            _ctx.Hud.WeatherCount = weather.IsFalling && !WeatherView.Active ? weather.Count : 0; // WeatherView draws it when on
-            _ctx.Hud.WeatherSnow = weather.Type == WeatherType.Snow;
-            _ctx.Hud.WeatherStorm = weather.Type == WeatherType.FierceStorm;
+            // (Weather not heard of for a while is over: WeatherView.Current.)
+            Core.Weather weather = WeatherView.Current(_ctx.Session.Weather);
+            _ctx.Hud.WeatherCount = weather != null && weather.IsFalling && !WeatherView.Active ? weather.Count : 0; // WeatherView draws it when on
+            _ctx.Hud.WeatherSnow = weather?.Type == WeatherType.Snow;
+            _ctx.Hud.WeatherStorm = weather?.Type == WeatherType.FierceStorm;
 
             // Quest arrow: the target tile's center at the player's height (the packet has no z), as Avatar anchors it.
             Core.QuestArrow arrow = _ctx.Session.QuestArrow;

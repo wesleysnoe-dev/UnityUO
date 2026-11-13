@@ -74,6 +74,12 @@ namespace UOClient.Unity
         private bool _nearLightSent, _gumpsShown, _fxShown, _questionShown;
         private float _fxLogAt, _fxAt, _deathLogAt, _questionLogAt;
         private int _deathStep, _assistStep, _tourTab = -1, _cmdStep = -1, _hudStep;
+        private int _mailStep;
+        private bool _mailHooked, _vetHooked;
+        private int _vetStep;
+        private uint _vetVendor;
+        private (int X, int Y) _vetAt;
+        private uint _mailBox, _mailItem;
         private float _hudLogAt;
         private float _cmdLogAt;
         private uint _assistVictim;
@@ -321,6 +327,119 @@ namespace UOClient.Unity
                     Assistant.AssistantWindow.ChosenForTest = tourHost.Agents[tab].Name;
                     Debug.Log($"UOClient assistant-tour: tab {tab}: {tourHost.Agents[tab].Name}");
                 }
+            }
+            // -mail-selftest: the character goes to the woods by Britain's moongate, a town mailbox is made beside it and
+            // opened, a letter to itself is written with 100 gold and an item from the backpack, sent, opened, emptied
+            // and deleted. The windows are answered as their buttons would (the server's ids: PlayerMail.cs); the log
+            // follows the journal and the text of each window that comes up.
+            if (_shadowSent && Time.unscaledTime >= _shadowAt + 14f && _ctx.Session != null
+                && Array.Exists(Environment.GetCommandLineArgs(), x => string.Equals(x, "-mail-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                Core.World w = _ctx.Session.World;
+                float t = Time.unscaledTime - _shadowAt - 14f;
+                int px = _ctx.Player.X, py = _ctx.Player.Y, pz = _ctx.Player.Z;
+                Core.ServerGump Top() => w.Gumps.Count > 0 ? w.Gumps[w.Gumps.Count - 1] : null;
+                void Reply(int button, bool texts)
+                {
+                    Core.ServerGump g = Top();
+                    if (g == null)
+                    {
+                        Debug.Log($"UOClient mail-selftest: no window to press {button} on");
+                        return;
+                    }
+                    var entries = new System.Collections.Generic.List<(int, string)>();
+                    if (texts)
+                    {
+                        entries.Add((1, w.Player?.Name ?? ""));
+                        entries.Add((2, "Test letter"));
+                        entries.Add((3, "100"));
+                        entries.Add((10, "Hello from the mail self-test."));
+                        entries.Add((11, "Second line."));
+                    }
+                    Debug.Log($"UOClient mail-selftest: pressing {button} on 0x{g.TypeId:X8}");
+                    _ctx.Session.ReplyGump(g, button, new System.Collections.Generic.List<int>(), entries);
+                }
+                if (_mailStep == 0 && !_mailHooked)
+                {
+                    _mailHooked = true;
+                    w.JournalAdded += j => Debug.Log($"UOClient mail-selftest: journal: {j.Name}: {j.Text}");
+                    w.GumpOpened += g => Debug.Log($"UOClient mail-selftest: window 0x{g.TypeId:X8}: {string.Join(" | ", g.Lines)}");
+                }
+                var steps = new (float At, Action Do)[]
+                {
+                    (0f, () => _ctx.Session.Say("[self set Map Felucca")),
+                    (1.5f, () => _ctx.Session.Say("[go 1336 2012")),
+                    (3f, () => _ctx.Session.Say("[add PublicMailbox")),
+                    (4.5f, () => _ctx.Session.TargetGround(px + 1, py - 1, pz)),
+                    (6f, () => _ctx.Session.OpenBackpack()),
+                    (8f, () =>
+                    {
+                        foreach (Core.WorldItem i in w.Items.Values)
+                            if (i.Graphic == 0x4142 && Math.Abs(i.X - px) <= 2 && Math.Abs(i.Y - py) <= 2)
+                                _mailBox = i.Serial;
+                        Debug.Log($"UOClient mail-selftest: mailbox 0x{_mailBox:X8}");
+                        _ctx.Session.DoubleClick(_mailBox);
+                    }),
+                    (10f, () => Reply(10, false)),        // Write a letter
+                    (12f, () => Reply(30, true)),         // Attach an item
+                    (13.5f, () =>
+                    {
+                        uint pack = w.Worn(w.Player, 21);
+                        foreach (Core.ContainedItem i in w.ItemsIn(pack))
+                            if (i.Graphic != 0x0EED && _mailItem == 0)
+                                _mailItem = i.Serial;
+                        Debug.Log($"UOClient mail-selftest: attaching 0x{_mailItem:X8}");
+                        _ctx.Session.TargetObject(_mailItem);
+                    }),
+                    (16f, () => Reply(31, true)),         // Send
+                    (19f, () => Reply(100, false)),       // open the newest letter
+                    (22f, () => Reply(20, false)),        // Take everything
+                    (25f, () => Reply(22, false)),        // Delete
+                    (28f, () => Debug.Log("UOClient mail-selftest: done")),
+                };
+                if (_mailStep < steps.Length && t >= steps[_mailStep].At)
+                    steps[_mailStep++].Do();
+            }
+            // -vetvendor-selftest: the character goes to Britain's bank, double-clicks the veteran rewards vendor (the one
+            // in the red GM robe, 0x204F hue 0x26) and turns to its Storage shelf (button 107); the log has its text.
+            if (_shadowSent && Time.unscaledTime >= _shadowAt + 14f && _ctx.Session != null
+                && Array.Exists(Environment.GetCommandLineArgs(), x => string.Equals(x, "-vetvendor-selftest", StringComparison.OrdinalIgnoreCase)))
+            {
+                Core.World w = _ctx.Session.World;
+                float t = Time.unscaledTime - _shadowAt - 14f;
+                if (_vetStep == 0 && !_vetHooked)
+                {
+                    _vetHooked = true;
+                    w.GumpOpened += g => Debug.Log($"UOClient vetvendor-selftest: window 0x{g.TypeId:X8}: {string.Join(" | ", g.Lines)}");
+                    w.JournalAdded += j => Debug.Log($"UOClient vetvendor-selftest: journal: {j.Name}: {j.Text}");
+                }
+                var steps = new (float At, Action Do)[]
+                {
+                    (0f, () => _ctx.Session.Say("[self set Map Felucca")),
+                    (1.5f, () => _ctx.Session.Say("[go 1434 1690")),
+                    (6f, () =>
+                    {
+                        foreach (Core.Mobile m in w.Mobiles.Values)
+                            foreach (Core.EquippedItem e in m.Equipment.Values)
+                                if (e.Graphic == 0x204F && e.Hue == 0x26)
+                                {
+                                    _vetVendor = m.Serial;
+                                    _vetAt = (m.X + 1, m.Y);
+                                }
+                        Debug.Log($"UOClient vetvendor-selftest: vendor 0x{_vetVendor:X8} at {_vetAt}");
+                        if (_vetVendor != 0)
+                            _ctx.Session.Say($"[go {_vetAt.X} {_vetAt.Y}");
+                    }),
+                    (8f, () => _ctx.Session.DoubleClick(_vetVendor)),
+                    (11f, () =>
+                    {
+                        if (w.Gumps.Count > 0)
+                            _ctx.Session.ReplyGump(w.Gumps[w.Gumps.Count - 1], 107, new System.Collections.Generic.List<int>(), new System.Collections.Generic.List<(int, string)>());
+                    }),
+                    (14f, () => Debug.Log("UOClient vetvendor-selftest: done")),
+                };
+                if (_vetStep < steps.Length && t >= steps[_vetStep].At)
+                    steps[_vetStep++].Do();
             }
             // -command-selftest=a,b,c: once there, those button commands are run 3 s apart, and every journal line that
             // arrives is written to the log (what the server answered) with the windows open.
